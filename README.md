@@ -116,4 +116,4 @@ server: {
 
 ## License
 
-MIT
+AGPLv3
