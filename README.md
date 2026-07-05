@@ -59,7 +59,7 @@ Graw/
 cd backend
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements.txt # 首次
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 

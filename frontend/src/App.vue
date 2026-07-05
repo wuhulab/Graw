@@ -69,8 +69,8 @@
           <div class="nm">{{ auth.user?.username }}</div>
           <div>{{ auth.user?.role === 'admin' ? '管理员' : '普通用户' }}</div>
         </div>
-        <button v-if="isAdmin()" class="item" @click="openUsers; userMenuOpen = false">账号管理</button>
-        <button class="item" @click="openChangePwd; userMenuOpen = false">修改密码</button>
+        <button v-if="isAdmin()" class="item" @click="openUsers(); userMenuOpen = false">账号管理</button>
+        <button class="item" @click="openChangePwd(); userMenuOpen = false">修改密码</button>
         <button class="item danger" @click="doLogout">退出登录</button>
       </div>
       <div class="clock">
