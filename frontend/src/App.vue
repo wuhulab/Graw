@@ -82,7 +82,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted, shallowRef, markRaw } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, shallowRef, markRaw, watch } from 'vue'
 import RingCard from './components/cards/RingCard.vue'
 import MonitorCard from './components/cards/MonitorCard.vue'
 import InfoNotesCard from './components/cards/InfoNotesCard.vue'
@@ -142,12 +142,6 @@ function onDocClick(e) {
 function openWindow(key) {
   const def = shortcuts.value.find(s => s.key === key)
   if (!def) return
-  const existing = openWindows.value.find(w => w.key === key)
-  if (existing) {
-    existing.minimized = false
-    focusWindow(existing.id)
-    return
-  }
   const id = ++windowSeq
   const w = reactive({
     id,
@@ -235,7 +229,17 @@ const overview = ref({
 })
 let overviewTimer = null
 async function refreshOverview() {
+  if (!auth.token) return
   try { overview.value = await systemApi.overview() } catch (e) { /* ignore */ }
+}
+
+function startOverview() {
+  if (overviewTimer) return
+  refreshOverview()
+  overviewTimer = setInterval(refreshOverview, 2000)
+}
+function stopOverview() {
+  if (overviewTimer) { clearInterval(overviewTimer); overviewTimer = null }
 }
 
 // Clock
@@ -250,15 +254,21 @@ function updateClock() {
 }
 
 onMounted(() => {
-  refreshOverview()
-  overviewTimer = setInterval(refreshOverview, 2000)
+  // 仅在已登录时启动业务轮询；登录态变化时通过 watch 启停
+  if (loggedIn.value) startOverview()
   updateClock()
   clockTimer = setInterval(updateClock, 1000)
   document.addEventListener('mousedown', onDocClick)
 })
 
+// 登录态变化时启停系统概览轮询，避免未登录时持续打 401
+watch(loggedIn, (v) => {
+  if (v) startOverview()
+  else stopOverview()
+})
+
 onUnmounted(() => {
-  clearInterval(overviewTimer)
+  stopOverview()
   clearInterval(clockTimer)
   document.removeEventListener('mousedown', onDocClick)
 })

@@ -22,9 +22,13 @@ function attachToken(config) {
 api.interceptors.request.use(attachToken)
 dockerHttp.interceptors.request.use(attachToken)
 
-// 响应拦截：401 时清除登录态并刷新到登录页
+// 响应拦截：仅在「曾经登录但 token 失效」时清除登录态并刷新。
+// 从未登录（本地无 token）的请求拿到 401 是正常的，不触发刷新，
+// 否则未登录页面会陷入无限 reload 循环。
+let _reloading = false
 function on401(err) {
-  if (err?.response?.status === 401) {
+  if (err?.response?.status === 401 && auth.token && !_reloading) {
+    _reloading = true
     clearAuth()
     if (location.pathname !== '/') {
       location.href = '/'
