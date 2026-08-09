@@ -5,7 +5,13 @@
       <button class="btn" @click="refresh">刷新</button>
       <input type="text" v-model="pathInput" @keyup.enter="go" />
       <button class="btn" @click="go">转到</button>
-      <button class="btn" @click="mkdirPrompt">新建文件夹</button>
+      <div style="position:relative;">
+        <button class="btn" @click.stop="newMenuOpen = !newMenuOpen">新建</button>
+        <div v-if="newMenuOpen" style="position:absolute; top:100%; left:0; margin-top:4px; background:#fff; border:1px solid rgba(0,0,0,0.1); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.12); z-index:100; min-width:120px;">
+          <div class="menu-item" @click="createFolder">文件夹</div>
+          <div class="menu-item" @click="createFile">文件</div>
+        </div>
+      </div>
     </div>
     <div style="flex:1; overflow:auto;">
       <table class="dt">
@@ -60,6 +66,7 @@ const parent = ref(null)
 const path = ref('')
 const pathInput = ref('')
 const editing = ref(null)
+const newMenuOpen = ref(false)
 
 async function load(p) {
   try {
@@ -123,13 +130,28 @@ async function renameItem(it) {
   }
 }
 
-async function mkdirPrompt() {
+async function createFolder() {
+  newMenuOpen.value = false
   const name = prompt('新建文件夹名称')
   if (!name) return
   const sep = path.value.includes('\\') ? '\\' : '/'
   const newPath = path.value.replace(/[\\/]$/, '') + sep + name
   try {
     await filesApi.mkdir(newPath)
+    refresh()
+  } catch (e) {
+    alert('创建失败：' + (e.response?.data?.detail || e.message))
+  }
+}
+
+async function createFile() {
+  newMenuOpen.value = false
+  const name = prompt('新建文件名称')
+  if (!name) return
+  const sep = path.value.includes('\\') ? '\\' : '/'
+  const newPath = path.value.replace(/[\\/]$/, '') + sep + name
+  try {
+    await filesApi.write(newPath, '')
     refresh()
   } catch (e) {
     alert('创建失败：' + (e.response?.data?.detail || e.message))
@@ -148,3 +170,8 @@ onMounted(async () => {
   await load('')
 })
 </script>
+
+<style scoped>
+.menu-item { padding: 8px 12px; font-size: 12px; cursor: pointer; }
+.menu-item:hover { background: #f5f5f7; }
+</style>
