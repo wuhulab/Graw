@@ -1,5 +1,5 @@
 <template>
-  <div style="display:flex; flex-direction:column; height:100%;">
+  <div style="display:flex; flex-direction:column; height:100%;" @click="closeMenus">
     <div class="toolbar">
       <button class="btn" @click="refresh">刷新</button>
       <label style="font-size:11px;color:#0a3d7a;">排序：</label>
@@ -23,25 +23,26 @@
             <th style="width:80px;">状态</th>
             <th style="width:80px;">CPU%</th>
             <th style="width:100px;">内存</th>
-            <th style="width:140px;">操作</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="p in filteredList" :key="p.pid">
+          <tr v-for="p in filteredList" :key="p.pid" @contextmenu.prevent="onContextMenu($event, p)">
             <td>{{ p.pid }}</td>
             <td>{{ p.name }}</td>
             <td>{{ p.username }}</td>
             <td>{{ p.status }}</td>
             <td>{{ p.cpu.toFixed(1) }}</td>
             <td>{{ formatBytes(p.memory) }}</td>
-            <td>
-              <button class="btn" @click="kill(p.pid, false)">结束</button>
-              <button class="btn danger" @click="kill(p.pid, true)">强制</button>
-            </td>
           </tr>
         </tbody>
       </table>
     </div>
+    <Teleport to="body">
+      <div v-if="contextMenu.show" class="context-menu" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }" @click.stop>
+        <div class="menu-item" @click="menuKill">结束进程</div>
+        <div class="menu-item" @click="menuForceKill">强制结束</div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -53,6 +54,7 @@ const list = ref([])
 const sortBy = ref('cpu')
 const filter = ref('')
 const loading = ref(false)
+const contextMenu = ref({ show: false, x: 0, y: 0, item: null })
 let timer = null
 
 const filteredList = computed(() => {
@@ -72,6 +74,26 @@ async function refresh() {
   }
 }
 
+function closeMenus() {
+  contextMenu.value.show = false
+}
+
+function onContextMenu(e, p) {
+  contextMenu.value = { show: true, x: e.clientX, y: e.clientY, item: p }
+}
+
+function menuKill() {
+  const p = contextMenu.value.item
+  closeMenus()
+  if (p) kill(p.pid, false)
+}
+
+function menuForceKill() {
+  const p = contextMenu.value.item
+  closeMenus()
+  if (p) kill(p.pid, true)
+}
+
 async function kill(pid, force) {
   if (!confirm(`确认${force ? '强制' : ''}结束进程 ${pid}？`)) return
   try {
@@ -88,3 +110,18 @@ onMounted(() => {
 })
 onUnmounted(() => clearInterval(timer))
 </script>
+
+<style scoped>
+.menu-item { padding: 8px 12px; font-size: 12px; cursor: pointer; }
+.menu-item:hover { background: #f5f5f7; }
+.context-menu {
+  position: fixed;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  z-index: 200;
+  min-width: 140px;
+  padding: 4px 0;
+}
+</style>
