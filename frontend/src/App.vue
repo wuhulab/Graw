@@ -41,7 +41,7 @@
       @move="(x, y) => moveWindow(w.id, x, y)"
       @resize="(width, height) => resizeWindow(w.id, width, height)"
     >
-      <component :is="w.component" v-bind="w.props || {}" @openTerminal="openTerminalAt" @openEditor="openEditor" />
+      <component :is="w.component" v-bind="w.props || {}" @close="closeWindow(w.id)" @openTerminal="openTerminalAt" @openEditor="openEditor" />
     </WindowFrame>
 
     <!-- Dock -->
@@ -91,6 +91,7 @@ import DockerWindow from './components/windows/DockerWindow.vue'
 import ProcessWindow from './components/windows/ProcessWindow.vue'
 import FilesWindow from './components/windows/FilesWindow.vue'
 import TerminalWindow from './components/windows/TerminalWindow.vue'
+import EditorWindow from './components/windows/EditorWindow.vue'
 import UserWindow from './components/windows/UserWindow.vue'
 import ChangePasswordWindow from './components/windows/ChangePasswordWindow.vue'
 import Login from './views/Login.vue'
@@ -192,8 +193,8 @@ function openEditor({ path, content }) {
     key: 'editor',
     title: '编辑: ' + path.split(/[\\/]/).pop(),
     icon: markRaw(FileText),
-    component: markRaw(TerminalWindow),
-    props: {},
+    component: markRaw(EditorWindow),
+    props: { path, content },
     x: 140 + (openWindows.value.length * 30),
     y: 60 + (openWindows.value.length * 25),
     width: 780,

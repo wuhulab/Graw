@@ -31,7 +31,7 @@
             <td>{{ it.is_dir ? '-' : formatBytes(it.size) }}</td>
             <td>{{ it.modified ? formatTime(it.modified) : '-' }}</td>
             <td>
-              <button class="btn" v-if="!it.is_dir && it.size < 2*1024*1024" @click="editFile(it)">查看</button>
+              <button class="btn" v-if="!it.is_dir && it.size < 2*1024*1024" @click.stop="openEditorWindow(it)">查看</button>
               <button class="btn" @click="download(it)" v-if="!it.is_dir">下载</button>
               <button class="btn" @click="renameItem(it)">重命名</button>
               <button class="btn danger" @click="remove(it)">删除</button>
@@ -42,16 +42,6 @@
           </tr>
         </tbody>
       </table>
-    </div>
-    <div v-if="editing" style="position:absolute;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:10;">
-      <div style="width:80%;height:80%;background:#fff;border-radius:6px;display:flex;flex-direction:column;border:1px solid #b0c4de;">
-        <div class="toolbar">
-          <strong style="font-family:monospace;">{{ editing.path }}</strong>
-          <button class="btn" style="margin-left:auto;" @click="saveEdit">保存</button>
-          <button class="btn" @click="editing = null">关闭</button>
-        </div>
-        <textarea v-model="editing.content" style="flex:1;border:none;outline:none;padding:8px;font-family:Consolas,monospace;font-size:12px;"></textarea>
-      </div>
     </div>
     <div v-if="contextMenu.show" class="context-menu" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }">
       <div class="menu-item" @click="menuRename">重命名</div>
@@ -71,7 +61,6 @@ const items = ref([])
 const parent = ref(null)
 const path = ref('')
 const pathInput = ref('')
-const editing = ref(null)
 const newMenuOpen = ref(false)
 const contextMenu = ref({ show: false, x: 0, y: 0, item: null })
 
@@ -95,25 +84,15 @@ function goUp() { if (parent.value) load(parent.value) }
 
 function openItem(it) {
   if (it.is_dir) load(it.path)
-  else if (it.size < 2 * 1024 * 1024) editFile(it)
+  else if (it.size < 2 * 1024 * 1024) openEditorWindow(it)
 }
 
-async function editFile(it) {
+async function openEditorWindow(it) {
   try {
     const r = await filesApi.read(it.path)
-    editing.value = { path: r.path, content: r.content }
+    emit('openEditor', { path: r.path, content: r.content })
   } catch (e) {
     alert('读取失败：' + (e.response?.data?.detail || e.message))
-  }
-}
-
-async function saveEdit() {
-  try {
-    await filesApi.write(editing.value.path, editing.value.content)
-    editing.value = null
-    refresh()
-  } catch (e) {
-    alert('保存失败：' + (e.response?.data?.detail || e.message))
   }
 }
 
@@ -205,7 +184,7 @@ function menuEdit() {
   const it = contextMenu.value.item
   closeMenus()
   if (!it || it.is_dir) return
-  editFile(it)
+  openEditorWindow(it)
 }
 
 onMounted(async () => {
