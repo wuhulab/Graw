@@ -88,6 +88,15 @@ export const notesApi = {
   save: (content) => api.post('/notes/', { content }).then(r => r.data)
 }
 
+export const sitesApi = {
+  list: () => api.get('/sites/list').then(r => r.data),
+  create: (body) => api.post('/sites/create', body).then(r => r.data),
+  action: (id, action) => api.post(`/sites/${id}/action`, { action }).then(r => r.data),
+  config: (id) => api.get(`/sites/${id}/config`).then(r => r.data),
+  update: (id, body) => api.post(`/sites/${id}/update`, body).then(r => r.data),
+  delete: (id) => api.post(`/sites/${id}/delete`).then(r => r.data)
+}
+
 export function formatBytes(bytes) {
   if (bytes == null) return '-'
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
