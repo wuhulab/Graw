@@ -35,13 +35,13 @@
       :window="w"
       :active="activeWindowId === w.id"
       @focus="focusWindow(w.id)"
-      @close="closeWindow(w.id)"
+      @close="handleCloseWindow(w.id)"
       @minimize="minimizeWindow(w.id)"
       @maximize="toggleMaximize(w.id)"
       @move="(x, y) => moveWindow(w.id, x, y)"
       @resize="(width, height) => resizeWindow(w.id, width, height)"
     >
-      <component :is="w.component" v-bind="w.props || {}" @close="closeWindow(w.id)" @openTerminal="openTerminalAt" @openEditor="openEditor" />
+      <component :is="w.component" v-bind="w.props || {}" @close="handleCloseWindow(w.id)" @dirty="(v) => { const ww=openWindows.value.find(x=>x.id===w.id); if(ww) ww.dirty=v }" @openTerminal="openTerminalAt" @openEditor="openEditor" @openMedia="openMedia" />
     </WindowFrame>
 
     <!-- Dock -->
@@ -92,12 +92,13 @@ import ProcessWindow from './components/windows/ProcessWindow.vue'
 import FilesWindow from './components/windows/FilesWindow.vue'
 import TerminalWindow from './components/windows/TerminalWindow.vue'
 import EditorWindow from './components/windows/EditorWindow.vue'
+import MediaWindow from './components/windows/MediaWindow.vue'
 import UserWindow from './components/windows/UserWindow.vue'
 import ChangePasswordWindow from './components/windows/ChangePasswordWindow.vue'
 import Login from './views/Login.vue'
 import { systemApi } from './api'
 import { auth, clearAuth, isAdmin } from './store/auth'
-import { Container, Settings, Folder, Terminal, FileText, LayoutGrid, UserCircle2 } from 'lucide-vue-next'
+import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LayoutGrid, UserCircle2 } from 'lucide-vue-next'
 
 const loggedIn = computed(() => !!auth.token)
 function onLoggedIn() { /* 触发响应式重渲染 */ }
@@ -195,6 +196,30 @@ function openEditor({ path, content }) {
     icon: markRaw(FileText),
     component: markRaw(EditorWindow),
     props: { path, content },
+    dirty: false,
+    x: 140 + (openWindows.value.length * 30),
+    y: 60 + (openWindows.value.length * 25),
+    width: 780,
+    height: 520,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+function openMedia({ path, name, type }) {
+  const id = ++windowSeq
+  const title = (type === 'image' ? '图片' : '视频') + ': ' + name
+  const w = reactive({
+    id,
+    key: 'media',
+    title,
+    icon: markRaw(type === 'image' ? ImageIcon : Film),
+    component: markRaw(MediaWindow),
+    props: { path, name, type },
     x: 140 + (openWindows.value.length * 30),
     y: 60 + (openWindows.value.length * 25),
     width: 780,
@@ -219,6 +244,14 @@ function focusWindow(id) {
 function closeWindow(id) {
   openWindows.value = openWindows.value.filter(w => w.id !== id)
   if (activeWindowId.value === id) activeWindowId.value = null
+}
+
+function handleCloseWindow(id) {
+  const w = openWindows.value.find(x => x.id === id)
+  if (w?.key === 'editor' && w.dirty) {
+    if (!confirm('文件已修改，是否关闭？')) return
+  }
+  closeWindow(id)
 }
 
 function minimizeWindow(id) {

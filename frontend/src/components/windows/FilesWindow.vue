@@ -43,23 +43,12 @@
         <div class="menu-item" @click="menuEdit">编辑</div>
       </div>
     </Teleport>
-    <div v-if="mediaPreview.show" style="position:absolute;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:10;" @click="closeMediaPreview">
-      <div style="max-width:90%;max-height:90%;background:#fff;border-radius:6px;padding:8px;" @click.stop>
-        <div class="toolbar" style="margin-bottom:4px;">
-          <strong style="font-family:monospace;">{{ mediaPreview.name }}</strong>
-          <button class="btn" style="margin-left:auto;" @click="closeMediaPreview">关闭</button>
-        </div>
-        <img v-if="mediaPreview.type === 'image'" :src="mediaPreview.url" style="max-width:80vw;max-height:70vh;display:block;" />
-        <video v-else-if="mediaPreview.type === 'video'" :src="mediaPreview.url" controls style="max-width:80vw;max-height:70vh;display:block;" />
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { filesApi, formatBytes } from '../../api'
-import { auth } from '../../store/auth'
 import { ArrowUp, Folder, FileText, Image as ImageIcon, Film } from 'lucide-vue-next'
 
 const items = ref([])
@@ -68,9 +57,8 @@ const path = ref('')
 const pathInput = ref('')
 const newMenuOpen = ref(false)
 const contextMenu = ref({ show: false, x: 0, y: 0, item: null })
-const mediaPreview = ref({ show: false, type: '', url: '', name: '' })
 
-const emit = defineEmits(['openTerminal', 'openEditor'])
+const emit = defineEmits(['openTerminal', 'openEditor', 'openMedia'])
 
 async function load(p) {
   try {
@@ -98,31 +86,10 @@ function isVideo(name) {
   return ['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext)
 }
 
-async function showMediaPreview(it) {
-  try {
-    const resp = await fetch('/api/files/download?path=' + encodeURIComponent(it.path), {
-      headers: { Authorization: `Bearer ${auth.token}` }
-    })
-    if (!resp.ok) throw new Error(resp.status)
-    const blob = await resp.blob()
-    const url = URL.createObjectURL(blob)
-    const type = isImage(it.name) ? 'image' : isVideo(it.name) ? 'video' : ''
-    mediaPreview.value = { show: true, type, url, name: it.name }
-  } catch (e) {
-    alert('加载失败：' + e.message)
-  }
-}
-
-function closeMediaPreview() {
-  if (mediaPreview.value.url) {
-    URL.revokeObjectURL(mediaPreview.value.url)
-  }
-  mediaPreview.value = { show: false, type: '', url: '', name: '' }
-}
-
 function openItem(it) {
   if (it.is_dir) load(it.path)
-  else if (isImage(it.name) || isVideo(it.name)) showMediaPreview(it)
+  else if (isImage(it.name)) emit('openMedia', { path: it.path, name: it.name, type: 'image' })
+  else if (isVideo(it.name)) emit('openMedia', { path: it.path, name: it.name, type: 'video' })
   else if (it.size < 2 * 1024 * 1024) openEditorWindow(it)
 }
 
@@ -223,11 +190,9 @@ function menuEdit() {
   const it = contextMenu.value.item
   closeMenus()
   if (!it || it.is_dir) return
-  if (isImage(it.name) || isVideo(it.name)) {
-    showMediaPreview(it)
-  } else {
-    openEditorWindow(it)
-  }
+  if (isImage(it.name)) emit('openMedia', { path: it.path, name: it.name, type: 'image' })
+  else if (isVideo(it.name)) emit('openMedia', { path: it.path, name: it.name, type: 'video' })
+  else openEditorWindow(it)
 }
 
 onMounted(async () => {
