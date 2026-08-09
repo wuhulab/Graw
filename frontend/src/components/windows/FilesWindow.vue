@@ -6,9 +6,6 @@
       <input type="text" v-model="pathInput" @keyup.enter="go" />
       <button class="btn" @click="go">转到</button>
       <button class="btn" @click="mkdirPrompt">新建文件夹</button>
-      <select v-if="roots.length > 1" v-model="selectedRoot" @change="go" style="font-size:11px;">
-        <option v-for="r in roots" :key="r" :value="r">{{ r }}</option>
-      </select>
     </div>
     <div style="flex:1; overflow:auto;">
       <table class="dt">
@@ -62,17 +59,7 @@ const items = ref([])
 const parent = ref(null)
 const path = ref('')
 const pathInput = ref('')
-const roots = ref([])
-const selectedRoot = ref('')
 const editing = ref(null)
-
-async function loadRoots() {
-  try {
-    const r = await filesApi.roots()
-    roots.value = r.roots || []
-    if (!selectedRoot.value && roots.value.length) selectedRoot.value = roots.value[0]
-  } catch (e) {}
-}
 
 async function load(p) {
   try {
@@ -87,7 +74,7 @@ async function load(p) {
 }
 
 function refresh() { load(path.value) }
-function go() { load(pathInput.value || selectedRoot.value) }
+function go() { load(pathInput.value || '') }
 function goUp() { if (parent.value) load(parent.value) }
 
 function openItem(it) {
@@ -158,7 +145,6 @@ function formatTime(t) {
 }
 
 onMounted(async () => {
-  await loadRoots()
   await load('')
 })
 </script>
