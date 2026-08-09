@@ -49,11 +49,11 @@ function connect() {
     if (props.cwd) {
       setTimeout(() => {
         if (ws && ws.readyState === 1) {
-          const sep = props.cwd.includes('\\') ? '\\' : '/'
-          const quote = props.cwd.includes(' ') ? '"' : ''
-          ws.send(`cd ${quote}${props.cwd}${quote}\n`)
+          const isWinPath = props.cwd.includes('\\') || /^[A-Za-z]:/.test(props.cwd)
+          const cmd = isWinPath ? `cd /d "${props.cwd}"\r\n` : `cd "${props.cwd}"\n`
+          ws.send(cmd)
         }
-      }, 400)
+      }, 600)
     }
   }
   ws.onmessage = (e) => {

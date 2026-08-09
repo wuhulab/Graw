@@ -4,7 +4,6 @@
       <button class="btn" @click="goUp" :disabled="!parent"><ArrowUp :size="14" /> 上级</button>
       <button class="btn" @click="refresh">刷新</button>
       <input type="text" v-model="pathInput" @keyup.enter="go" />
-      <button class="btn" @click="go">转到</button>
       <div style="position:relative;">
         <button class="btn" @click.stop="newMenuOpen = !newMenuOpen">新建</button>
         <div v-if="newMenuOpen" style="position:absolute; top:100%; left:0; margin-top:4px; background:#fff; border:1px solid rgba(0,0,0,0.1); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.12); z-index:100; min-width:120px;">
@@ -217,7 +216,7 @@ onMounted(async () => {
 .menu-item { padding: 8px 12px; font-size: 12px; cursor: pointer; }
 .menu-item:hover { background: #f5f5f7; }
 .context-menu {
-  position: absolute;
+  position: fixed;
   background: #fff;
   border: 1px solid rgba(0,0,0,0.1);
   border-radius: 8px;
