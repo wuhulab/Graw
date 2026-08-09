@@ -109,6 +109,14 @@ export const databasesApi = {
   deleteDB: (id, name) => api.post(`/databases/connections/${id}/delete-db`, { name }).then(r => r.data)
 }
 
+export const cronApi = {
+  list: () => api.get('/cron/list').then(r => r.data),
+  create: (body) => api.post('/cron/create', body).then(r => r.data),
+  update: (id, body) => api.post(`/cron/${id}/update`, body).then(r => r.data),
+  delete: (id) => api.post(`/cron/${id}/delete`).then(r => r.data),
+  run: (id) => api.post(`/cron/${id}/run`).then(r => r.data)
+}
+
 export function formatBytes(bytes) {
   if (bytes == null) return '-'
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']

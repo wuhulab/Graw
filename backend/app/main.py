@@ -15,6 +15,7 @@ from app.routers import (
     auth,
     sites,
     databases,
+    cron,
 )
 from app.auth import seed_default_users, get_current_user
 
@@ -67,6 +68,9 @@ app.include_router(
     prefix="/api/databases",
     tags=["databases"],
     dependencies=PROTECTED,
+)
+app.include_router(
+    cron.router, prefix="/api/cron", tags=["cron"], dependencies=PROTECTED
 )
 
 # Serve frontend static files if built
