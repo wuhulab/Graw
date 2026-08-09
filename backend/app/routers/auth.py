@@ -54,7 +54,9 @@ class ChangePasswordRequest(BaseModel):
 
 
 @router.post("/password")
-async def change_password(req: ChangePasswordRequest, user: dict = Depends(get_current_user)):
+async def change_password(
+    req: ChangePasswordRequest, user: dict = Depends(get_current_user)
+):
     full = _get_user(user["username"])
     if full is None or not verify_password(req.old_password, full["password"]):
         raise HTTPException(status_code=400, detail="原密码错误")
@@ -107,14 +109,18 @@ class UpdateUserRequest(BaseModel):
 
 
 @router.put("/users/{username}")
-async def update_user(username: str, req: UpdateUserRequest, _: dict = Depends(require_admin)):
+async def update_user(
+    username: str, req: UpdateUserRequest, _: dict = Depends(require_admin)
+):
     users = _load_users() or {}
     target = users.get(username)
     if target is None:
         raise HTTPException(status_code=404, detail="用户不存在")
     if req.password is not None:
         if len(req.password) < MIN_PASSWORD_LEN:
-            raise HTTPException(status_code=400, detail=f"密码至少 {MIN_PASSWORD_LEN} 位")
+            raise HTTPException(
+                status_code=400, detail=f"密码至少 {MIN_PASSWORD_LEN} 位"
+            )
         target["password"] = hash_password(req.password)
         # 重置密码后默认要求下次登录修改
         target["must_change_password"] = (
@@ -123,6 +129,11 @@ async def update_user(username: str, req: UpdateUserRequest, _: dict = Depends(r
     if req.role is not None:
         if req.role not in VALID_ROLES:
             raise HTTPException(status_code=400, detail="角色无效")
+        # 阻止降级最后一个管理员
+        if target.get("role") == "admin" and req.role != "admin":
+            admins = [u for u in users.values() if u.get("role") == "admin"]
+            if len(admins) <= 1:
+                raise HTTPException(status_code=400, detail="至少保留一个管理员账号")
         target["role"] = req.role
     if req.must_change_password is not None:
         target["must_change_password"] = req.must_change_password

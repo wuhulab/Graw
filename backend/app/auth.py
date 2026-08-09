@@ -84,19 +84,25 @@ def verify_password(password: str, hashed: str) -> bool:
 
 
 def seed_default_users() -> None:
-    """首次启动时创建默认管理员账号 admin / admin123（需首次登录改密）。"""
-    if os.path.exists(USERS_FILE):
-        return
-    default = {
-        "admin": {
-            "username": "admin",
-            "password": hash_password("admin123"),
-            "role": "admin",
-            "must_change_password": True,
-            "created_at": time.time(),
+    """首次启动时创建默认管理员账号 admin / admin123（需首次登录改密）。
+    若 admin 已存在但角色不是 admin，自动修复以至少保留一个管理员。"""
+    users = _load_users()
+    if users is None:
+        default = {
+            "admin": {
+                "username": "admin",
+                "password": hash_password("admin123"),
+                "role": "admin",
+                "must_change_password": True,
+                "created_at": time.time(),
+            }
         }
-    }
-    _save_users(default)
+        _save_users(default)
+        return
+    admin = users.get("admin")
+    if admin and admin.get("role") != "admin":
+        admin["role"] = "admin"
+        _save_users(users)
 
 
 def create_token(username: str) -> str:
@@ -132,7 +138,11 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(_security),
 ) -> dict:
     """HTTP 接口鉴权依赖：校验 Bearer 令牌并返回当前用户（脱敏）。"""
-    if credentials is None or (credentials.scheme or "").lower() != "bearer" or not credentials.credentials:
+    if (
+        credentials is None
+        or (credentials.scheme or "").lower() != "bearer"
+        or not credentials.credentials
+    ):
         raise HTTPException(status_code=401, detail="未认证")
     payload = decode_token(credentials.credentials)
     if payload is None:

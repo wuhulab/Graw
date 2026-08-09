@@ -181,6 +181,13 @@ async function submitReset() {
 
 async function toggleRole(u) {
   const next = u.role === 'admin' ? 'user' : 'admin'
+  if (u.role === 'admin' && next === 'user') {
+    const admins = users.value.filter(u2 => u2.role === 'admin')
+    if (admins.length <= 1) {
+      alert('至少需要保留一个管理员账号')
+      return
+    }
+  }
   try {
     await authApi.updateUser(u.username, { role: next })
     await refresh()
