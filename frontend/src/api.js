@@ -127,6 +127,13 @@ export const firewallApi = {
   toggle: (enabled) => api.post('/firewall/toggle', { enabled }).then(r => r.data)
 }
 
+export const sslApi = {
+  list: () => api.get('/ssl/list').then(r => r.data),
+  upload: (formData) => api.post('/ssl/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
+  letsencrypt: (body) => api.post('/ssl/letsencrypt', body).then(r => r.data),
+  delete: (id) => api.post(`/ssl/${id}/delete`).then(r => r.data)
+}
+
 export function formatBytes(bytes) {
   if (bytes == null) return '-'
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
