@@ -108,6 +108,25 @@ npm run build
 
 详细接口定义请参考 `backend/app/routers/` 下的各路由文件。
 
+## 重置密码
+
+如果忘记管理员密码或无法登录 Web 面板，可以在服务器本地直接运行命令行脚本重置密码（无需启动后端服务）：
+
+```bash
+cd backend
+
+# 列出所有账号
+python reset_password.py --list
+
+# 重置指定账号（交互式输入新密码）
+python reset_password.py admin
+
+# 不指定账号，脚本会提示选择
+python reset_password.py
+```
+
+脚本直接读写 `backend/data/users.json`，密码输入会隐藏，重置后自动清除“首次登录必须改密”标志。新密码至少 6 位。
+
 ## 配置
 
 前端开发服务器的代理配置位于 `frontend/vite.config.js`，默认将 `/api` 与 WebSocket 转发到 `http://localhost:8000`：

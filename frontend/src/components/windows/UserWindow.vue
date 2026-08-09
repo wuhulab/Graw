@@ -1,5 +1,5 @@
 <template>
-  <div style="display:flex; flex-direction:column; height:100%; background:#f5f5f7;">
+  <div style="display:flex; flex-direction:column; height:100%; background:#f5f5f7;" @click="closeMenus">
     <div class="toolbar">
       <span style="color:#0a3d7a; font-weight:600;">账号管理</span>
       <span style="color:#6e6e73; font-size:11px;">共 {{ users.length }} 个账号</span>
@@ -15,14 +15,13 @@
             <th>角色</th>
             <th>状态</th>
             <th>创建时间</th>
-            <th style="width:200px;">操作</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="users.length === 0">
-            <td colspan="5" class="empty">暂无账号</td>
+            <td colspan="4" class="empty">暂无账号</td>
           </tr>
-          <tr v-for="u in users" :key="u.username">
+          <tr v-for="u in users" :key="u.username" @contextmenu.prevent="onContextMenu($event, u)">
             <td>
               <span style="font-family: ui-monospace, monospace; font-weight:600;">{{ u.username }}</span>
               <span v-if="u.username === currentUser" style="color:#0a84ff; font-size:11px; margin-left:6px;">(我)</span>
@@ -35,17 +34,18 @@
               <span v-else style="color:#67c23a; font-size:11px;">正常</span>
             </td>
             <td style="font-size:11px; color:#6e6e73;">{{ formatTime(u.created_at) }}</td>
-            <td>
-              <button class="btn" @click="openResetPwd(u)">重置密码</button>
-              <button class="btn" @click="toggleRole(u)">
-                {{ u.role === 'admin' ? '降为用户' : '升为管理' }}
-              </button>
-              <button class="btn danger" :disabled="u.username === currentUser" @click="del(u)">删除</button>
-            </td>
           </tr>
         </tbody>
       </table>
     </div>
+
+    <Teleport to="body">
+      <div v-if="contextMenu.show" class="context-menu" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }" @click.stop>
+        <div class="menu-item" @click="menuResetPwd">重置密码</div>
+        <div class="menu-item" @click="menuToggleRole">{{ contextMenu.item?.role === 'admin' ? '降为用户' : '升为管理' }}</div>
+        <div class="menu-item danger" @click="menuDelete">删除</div>
+      </div>
+    </Teleport>
 
     <!-- 创建对话框 -->
     <div v-if="showCreate" class="modal-mask" @click.self="showCreate = false">
@@ -114,6 +114,7 @@ const resetMustChange = ref(true)
 const form = ref({ username: '', password: '', role: 'user' })
 const saving = ref(false)
 const modalError = ref('')
+const contextMenu = ref({ show: false, x: 0, y: 0, item: null })
 let timer = null
 
 const currentUser = auth.user?.username
@@ -189,6 +190,7 @@ async function toggleRole(u) {
 }
 
 async function del(u) {
+  if (u.username === currentUser) { alert('不能删除当前登录账号'); return }
   if (!confirm(`确认删除账号 ${u.username}?`)) return
   try {
     await authApi.deleteUser(u.username)
@@ -201,6 +203,32 @@ async function del(u) {
 function formatTime(t) {
   if (!t) return '-'
   try { return new Date(t * 1000).toLocaleString() } catch { return '-' }
+}
+
+function closeMenus() {
+  contextMenu.value.show = false
+}
+
+function onContextMenu(e, u) {
+  contextMenu.value = { show: true, x: e.clientX, y: e.clientY, item: u }
+}
+
+function menuResetPwd() {
+  const u = contextMenu.value.item
+  closeMenus()
+  if (u) openResetPwd(u)
+}
+
+function menuToggleRole() {
+  const u = contextMenu.value.item
+  closeMenus()
+  if (u) toggleRole(u)
+}
+
+function menuDelete() {
+  const u = contextMenu.value.item
+  closeMenus()
+  if (u) del(u)
 }
 
 onMounted(() => { refresh(); timer = setInterval(refresh, 10000) })
@@ -217,6 +245,20 @@ onUnmounted(() => clearInterval(timer))
 }
 .role-pill.admin { background: rgba(10, 132, 255, 0.12); color: #0a3d7a; }
 .role-pill.user { background: rgba(0, 0, 0, 0.06); color: #1d1d1f; }
+
+.menu-item { padding: 8px 12px; font-size: 12px; cursor: pointer; }
+.menu-item:hover { background: #f5f5f7; }
+.menu-item.danger { color: #c0392b; }
+.context-menu {
+  position: fixed;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  z-index: 200;
+  min-width: 140px;
+  padding: 4px 0;
+}
 
 .modal-mask {
   position: fixed;
