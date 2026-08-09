@@ -42,12 +42,14 @@
         </tbody>
       </table>
     </div>
-    <div v-if="contextMenu.show" class="context-menu" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }">
-      <div class="menu-item" @click="menuRename">重命名</div>
-      <div class="menu-item" @click="menuDelete">删除</div>
-      <div class="menu-item" @click="menuOpenTerminal">在此处打开终端</div>
-      <div class="menu-item" @click="menuEdit">编辑</div>
-    </div>
+    <Teleport to="body">
+      <div v-if="contextMenu.show" class="context-menu" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }" @click.stop>
+        <div class="menu-item" @click="menuRename">重命名</div>
+        <div class="menu-item" @click="menuDelete">删除</div>
+        <div class="menu-item" @click="menuOpenTerminal">在此处打开终端</div>
+        <div class="menu-item" @click="menuEdit">编辑</div>
+      </div>
+    </Teleport>
     <div v-if="imagePreview.show" style="position:absolute;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:10;" @click="imagePreview.show = false">
       <div style="max-width:90%;max-height:90%;background:#fff;border-radius:6px;padding:8px;" @click.stop>
         <div class="toolbar" style="margin-bottom:4px;">
