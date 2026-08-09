@@ -90,6 +90,7 @@ import ProcessWindow from './components/windows/ProcessWindow.vue'
 import FilesWindow from './components/windows/FilesWindow.vue'
 import TerminalWindow from './components/windows/TerminalWindow.vue'
 import SitesWindow from './components/windows/SitesWindow.vue'
+import DatabaseWindow from './components/windows/DatabaseWindow.vue'
 import EditorWindow from './components/windows/EditorWindow.vue'
 import MediaWindow from './components/windows/MediaWindow.vue'
 import UserWindow from './components/windows/UserWindow.vue'
@@ -99,13 +100,14 @@ import Login from './views/Login.vue'
 import { systemApi } from './api'
 import { auth, clearAuth, isAdmin } from './store/auth'
 import { settings } from './store/settings'
-import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe } from 'lucide-vue-next'
+import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database } from 'lucide-vue-next'
 
 const loggedIn = computed(() => !!auth.token)
 function onLoggedIn() { /* 触发响应式重渲染 */ }
 
 const shortcuts = ref([
   { key: 'sites', label: '网站', icon: markRaw(Globe), component: markRaw(SitesWindow), w: 900, h: 560, adminOnly: false },
+  { key: 'database', label: '数据库', icon: markRaw(Database), component: markRaw(DatabaseWindow), w: 860, h: 540, adminOnly: false },
   { key: 'docker', label: 'Docker', icon: markRaw(Container), component: markRaw(DockerWindow), w: 820, h: 520, adminOnly: false },
   { key: 'process', label: '进程管理', icon: markRaw(Settings), component: markRaw(ProcessWindow), w: 780, h: 520, adminOnly: false },
   { key: 'files', label: '文件管理', icon: markRaw(Folder), component: markRaw(FilesWindow), w: 820, h: 540, adminOnly: false },

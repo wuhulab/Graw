@@ -97,6 +97,18 @@ export const sitesApi = {
   delete: (id) => api.post(`/sites/${id}/delete`).then(r => r.data)
 }
 
+export const databasesApi = {
+  status: () => api.get('/databases/status').then(r => r.data),
+  connections: () => api.get('/databases/connections').then(r => r.data),
+  createConn: (body) => api.post('/databases/connections', body).then(r => r.data),
+  deleteConn: (id) => api.delete(`/databases/connections/${id}`).then(r => r.data),
+  test: (id) => api.post(`/databases/connections/${id}/test`).then(r => r.data),
+  listDBs: (id) => api.get(`/databases/connections/${id}/databases`).then(r => r.data),
+  query: (id, body) => api.post(`/databases/connections/${id}/query`, body).then(r => r.data),
+  createDB: (id, name) => api.post(`/databases/connections/${id}/create-db`, { name }).then(r => r.data),
+  deleteDB: (id, name) => api.post(`/databases/connections/${id}/delete-db`, { name }).then(r => r.data)
+}
+
 export function formatBytes(bytes) {
   if (bytes == null) return '-'
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']

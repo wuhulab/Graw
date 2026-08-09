@@ -5,7 +5,17 @@ from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 import os
 
-from app.routers import system, docker_api, process, files, terminal, notes, auth, sites
+from app.routers import (
+    system,
+    docker_api,
+    process,
+    files,
+    terminal,
+    notes,
+    auth,
+    sites,
+    databases,
+)
 from app.auth import seed_default_users, get_current_user
 
 PROTECTED = [Depends(get_current_user)]
@@ -51,6 +61,12 @@ app.include_router(
 )
 app.include_router(
     sites.router, prefix="/api/sites", tags=["sites"], dependencies=PROTECTED
+)
+app.include_router(
+    databases.router,
+    prefix="/api/databases",
+    tags=["databases"],
+    dependencies=PROTECTED,
 )
 
 # Serve frontend static files if built
