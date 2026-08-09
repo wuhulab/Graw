@@ -46,32 +46,30 @@
 
     <!-- Dock -->
     <div class="taskbar">
-      <div class="start-button" title="Launchpad"><LayoutGrid :size="22" /></div>
+      <div class="start-button" title="Launchpad" @click.stop="toggleStartMenu"><LayoutGrid :size="22" /></div>
+      <div v-if="startMenuOpen" class="start-menu" @click.stop>
+        <div class="start-header">
+          <div style="font-weight:700;">{{ auth.user?.username }}</div>
+          <div style="font-size:11px;color:#6e6e73;">{{ auth.user?.role === 'admin' ? '管理员' : '普通用户' }}</div>
+        </div>
+        <div class="start-list">
+          <button v-if="isAdmin()" class="start-item" @click="openUsers(); startMenuOpen = false"><UserCircle2 :size="16" /> 账号管理</button>
+          <button class="start-item" @click="openChangePwd(); startMenuOpen = false"><UserCircle2 :size="16" /> 修改密码</button>
+          <button class="start-item" @click="openSettings(); startMenuOpen = false"><Settings :size="16" /> 设置</button>
+          <button class="start-item danger" @click="doLogout"><LogOut :size="16" /> 退出登录</button>
+        </div>
+      </div>
       <div class="task-items">
         <div
           v-for="w in openWindows"
           :key="w.id"
           class="task-item"
-          :class="{ active: activeWindowId === w.id && !w.minimized }"
+          :class="{ active: activeWindowId === w.id && !w.minimized, 'icon-only': settings.taskbarTextOnly, 'no-text': !settings.showTaskbarText && !settings.taskbarTextOnly }"
           @click="taskClick(w.id)"
         >
-          <span class="icon"><component :is="w.icon" :size="20" /></span>
-          <span class="title">{{ w.title }}</span>
+          <span v-if="!settings.taskbarTextOnly" class="icon"><component :is="w.icon" :size="20" /></span>
+          <span v-if="settings.showTaskbarText || settings.taskbarTextOnly" class="title">{{ w.title }}</span>
         </div>
-      </div>
-      <div class="user-chip" :title="auth.user?.role === 'admin' ? '管理员' : '用户'" @click="toggleUserMenu">
-        <UserCircle2 :size="20" />
-        <span class="name">{{ auth.user?.username }}</span>
-        <span v-if="auth.user?.role === 'admin'" class="role-badge">管理</span>
-      </div>
-      <div v-if="userMenuOpen" class="user-menu" @click.stop>
-        <div class="meta">
-          <div class="nm">{{ auth.user?.username }}</div>
-          <div>{{ auth.user?.role === 'admin' ? '管理员' : '普通用户' }}</div>
-        </div>
-        <button v-if="isAdmin()" class="item" @click="openUsers(); userMenuOpen = false">账号管理</button>
-        <button class="item" @click="openChangePwd(); userMenuOpen = false">修改密码</button>
-        <button class="item danger" @click="doLogout">退出登录</button>
       </div>
       <div class="clock">
         <div>{{ clockTime }}</div>
@@ -95,10 +93,12 @@ import EditorWindow from './components/windows/EditorWindow.vue'
 import MediaWindow from './components/windows/MediaWindow.vue'
 import UserWindow from './components/windows/UserWindow.vue'
 import ChangePasswordWindow from './components/windows/ChangePasswordWindow.vue'
+import SettingsWindow from './components/windows/SettingsWindow.vue'
 import Login from './views/Login.vue'
 import { systemApi } from './api'
 import { auth, clearAuth, isAdmin } from './store/auth'
-import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LayoutGrid, UserCircle2 } from 'lucide-vue-next'
+import { settings } from './store/settings'
+import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2 } from 'lucide-vue-next'
 
 const loggedIn = computed(() => !!auth.token)
 function onLoggedIn() { /* 触发响应式重渲染 */ }
@@ -107,43 +107,46 @@ const shortcuts = ref([
   { key: 'docker', label: 'Docker', icon: markRaw(Container), component: markRaw(DockerWindow), w: 820, h: 520, adminOnly: false },
   { key: 'process', label: '进程管理', icon: markRaw(Settings), component: markRaw(ProcessWindow), w: 780, h: 520, adminOnly: false },
   { key: 'files', label: '文件管理', icon: markRaw(Folder), component: markRaw(FilesWindow), w: 820, h: 540, adminOnly: false },
-  { key: 'terminal', label: '终端', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: false },
-  { key: 'changepwd', label: '修改密码', icon: markRaw(UserCircle2), component: markRaw(ChangePasswordWindow), w: 420, h: 360, adminOnly: false }
+  { key: 'terminal', label: '终端', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: false }
 ])
-if (isAdmin()) {
-  shortcuts.value.push({
-    key: 'users', label: '账号管理', icon: markRaw(UserCircle2),
-    component: markRaw(UserWindow), w: 600, h: 460, adminOnly: true
-  })
-}
 
 const selected = ref(null)
 const openWindows = ref([])
 const activeWindowId = ref(null)
-const userMenuOpen = ref(false)
+const startMenuOpen = ref(false)
 let windowSeq = 0
 let zSeq = 100
 
-function toggleUserMenu() { userMenuOpen.value = !userMenuOpen.value }
+function toggleStartMenu() { startMenuOpen.value = !startMenuOpen.value }
 function openUsers() { openWindow('users') }
 function openChangePwd() { openWindow('changepwd') }
+function openSettings() { openWindow('settings') }
 
 function doLogout() {
-  userMenuOpen.value = false
+  startMenuOpen.value = false
   clearAuth()
   location.reload()
 }
 
 function onDocClick(e) {
-  if (!userMenuOpen.value) return
-  const chip = e.target.closest('.user-chip')
-  const menu = e.target.closest('.user-menu')
-  if (!chip && !menu) userMenuOpen.value = false
+  if (!startMenuOpen.value) return
+  const btn = e.target.closest('.start-button')
+  const menu = e.target.closest('.start-menu')
+  if (!btn && !menu) startMenuOpen.value = false
 }
 
 function openWindow(key) {
-  const def = shortcuts.value.find(s => s.key === key)
-  if (!def) return
+  let def = shortcuts.value.find(s => s.key === key)
+  if (!def) {
+    const extras = {
+      users: { label: '账号管理', icon: markRaw(UserCircle2), component: markRaw(UserWindow), w: 600, h: 460 },
+      changepwd: { label: '修改密码', icon: markRaw(UserCircle2), component: markRaw(ChangePasswordWindow), w: 420, h: 360 },
+      settings: { label: '设置', icon: markRaw(Settings), component: markRaw(SettingsWindow), w: 520, h: 480 }
+    }
+    def = extras[key]
+    if (!def) return
+    if (key === 'users' && !isAdmin()) return
+  }
   const id = ++windowSeq
   const w = reactive({
     id,

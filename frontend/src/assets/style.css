@@ -304,11 +304,11 @@ button {
   color: #0a3d7a;
 }
 
-.user-menu {
+.start-menu {
   position: absolute;
-  right: 100px;
-  bottom: 84px;
-  min-width: 160px;
+  bottom: 76px;
+  left: 12px;
+  min-width: 200px;
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 12px;
@@ -319,9 +319,16 @@ button {
   z-index: 9100;
   user-select: none;
 }
-
-.user-menu .item {
-  display: block;
+.start-header {
+  padding: 6px 12px 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  margin-bottom: 4px;
+}
+.start-list { display: flex; flex-direction: column; gap: 2px; }
+.start-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   text-align: left;
   padding: 7px 12px;
@@ -333,18 +340,12 @@ button {
   color: #1d1d1f;
   font-family: inherit;
 }
+.start-item:hover { background: rgba(0, 0, 0, 0.06); }
+.start-item.danger { color: #c0392b; }
+.start-item.danger:hover { background: rgba(255, 59, 48, 0.12); }
 
-.user-menu .item:hover { background: rgba(0, 0, 0, 0.06); }
-.user-menu .item.danger { color: #c0392b; }
-.user-menu .item.danger:hover { background: rgba(255, 59, 48, 0.12); }
-.user-menu .meta {
-  padding: 6px 12px 8px;
-  font-size: 11px;
-  color: #6e6e73;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-  margin-bottom: 4px;
-}
-.user-menu .meta .nm { font-weight: 700; color: #1d1d1f; font-size: 12px; }
+.task-item.icon-only { padding: 0 10px; min-width: auto; }
+.task-item.no-text { padding: 0 10px; min-width: auto; }
 
 /* Window */
 .window {
