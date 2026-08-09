@@ -16,6 +16,8 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { auth } from '../../store/auth'
 
+const props = defineProps({ cwd: String })
+
 const termEl = ref(null)
 const statusText = ref('未连接')
 let term = null
@@ -44,6 +46,15 @@ function connect() {
     backoff = 500
     setStatus('已连接')
     sendResize()
+    if (props.cwd) {
+      setTimeout(() => {
+        if (ws && ws.readyState === 1) {
+          const sep = props.cwd.includes('\\') ? '\\' : '/'
+          const quote = props.cwd.includes(' ') ? '"' : ''
+          ws.send(`cd ${quote}${props.cwd}${quote}\n`)
+        }
+      }, 400)
+    }
   }
   ws.onmessage = (e) => {
     if (term) term.write(e.data)

@@ -41,7 +41,7 @@
       @move="(x, y) => moveWindow(w.id, x, y)"
       @resize="(width, height) => resizeWindow(w.id, width, height)"
     >
-      <component :is="w.component" />
+      <component :is="w.component" v-bind="w.props || {}" @openTerminal="openTerminalAt" @openEditor="openEditor" />
     </WindowFrame>
 
     <!-- Dock -->
@@ -96,7 +96,7 @@ import ChangePasswordWindow from './components/windows/ChangePasswordWindow.vue'
 import Login from './views/Login.vue'
 import { systemApi } from './api'
 import { auth, clearAuth, isAdmin } from './store/auth'
-import { Container, Settings, Folder, Terminal, LayoutGrid, UserCircle2 } from 'lucide-vue-next'
+import { Container, Settings, Folder, Terminal, FileText, LayoutGrid, UserCircle2 } from 'lucide-vue-next'
 
 const loggedIn = computed(() => !!auth.token)
 function onLoggedIn() { /* 触发响应式重渲染 */ }
@@ -149,10 +149,55 @@ function openWindow(key) {
     title: def.label,
     icon: def.icon,
     component: def.component,
+    props: {},
     x: 140 + (openWindows.value.length * 30),
     y: 60 + (openWindows.value.length * 25),
     width: def.w,
     height: def.h,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+function openTerminalAt(cwd) {
+  const id = ++windowSeq
+  const w = reactive({
+    id,
+    key: 'terminal',
+    title: '终端',
+    icon: markRaw(Terminal),
+    component: markRaw(TerminalWindow),
+    props: { cwd },
+    x: 140 + (openWindows.value.length * 30),
+    y: 60 + (openWindows.value.length * 25),
+    width: 780,
+    height: 460,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+function openEditor({ path, content }) {
+  const id = ++windowSeq
+  const w = reactive({
+    id,
+    key: 'editor',
+    title: '编辑: ' + path.split(/[\\/]/).pop(),
+    icon: markRaw(FileText),
+    component: markRaw(TerminalWindow),
+    props: {},
+    x: 140 + (openWindows.value.length * 30),
+    y: 60 + (openWindows.value.length * 25),
+    width: 780,
+    height: 520,
     z: ++zSeq,
     minimized: false,
     maximized: false,
