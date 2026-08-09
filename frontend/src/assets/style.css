@@ -217,21 +217,22 @@ button {
 }
 
 .task-item {
+  width: 52px;
   height: 52px;
-  padding: 0 12px;
-  display: flex;
+  display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  gap: 2px;
   background: transparent;
   border: none;
   border-radius: 12px;
   color: #1d1d1f;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 500;
   cursor: pointer;
-  min-width: 120px;
-  max-width: 200px;
   position: relative;
+  padding: 2px;
 }
 
 .task-item:hover { background: rgba(0, 0, 0, 0.06); }
@@ -250,6 +251,7 @@ button {
 
 .task-item .icon { font-size: 20px; }
 .task-item .title {
+  max-width: 48px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -344,8 +346,8 @@ button {
 .start-item.danger { color: #c0392b; }
 .start-item.danger:hover { background: rgba(255, 59, 48, 0.12); }
 
-.task-item.icon-only { padding: 0 10px; min-width: auto; }
-.task-item.no-text { padding: 0 10px; min-width: auto; }
+.task-item.icon-only { padding: 2px; }
+.task-item.no-text { padding: 2px; }
 
 /* Window */
 .window {
