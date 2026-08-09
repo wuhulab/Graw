@@ -84,7 +84,8 @@ export const filesApi = {
   chmod: (path, mode) => api.post('/files/chmod', { path, mode }).then(r => r.data),
   copy: (src, dst) => api.post('/files/copy', { src, dst }).then(r => r.data),
   compress: (paths, archive, fmt) => api.post('/files/compress', { paths, archive, fmt }).then(r => r.data),
-  extract: (archive, dest) => api.post('/files/extract', { archive, dest }).then(r => r.data)
+  extract: (archive, dest) => api.post('/files/extract', { archive, dest }).then(r => r.data),
+  upload: (formData) => api.post('/files/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data)
 }
 
 export const notesApi = {

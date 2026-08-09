@@ -7,9 +7,15 @@
 - **账号与权限系统** —— 基于 JWT 的用户登录、角色（管理员/普通用户）、账号管理、强制改密，登录后所有受保护接口均需 `Authorization: Bearer <token>`
 - **桌面式交互界面** —— 窗口化应用、任务栏、桌面快捷方式，支持拖拽、最大化/最小化
 - **实时系统监控** —— CPU、内存、磁盘、网络、负载，通过 WebSocket 实时推送数据与图表
+- **网站管理** —— 支持 Nginx / Apache 虚拟主站的增删改查、启停、配置生成与查看
+- **数据库管理** —— MySQL / MariaDB / Redis 连接管理、库表浏览、SQL / Redis 命令执行
+- **计划任务** —— Cron 表达式管理（Linux crontab / Windows schtasks 封装）
+- **防火墙** —— 端口规则与 IP 黑白名单管理（iptables / netsh）
+- **SSL 证书** —— 自定义证书上传与 Let's Encrypt 申请（certbot）
+- **日志中心** —— 系统日志、网站日志、面板日志的实时查看与清空
 - **Docker 管理** —— 容器与镜像的查看、启动、停止、日志等操作
 - **进程管理** —— 查看系统运行中的进程列表与详情
-- **文件管理** —— 浏览目录、上传/下载文件
+- **文件管理** —— 浏览目录、上传下载、权限修改、压缩解压、复制重命名
 - **Web 终端** —— 基于 xterm.js 的浏览器内终端，直接操作服务器（WebSocket 通过 `?token=` 鉴权）
 - **备忘录** —— 随手记录与查看系统备注信息
 
@@ -88,9 +94,15 @@ npm run build
 |------|------|------|
 | Auth | `/api/auth` | 登录、当前用户、改密、用户管理（管理员） |
 | System | `/api/system` | CPU、内存、磁盘、网络、负载、WebSocket 实时流 |
+| Sites | `/api/sites` | 网站虚拟主机管理（Nginx/Apache） |
+| Databases | `/api/databases` | MySQL/MariaDB/Redis 连接与查询管理 |
+| Cron | `/api/cron` | 计划任务（Linux crontab / Windows schtasks） |
+| Firewall | `/api/firewall` | 端口与 IP 防火墙规则 |
+| SSL | `/api/ssl` | 自定义证书上传与 Let's Encrypt 申请 |
+| Logs | `/api/logs` | 日志查看与清空 |
 | Docker | `/api/docker` | 容器与镜像管理 |
 | Process | `/api/process` | 进程列表与详情 |
-| Files | `/api/files` | 文件浏览与传输 |
+| Files | `/api/files` | 文件浏览、传输、权限、压缩解压 |
 | Terminal | `/api/terminal` | WebSocket 终端会话（通过 `?token=` 鉴权） |
 | Notes | `/api/notes` | 备忘录 CRUD |
 

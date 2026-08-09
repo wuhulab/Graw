@@ -57,7 +57,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { api, filesApi, formatBytes } from '../../api'
+import { filesApi, formatBytes } from '../../api'
 import { ArrowUp, Folder, FileText, Image as ImageIcon, Film, Upload } from 'lucide-vue-next'
 
 const items = ref([])
@@ -262,7 +262,7 @@ async function onUpload(e) {
     const fd = new FormData()
     fd.append('path', path.value)
     fd.append('file', file)
-    await api.post('/files/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    await filesApi.upload(fd)
     refresh()
   } catch (e) {
     alert('上传失败：' + (e.response?.data?.detail || e.message))
