@@ -26,12 +26,12 @@
         <tbody>
           <tr v-for="it in items" :key="it.path" @dblclick="openItem(it)" @contextmenu.prevent="onContextMenu($event, it)">
             <td>
-              <span style="margin-right:4px;"><component :is="it.is_dir ? Folder : FileText" :size="14" /></span>{{ it.name }}
+               <span style="margin-right:4px;"><component :is="it.is_dir ? Folder : (isImage(it.name) ? ImageIcon : FileText)" :size="14" /></span>{{ it.name }}
             </td>
             <td>{{ it.is_dir ? '-' : formatBytes(it.size) }}</td>
             <td>{{ it.modified ? formatTime(it.modified) : '-' }}</td>
             <td>
-              <button class="btn" v-if="!it.is_dir && it.size < 2*1024*1024" @click.stop="openEditorWindow(it)">查看</button>
+              <button class="btn" v-if="!it.is_dir && !isImage(it.name) && it.size < 2*1024*1024" @click.stop="openEditorWindow(it)">查看</button>
               <button class="btn" @click="download(it)" v-if="!it.is_dir">下载</button>
               <button class="btn" @click="renameItem(it)">重命名</button>
               <button class="btn danger" @click="remove(it)">删除</button>
@@ -49,13 +49,22 @@
       <div class="menu-item" @click="menuOpenTerminal">在此处打开终端</div>
       <div class="menu-item" @click="menuEdit">编辑</div>
     </div>
+    <div v-if="imagePreview.show" style="position:absolute;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:10;" @click="imagePreview.show = false">
+      <div style="max-width:90%;max-height:90%;background:#fff;border-radius:6px;padding:8px;" @click.stop>
+        <div class="toolbar" style="margin-bottom:4px;">
+          <strong style="font-family:monospace;">{{ imagePreview.name }}</strong>
+          <button class="btn" style="margin-left:auto;" @click="imagePreview.show = false">关闭</button>
+        </div>
+        <img :src="imagePreview.url" style="max-width:80vw;max-height:70vh;display:block;" />
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { filesApi, formatBytes } from '../../api'
-import { ArrowUp, Folder, FileText } from 'lucide-vue-next'
+import { ArrowUp, Folder, FileText, Image as ImageIcon } from 'lucide-vue-next'
 
 const items = ref([])
 const parent = ref(null)
@@ -63,6 +72,7 @@ const path = ref('')
 const pathInput = ref('')
 const newMenuOpen = ref(false)
 const contextMenu = ref({ show: false, x: 0, y: 0, item: null })
+const imagePreview = ref({ show: false, url: '', name: '' })
 
 const emit = defineEmits(['openTerminal', 'openEditor'])
 
@@ -82,9 +92,16 @@ function refresh() { load(path.value) }
 function go() { load(pathInput.value || '') }
 function goUp() { if (parent.value) load(parent.value) }
 
+function isImage(name) {
+  const ext = name.split('.').pop().toLowerCase()
+  return ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg'].includes(ext)
+}
+
 function openItem(it) {
   if (it.is_dir) load(it.path)
-  else if (it.size < 2 * 1024 * 1024) openEditorWindow(it)
+  else if (isImage(it.name)) {
+    imagePreview.value = { show: true, url: `/api/files/download?path=${encodeURIComponent(it.path)}`, name: it.name }
+  } else if (it.size < 2 * 1024 * 1024) openEditorWindow(it)
 }
 
 async function openEditorWindow(it) {
@@ -184,7 +201,11 @@ function menuEdit() {
   const it = contextMenu.value.item
   closeMenus()
   if (!it || it.is_dir) return
-  openEditorWindow(it)
+  if (isImage(it.name)) {
+    imagePreview.value = { show: true, url: `/api/files/download?path=${encodeURIComponent(it.path)}`, name: it.name }
+  } else {
+    openEditorWindow(it)
+  }
 }
 
 onMounted(async () => {
