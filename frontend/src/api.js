@@ -117,6 +117,16 @@ export const cronApi = {
   run: (id) => api.post(`/cron/${id}/run`).then(r => r.data)
 }
 
+export const firewallApi = {
+  status: () => api.get('/firewall/status').then(r => r.data),
+  rules: () => api.get('/firewall/rules').then(r => r.data),
+  addPort: (body) => api.post('/firewall/port', body).then(r => r.data),
+  delPort: (id) => api.delete(`/firewall/port/${id}`).then(r => r.data),
+  addIp: (body) => api.post('/firewall/ip', body).then(r => r.data),
+  delIp: (id) => api.delete(`/firewall/ip/${id}`).then(r => r.data),
+  toggle: (enabled) => api.post('/firewall/toggle', { enabled }).then(r => r.data)
+}
+
 export function formatBytes(bytes) {
   if (bytes == null) return '-'
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
