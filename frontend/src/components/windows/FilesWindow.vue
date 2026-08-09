@@ -19,25 +19,18 @@
             <th>名称</th>
             <th style="width:120px;">大小</th>
             <th style="width:160px;">修改时间</th>
-            <th style="width:200px;">操作</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="it in items" :key="it.path" @dblclick="openItem(it)" @contextmenu.prevent="onContextMenu($event, it)">
             <td>
-               <span style="margin-right:4px;"><component :is="it.is_dir ? Folder : (isImage(it.name) ? ImageIcon : FileText)" :size="14" /></span>{{ it.name }}
+               <span style="margin-right:4px;"><component :is="it.is_dir ? Folder : (isImage(it.name) ? ImageIcon : isVideo(it.name) ? Film : FileText)" :size="14" /></span>{{ it.name }}
             </td>
             <td>{{ it.is_dir ? '-' : formatBytes(it.size) }}</td>
             <td>{{ it.modified ? formatTime(it.modified) : '-' }}</td>
-            <td>
-              <button class="btn" v-if="!it.is_dir && !isImage(it.name) && it.size < 2*1024*1024" @click.stop="openEditorWindow(it)">查看</button>
-              <button class="btn" @click="download(it)" v-if="!it.is_dir">下载</button>
-              <button class="btn" @click="renameItem(it)">重命名</button>
-              <button class="btn danger" @click="remove(it)">删除</button>
-            </td>
           </tr>
           <tr v-if="!items.length">
-            <td colspan="4"><div class="empty">空目录</div></td>
+            <td colspan="3"><div class="empty">空目录</div></td>
           </tr>
         </tbody>
       </table>
@@ -50,13 +43,14 @@
         <div class="menu-item" @click="menuEdit">编辑</div>
       </div>
     </Teleport>
-    <div v-if="imagePreview.show" style="position:absolute;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:10;" @click="imagePreview.show = false">
+    <div v-if="mediaPreview.show" style="position:absolute;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:10;" @click="closeMediaPreview">
       <div style="max-width:90%;max-height:90%;background:#fff;border-radius:6px;padding:8px;" @click.stop>
         <div class="toolbar" style="margin-bottom:4px;">
-          <strong style="font-family:monospace;">{{ imagePreview.name }}</strong>
-          <button class="btn" style="margin-left:auto;" @click="imagePreview.show = false">关闭</button>
+          <strong style="font-family:monospace;">{{ mediaPreview.name }}</strong>
+          <button class="btn" style="margin-left:auto;" @click="closeMediaPreview">关闭</button>
         </div>
-        <img :src="imagePreview.url" style="max-width:80vw;max-height:70vh;display:block;" />
+        <img v-if="mediaPreview.type === 'image'" :src="mediaPreview.url" style="max-width:80vw;max-height:70vh;display:block;" />
+        <video v-else-if="mediaPreview.type === 'video'" :src="mediaPreview.url" controls style="max-width:80vw;max-height:70vh;display:block;" />
       </div>
     </div>
   </div>
@@ -65,7 +59,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { filesApi, formatBytes } from '../../api'
-import { ArrowUp, Folder, FileText, Image as ImageIcon } from 'lucide-vue-next'
+import { auth } from '../../store/auth'
+import { ArrowUp, Folder, FileText, Image as ImageIcon, Film } from 'lucide-vue-next'
 
 const items = ref([])
 const parent = ref(null)
@@ -73,7 +68,7 @@ const path = ref('')
 const pathInput = ref('')
 const newMenuOpen = ref(false)
 const contextMenu = ref({ show: false, x: 0, y: 0, item: null })
-const imagePreview = ref({ show: false, url: '', name: '' })
+const mediaPreview = ref({ show: false, type: '', url: '', name: '' })
 
 const emit = defineEmits(['openTerminal', 'openEditor'])
 
@@ -98,11 +93,37 @@ function isImage(name) {
   return ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg'].includes(ext)
 }
 
+function isVideo(name) {
+  const ext = name.split('.').pop().toLowerCase()
+  return ['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext)
+}
+
+async function showMediaPreview(it) {
+  try {
+    const resp = await fetch('/api/files/download?path=' + encodeURIComponent(it.path), {
+      headers: { Authorization: `Bearer ${auth.token}` }
+    })
+    if (!resp.ok) throw new Error(resp.status)
+    const blob = await resp.blob()
+    const url = URL.createObjectURL(blob)
+    const type = isImage(it.name) ? 'image' : isVideo(it.name) ? 'video' : ''
+    mediaPreview.value = { show: true, type, url, name: it.name }
+  } catch (e) {
+    alert('加载失败：' + e.message)
+  }
+}
+
+function closeMediaPreview() {
+  if (mediaPreview.value.url) {
+    URL.revokeObjectURL(mediaPreview.value.url)
+  }
+  mediaPreview.value = { show: false, type: '', url: '', name: '' }
+}
+
 function openItem(it) {
   if (it.is_dir) load(it.path)
-  else if (isImage(it.name)) {
-    imagePreview.value = { show: true, url: `/api/files/download?path=${encodeURIComponent(it.path)}`, name: it.name }
-  } else if (it.size < 2 * 1024 * 1024) openEditorWindow(it)
+  else if (isImage(it.name) || isVideo(it.name)) showMediaPreview(it)
+  else if (it.size < 2 * 1024 * 1024) openEditorWindow(it)
 }
 
 async function openEditorWindow(it) {
@@ -202,8 +223,8 @@ function menuEdit() {
   const it = contextMenu.value.item
   closeMenus()
   if (!it || it.is_dir) return
-  if (isImage(it.name)) {
-    imagePreview.value = { show: true, url: `/api/files/download?path=${encodeURIComponent(it.path)}`, name: it.name }
+  if (isImage(it.name) || isVideo(it.name)) {
+    showMediaPreview(it)
   } else {
     openEditorWindow(it)
   }
