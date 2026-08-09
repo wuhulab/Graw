@@ -80,7 +80,11 @@ export const filesApi = {
   write: (path, content) => api.post('/files/write', { path, content }).then(r => r.data),
   remove: (path) => api.post('/files/delete', { path }).then(r => r.data),
   mkdir: (path) => api.post('/files/mkdir', { path }).then(r => r.data),
-  rename: (src, dst) => api.post('/files/rename', { src, dst }).then(r => r.data)
+  rename: (src, dst) => api.post('/files/rename', { src, dst }).then(r => r.data),
+  chmod: (path, mode) => api.post('/files/chmod', { path, mode }).then(r => r.data),
+  copy: (src, dst) => api.post('/files/copy', { src, dst }).then(r => r.data),
+  compress: (paths, archive, fmt) => api.post('/files/compress', { paths, archive, fmt }).then(r => r.data),
+  extract: (archive, dest) => api.post('/files/extract', { archive, dest }).then(r => r.data)
 }
 
 export const notesApi = {

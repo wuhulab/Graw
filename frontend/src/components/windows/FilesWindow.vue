@@ -11,6 +11,10 @@
           <div class="menu-item" @click="createFile">文件</div>
         </div>
       </div>
+      <label class="btn" style="cursor:pointer;">
+        <input type="file" style="display:none;" @change="onUpload" />
+        <Upload :size="14" /> 上传
+      </label>
     </div>
     <div style="flex:1; overflow:auto;">
       <table class="dt">
@@ -37,10 +41,15 @@
     </div>
     <Teleport to="body">
       <div v-if="contextMenu.show" class="context-menu" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }" @click.stop>
+        <div class="menu-item" @click="menuEdit">编辑 / 打开</div>
         <div class="menu-item" @click="menuRename">重命名</div>
         <div class="menu-item" @click="menuDelete">删除</div>
+        <div class="menu-item" @click="menuCopy">复制到</div>
+        <div class="menu-item" @click="menuCompress">压缩</div>
+        <div class="menu-item" @click="menuExtract" v-if="isArchive(contextMenu.item?.name)">解压</div>
+        <div class="menu-item" @click="menuChmod">权限</div>
+        <div class="menu-item" @click="menuDownload">下载</div>
         <div class="menu-item" @click="menuOpenTerminal">在此处打开终端</div>
-        <div class="menu-item" @click="menuEdit">编辑</div>
       </div>
     </Teleport>
   </div>
@@ -48,8 +57,8 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { filesApi, formatBytes } from '../../api'
-import { ArrowUp, Folder, FileText, Image as ImageIcon, Film } from 'lucide-vue-next'
+import { api, filesApi, formatBytes } from '../../api'
+import { ArrowUp, Folder, FileText, Image as ImageIcon, Film, Upload } from 'lucide-vue-next'
 
 const items = ref([])
 const parent = ref(null)
@@ -193,6 +202,71 @@ function menuEdit() {
   if (isImage(it.name)) emit('openMedia', { path: it.path, name: it.name, type: 'image' })
   else if (isVideo(it.name)) emit('openMedia', { path: it.path, name: it.name, type: 'video' })
   else openEditorWindow(it)
+}
+
+function isArchive(name) {
+  const ext = name.split('.').pop().toLowerCase()
+  return ['zip', 'tar', 'gz', 'tgz', 'bz2', 'xz', '7z', 'rar'].includes(ext) || name.endsWith('.tar.gz')
+}
+
+function menuDownload() {
+  const it = contextMenu.value.item
+  closeMenus()
+  if (it && !it.is_dir) download(it)
+}
+
+async function menuCopy() {
+  const it = contextMenu.value.item
+  closeMenus()
+  if (!it) return
+  const dst = prompt('复制到路径', it.path + '_copy')
+  if (!dst) return
+  try { await filesApi.copy(it.path, dst); refresh() } catch (e) { alert('复制失败：' + (e.response?.data?.detail || e.message)) }
+}
+
+async function menuCompress() {
+  const it = contextMenu.value.item
+  closeMenus()
+  if (!it) return
+  const fmt = prompt('格式: zip / tar / tar.gz', 'zip')
+  if (!fmt) return
+  const archive = prompt('压缩包完整路径', it.path + (fmt==='zip'?'.zip':'.tar.gz'))
+  if (!archive) return
+  try { await filesApi.compress([it.path], archive, fmt); refresh() } catch (e) { alert('压缩失败：' + (e.response?.data?.detail || e.message)) }
+}
+
+async function menuExtract() {
+  const it = contextMenu.value.item
+  closeMenus()
+  if (!it) return
+  const dest = prompt('解压到目录', path.value)
+  if (!dest) return
+  try { await filesApi.extract(it.path, dest); refresh() } catch (e) { alert('解压失败：' + (e.response?.data?.detail || e.message)) }
+}
+
+async function menuChmod() {
+  const it = contextMenu.value.item
+  closeMenus()
+  if (!it) return
+  const modeStr = prompt('输入权限数字 (如 755, 644)', '755')
+  if (!modeStr) return
+  const mode = parseInt(modeStr, 8)
+  if (isNaN(mode)) { alert('无效的权限数字'); return }
+  try { await filesApi.chmod(it.path, mode); refresh() } catch (e) { alert('修改权限失败：' + (e.response?.data?.detail || e.message)) }
+}
+
+async function onUpload(e) {
+  const file = e.target.files[0]
+  if (!file) return
+  try {
+    const fd = new FormData()
+    fd.append('path', path.value)
+    fd.append('file', file)
+    await api.post('/files/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    refresh()
+  } catch (e) {
+    alert('上传失败：' + (e.response?.data?.detail || e.message))
+  }
 }
 
 onMounted(async () => {
