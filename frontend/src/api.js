@@ -134,6 +134,13 @@ export const sslApi = {
   delete: (id) => api.post(`/ssl/${id}/delete`).then(r => r.data)
 }
 
+export const logsApi = {
+  list: () => api.get('/logs/list').then(r => r.data),
+  read: (path, tail = 200) => api.get('/logs/read', { params: { path, tail } }).then(r => r.data),
+  add: (body) => api.post('/logs/add', body).then(r => r.data),
+  clear: (path) => api.post('/logs/clear', { path }).then(r => r.data)
+}
+
 export function formatBytes(bytes) {
   if (bytes == null) return '-'
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']

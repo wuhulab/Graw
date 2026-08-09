@@ -18,6 +18,7 @@ from app.routers import (
     cron,
     firewall,
     ssl,
+    logs,
 )
 from app.auth import seed_default_users, get_current_user
 
@@ -81,6 +82,9 @@ app.include_router(
     dependencies=PROTECTED,
 )
 app.include_router(ssl.router, prefix="/api/ssl", tags=["ssl"], dependencies=PROTECTED)
+app.include_router(
+    logs.router, prefix="/api/logs", tags=["logs"], dependencies=PROTECTED
+)
 
 # Serve frontend static files if built
 FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
