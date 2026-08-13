@@ -1,13 +1,14 @@
 import json
 import os
 import shutil
-import subprocess
 import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, Field
+
+from app.hostfs import host_path, host_cmd, host_which
 
 router = APIRouter()
 
@@ -34,7 +35,8 @@ def _save_certs(certs: list):
 
 
 def _which(cmd: str) -> Optional[str]:
-    return shutil.which(cmd)
+    # 在宿主机环境中查找命令（容器模式经 hostfs 映射）
+    return host_which(cmd)
 
 
 class LetsEncryptRequest(BaseModel):
@@ -95,7 +97,8 @@ async def letsencrypt(req: LetsEncryptRequest):
         "http",
     ] + [d for domain in req.domains for d in ("-d", domain)]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        # 在宿主机环境执行 certbot（容器模式经 chroot 映射）
+        r = host_cmd(cmd, capture_output=True, text=True, timeout=120)
         if r.returncode != 0:
             raise HTTPException(status_code=500, detail=r.stderr or r.stdout)
     except Exception as e:
@@ -129,15 +132,16 @@ async def delete_cert(cert_id: str):
     if not cert:
         raise HTTPException(status_code=404, detail="Certificate not found")
     if cert.get("type") == "letsencrypt" and _which("certbot"):
-        subprocess.run(
+        host_cmd(
             ["certbot", "delete", "--cert-name", cert["name"]],
             capture_output=True,
             timeout=30,
         )
     for p in [cert.get("cert_path"), cert.get("key_path")]:
-        if p and os.path.exists(p):
+        real = host_path(p) if p else None
+        if real and os.path.exists(real):
             try:
-                os.remove(p)
+                os.remove(real)
             except Exception:
                 pass
     certs = [c for c in certs if c["id"] != cert_id]

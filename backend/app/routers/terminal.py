@@ -6,6 +6,7 @@ import threading
 import subprocess
 
 from app.auth import get_current_user_ws
+from app.hostfs import get_host_root
 
 router = APIRouter()
 
@@ -215,6 +216,15 @@ async def _unix_terminal(websocket: WebSocket):
     shell = os.environ.get("SHELL", "/bin/bash")
     pid, fd = pty.fork()
     if pid == 0:
+        # 容器模式下 chroot 到宿主机根目录，让终端直接操作宿主机
+        host_root = get_host_root()
+        if host_root:
+            try:
+                os.chroot(host_root)
+                os.chdir("/")
+            except OSError:
+                # chroot 失败（非特权）时退回容器内 shell
+                pass
         os.execv(shell, [shell])
         return
 

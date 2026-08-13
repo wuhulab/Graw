@@ -5,7 +5,11 @@
 # ============================================================
 
 # ---------- 阶段 1: 前端构建 ----------
-FROM node:20-alpine AS frontend-builder
+# 关键优化：固定使用 BUILDPLATFORM（构建宿主，即 GitHub runner 的 amd64）来
+# 构建前端。前端 dist 是平台无关的静态文件，无需为 arm64 再用 QEMU 模拟
+# 跑 npm install / npm run build（模拟执行极慢，是构建卡顿的主因）。
+# 只有下面的 runtime 阶段才会按 TARGETPLATFORM 分别构建 amd64/arm64。
+FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend-builder
 
 # 设置工作目录
 WORKDIR /build/frontend
@@ -36,10 +40,9 @@ RUN apt-get update \
         tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-# 创建非 root 运行用户，提升安全性
-RUN addgroup --system app && adduser --system --ingroup app app
-
-# 设置后端工作目录
+# 说明：作为服务器管理面板，容器需以 root 高权限运行，才能管理宿主机
+# 系统资源（进程、网站配置、Docker、防火墙、文件系统等）。仅部署于可信环境。
+# 因此这里不创建低权限用户，直接以 root 运行（见文件末尾 CMD）。
 WORKDIR /app/backend
 
 # 先复制依赖清单并安装，利用层缓存
@@ -52,11 +55,8 @@ COPY backend/ .
 # 复制阶段 1 构建出的前端静态资源（保持与 app/main.py 中 FRONTEND_DIST 一致的目录结构）
 COPY --from=frontend-builder /build/frontend/dist /app/frontend/dist
 
-# 创建数据目录并授权给运行用户
-RUN mkdir -p /app/backend/data && chown -R app:app /app/backend/data
-
-# 切换为非 root 用户运行
-USER app
+# 创建数据目录（面板数据持久化）
+RUN mkdir -p /app/backend/data
 
 # 健康检查（后端提供 /api/health 接口）
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

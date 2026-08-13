@@ -1,7 +1,6 @@
 import json
 import os
 import platform
-import shutil
 import subprocess
 from datetime import datetime
 from typing import List, Optional
@@ -9,10 +8,13 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.hostfs import host_path, host_cmd, host_which
+
 router = APIRouter()
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 SITES_FILE = os.path.join(DATA_DIR, "sites.json")
+# 以下均为宿主机视角路径，实际访问时经 host_path 映射（容器模式下为 /host 前缀）
 NGINX_AVAILABLE = "/etc/nginx/sites-available"
 NGINX_ENABLED = "/etc/nginx/sites-enabled"
 APACHE_AVAILABLE = "/etc/apache2/sites-available"
@@ -36,7 +38,8 @@ def _save_sites(sites: list):
 
 
 def _which(cmd: str) -> Optional[str]:
-    return shutil.which(cmd)
+    # 在宿主机环境中查找命令（容器模式经 hostfs 映射）
+    return host_which(cmd)
 
 
 def _web_server_type() -> str:
@@ -126,11 +129,14 @@ def _nginx_site_config(site: dict) -> str:
 
 def _apply_nginx_config(site_id: str, site: dict, enabled: bool):
     conf_name = f"{site_id}.conf"
-    avail = os.path.join(NGINX_AVAILABLE, conf_name)
-    enab = os.path.join(NGINX_ENABLED, conf_name)
+    # 容器模式下映射为 /host/etc/nginx/...，从而操作宿主机 nginx 配置
+    avail_dir = host_path(NGINX_AVAILABLE)
+    enab_dir = host_path(NGINX_ENABLED)
+    avail = os.path.join(avail_dir, conf_name)
+    enab = os.path.join(enab_dir, conf_name)
     if enabled:
-        os.makedirs(NGINX_AVAILABLE, exist_ok=True)
-        os.makedirs(NGINX_ENABLED, exist_ok=True)
+        os.makedirs(avail_dir, exist_ok=True)
+        os.makedirs(enab_dir, exist_ok=True)
         with open(avail, "w", encoding="utf-8") as f:
             f.write(_nginx_site_config(site))
         if os.path.exists(enab):
@@ -145,9 +151,7 @@ def _apply_nginx_config(site_id: str, site: dict, enabled: bool):
 
 def _reload_nginx():
     try:
-        subprocess.run(
-            ["nginx", "-s", "reload"], capture_output=True, check=False, timeout=10
-        )
+        host_cmd(["nginx", "-s", "reload"], capture_output=True, check=False, timeout=10)
     except Exception:
         pass
 
@@ -165,11 +169,13 @@ def _apache_site_config(site: dict) -> str:
 
 def _apply_apache_config(site_id: str, site: dict, enabled: bool):
     conf_name = f"{site_id}.conf"
-    avail = os.path.join(APACHE_AVAILABLE, conf_name)
-    enab = os.path.join(APACHE_ENABLED, conf_name)
+    avail_dir = host_path(APACHE_AVAILABLE)
+    enab_dir = host_path(APACHE_ENABLED)
+    avail = os.path.join(avail_dir, conf_name)
+    enab = os.path.join(enab_dir, conf_name)
     if enabled:
-        os.makedirs(APACHE_AVAILABLE, exist_ok=True)
-        os.makedirs(APACHE_ENABLED, exist_ok=True)
+        os.makedirs(avail_dir, exist_ok=True)
+        os.makedirs(enab_dir, exist_ok=True)
         with open(avail, "w", encoding="utf-8") as f:
             f.write(_apache_site_config(site))
         if os.path.exists(enab):
@@ -181,10 +187,8 @@ def _apply_apache_config(site_id: str, site: dict, enabled: bool):
         if os.path.exists(avail):
             os.remove(avail)
     try:
-        subprocess.run(
-            ["a2ensite", conf_name], capture_output=True, check=False, timeout=10
-        )
-        subprocess.run(
+        host_cmd(["a2ensite", conf_name], capture_output=True, check=False, timeout=10)
+        host_cmd(
             ["apache2ctl", "graceful"], capture_output=True, check=False, timeout=10
         )
     except Exception:
@@ -240,7 +244,7 @@ async def create_site(req: CreateSite):
         "enabled": False,
         "created_at": datetime.now().isoformat(),
     }
-    os.makedirs(req.root, exist_ok=True)
+    os.makedirs(host_path(req.root), exist_ok=True)
     sites.append(site)
     _save_sites(sites)
     return site
@@ -309,7 +313,7 @@ async def update_site(site_id: str, req: UpdateSite):
     if req.domains is not None:
         site["domains"] = req.domains
     if req.root is not None:
-        os.makedirs(req.root, exist_ok=True)
+        os.makedirs(host_path(req.root), exist_ok=True)
         site["root"] = req.root
     if req.port is not None:
         site["port"] = req.port

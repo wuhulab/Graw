@@ -2,9 +2,11 @@
 # Graw Server Panel - 自动构建 Docker 镜像并发布到 Docker Hub
 #
 # 触发方式:
-#   1. 推送代码到 main 分支        -> 构建并推送 :latest
-#   2. 打版本 tag (v1.2.3)        -> 构建并推送 :1.2.3 与 :latest
-#   3. 手动触发 (Actions 页面)    -> 按需构建
+#   1. 打版本 tag (v1.2.3)        -> 构建并推送 :1.2.3 与 :latest
+#   2. 手动触发 (Actions 页面)    -> 按需构建
+#
+# 说明: 仅当发布 Release（打 tag）时才触发构建，普通代码推送到
+#       main 分支不会触发。tag 格式为 v 开头，如 v1.0.0。
 #
 # 所需仓库 Secrets（Settings -> Secrets and variables -> Actions）:
 #   DOCKERHUB_USERNAME   Docker Hub 用户名
@@ -13,11 +15,9 @@
 
 name: Docker Build & Publish
 
-# 触发事件配置
+# 触发事件配置：仅 tag 与手动触发，不响应普通分支推送
 on:
   push:
-    branches:
-      - main            # 主分支推送
     tags:
       - 'v*'            # 版本 tag，如 v1.0.0
   workflow_dispatch:    # 支持手动触发
@@ -46,30 +46,26 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 3. 登录 Docker Hub（使用仓库 Secrets 中的令牌）
+      # 3. 启用 QEMU 模拟器（仅后端 runtime 阶段按目标平台构建 arm64 时需要）
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # 4. 登录 Docker Hub（使用仓库 Secrets 中的令牌）
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # 4. 生成镜像标签
-      #    - main 分支推送       -> latest
+      # 5. 生成镜像标签
       #    - tag 推送 (v1.2.3)   -> 1.2.3 和 latest
       - name: Generate image tags
         id: meta
         run: |
-          tags=""
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            # 去掉 tag 前缀 v，得到版本号，例如 v1.2.3 -> 1.2.3
-            version="${GITHUB_REF_NAME#v}"
-            tags="${{ env.IMAGE_NAME }}:${version},${{ env.IMAGE_NAME }}:latest"
-          else
-            tags="${{ env.IMAGE_NAME }}:latest"
-          fi
-          echo "tags=${tags}" >> "$GITHUB_OUTPUT"
+          version="${GITHUB_REF_NAME#v}"
+          echo "tags=${{ env.IMAGE_NAME }}:${version},${{ env.IMAGE_NAME }}:latest" >> "$GITHUB_OUTPUT"
 
-      # 5. 构建并推送镜像（多架构：amd64 + arm64）
+      # 6. 构建并推送镜像（多架构：amd64 + arm64）
       - name: Build and push
         id: build
         uses: docker/build-push-action@v6
@@ -79,13 +75,19 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
-          # 构建缓存，加速后续构建
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # 双缓存：gha 缓存 + 基于镜像仓库的 registry 缓存。
+          # registry 缓存可跨构建持久复用依赖层（node_modules / pip），
+          # 后续版本构建会直接跳过 npm install / pip install，速度大幅提升。
+          cache-from: |
+            type=gha
+            type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
+          cache-to: |
+            type=gha,mode=max
+            type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
           provenance: mode=max
           sbom: true
 
-      # 6. 输出构建摘要（镜像 digest、标签等）
+      # 7. 输出构建摘要（镜像 digest、标签等）
       - name: Build summary
         run: |
           echo "## 构建完成" >> "$GITHUB_STEP_SUMMARY"

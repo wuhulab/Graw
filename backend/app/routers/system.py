@@ -6,6 +6,8 @@ import time
 import asyncio
 from datetime import datetime
 
+from app.hostfs import host_path
+
 router = APIRouter()
 
 # Prime psutil.cpu_percent so subsequent calls with interval=None return meaningful
@@ -30,7 +32,9 @@ async def overview():
 def _overview_sync():
     cpu_percent = psutil.cpu_percent(interval=None)
     mem = psutil.virtual_memory()
-    disk = psutil.disk_usage("/") if platform.system() != "Windows" else psutil.disk_usage("C:\\")
+    # 容器模式下监控宿主机根目录磁盘（映射为 /host），否则为 / 或 C:\
+    disk_path = host_path("/") if platform.system() != "Windows" else "C:\\"
+    disk = psutil.disk_usage(disk_path)
     try:
         load1, load5, load15 = psutil.getloadavg()
     except Exception:

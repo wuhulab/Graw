@@ -10,6 +10,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.hostfs import host_cmd, host_shell
+
 router = APIRouter()
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
@@ -157,9 +159,8 @@ def _run_windows_task(name: str):
 
 def _list_linux_cron():
     try:
-        r = subprocess.run(
-            ["crontab", "-l"], capture_output=True, text=True, timeout=10
-        )
+        # 在宿主机环境执行 crontab（容器模式经 chroot 映射，读写宿主 crontab）
+        r = host_cmd(["crontab", "-l"], capture_output=True, text=True, timeout=10)
         if r.returncode != 0:
             return []
         lines = r.stdout.splitlines()
@@ -183,9 +184,14 @@ def _rewrite_linux_cron(tasks: list):
     for t in tasks:
         lines.append(f"{t['schedule']} {t['command']}")
     text = "# Managed by Graw Panel\n" + "\n".join(lines) + "\n"
-    p = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
-    p.communicate(text)
-    if p.returncode != 0:
+    r = host_cmd(
+        ["crontab", "-"],
+        input=text,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if r.returncode != 0:
         raise RuntimeError("crontab update failed")
 
 
@@ -281,5 +287,6 @@ async def run_task(task_id: str):
     if IS_WIN:
         _run_windows_task(task["name"])
     else:
-        subprocess.Popen(task["command"], shell=True)
+        # 在宿主机环境执行任务命令（容器模式经 chroot 映射）
+        host_shell(task["command"])
     return {"ok": True}

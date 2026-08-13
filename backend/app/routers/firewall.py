@@ -9,6 +9,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.hostfs import host_cmd
+
 router = APIRouter()
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
@@ -35,7 +37,8 @@ def _save_fw(data: dict):
 def _iptables_cmd(args: list, timeout=10) -> tuple:
     cmd = ["iptables"] + args
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        # 在宿主机环境执行 iptables（容器模式经 chroot 映射，作用于宿主 netfilter）
+        r = host_cmd(cmd, capture_output=True, text=True, timeout=timeout)
         return r.returncode, r.stdout, r.stderr
     except Exception as e:
         return -1, "", str(e)
@@ -44,7 +47,7 @@ def _iptables_cmd(args: list, timeout=10) -> tuple:
 def _netsh_cmd(args: list, timeout=10) -> tuple:
     cmd = ["netsh", "advfirewall", "firewall"] + args
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        r = host_cmd(cmd, capture_output=True, text=True, timeout=timeout)
         return r.returncode, r.stdout, r.stderr
     except Exception as e:
         return -1, "", str(e)
@@ -222,7 +225,7 @@ async def toggle_firewall(body: dict):
     _save_fw(data)
     if IS_WIN:
         action = "on" if enabled else "off"
-        subprocess.run(
+        host_cmd(
             ["netsh", "advfirewall", "set", "allprofiles", "state", action],
             capture_output=True,
             timeout=10,
