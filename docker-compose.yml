@@ -1,0 +1,33 @@
+# ============================================================
+# Graw Server Panel - Docker Compose 编排
+# 用法:
+#   启动:      docker compose up -d --build
+#   查看日志:  docker compose logs -f
+#   停止:      docker compose down
+# ============================================================
+
+services:
+  graw:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: graw-server-panel:latest
+    container_name: graw-panel
+    # 后端对外端口映射（宿主端口:容器端口）
+    ports:
+      - "8000:8000"
+    # 数据持久化：用户账号、签名密钥等保存在 backend/data
+    volumes:
+      - graw-data:/app/backend/data
+      # ---------- 可选：启用 Docker 管理功能 ----------
+      # 如需在面板中使用"容器 / 镜像管理"，取消下面这行注释，
+      # 将宿主机的 Docker socket 挂载进容器（存在安全风险，请谨慎）。
+      # 注意：Windows 宿主机通常无法直接挂载此 socket。
+      # - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
+
+# 数据卷声明
+volumes:
+  graw-data:

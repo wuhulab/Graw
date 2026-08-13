@@ -1,0 +1,93 @@
+# ============================================================
+# Graw Server Panel - 自动构建 Docker 镜像并发布到 Docker Hub
+#
+# 触发方式:
+#   1. 推送代码到 main 分支        -> 构建并推送 :latest
+#   2. 打版本 tag (v1.2.3)        -> 构建并推送 :1.2.3 与 :latest
+#   3. 手动触发 (Actions 页面)    -> 按需构建
+#
+# 所需仓库 Secrets（Settings -> Secrets and variables -> Actions）:
+#   DOCKERHUB_USERNAME   Docker Hub 用户名
+#   DOCKERHUB_TOKEN       Docker Hub 访问令牌（Access Token，非登录密码）
+# ============================================================
+
+name: Docker Build & Publish
+
+# 触发事件配置
+on:
+  push:
+    branches:
+      - main            # 主分支推送
+    tags:
+      - 'v*'            # 版本 tag，如 v1.0.0
+  workflow_dispatch:    # 支持手动触发
+
+env:
+  # 镜像命名空间与仓库名（对应 Docker Hub 仓库 shunx/graw）
+  IMAGE_NAME: shunx/graw
+
+jobs:
+  build-and-push:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    # 权限：读取代码 + 写入包/内容
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+
+    steps:
+      # 1. 检出代码
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. 准备 Docker 多架构构建环境 (buildx)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 3. 登录 Docker Hub（使用仓库 Secrets 中的令牌）
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 4. 生成镜像标签
+      #    - main 分支推送       -> latest
+      #    - tag 推送 (v1.2.3)   -> 1.2.3 和 latest
+      - name: Generate image tags
+        id: meta
+        run: |
+          tags=""
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            # 去掉 tag 前缀 v，得到版本号，例如 v1.2.3 -> 1.2.3
+            version="${GITHUB_REF_NAME#v}"
+            tags="${{ env.IMAGE_NAME }}:${version},${{ env.IMAGE_NAME }}:latest"
+          else
+            tags="${{ env.IMAGE_NAME }}:latest"
+          fi
+          echo "tags=${tags}" >> "$GITHUB_OUTPUT"
+
+      # 5. 构建并推送镜像（多架构：amd64 + arm64）
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          # 构建缓存，加速后续构建
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
+
+      # 6. 输出构建摘要（镜像 digest、标签等）
+      - name: Build summary
+        run: |
+          echo "## 构建完成" >> "$GITHUB_STEP_SUMMARY"
+          echo "镜像标签: \`${{ steps.meta.outputs.tags }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "构建时间: \`$(date -u +'%Y-%m-%d %H:%M:%S UTC')\`" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,27 @@
+# ============================================================
+# Docker 构建上下文忽略清单（加速构建、减小上下文体积）
+# ============================================================
+
+# 版本控制
+.git
+.gitignore
+
+# 前端构建产物与依赖
+frontend/node_modules
+frontend/dist
+frontend/.vite
+
+# 后端虚拟环境与缓存
+backend/.venv
+__pycache__
+*.pyc
+backend/data/*
+
+# 日志
+logs
+*.log
+
+# 编辑目录
+.vscode
+.idea
+.DS_Store
