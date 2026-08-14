@@ -19,6 +19,7 @@ from app.routers import (
     firewall,
     ssl,
     logs,
+    protection,
 )
 from app.auth import seed_default_users, get_current_user
 
@@ -84,6 +85,12 @@ app.include_router(
 app.include_router(ssl.router, prefix="/api/ssl", tags=["ssl"], dependencies=PROTECTED)
 app.include_router(
     logs.router, prefix="/api/logs", tags=["logs"], dependencies=PROTECTED
+)
+app.include_router(
+    protection.router,
+    prefix="/api/protection",
+    tags=["protection"],
+    dependencies=PROTECTED,
 )
 
 # Serve frontend static files if built

@@ -100,11 +100,12 @@ import FirewallWindow from './components/windows/FirewallWindow.vue'
 import SSLWindow from './components/windows/SSLWindow.vue'
 import LogsWindow from './components/windows/LogsWindow.vue'
 import SettingsWindow from './components/windows/SettingsWindow.vue'
+import ProtectionWindow from './components/windows/ProtectionWindow.vue'
 import Login from './views/Login.vue'
 import { systemApi } from './api'
 import { auth, clearAuth, isAdmin } from './store/auth'
 import { settings } from './store/settings'
-import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText } from 'lucide-vue-next'
+import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck } from 'lucide-vue-next'
 
 const loggedIn = computed(() => !!auth.token)
 function onLoggedIn() { /* 触发响应式重渲染 */ }
@@ -117,6 +118,7 @@ const shortcuts = ref([
   { key: 'ssl', label: 'SSL', icon: markRaw(Lock), component: markRaw(SSLWindow), w: 820, h: 520, adminOnly: false },
   { key: 'logs', label: '日志', icon: markRaw(ScrollText), component: markRaw(LogsWindow), w: 900, h: 560, adminOnly: false },
   { key: 'docker', label: 'Docker', icon: markRaw(Container), component: markRaw(DockerWindow), w: 820, h: 520, adminOnly: false },
+  { key: 'protection', label: 'Graw数据库保护机制', icon: markRaw(ShieldCheck), component: markRaw(ProtectionWindow), w: 860, h: 560, adminOnly: false },
   { key: 'process', label: '进程管理', icon: markRaw(Settings), component: markRaw(ProcessWindow), w: 780, h: 520, adminOnly: false },
   { key: 'files', label: '文件管理', icon: markRaw(Folder), component: markRaw(FilesWindow), w: 820, h: 540, adminOnly: false },
   { key: 'terminal', label: '终端', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: false }

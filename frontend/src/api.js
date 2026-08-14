@@ -146,6 +146,20 @@ export const logsApi = {
   clear: (path) => api.post('/logs/clear', { path }).then(r => r.data)
 }
 
+export const protectionApi = {
+  status: () => api.get('/protection/status').then(r => r.data),
+  scanDocker: () => api.get('/protection/docker').then(r => r.data),
+  mapDocker: (name) => dockerHttp.post(`/protection/docker/${encodeURIComponent(name)}/map`, {}, { timeout: 300000 }).then(r => r.data),
+  scanDbFiles: () => api.get('/protection/db-files').then(r => r.data),
+  addBackup: (path, schedule) => api.post('/protection/db-files/backup', { path, schedule }).then(r => r.data),
+  batchBackup: (paths) => api.post('/protection/db-files/batch-backup', { paths }).then(r => r.data),
+  removeBackup: (path) => api.post('/protection/db-files/unbackup', { path }).then(r => r.data),
+  ignore: (kind, key, name, permanent) => api.post('/protection/ignore', { kind, key, name, permanent }).then(r => r.data),
+  unignore: (kind, key) => api.post('/protection/unignore', { kind, key }).then(r => r.data),
+  listIgnored: () => api.get('/protection/ignored').then(r => r.data),
+  listBackups: () => api.get('/protection/backups').then(r => r.data)
+}
+
 export function formatBytes(bytes) {
   if (bytes == null) return '-'
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']

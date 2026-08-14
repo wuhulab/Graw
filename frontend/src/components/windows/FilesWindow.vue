@@ -1,5 +1,9 @@
 <template>
-  <div style="display:flex; flex-direction:column; height:100%;" @click="closeMenus">
+  <div style="display:flex; flex-direction:column; height:100%;" @click="closeMenus"
+    @dragover.prevent="onDragOver"
+    @dragenter.prevent="onDragOver"
+    @dragleave.prevent="onDragLeave"
+    @drop.prevent="onDrop">
     <div class="toolbar">
       <button class="btn" @click="goUp" :disabled="!parent"><ArrowUp :size="14" /> 上级</button>
       <button class="btn" @click="refresh">刷新</button>
@@ -15,6 +19,18 @@
         <input type="file" style="display:none;" @change="onUpload" />
         <Upload :size="14" /> 上传
       </label>
+    </div>
+    <!-- 拖拽上传提示遮罩 -->
+    <div v-if="dragOver" class="drag-overlay">
+      <div class="drag-inner">
+        <Upload :size="48" />
+        <div class="drag-text">松开鼠标上传到 {{ path }}</div>
+      </div>
+    </div>
+    <!-- 批量上传进度条 -->
+    <div v-if="uploadingFiles.length > 0" class="upload-progress">
+      <span>正在上传 {{ uploadIdx + 1 }}/{{ uploadingFiles.length }}</span>
+      <div class="progress-bar"><div class="progress-fill" :style="{ width: ((uploadIdx / uploadingFiles.length) * 100) + '%' }"></div></div>
     </div>
     <div style="flex:1; overflow:auto;">
       <table class="dt">
@@ -66,6 +82,10 @@ const path = ref('')
 const pathInput = ref('')
 const newMenuOpen = ref(false)
 const contextMenu = ref({ show: false, x: 0, y: 0, item: null })
+// 拖拽上传状态
+const dragOver = ref(false)
+const uploadingFiles = ref([])
+const uploadIdx = ref(0)
 
 const emit = defineEmits(['openTerminal', 'openEditor', 'openMedia'])
 
@@ -269,6 +289,38 @@ async function onUpload(e) {
   }
 }
 
+// ---------- 拖拽上传 ----------
+function onDragOver() {
+  dragOver.value = true
+}
+
+function onDragLeave(e) {
+  // 仅当离开整个容器时才隐藏遮罩（避免子元素切换闪烁）
+  if (e.relatedTarget === null) dragOver.value = false
+}
+
+async function onDrop(e) {
+  dragOver.value = false
+  const files = Array.from(e.dataTransfer?.files || [])
+  if (files.length === 0) return
+  uploadingFiles.value = files
+  uploadIdx.value = 0
+  for (let i = 0; i < files.length; i++) {
+    uploadIdx.value = i
+    try {
+      const fd = new FormData()
+      fd.append('path', path.value)
+      fd.append('file', files[i])
+      await filesApi.upload(fd)
+    } catch (err) {
+      alert(`上传 ${files[i].name} 失败：` + (err.response?.data?.detail || err.message))
+    }
+  }
+  uploadingFiles.value = []
+  uploadIdx.value = 0
+  refresh()
+}
+
 onMounted(async () => {
   await load('')
 })
@@ -287,4 +339,20 @@ onMounted(async () => {
   min-width: 140px;
   padding: 4px 0;
 }
+/* 拖拽上传遮罩 */
+.drag-overlay {
+  position: absolute; inset: 0; background: rgba(10, 132, 255, 0.12);
+  border: 2px dashed #0a84ff; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 50; pointer-events: none;
+}
+.drag-inner { display: flex; flex-direction: column; align-items: center; gap: 10px; color: #0a84ff; }
+.drag-text { font-size: 14px; font-weight: 600; }
+/* 上传进度条 */
+.upload-progress {
+  padding: 6px 12px; background: #f0f7ff; border: 1px solid #b3d7ff;
+  border-radius: 6px; margin-bottom: 6px; font-size: 12px; color: #0a3d7a;
+}
+.progress-bar { height: 4px; background: #e5e7eb; border-radius: 2px; margin-top: 4px; overflow: hidden; }
+.progress-fill { height: 100%; background: #0a84ff; transition: width 0.3s; }
 </style>
