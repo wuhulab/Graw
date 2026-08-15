@@ -27,3 +27,6 @@ __pycache__
 .vscode
 backend/data/*
 data/
+
+app-store/
+.playwright-cli/

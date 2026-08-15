@@ -3,7 +3,7 @@ import { auth, clearAuth } from './store/auth'
 
 const api = axios.create({
   baseURL: '/api',
-  timeout: 15000
+  timeout: 60000
 })
 
 const dockerHttp = axios.create({
@@ -22,31 +22,55 @@ function attachToken(config) {
 api.interceptors.request.use(attachToken)
 dockerHttp.interceptors.request.use(attachToken)
 
-// 响应拦截：仅在「曾经登录但 token 失效」时清除登录态并刷新。
-// 从未登录（本地无 token）的请求拿到 401 是正常的，不触发刷新，
-// 否则未登录页面会陷入无限 reload 循环。
-let _reloading = false
+// 响应拦截：
+// - 401：仅在「曾经登录但 token 失效」时清除登录态并刷新。
+//   从未登录（本地无 token）的请求拿到 401 是正常的，不触发刷新，
+//   否则未登录页面会陷入无限 reload 循环。
+// - 403「必须修改默认密码」：ShunX 强制改密触发 → 自动退出登录，
+//   回到登录页走强制改密流程，避免业务接口持续 403 刷屏。
+let _loggingOut = false
+function forceLogout() {
+  if (_loggingOut) return
+  _loggingOut = true
+  clearAuth()
+  // 回到登录页：保留当前路径（已配置安全入口时即入口路径，可直接显示登录表单）
+  const p = window.location.pathname
+  if (p && p !== '/') {
+    window.location.href = p
+  } else {
+    window.location.reload()
+  }
+}
+
 function on401(err) {
-  if (err?.response?.status === 401 && auth.token && !_reloading) {
-    _reloading = true
-    clearAuth()
-    if (location.pathname !== '/') {
-      location.href = '/'
-    } else {
-      location.reload()
-    }
+  if (err?.response?.status === 401 && auth.token) forceLogout()
+  return Promise.reject(err)
+}
+
+function onDefaultPassword403(err) {
+  if (
+    err?.response?.status === 403 &&
+    err?.response?.data?.detail === '必须修改默认密码后才能使用面板' &&
+    auth.token
+  ) {
+    forceLogout()
   }
   return Promise.reject(err)
 }
+
 api.interceptors.response.use(r => r, on401)
 dockerHttp.interceptors.response.use(r => r, on401)
+api.interceptors.response.use(r => r, onDefaultPassword403)
+dockerHttp.interceptors.response.use(r => r, onDefaultPassword403)
 
 export default api
 
 export const authApi = {
-  login: (username, password) => api.post('/auth/login', { username, password }).then(r => r.data),
+  // path 为浏览器地址栏路径，用于 ShunX 安全入口校验
+  login: (username, password, path = '') => api.post('/auth/login', { username, password }, { headers: { 'X-ShunX-Entry': path } }).then(r => r.data),
   me: () => api.get('/auth/me').then(r => r.data),
-  changePassword: (old_password, new_password) => api.post('/auth/password', { old_password, new_password }).then(r => r.data),
+  // token 可选：强制改密场景下尚未写入登录态，显式携带临时 token
+  changePassword: (old_password, new_password, token) => api.post('/auth/password', { old_password, new_password }, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined).then(r => r.data),
   listUsers: () => api.get('/auth/users').then(r => r.data),
   createUser: (username, password, role) => api.post('/auth/users', { username, password, role }).then(r => r.data),
   updateUser: (username, body) => api.put(`/auth/users/${username}`, body).then(r => r.data),
@@ -158,6 +182,83 @@ export const protectionApi = {
   unignore: (kind, key) => api.post('/protection/unignore', { kind, key }).then(r => r.data),
   listIgnored: () => api.get('/protection/ignored').then(r => r.data),
   listBackups: () => api.get('/protection/backups').then(r => r.data)
+}
+
+export const shunxApi = {
+  // 公开接口：查询是否已配置安全入口、当前路径是否匹配
+  status: (path) => api.get('/shunx/status', { params: { path } }).then(r => r.data),
+  // 受保护接口：查询/修改配置（查询需登录，修改仅管理员）
+  config: () => api.get('/shunx/config').then(r => r.data),
+  update: (entry_path, enabled = true) => api.put('/shunx/config', { entry_path, enabled }).then(r => r.data)
+}
+
+export const appStoreApi = {
+  // 索引地址配置
+  config: () => api.get('/appstore/config').then(r => r.data),
+  saveConfig: (index_url) => api.put('/appstore/config', { index_url }).then(r => r.data),
+  // 应用商店索引（refresh=1 强制重新拉取）
+  index: (refresh = false) => api.get('/appstore/index', { params: { refresh } }).then(r => r.data),
+  // 获取某个应用的 docker-compose.yml 原文（用于"编辑 compose"）
+  compose: (app_id) => api.get(`/appstore/app/${encodeURIComponent(app_id)}/compose`).then(r => r.data),
+  // 获取某个应用的 GitHub README
+  readme: (app_id) => api.get(`/appstore/app/${encodeURIComponent(app_id)}/readme`).then(r => r.data),
+  // 安装应用（同步，超时放宽到 30 分钟）
+  install: (body) => api.post('/appstore/install', body, { timeout: 1800000 }).then(r => r.data),
+  // 流式安装：SSE 逐步推送日志，onEvent 回调收到 {type:'status'|'log'|'result'|'error', ...}
+  // 返回 AbortController（可中断请求）
+  installStream: (body, onEvent) => {
+    const controller = new AbortController()
+    fetch('/api/appstore/install/stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${auth.token}`
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    }).then(async (resp) => {
+      if (!resp.ok) {
+        let msg = resp.statusText
+        try {
+          const j = await resp.json()
+          msg = j.detail || msg
+        } catch (e) { /* ignore */ }
+        onEvent({ type: 'error', message: msg })
+        return
+      }
+      const reader = resp.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      const handleChunk = (chunk) => {
+        const lines = chunk.split('\n')
+        for (const raw of lines) {
+          const t = raw.trim()
+          if (!t.startsWith('data:')) continue
+          const payload = t.slice(5).trim()
+          if (!payload) continue
+          try { onEvent(JSON.parse(payload)) } catch (e) { /* ignore */ }
+        }
+      }
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          let idx
+          while ((idx = buffer.indexOf('\n\n')) !== -1) {
+            handleChunk(buffer.slice(0, idx))
+            buffer = buffer.slice(idx + 2)
+          }
+        }
+        if (buffer.trim()) handleChunk(buffer)
+      } catch (e) {
+        if (e.name !== 'AbortError') onEvent({ type: 'error', message: '连接中断: ' + e.message })
+      }
+    }).catch((e) => {
+      if (e.name !== 'AbortError') onEvent({ type: 'error', message: '请求失败: ' + e.message })
+    })
+    return controller
+  }
 }
 
 export function formatBytes(bytes) {

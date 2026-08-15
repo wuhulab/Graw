@@ -10,6 +10,7 @@ import json
 import time
 import secrets
 import threading
+from collections import defaultdict
 from typing import Optional
 
 import jwt
@@ -25,6 +26,10 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 ALGORITHM = "HS256"
 TOKEN_TTL = 86400 * 7  # 7 天
+
+# 默认密码：种子管理员账号使用。ShunX 保护机制会检测并强制用户修改，
+# 且禁止任何地方（创建/重置/改密）再次使用该默认密码。
+DEFAULT_PASSWORD = "admin123"
 
 _security = HTTPBearer(auto_error=False)
 _file_lock = threading.Lock()
@@ -83,15 +88,23 @@ def verify_password(password: str, hashed: str) -> bool:
         return False
 
 
+def is_default_password(password_hash: str) -> bool:
+    """判断某个密码哈希是否为默认密码（用于强制改密检测）。"""
+    try:
+        return bcrypt.checkpw(DEFAULT_PASSWORD.encode("utf-8"), password_hash.encode("utf-8"))
+    except Exception:
+        return False
+
+
 def seed_default_users() -> None:
-    """首次启动时创建默认管理员账号 admin / admin123（需首次登录改密）。
+    """首次启动时创建默认管理员账号 admin / <DEFAULT_PASSWORD>（需首次登录改密）。
     若 admin 已存在但角色不是 admin，自动修复以至少保留一个管理员。"""
     users = _load_users()
     if users is None:
         default = {
             "admin": {
                 "username": "admin",
-                "password": hash_password("admin123"),
+                "password": hash_password(DEFAULT_PASSWORD),
                 "role": "admin",
                 "must_change_password": True,
                 "created_at": time.time(),
@@ -171,7 +184,42 @@ async def get_current_user_ws(
     return _public_user(user)
 
 
-async def require_admin(user: dict = Depends(get_current_user)) -> dict:
+async def require_non_default_password(
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """业务/管理路由依赖：使用默认密码的账号必须先修改密码才能使用面板。
+
+    该依赖基于「当前存储的密码哈希」实时检测，即使 must_change_password
+    标志被人为清除（如 reset_password.py 重置回默认密码），也能强制改密。
+    """
+    full = _get_user(user["username"])
+    if full is not None and is_default_password(full.get("password", "")):
+        raise HTTPException(status_code=403, detail="必须修改默认密码后才能使用面板")
+    return user
+
+
+async def require_admin(user: dict = Depends(require_non_default_password)) -> dict:
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="需要管理员权限")
+    return user
+
+
+async def get_current_user_ws_admin(
+    websocket: WebSocket, token: str = Query(default="")
+) -> Optional[dict]:
+    """WebSocket 管理员鉴权依赖：仅允许「已改密的管理员」访问。
+
+    在 get_current_user_ws 基础上追加：角色必须为 admin，且未使用默认密码
+    （默认密码账号必须先改密，避免经终端绕过默认密码拦截）。
+    """
+    user = await get_current_user_ws(websocket, token)
+    if user is None:
+        return None
+    if user.get("role") != "admin":
+        await websocket.close(code=4403)
+        return None
+    full = _get_user(user["username"])
+    if full is not None and is_default_password(full.get("password", "")):
+        await websocket.close(code=4403)
+        return None
     return user

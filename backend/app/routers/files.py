@@ -10,21 +10,48 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import os
+import logging
 import shutil
 import platform
 from typing import Optional
 
 from app.hostfs import host_path, unhost_path
 
+logger = logging.getLogger("graw.files")
+
 router = APIRouter()
+
+# 面板数据目录：包含 secret.key / users.json 等敏感文件，禁止通过文件管理访问
+DATA_DIR = os.path.normpath(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data"))
+)
+
+
+def _is_forbidden(host_view: str) -> bool:
+    """判断宿主机视角路径是否位于面板数据目录（data/）内。"""
+    try:
+        common = os.path.commonpath([os.path.normpath(host_view), DATA_DIR])
+    except ValueError:
+        return False
+    return common == DATA_DIR
 
 
 def _safe_path(path: str) -> str:
-    """规范化宿主机视角路径（绝对化）。"""
+    """规范化宿主机视角路径（绝对化），并拦截面板数据目录。"""
     if not path:
         path = "/"
-    path = os.path.abspath(path)
-    return path
+    sp = os.path.abspath(path)
+    if _is_forbidden(sp):
+        raise HTTPException(status_code=403, detail="无权访问面板数据目录")
+    return sp
+
+
+def _is_within(base: str, target: str) -> bool:
+    """判断 target 是否位于 base 目录之内（用于防 Zip Slip 路径穿越）。"""
+    try:
+        return os.path.commonpath([os.path.abspath(base), os.path.abspath(target)]) == os.path.abspath(base)
+    except ValueError:
+        return False
 
 
 @router.get("/list")
@@ -100,7 +127,8 @@ async def read_file(path: str):
         with open(real, "r", encoding="utf-8", errors="replace") as f:
             return {"path": _safe_path(path), "content": f.read()}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.warning("读取文件失败: %s", e)
+        raise HTTPException(status_code=500, detail="读取文件失败")
 
 
 class WriteRequest(BaseModel):
@@ -117,7 +145,8 @@ async def write_file(req: WriteRequest):
             f.write(req.content)
         return {"ok": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.warning("写入文件失败: %s", e)
+        raise HTTPException(status_code=500, detail="写入文件失败")
 
 
 class DeleteRequest(BaseModel):
@@ -184,13 +213,19 @@ async def upload(path: str = Form(...), file: UploadFile = File(...)):
     target_dir = host_path(_safe_path(path))
     if not os.path.isdir(target_dir):
         raise HTTPException(status_code=400, detail="Target directory not found")
-    target = os.path.join(target_dir, file.filename)
+    # 文件名消毒：去除路径分隔符仅保留基本名，防止 ../ 路径穿越写至任意目录
+    raw_name = (file.filename or "").replace("\\", "/")
+    safe_name = os.path.basename(raw_name).strip()
+    if not safe_name or safe_name in (".", ".."):
+        raise HTTPException(status_code=400, detail="非法文件名")
+    target = os.path.join(target_dir, safe_name)
     try:
         with open(target, "wb") as f:
             shutil.copyfileobj(file.file, f)
         return {"ok": True, "path": unhost_path(target)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.warning("上传失败: %s", e)
+        raise HTTPException(status_code=500, detail="上传失败")
 
 
 class ChmodRequest(BaseModel):
@@ -286,12 +321,22 @@ async def extract(req: ExtractRequest):
             import zipfile
 
             with zipfile.ZipFile(archive, "r") as zf:
+                # 防 Zip Slip：拒绝包含 ../ 等越界路径的压缩包
+                for info in zf.infolist():
+                    if not _is_within(dest, os.path.join(dest, info.filename)):
+                        raise HTTPException(status_code=400, detail="压缩包包含非法路径（Zip Slip）")
                 zf.extractall(dest)
         else:
             import tarfile
 
             with tarfile.open(archive, "r:*") as tf:
+                for member in tf.getmembers():
+                    if not _is_within(dest, os.path.join(dest, member.name)):
+                        raise HTTPException(status_code=400, detail="压缩包包含非法路径（Zip Slip）")
                 tf.extractall(dest)
         return {"ok": True}
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.warning("解压失败: %s", e)
+        raise HTTPException(status_code=500, detail="解压失败")

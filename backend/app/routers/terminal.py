@@ -5,7 +5,7 @@ import platform
 import threading
 import subprocess
 
-from app.auth import get_current_user_ws
+from app.auth import get_current_user_ws_admin
 from app.hostfs import get_host_root
 
 router = APIRouter()
@@ -23,8 +23,8 @@ else:
 
 
 @router.websocket("/ws")
-async def terminal_ws(websocket: WebSocket, user=Depends(get_current_user_ws)):
-    # get_current_user_ws 在鉴权失败时会关闭连接并返回 None
+async def terminal_ws(websocket: WebSocket, user=Depends(get_current_user_ws_admin)):
+    # get_current_user_ws_admin 在鉴权失败时会关闭连接并返回 None
     if user is None:
         return
     await websocket.accept()

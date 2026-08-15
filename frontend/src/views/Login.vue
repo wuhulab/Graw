@@ -1,38 +1,54 @@
 <template>
   <div class="login-page">
     <div class="login-card">
-      <div class="login-title">Graw</div>
-      <div class="login-subtitle">服务器管理面板</div>
+      <!-- 安全入口门禁（已配置入口且当前路径不匹配） -->
+      <template v-if="shunxChecked && shunx.enabled && !shunx.matched">
+        <div class="login-title">ShunX</div>
+        <div class="login-subtitle">安全入口保护</div>
+        <div class="hint" style="background:rgba(255,59,48,0.08);border-color:rgba(255,59,48,0.2);color:#c0392b;">
+          请通过已配置的安全入口路径访问管理面板
+        </div>
+      </template>
 
-      <form v-if="!forceChange" @submit.prevent="handleLogin">
-        <label class="field">
-          <span class="label">账号</span>
-          <input
-            v-model.trim="username"
-            type="text"
-            autocomplete="username"
-            autofocus
-            spellcheck="false"
-            required
-          />
-        </label>
-        <label class="field">
-          <span class="label">密码</span>
-          <input
-            v-model="password"
-            type="password"
-            autocomplete="current-password"
-            required
-          />
-        </label>
-        <div v-if="error" class="error">{{ error }}</div>
-        <button class="btn-primary" type="submit" :disabled="loading">
-          {{ loading ? '登录中…' : '登 录' }}
-        </button>
-      </form>
+      <!-- 登录表单 -->
+      <template v-else-if="!forceChange">
+        <div class="login-title">Graw</div>
+        <div class="login-subtitle">服务器管理面板</div>
 
+        <form @submit.prevent="handleLogin">
+          <label class="field">
+            <span class="label">账号</span>
+            <input
+              v-model.trim="username"
+              type="text"
+              autocomplete="username"
+              autofocus
+              spellcheck="false"
+              required
+            />
+          </label>
+          <label class="field">
+            <span class="label">密码</span>
+            <input
+              v-model="password"
+              type="password"
+              autocomplete="current-password"
+              required
+            />
+          </label>
+          <div v-if="error" class="error">{{ error }}</div>
+          <button class="btn-primary" type="submit" :disabled="loading">
+            {{ loading ? '登录中…' : '登 录' }}
+          </button>
+        </form>
+      </template>
+
+      <!-- 强制改密 -->
       <form v-else @submit.prevent="handleChangePassword">
-        <div class="hint">首次登录或密码已重置，请设置新密码</div>
+        <div v-if="forceChangeReason === 'default'" class="hint danger">
+          检测到您正在使用默认密码，出于安全考虑，必须先修改密码才能使用面板。
+        </div>
+        <div v-else class="hint">首次登录或密码已重置，请设置新密码</div>
         <label class="field">
           <span class="label">原密码</span>
           <input v-model="oldPassword" type="password" required />
@@ -55,9 +71,9 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { authApi } from '../api'
-import { setAuth, clearAuth } from '../store/auth'
+import { ref, onMounted } from 'vue'
+import { authApi, shunxApi } from '../api'
+import { setAuth } from '../store/auth'
 
 const emit = defineEmits(['login'])
 
@@ -67,23 +83,52 @@ const loading = ref(false)
 const error = ref('')
 
 const forceChange = ref(false)
+const forceChangeReason = ref('') // '' | 'default'（默认密码）| 'reset'（重置/首登）
+// 强制改密时暂存登录凭据：改密成功后才写入登录态，避免立即进入桌面
+const pendingToken = ref(null)
+const pendingUser = ref(null)
 const oldPassword = ref('')
 const newPassword = ref('')
 const confirmPassword = ref('')
+
+// ShunX 安全入口状态
+const shunxChecked = ref(false)
+const shunx = ref({ enabled: false, matched: false })
+
+onMounted(async () => {
+  try {
+    // 取当前 URL 路径（去掉可能的多余斜杠）
+    const currentPath = window.location.pathname.replace(/\/+$/, '') || '/'
+    const res = await shunxApi.status(currentPath)
+    shunx.value = res
+  } catch (e) {
+    // 接口调用失败时允许正常登录（兼容旧版后端）
+    shunx.value = { enabled: false, matched: false }
+  } finally {
+    shunxChecked.value = true
+  }
+})
 
 async function handleLogin() {
   if (loading.value) return
   error.value = ''
   loading.value = true
   try {
-    const data = await authApi.login(username.value, password.value)
-    setAuth(data.token, data.user)
+    // 获取当前路径用于 ShunX 安全入口校验
+    const currentPath = window.location.pathname.replace(/\/+$/, '') || '/'
+    const data = await authApi.login(username.value, password.value, currentPath)
     if (data.user?.must_change_password) {
+      // 强制改密：先不写入登录态（否则 App 会立即切换到桌面），改密成功后再进入
+      pendingToken.value = data.token
+      pendingUser.value = data.user
       oldPassword.value = password.value
       password.value = ''
       forceChange.value = true
+      // 区分「默认密码」与「重置/首登」，展示不同提示
+      forceChangeReason.value = data.user?.default_password ? 'default' : 'reset'
       return
     }
+    setAuth(data.token, data.user)
     emit('login', data.user)
   } catch (e) {
     error.value = e?.response?.data?.detail || '登录失败'
@@ -105,13 +150,16 @@ async function handleChangePassword() {
   error.value = ''
   loading.value = true
   try {
-    await authApi.changePassword(oldPassword.value, newPassword.value)
-    const user = auth.user
+    await authApi.changePassword(oldPassword.value, newPassword.value, pendingToken.value || undefined)
+    // 改密成功：写入登录态并进入面板
+    const user = pendingUser.value
     if (user) {
       user.must_change_password = false
-      setAuth(auth.token, user)
+      user.default_password = false
+      setAuth(pendingToken.value, user)
     }
     forceChange.value = false
+    forceChangeReason.value = ''
     oldPassword.value = ''
     newPassword.value = ''
     confirmPassword.value = ''
@@ -200,6 +248,12 @@ async function handleChangePassword() {
   padding: 8px 10px;
   font-size: 12px;
   margin-bottom: 14px;
+}
+
+.hint.danger {
+  background: rgba(255, 59, 48, 0.08);
+  color: #c0392b;
+  border-color: rgba(255, 59, 48, 0.2);
 }
 
 .error {

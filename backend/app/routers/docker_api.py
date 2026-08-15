@@ -287,6 +287,112 @@ async def containers(all: bool = True):
     return await asyncio.to_thread(_containers_sync, all)
 
 
+def _parse_percent(s) -> float:
+    """把 '0.10%' 之类的字符串解析为浮点数百分比，失败返回 0.0。"""
+    try:
+        return round(float(str(s).replace("%", "").strip()), 2)
+    except Exception:
+        return 0.0
+
+
+def _parse_stats_cli(items: list) -> dict:
+    """解析 podman/docker CLI 的 stats JSON 输出为 {name: stats}。
+
+    podman `stats --format json` 输出一个数组，docker 输出逐行 JSON，
+    统一在此处归一化为 key 为容器名称的字典。
+    """
+    result = {}
+    for it in items:
+        name = it.get("name") or it.get("container") or it.get("id") or ""
+        if not name:
+            continue
+        # podman 字段：cpu_percent / mem_usage / mem_percent
+        # docker 字段：CPUPerc / MemUsage / MemPerc
+        cpu_percent = it.get("cpu_percent") or it.get("CPUPerc") or ""
+        mem_percent = it.get("mem_percent") or it.get("MemPerc") or ""
+        mem_usage = it.get("mem_usage") or it.get("MemUsage") or ""
+        result[name] = {
+            "cpu_percent": _parse_percent(cpu_percent),
+            "mem_percent": _parse_percent(mem_percent),
+            "mem_usage": str(mem_usage or ""),
+        }
+    return result
+
+
+def _stats_sync() -> dict:
+    """批量采集运行中容器的 CPU / 内存占用。
+
+    返回 {name: {cpu_percent, mem_percent, mem_usage}}。
+    CLI 模式：`podman/docker stats --no-stream --format json`。
+    SDK 模式：逐个容器 c.stats(stream=False) 计算。
+    任何失败都返回空字典，不影响容器列表主流程。
+    """
+    try:
+        kind, client = get_backend()
+    except HTTPException:
+        return {}
+    result = {}
+    if kind == "cli":
+        cli = _find_podman()
+        if cli is None:
+            return {}
+        try:
+            rc, out, err = _run(cli + ["stats", "--no-stream", "--format", "json"], timeout=30)
+            if rc != 0:
+                return {}
+            out = out.strip()
+            if not out:
+                return {}
+            items = []
+            if out.startswith("["):
+                # podman: 单个 JSON 数组
+                try:
+                    items = json.loads(out)
+                except json.JSONDecodeError:
+                    return {}
+            else:
+                # docker: 每行一个 JSON 对象
+                for line in out.splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        items.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+            result = _parse_stats_cli(items)
+        except Exception:
+            return {}
+    else:
+        # docker SDK 模式：用容器 stats 计算 CPU / 内存
+        try:
+            for c in client.containers.list():
+                try:
+                    s = c.stats(stream=False)
+                except Exception:
+                    continue
+                mem = s.get("memory_stats", {}) or {}
+                usage = mem.get("usage") or 0
+                limit = mem.get("limit") or 0
+                mem_pct = round(usage / limit * 100, 2) if limit else 0.0
+                # CPU：两次采样差值比
+                cpu = s.get("cpu_stats", {}) or {}
+                precpu = s.get("precpu_stats", {}) or {}
+                cpu_delta = (cpu.get("cpu_usage", {}) or {}).get("total_usage", 0) - \
+                            (precpu.get("cpu_usage", {}) or {}).get("total_usage", 0)
+                sys_delta = cpu.get("system_cpu_usage", 0) - precpu.get("system_cpu_usage", 0)
+                online = cpu.get("online_cpus", 1) or 1
+                cpu_pct = round(cpu_delta / sys_delta * online * 100, 2) if sys_delta > 0 else 0.0
+                result[c.name] = {
+                    "cpu_percent": cpu_pct,
+                    "mem_percent": mem_pct,
+                    "mem_usage": f"{usage / 1024 / 1024:.1f}MB / {limit / 1024 / 1024:.1f}MB",
+                }
+        except Exception:
+            return {}
+    return result
+
+
 def _containers_sync(all: bool = True):
     try:
         kind, client = get_backend()
@@ -295,22 +401,31 @@ def _containers_sync(all: bool = True):
     if kind == "cli":
         try:
             arr = _podman_json(["ps", "-a", "--format", "json"])
+            stats = _stats_sync() if any(c.get("Status", "").startswith("Up") for c in arr) else {}
             result = []
             for c in arr:
                 state = "running" if c.get("Status", "").startswith("Up") else c.get("Status", "exited")
+                name = (c.get("Names") or [""])[0] if c.get("Names") else ""
+                st = stats.get(name, {})
                 result.append({
                     "id": c.get("Id", "")[:12],
-                    "name": (c.get("Names") or [""])[0] if c.get("Names") else "",
+                    "name": name,
                     "image": c.get("Image", ""),
                     "status": c.get("Status", ""),
                     "state": state,
                     "created": c.get("Created", ""),
                     "ports": _parse_ports(c.get("Ports")),
+                    "cpu_percent": st.get("cpu_percent", 0),
+                    "mem_percent": st.get("mem_percent", 0),
+                    "mem_usage": st.get("mem_usage", ""),
                 })
             return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=_clean_reason(e))
     try:
+        stats = _stats_sync() if any(
+            (c.attrs.get("State", {}).get("Status", "") == "running") for c in client.containers.list(all=all)
+        ) else {}
         result = []
         for c in client.containers.list(all=all):
             attrs = c.attrs
@@ -325,6 +440,7 @@ def _containers_sync(all: bool = True):
                         ports.append(k)
             except Exception:
                 pass
+            st = stats.get(c.name, {})
             result.append({
                 "id": c.short_id,
                 "name": c.name,
@@ -333,6 +449,9 @@ def _containers_sync(all: bool = True):
                 "state": attrs.get("State", {}).get("Status", c.status),
                 "created": attrs.get("Created", ""),
                 "ports": ports,
+                "cpu_percent": st.get("cpu_percent", 0),
+                "mem_percent": st.get("mem_percent", 0),
+                "mem_usage": st.get("mem_usage", ""),
             })
         return result
     except Exception as e:
