@@ -4,11 +4,12 @@
     <div class="toolbar">
       <span class="title"><Terminal :size="15" /> 安装日志：{{ app?.name || '' }}</span>
       <span class="badge" :class="phaseClass">{{ phaseText }}</span>
-      <button class="btn" style="margin-left:auto;" @click="emit('close')">关闭</button>
+      <button class="btn" style="margin-left:auto;" @click="copyAll">{{ copied ? '已复制 ✓' : '复制日志' }}</button>
+      <button class="btn" @click="emit('close')">关闭</button>
     </div>
 
     <div class="body">
-      <!-- 日志区 -->
+      <!-- 日志区（user-select:text 允许手动选中复制） -->
       <div ref="logBox" class="log-box">
         <div v-for="(l, i) in lines" :key="i" class="line" :class="l.type">
           <span v-if="l.type === 'status'" class="arrow">»</span>
@@ -55,8 +56,10 @@ const lines = ref([])
 const result = ref(null)
 const errorMsg = ref('')
 const logBox = ref(null)
+const copied = ref(false)
 
 let controller = null
+let copiedTimer = null
 
 const phaseText = computed(() => {
   if (phase.value === 'running') return '正在安装...'
@@ -103,8 +106,9 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  // 关闭窗口时中断流式请求（后端会停止子进程）
+  // 关闭窗口时中断流式请求（后端会停止子进程）并清理定时器
   if (controller) controller.abort()
+  clearTimeout(copiedTimer)
 })
 </script>
 
@@ -120,7 +124,7 @@ onUnmounted(() => {
 
 .body { flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; overflow-y: auto; }
 
-.log-box { flex: 1; min-height: 0; overflow-y: auto; background: #0f172a; border-radius: 8px; padding: 10px; font-family: Consolas, monospace; font-size: 12px; line-height: 1.55; }
+.log-box { flex: 1; min-height: 0; overflow-y: auto; background: #0f172a; border-radius: 8px; padding: 10px; font-family: Consolas, monospace; font-size: 12px; line-height: 1.55; user-select: text; cursor: text; }
 .line { display: flex; gap: 6px; white-space: pre-wrap; word-break: break-all; }
 .line.log .text { color: #cbd5e1; }
 .line.status .text { color: #60a5fa; font-weight: 600; }

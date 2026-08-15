@@ -115,7 +115,7 @@ import Login from './views/Login.vue'
 import { systemApi, shunxApi } from './api'
 import { auth, clearAuth, isAdmin } from './store/auth'
 import { settings } from './store/settings'
-import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck, Store } from 'lucide-vue-next'
+import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck, Store, BookOpen } from 'lucide-vue-next'
 
 const loggedIn = computed(() => !!auth.token)
 function onLoggedIn() {

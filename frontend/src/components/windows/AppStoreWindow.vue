@@ -44,6 +44,7 @@
           <div class="card-actions">
             <a v-if="app.homepage" class="icon-link" :href="app.homepage" target="_blank" rel="noopener" title="官方网站"><Globe :size="14" /></a>
             <a v-if="app.source" class="icon-link" :href="app.source" target="_blank" rel="noopener" title="开源社区"><Github :size="14" /></a>
+            <button v-if="app.source" class="readme-btn" title="查看 GitHub README" @click="emit('openReadme', app)">README</button>
           </div>
         </div>
 

@@ -136,9 +136,12 @@ function randHex() {
 }
 
 const installForm = reactive({
-  app_name: '',
-  version: '',
-  port: null,
+  // 默认应用名称：<app-id>-<随机6位hex>，避免重名冲突
+  app_name: (props.app?.id || 'app') + '-' + randHex(),
+  // 默认版本：版本列表第一个（即最新），否则回退 app.version / latest
+  version: props.app?.versions?.[0]?.tag || props.app?.version || 'latest',
+  // 默认端口：预填应用声明的第一个容器端口
+  port: props.app?.ports?.[0]?.container ?? null,
   timezone: 'Asia/Shanghai',
   container_name: '',
   expose_port: false,
