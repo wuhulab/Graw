@@ -128,6 +128,10 @@ app.include_router(shunx.router, prefix="/api/shunx", tags=["shunx"])
 app.include_router(
     appstore.router, prefix="/api/appstore", tags=["appstore"], dependencies=ADMIN
 )
+# 应用图标是 <img> 加载的公开静态资源（无 Bearer token），单独挂载不加鉴权
+app.include_router(
+    appstore.icons_router, prefix="/api/appstore", tags=["appstore"]
+)
 
 # 任务中心（长线任务：应用商店安装等，需管理员）
 app.include_router(

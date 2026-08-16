@@ -32,7 +32,7 @@ from typing import Optional
 
 import urllib.request
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 try:
@@ -46,6 +46,9 @@ from app.routers import tasks
 
 logger = logging.getLogger("appstore")
 router = APIRouter()
+# 图标是给 <img> 标签加载的公开静态资源（无法携带 Bearer token），
+# 单独一个无鉴权 router，在 main.py 中以独立前缀挂载。
+icons_router = APIRouter()
 
 IS_WINDOWS = os.name == "nt"
 
@@ -60,8 +63,12 @@ LOCAL_INDEX = os.path.join(APP_STORE_DIR, "index.json")
 
 CFG_FILE = os.path.join(DATA_DIR, "appstore.json")
 
-# 索引内存缓存（秒）
-INDEX_TTL = 300
+# 远程索引默认源（未配置 index_url 时使用）
+DEFAULT_INDEX_URL = "https://wuhulab.github.io/Graw-app-store/index.json"
+# 远程索引缓存时间：最多每天拉取一次（秒）；手动刷新也受此限制
+REMOTE_INDEX_TTL = 86400
+# 本地索引缓存时间（秒）：开发版使用本地商店，可手动强制刷新
+LOCAL_INDEX_TTL = 60
 _index_cache = {"at": 0.0, "source": "", "data": None, "error": ""}
 
 # 合法的重启策略
@@ -94,7 +101,12 @@ def _save_config(cfg: dict):
 @router.get("/config")
 async def get_config():
     cfg = _load_config()
-    return {"index_url": cfg.get("index_url", ""), "configured": bool(cfg.get("index_url"))}
+    index_url = cfg.get("index_url", "").strip()
+    return {
+        "index_url": index_url or DEFAULT_INDEX_URL,
+        "configured": bool(index_url),
+        "default_url": DEFAULT_INDEX_URL,
+    }
 
 
 class ConfigRequest(BaseModel):
@@ -150,37 +162,60 @@ def _load_local_index() -> Optional[dict]:
 
 
 def _load_index(refresh: bool = False):
-    """返回 (source, data, updated_at, error)。"""
-    now = time.time()
-    if not refresh and _index_cache["at"] and (now - _index_cache["at"]) < INDEX_TTL:
-        return _index_cache["source"], _index_cache["data"], _index_cache["at"], _index_cache["error"]
+    """返回 (source, data, updated_at, error)。
 
+    开发模式（app-store 目录存在）优先使用本地索引。
+    远程索引默认源 DEFAULT_INDEX_URL，最多每天拉取一次（refresh 也受此限制）。
+    """
+    now = time.time()
+
+    # 检查是否开发模式：本地 app-store 目录存在
+    use_local = os.path.isdir(APP_STORE_DIR)
+
+    if not refresh:
+        cache_ttl = LOCAL_INDEX_TTL if use_local else REMOTE_INDEX_TTL
+        if _index_cache["at"] and (now - _index_cache["at"]) < cache_ttl:
+            return _index_cache["source"], _index_cache["data"], _index_cache["at"], _index_cache["error"]
+
+    # 远程索引配置
     cfg = _load_config()
     url = cfg.get("index_url", "").strip()
+    if not url:
+        url = DEFAULT_INDEX_URL
+
     source = "local"
     data = None
     error = ""
 
     if url:
-        try:
-            raw = _fetch_url(url)
-            parsed = json.loads(raw)
-            if isinstance(parsed, dict) and "apps" in parsed:
-                data = parsed
-                source = "remote"
-            else:
-                error = "索引格式不正确（缺少 apps 字段）"
-                logger.warning("远程索引格式不正确: %s", url)
-        except Exception as e:
-            error = f"远程索引拉取失败: {e}"
-            logger.warning("拉取远程索引失败 %s: %s", url, e)
+        # 远程索引 TTL：每天最多一次 + 手动刷新也受限制
+        if refresh and _index_cache["at"] and (now - _index_cache["at"]) < REMOTE_INDEX_TTL:
+            source = "remote_cached"
+            error = "已达每日拉取上限（一天最多刷新一次），请明天再试"
+            data = _index_cache["data"]
+        else:
+            try:
+                raw = _fetch_url(url)
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict) and "apps" in parsed:
+                    data = parsed
+                    source = "remote"
+                else:
+                    error = "索引格式不正确（缺少 apps 字段）"
+                    logger.warning("远程索引格式不正确: %s", url)
+            except Exception as e:
+                error = f"远程索引拉取失败: {e}"
+                logger.warning("拉取远程索引失败 %s: %s", url, e)
 
-    if data is None:
+    # 远程失败或开发模式时回退本地索引
+    if data is None and use_local:
         data = _load_local_index()
         if data is not None:
             source = "local"
         else:
             raise HTTPException(status_code=502, detail=error or "未配置索引地址，且本地无 app-store/index.json")
+    elif data is None and not use_local:
+        raise HTTPException(status_code=502, detail=error or "未配置索引地址")
 
     _index_cache.update({"at": now, "source": source, "data": data, "error": error})
     return source, data, now, error
@@ -190,13 +225,34 @@ def _load_index(refresh: bool = False):
 async def get_index(refresh: bool = False):
     source, data, _at, error = _load_index(refresh=refresh)
     store = data.get("store", {})
+    apps = []
+    for app in data.get("apps", []):
+        item = dict(app)
+        # 图标统一走本地静态服务：不依赖 GitHub Pages，且立即显示真实图标
+        item["icon"] = f"/api/appstore/icons/{app.get('id', '')}"
+        apps.append(item)
     return {
         "source": source,
         "error": error,
         "updated_at": store.get("updated_at", ""),
         "store": store,
-        "apps": data.get("apps", []),
+        "apps": apps,
     }
+
+
+@icons_router.get("/icons/{app_id}")
+async def get_app_icon(app_id: str):
+    """返回应用的官方图标（本地 app-store/apps/<id>/icon.png 或 icon.svg）。
+
+    优先 PNG，其次 SVG；统一由本地静态服务提供，不依赖外部 CDN。
+    """
+    safe = os.path.basename(app_id)
+    app_dir = os.path.join(LOCAL_APPS_DIR, safe)
+    for fname, mime in (("icon.png", "image/png"), ("icon.svg", "image/svg+xml")):
+        path = os.path.join(app_dir, fname)
+        if os.path.isfile(path):
+            return FileResponse(path, media_type=mime)
+    raise HTTPException(status_code=404, detail=f"图标不存在: {app_id}")
 
 
 # ------------------------------------------------------------
@@ -316,6 +372,8 @@ class InstallRequest(BaseModel):
     version: str = Field(default="latest", max_length=128)
     # 外部访问端口（None 表示不映射）
     port: Optional[int] = Field(default=None, ge=1, le=65535)
+    # 多端口映射：[{container, external}]，允许为应用声明的每个容器端口分别指定外部端口
+    ports: Optional[list] = Field(default=None, description="多端口映射 [{container, external}]")
     # 时区（注入 TZ 环境变量）
     timezone: str = Field(default="Asia/Shanghai", max_length=64)
     # 容器名称（留空自动生成 graw-<app_name>-<随机>）
@@ -355,8 +413,12 @@ def _set_env(svc: dict, key: str, value: str):
         svc["environment"] = {key: value}
 
 
-def _apply_port(svc: dict, external: int, container: int):
-    """确保 service 暴露 external:container 端口映射（容器端口已在则替换宿主端口）。"""
+def _apply_port(svc: dict, external: int, container: int) -> bool:
+    """替换 service 中已声明的 external:container 端口映射。
+
+    仅在服务已声明该容器端口时替换宿主端口（返回 True）；
+    服务未声明该端口时返回 False，避免给配套服务（如 db）误加端口映射。
+    """
     target = str(container)
     port_str = f"{external}:{container}"
     ports = svc.get("ports")
@@ -366,7 +428,7 @@ def _apply_port(svc: dict, external: int, container: int):
                 mapped = str(item.get("target") or item.get("container_port") or "")
                 if mapped == target:
                     item["published"] = external
-                    return
+                    return True
             elif isinstance(item, str):
                 parts = item.split(":")
                 # 形如 "3001:3001" / "0.0.0.0:3001:3001" / ":3001"
@@ -376,10 +438,8 @@ def _apply_port(svc: dict, external: int, container: int):
                     else:
                         parts[-2] = str(external)
                         ports[i] = ":".join(parts)
-                    return
-        ports.append(port_str)
-    else:
-        svc["ports"] = [port_str]
+                    return True
+    return False
 
 
 def _apply_compose_options(compose_text: str, req: InstallRequest, app: dict) -> str:
@@ -433,7 +493,14 @@ def _apply_compose_options(compose_text: str, req: InstallRequest, app: dict) ->
                 deploy["resources"] = resources
             resources["limits"] = limits
         # 端口映射（用户指定外部端口且应用声明了容器端口时）
-        if req.port and primary_container_port:
+        if req.ports and isinstance(req.ports, list):
+            # 多端口映射：遍历用户填写的每个 {container, external} 对
+            for pm in req.ports:
+                c_port = int(pm.get("container") or 0)
+                e_port = int(pm.get("external") or 0)
+                if c_port > 0 and e_port > 0:
+                    _apply_port(svc, e_port, c_port)
+        elif req.port and primary_container_port:
             _apply_port(svc, req.port, int(primary_container_port))
 
     return yaml.safe_dump(data, sort_keys=False, allow_unicode=True, default_flow_style=False)
@@ -546,12 +613,18 @@ def _install_prepare(req: InstallRequest):
     logger.info("compose 已写入: %s", compose_path)
 
     warnings = []
-    # 5. 可选：放行防火墙端口
-    if req.expose_port and req.port:
-        try:
-            _open_firewall_port(req.port, req.app_name)
-        except Exception as e:
-            warnings.append(f"防火墙端口放行失败: {e}")
+    # 5. 可选：放行防火墙端口（支持多端口）
+    if req.expose_port and (req.ports or req.port):
+        opened = []
+        if req.ports and isinstance(req.ports, list):
+            opened = [int(pm["external"]) for pm in req.ports if isinstance(pm, dict) and pm.get("external")]
+        elif req.port:
+            opened = [req.port]
+        for p in opened:
+            try:
+                _open_firewall_port(p, req.app_name)
+            except Exception as e:
+                warnings.append(f"防火墙端口 {p} 放行失败: {e}")
 
     # 6. 引擎与命令路径
     prefix = _compose_runner()

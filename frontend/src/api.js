@@ -89,7 +89,31 @@ export const dockerApi = {
   containers: () => dockerHttp.get('/docker/containers').then(r => r.data),
   images: () => dockerHttp.get('/docker/images').then(r => r.data),
   action: (id, action) => dockerHttp.post(`/docker/containers/${id}/action`, { action }).then(r => r.data),
-  logs: (id, tail = 200) => dockerHttp.get(`/docker/containers/${id}/logs`, { params: { tail } }).then(r => r.data)
+  logs: (id, tail = 200) => dockerHttp.get(`/docker/containers/${id}/logs`, { params: { tail } }).then(r => r.data),
+  // 标星
+  toggleStar: (id) => dockerHttp.post(`/docker/containers/${id}/star`).then(r => r.data),
+  // 备注笔记
+  saveNotes: (id, note) => dockerHttp.post(`/docker/containers/${id}/notes`, { note }).then(r => r.data),
+  // 详细信息
+  inspect: (id) => dockerHttp.get(`/docker/containers/${id}/inspect`).then(r => r.data),
+  // 备份
+  backup: (id) => dockerHttp.post(`/docker/containers/${id}/backup`).then(r => r.data),
+  // 升级
+  upgrade: (id) => dockerHttp.post(`/docker/containers/${id}/upgrade`).then(r => r.data),
+  // 制作镜像
+  commit: (id, repo = '', tag = 'latest') => dockerHttp.post(`/docker/containers/${id}/commit`, { repo, tag }).then(r => r.data),
+  // 引擎配置（镜像加速 / 私有仓库 / iptables / 配置文件）
+  config: () => dockerHttp.get('/docker/config').then(r => r.data),
+  saveConfig: (body) => dockerHttp.put('/docker/config', body).then(r => r.data),
+  saveConfigRaw: (content) => dockerHttp.put('/docker/config/raw', { content }).then(r => r.data),
+  // 编排（compose 项目）
+  composeProjects: () => dockerHttp.get('/docker/compose/projects').then(r => r.data),
+  composeAction: (name, action) => dockerHttp.post(`/docker/compose/${encodeURIComponent(name)}/action`, { action }).then(r => r.data),
+  // 镜像删除
+  removeImage: (id) => dockerHttp.post(`/docker/images/${id}/remove`).then(r => r.data),
+  // 网络
+  networks: () => dockerHttp.get('/docker/networks').then(r => r.data),
+  removeNetwork: (name) => dockerHttp.post(`/docker/networks/${encodeURIComponent(name)}/remove`).then(r => r.data)
 }
 
 export const processApi = {

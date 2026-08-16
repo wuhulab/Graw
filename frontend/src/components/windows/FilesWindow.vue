@@ -88,6 +88,7 @@ const uploadingFiles = ref([])
 const uploadIdx = ref(0)
 
 const emit = defineEmits(['openTerminal', 'openEditor', 'openMedia'])
+const props = defineProps({ path: String })
 
 async function load(p) {
   try {
@@ -322,7 +323,7 @@ async function onDrop(e) {
 }
 
 onMounted(async () => {
-  await load('')
+  await load(props.path || '')
 })
 </script>
 

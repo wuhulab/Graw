@@ -41,7 +41,7 @@
       @move="(x, y) => moveWindow(w.id, x, y)"
       @resize="(width, height) => resizeWindow(w.id, width, height)"
     >
-      <component :is="w.component" v-bind="w.props || {}" @close="handleCloseWindow(w.id)" @dirty="(v) => { const ww=openWindows.value.find(x=>x.id===w.id); if(ww) ww.dirty=v }" @openTerminal="openTerminalAt" @openEditor="openEditor" @openMedia="openMedia" @openUsers="openUsers" @openLogs="openContainerLogs" @openAppInstall="openAppStoreInstall" @openComposeEditor="openAppStoreComposeEditor" @openInstallLog="openAppStoreInstallLog" @openReadme="openAppStoreReadme" @openTaskCenter="openTasks" />
+      <component :is="w.component" v-bind="w.props || {}" @close="handleCloseWindow(w.id)" @dirty="(v) => { const ww=openWindows.value.find(x=>x.id===w.id); if(ww) ww.dirty=v }" @openTerminal="openTerminalAt" @openEditor="openEditor" @openMedia="openMedia" @openUsers="openUsers" @openLogs="openContainerLogs" @openContainerTerminal="openContainerTerminal" @openContainerDetails="openContainerDetails" @openFiles="openFiles" @openDockerConfigEditor="openDockerConfigEditor" @openAppInstall="openAppStoreInstall" @openComposeEditor="openAppStoreComposeEditor" @openInstallLog="openAppStoreInstallLog" @openReadme="openAppStoreReadme" @openTaskCenter="openTasks" />
     </WindowFrame>
 
     <!-- Dock -->
@@ -105,6 +105,8 @@ import LogsWindow from './components/windows/LogsWindow.vue'
 import SettingsWindow from './components/windows/SettingsWindow.vue'
 import ProtectionWindow from './components/windows/ProtectionWindow.vue'
 import ContainerLogsWindow from './components/windows/ContainerLogsWindow.vue'
+import ContainerDetailWindow from './components/windows/ContainerDetailWindow.vue'
+import DockerConfigEditorWindow from './components/windows/DockerConfigEditorWindow.vue'
 import AppStoreWindow from './components/windows/AppStoreWindow.vue'
 import AppStoreInstallWindow from './components/windows/AppStoreInstallWindow.vue'
 import AppStoreComposeEditorWindow from './components/windows/AppStoreComposeEditorWindow.vue'
@@ -302,6 +304,98 @@ function openContainerLogs({ id, name }) {
     x: 140 + (openWindows.value.length * 30),
     y: 60 + (openWindows.value.length * 25),
     width: 760,
+    height: 520,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id2
+}
+
+// Docker：打开容器内终端（进入容器 shell）
+function openContainerTerminal({ id, name }) {
+  const id2 = ++windowSeq
+  const w = reactive({
+    id: id2,
+    key: 'terminal',
+    title: '容器终端: ' + name,
+    icon: markRaw(Terminal),
+    component: markRaw(TerminalWindow),
+    props: { container: id },
+    x: 140 + (openWindows.value.length * 30),
+    y: 60 + (openWindows.value.length * 25),
+    width: 780,
+    height: 460,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id2
+}
+
+// Docker：打开容器详细信息窗口
+function openContainerDetails({ id, name }) {
+  const id2 = ++windowSeq
+  const w = reactive({
+    id: id2,
+    key: 'container-details',
+    title: '容器详情: ' + name,
+    icon: markRaw(Container),
+    component: markRaw(ContainerDetailWindow),
+    props: { id, name },
+    x: 150 + (openWindows.value.length * 30),
+    y: 70 + (openWindows.value.length * 25),
+    width: 640,
+    height: 520,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id2
+}
+
+// 打开文件管理窗口（Docker「进入安装目录」等场景，指定初始路径）
+function openFiles({ path }) {
+  const id2 = ++windowSeq
+  const w = reactive({
+    id: id2,
+    key: 'files',
+    title: '文件管理',
+    icon: markRaw(Folder),
+    component: markRaw(FilesWindow),
+    props: { path },
+    x: 140 + (openWindows.value.length * 30),
+    y: 60 + (openWindows.value.length * 25),
+    width: 820,
+    height: 540,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id2
+}
+
+// Docker：打开 Docker/Podman 引擎配置文件编辑器
+function openDockerConfigEditor() {
+  const id2 = ++windowSeq
+  const w = reactive({
+    id: id2,
+    key: 'docker-config-editor',
+    title: 'Docker 配置文件',
+    icon: markRaw(FileText),
+    component: markRaw(DockerConfigEditorWindow),
+    props: {},
+    x: 150 + (openWindows.value.length * 30),
+    y: 70 + (openWindows.value.length * 25),
+    width: 720,
     height: 520,
     z: ++zSeq,
     minimized: false,

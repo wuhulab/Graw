@@ -7,6 +7,7 @@ import subprocess
 
 from app.auth import get_current_user_ws_admin
 from app.hostfs import get_host_root
+from app.routers.docker_api import get_backend, _find_podman
 
 router = APIRouter()
 
@@ -20,6 +21,93 @@ if IS_WINDOWS:
         _CONPTY_AVAILABLE = False
 else:
     _CONPTY_AVAILABLE = False
+
+
+def _container_exec_command(container_id: str) -> str:
+    """构造进入容器内执行命令的命令串（供 ConPTY 使用）。
+
+    优先使用 podman/docker 的 exec -it 进入容器 shell；
+    容器未运行或引擎不可用时抛出 RuntimeError。
+    """
+    try:
+        kind, _client = get_backend()
+    except Exception as e:
+        raise RuntimeError(f"容器引擎不可用: {e}")
+    if kind == "cli":
+        cli = _find_podman()
+        if not cli:
+            raise RuntimeError("未检测到可用的容器引擎")
+        # 校验容器存在（running 才可 exec）
+        rc, out, _err = _run_subprocess(cli + ["inspect", container_id])
+        if rc != 0:
+            raise RuntimeError("容器不存在或无法访问")
+        import json as _json
+        try:
+            data = _json.loads(out)
+            if isinstance(data, list) and data and data[0].get("State", {}).get("Running"):
+                pass
+            else:
+                raise RuntimeError("容器未运行，无法打开终端")
+        except RuntimeError:
+            raise
+        except Exception:
+            raise RuntimeError("容器未运行，无法打开终端")
+        if IS_WINDOWS:
+            # Windows 上容器引擎跑在 WSL 中，需要经过 wsl -u root
+            return "wsl -u root -- podman exec -it " + container_id + " /bin/sh"
+        return "podman exec -it " + container_id + " /bin/sh"
+    # Docker SDK 模式：使用 docker CLI 执行（容器通过 SDK 访问时一般也有 CLI）
+    return "docker exec -it " + container_id + " /bin/sh"
+
+
+def _run_subprocess(args, timeout=30):
+    """运行子进程并返回 (returncode, stdout, stderr)，避免与事件循环冲突。"""
+    import subprocess as _sp
+    try:
+        p = _sp.run(args, capture_output=True, timeout=timeout)
+    except Exception:
+        return -1, "", ""
+    return p.returncode, p.stdout.decode("utf-8", "replace"), p.stderr.decode("utf-8", "replace")
+
+
+@router.websocket("/ws/container")
+async def container_terminal_ws(
+    websocket: WebSocket,
+    container: str,
+    user=Depends(get_current_user_ws_admin),
+):
+    """进入指定容器的交互终端（exec -it /bin/sh）。
+
+    container 参数为容器 ID 或名称；仅运行中的容器可打开终端。
+    """
+    if user is None:
+        return
+    await websocket.accept()
+    try:
+        command = _container_exec_command(container)
+    except RuntimeError as e:
+        try:
+            await websocket.send_text(f"\r\n[container terminal] {e}\r\n")
+            await websocket.close()
+        except Exception:
+            pass
+        return
+    try:
+        if IS_WINDOWS:
+            await _windows_conpty_terminal(websocket, command)
+        else:
+            await _unix_terminal(websocket)
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        try:
+            await websocket.send_text(f"\r\n[container terminal] {e}\r\n")
+        except Exception:
+            pass
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 
 @router.websocket("/ws")

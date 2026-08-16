@@ -1,7 +1,7 @@
 <template>
   <div style="display:flex; flex-direction:column; height:100%; background:#1e1e1e;">
     <div class="toolbar">
-      <span style="color:#0a3d7a;">终端 · {{ statusText }}</span>
+      <span style="color:#0a3d7a;">终端{{ container ? ' · 容器内 ' + container : '' }} · {{ statusText }}</span>
       <button class="btn" style="margin-left:auto;" @click="reconnect">重新连接</button>
       <button class="btn" @click="clear">清屏</button>
     </div>
@@ -16,7 +16,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { auth } from '../../store/auth'
 
-const props = defineProps({ cwd: String })
+const props = defineProps({ cwd: String, container: String })
 
 const termEl = ref(null)
 const statusText = ref('未连接')
@@ -37,7 +37,12 @@ function connect() {
   // 浏览器 WebSocket 无法设置请求头，token 通过查询参数传递
   const tokenParam = auth.token ? `?token=${encodeURIComponent(auth.token)}` : ''
   try {
-    ws = new WebSocket(`${proto}://${location.host}/api/terminal/ws${tokenParam}`)
+    if (props.container) {
+      // 容器内终端：使用 /ws/container 端点，传入容器 ID
+      ws = new WebSocket(`${proto}://${location.host}/api/terminal/ws/container?container=${encodeURIComponent(props.container)}${tokenParam ? '&' + tokenParam.slice(1) : ''}`)
+    } else {
+      ws = new WebSocket(`${proto}://${location.host}/api/terminal/ws${tokenParam}`)
+    }
   } catch (e) {
     scheduleReconnect()
     return
