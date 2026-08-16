@@ -4,7 +4,9 @@
     <div class="toolbar">
       <span class="title"><Terminal :size="15" /> 安装日志：{{ app?.name || '' }}</span>
       <span class="badge" :class="phaseClass">{{ phaseText }}</span>
+      <span v-if="taskId" class="task-hint" title="任务已挂载到任务中心，刷新页面不会中断"><ListChecks :size="12" /> 已挂载任务</span>
       <button class="btn" style="margin-left:auto;" @click="copyAll">{{ copied ? '已复制 ✓' : '复制日志' }}</button>
+      <button class="btn" @click="emit('openTaskCenter')"><ListChecks :size="13" /> 任务中心</button>
       <button class="btn" @click="emit('close')">关闭</button>
     </div>
 
@@ -43,13 +45,13 @@
 <script setup>
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { appStoreApi } from '../../api'
-import { Terminal, AlertTriangle } from 'lucide-vue-next'
+import { Terminal, AlertTriangle, ListChecks } from 'lucide-vue-next'
 
 const props = defineProps({
   app: Object,
   request: Object
 })
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'openTaskCenter'])
 
 const phase = ref('running') // running | done | error
 const lines = ref([])
@@ -57,6 +59,7 @@ const result = ref(null)
 const errorMsg = ref('')
 const logBox = ref(null)
 const copied = ref(false)
+const taskId = ref('')
 
 let controller = null
 let copiedTimer = null
@@ -84,7 +87,9 @@ function scrollBottom() {
 }
 
 function onEvent(evt) {
-  if (evt.type === 'status') {
+  if (evt.type === 'task_id') {
+    taskId.value = evt.task_id
+  } else if (evt.type === 'status') {
     push('status', evt.message)
   } else if (evt.type === 'log') {
     push('log', evt.line)
@@ -121,6 +126,7 @@ onUnmounted(() => {
 .badge.warn { background: #fffbeb; color: #b45309; }
 .badge.err { background: #fef2f2; color: #b91c1c; }
 .badge.ok { background: #ecfdf5; color: #047857; }
+.task-hint { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: #047857; background: #ecfdf5; border: 1px solid #bbf7d0; border-radius: 999px; padding: 1px 8px; }
 
 .body { flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; overflow-y: auto; }
 

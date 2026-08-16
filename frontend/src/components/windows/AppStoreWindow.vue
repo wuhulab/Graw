@@ -44,7 +44,7 @@
           <div class="card-actions">
             <a v-if="app.homepage" class="icon-link" :href="app.homepage" target="_blank" rel="noopener" title="官方网站"><Globe :size="14" /></a>
             <a v-if="app.source" class="icon-link" :href="app.source" target="_blank" rel="noopener" title="开源社区"><Github :size="14" /></a>
-            <button v-if="app.source" class="readme-btn" title="查看 GitHub README" @click="emit('openReadme', app)">README</button>
+            <button v-if="app.source" class="readme-btn" title="查看 GitHub README" @click="emit('openReadme', app)"><BookOpen :size="14" /></button>
           </div>
         </div>
 
@@ -84,7 +84,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { appStoreApi } from '../../api'
-import { Store, Settings2, Globe, Github, Container, AlertTriangle, Loader2 } from 'lucide-vue-next'
+import { Store, Settings2, Globe, Github, Container, AlertTriangle, Loader2, BookOpen } from 'lucide-vue-next'
 
 const emit = defineEmits(['openAppInstall', 'openReadme', 'close'])
 
@@ -174,8 +174,8 @@ onMounted(async () => {
 .card-actions { display: flex; align-items: center; gap: 2px; }
 .icon-link { color: #6b7280; padding: 4px; border-radius: 6px; display: inline-flex; }
 .icon-link:hover { background: #f3f4f6; color: #2563eb; }
-.readme-btn { font-size: 10.5px; color: #6b7280; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 2px 7px; cursor: pointer; font-family: inherit; }
-.readme-btn:hover { background: #eef2ff; color: #4338ca; border-color: #c7d2fe; }
+.readme-btn { display: inline-flex; align-items: center; color: #6b7280; background: transparent; border: none; padding: 4px; border-radius: 6px; cursor: pointer; }
+.readme-btn:hover { background: #f3f4f6; color: #2563eb; }
 
 .app-desc { font-size: 12px; color: #374151; line-height: 1.6; margin: 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; min-height: 58px; }
 

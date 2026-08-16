@@ -192,6 +192,14 @@ export const shunxApi = {
   update: (entry_path, enabled = true) => api.put('/shunx/config', { entry_path, enabled }).then(r => r.data)
 }
 
+export const tasksApi = {
+  // 任务中心：长线任务（应用商店安装等）
+  list: () => api.get('/tasks').then(r => r.data),
+  get: (id) => api.get(`/tasks/${encodeURIComponent(id)}`).then(r => r.data),
+  log: (id) => api.get(`/tasks/${encodeURIComponent(id)}/log`).then(r => r.data),
+  remove: (id) => api.delete(`/tasks/${encodeURIComponent(id)}`).then(r => r.data)
+}
+
 export const appStoreApi = {
   // 索引地址配置
   config: () => api.get('/appstore/config').then(r => r.data),

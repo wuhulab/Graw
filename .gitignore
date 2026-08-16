@@ -30,3 +30,5 @@ data/
 
 app-store/
 .playwright-cli/
+.pw-profile/
+.pw-test/

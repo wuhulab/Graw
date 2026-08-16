@@ -22,6 +22,7 @@ from app.routers import (
     protection,
     shunx,
     appstore,
+    tasks,
 )
 from app.auth import (
     seed_default_users,
@@ -126,6 +127,11 @@ app.include_router(shunx.router, prefix="/api/shunx", tags=["shunx"])
 # Graw 社区应用商店（安装会执行 docker compose，需管理员）
 app.include_router(
     appstore.router, prefix="/api/appstore", tags=["appstore"], dependencies=ADMIN
+)
+
+# 任务中心（长线任务：应用商店安装等，需管理员）
+app.include_router(
+    tasks.router, prefix="/api/tasks", tags=["tasks"], dependencies=ADMIN
 )
 
 # Serve frontend static files if built

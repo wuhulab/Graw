@@ -42,6 +42,7 @@ except ImportError:  # pragma: no cover
 
 from app.routers.docker_api import get_backend, _find_podman
 from app.routers import firewall
+from app.routers import tasks
 
 logger = logging.getLogger("appstore")
 router = APIRouter()
@@ -635,16 +636,107 @@ def _run_compose_stream(prefix: list, compose_path: str, args: list, emit, timeo
     return rc, "\n".join(lines)
 
 
-def _install_stream_worker(req: InstallRequest, emit):
-    """流式安装工作线程；emit 接收事件 dict（status/log/result/error）。"""
+def _now_str():
+    return time.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _verify_compose_containers(prefix: list, app_name: str, container_name: str):
+    """安装成功后验证 compose 项目容器是否真实创建并运行。
+
+    podman/docker 的 compose 命名一般为 <project>_<service>_<n>（project=app_name），
+    或用户指定的 container_name。仅当「至少一个匹配容器且处于运行态」才视为成功，
+    否则视为失败（例如镜像拉取失败导致容器从未创建，podman-compose 却可能返回 0）。
+
+    返回 (ok, detail)。
+    """
+    try:
+        p = subprocess.run(
+            prefix + ["ps", "-a", "--format", "json"],
+            capture_output=True,
+            timeout=60,
+        )
+    except Exception as e:
+        return True, f"无法验证容器状态（跳过）: {e}"
+    if p.returncode != 0:
+        return True, "无法查询容器列表（跳过验证）"
+    out = p.stdout.decode("utf-8", "replace").strip()
+    if not out:
+        return False, "compose up 返回成功，但未发现任何容器"
+
+    containers = []
+    try:
+        data = json.loads(out)
+        containers = data if isinstance(data, list) else [data]
+    except Exception:
+        # 非标准 JSON（多行 JSON）时逐行解析
+        for line in out.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                containers.append(json.loads(line))
+            except Exception:
+                pass
+
+    targets = {container_name} if container_name else set()
+    prefixes = (app_name + "_",)
+    matched = []
+    for c in containers:
+        # podman 的 Names 可能是字符串或数组，统一转成列表
+        raw_name = c.get("Names") or c.get("name") or ""
+        names = raw_name if isinstance(raw_name, list) else [raw_name]
+        for name in names:
+            if not name:
+                continue
+            if name in targets or any(name.startswith(p) for p in prefixes):
+                matched.append(c)
+                break
+
+    if not matched:
+        return False, "compose up 返回成功，但未找到对应容器（镜像可能拉取失败）"
+    running = [
+        c for c in matched
+        if str(c.get("State", "")).lower() == "running"
+        or str(c.get("Status", "")).lower().startswith("up")
+    ]
+    if not running:
+        return False, f"容器已创建但未运行（共 {len(matched)} 个，状态异常）"
+    return True, f"{len(running)} 个容器运行中"
+
+
+def _install_stream_worker(req: InstallRequest, emit, task_id: str = None):
+    """流式安装工作线程；emit 接收事件 dict（status/log/result/error）。
+    如果传入 task_id，则同时将日志持久化到任务中心。
+    """
+    # 如果任务中心模式，先创建任务记录
+    if task_id:
+        tasks.create_task({
+            "id": task_id,
+            "type": "appstore-install",
+            "status": "running",
+            "app_id": req.app_id,
+            "app_name": req.app_name,
+            "version": req.version,
+            "title": f"安装「{req.app_name}」",
+        })
+        # 注册一个带持久化的 emit 包装
+        _orig_emit = emit
+        def emit(evt):
+            tasks.append_log(task_id, evt)
+            _orig_emit(evt)
+
     try:
         container_name, project_dir, compose_path, engine_path, warnings, prefix = _install_prepare(req)
     except HTTPException as e:
         emit({"type": "error", "message": e.detail})
+        if task_id:
+            tasks.update_task(task_id, status="error", error=e.detail, finished_at=_now_str())
         return
     except Exception as e:
         logger.exception("安装准备失败")
         emit({"type": "error", "message": f"安装准备失败: {e}"})
+        if task_id:
+            tasks.update_task(task_id, status="error", error=str(e), finished_at=_now_str())
         return
 
     emit({"type": "status", "message": "已生成 docker-compose.yml，开始拉取 / 启动容器..."})
@@ -657,6 +749,8 @@ def _install_stream_worker(req: InstallRequest, emit):
                 warnings.append(f"镜像拉取可能失败（继续尝试启动）:\n{pull_output[-2000:]}")
         except HTTPException as e:
             emit({"type": "error", "message": e.detail})
+            if task_id:
+                tasks.update_task(task_id, status="error", error=e.detail, finished_at=_now_str())
             return
         emit({"type": "status", "message": "镜像拉取完成，正在启动容器..."})
     else:
@@ -666,40 +760,62 @@ def _install_stream_worker(req: InstallRequest, emit):
         rc, up_output = _run_compose_stream(prefix, engine_path, ["up", "-d", "--remove-orphans"], emit)
     except HTTPException as e:
         emit({"type": "error", "message": e.detail})
+        if task_id:
+            tasks.update_task(task_id, status="error", error=e.detail, finished_at=_now_str())
         return
 
     if rc != 0:
-        emit({"type": "error", "message": f"docker compose up 失败\n\n{up_output[-4000:]}\n\n项目目录: {compose_path}"})
+        msg = f"docker compose up 失败\n\n{up_output[-4000:]}\n\n项目目录: {compose_path}"
+        emit({"type": "error", "message": msg})
+        if task_id:
+            tasks.update_task(task_id, status="error", error=msg, finished_at=_now_str())
         return
 
+    # 关键修复：podman-compose 在镜像拉取失败时可能误报成功（rc=0 但容器未创建）。
+    # up 返回成功后必须实际验证 compose 项目容器确实存在并运行，否则标记失败。
+    verify_ok, verify_detail = _verify_compose_containers(prefix, req.app_name, container_name)
+    if not verify_ok:
+        msg = f"安装未成功：{verify_detail}\n\n{up_output[-4000:]}\n\n项目目录: {compose_path}"
+        logger.warning("安装验证失败 %s: %s", req.app_name, verify_detail)
+        emit({"type": "error", "message": msg})
+        if task_id:
+            tasks.update_task(task_id, status="error", error=msg, finished_at=_now_str())
+        return
+    emit({"type": "status", "message": f"容器验证通过（{verify_detail}）"})
+
+    result_data = {
+        "ok": True,
+        "app_id": req.app_id,
+        "app_name": req.app_name,
+        "container_name": container_name,
+        "version": req.version,
+        "project_dir": project_dir,
+        "compose_file": compose_path,
+        "port": req.port,
+        "expose_port": req.expose_port,
+        "restart": req.restart,
+        "output": (up_output or "(无输出)")[-4000:],
+        "warnings": warnings,
+    }
     logger.info("应用安装成功: %s (%s)", req.app_name, req.app_id)
-    emit({
-        "type": "result",
-        "data": {
-            "ok": True,
-            "app_id": req.app_id,
-            "app_name": req.app_name,
-            "container_name": container_name,
-            "version": req.version,
-            "project_dir": project_dir,
-            "compose_file": compose_path,
-            "port": req.port,
-            "expose_port": req.expose_port,
-            "restart": req.restart,
-            "output": (up_output or "(无输出)")[-4000:],
-            "warnings": warnings,
-        },
-    })
+    emit({"type": "result", "data": result_data})
+    if task_id:
+        tasks.update_task(task_id, status="completed", result=result_data, finished_at=_now_str())
 
 
 @router.post("/install/stream")
 async def install_stream(req: InstallRequest, request: Request):
-    """SSE 流式安装：逐步推送状态与 docker compose 输出日志。"""
+    """SSE 流式安装：逐步推送状态与 docker compose 输出日志。
+
+    每次安装会在「任务中心」创建一条持久化任务记录，日志写入任务
+    日志文件；即使客户端刷新 / 断开，安装也会在后台继续执行。
+    """
+    task_id = uuid.uuid4().hex[:8]
     queue: asyncio.Queue = asyncio.Queue()
 
     def worker():
         try:
-            _install_stream_worker(req, queue.put_nowait)
+            _install_stream_worker(req, queue.put_nowait, task_id)
         except Exception as e:
             logger.exception("流式安装异常")
             queue.put_nowait({"type": "error", "message": f"安装异常: {e}"})
@@ -709,6 +825,8 @@ async def install_stream(req: InstallRequest, request: Request):
     asyncio.get_event_loop().run_in_executor(None, worker)
 
     async def gen():
+        # 先发送 task_id，让前端建立任务关联
+        yield f"data: {json.dumps({'type': 'task_id', 'task_id': task_id}, ensure_ascii=False)}\n\n"
         while True:
             try:
                 evt = await asyncio.wait_for(queue.get(), timeout=0.5)
