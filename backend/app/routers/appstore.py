@@ -164,61 +164,58 @@ def _load_local_index() -> Optional[dict]:
 def _load_index(refresh: bool = False):
     """返回 (source, data, updated_at, error)。
 
-    开发模式（app-store 目录存在）优先使用本地索引。
-    远程索引默认源 DEFAULT_INDEX_URL，最多每天拉取一次（refresh 也受此限制）。
+    开发模式（app-store 目录存在）优先使用本地索引，不拉远程；
+    非开发模式拉取远程索引（配置地址或默认源），远程最多每天拉取一次（refresh 也受此限制）。
     """
     now = time.time()
 
-    # 检查是否开发模式：本地 app-store 目录存在
+    # 是否开发模式：本地 app-store 目录存在
     use_local = os.path.isdir(APP_STORE_DIR)
 
+    # 缓存命中：本地源 60s / 远程源 24h；手动刷新仅对本地源生效
     if not refresh:
         cache_ttl = LOCAL_INDEX_TTL if use_local else REMOTE_INDEX_TTL
         if _index_cache["at"] and (now - _index_cache["at"]) < cache_ttl:
             return _index_cache["source"], _index_cache["data"], _index_cache["at"], _index_cache["error"]
 
-    # 远程索引配置
-    cfg = _load_config()
-    url = cfg.get("index_url", "").strip()
-    if not url:
-        url = DEFAULT_INDEX_URL
-
-    source = "local"
-    data = None
     error = ""
 
-    if url:
-        # 远程索引 TTL：每天最多一次 + 手动刷新也受限制
-        if refresh and _index_cache["at"] and (now - _index_cache["at"]) < REMOTE_INDEX_TTL:
-            source = "remote_cached"
-            error = "已达每日拉取上限（一天最多刷新一次），请明天再试"
-            data = _index_cache["data"]
-        else:
-            try:
-                raw = _fetch_url(url)
-                parsed = json.loads(raw)
-                if isinstance(parsed, dict) and "apps" in parsed:
-                    data = parsed
-                    source = "remote"
-                else:
-                    error = "索引格式不正确（缺少 apps 字段）"
-                    logger.warning("远程索引格式不正确: %s", url)
-            except Exception as e:
-                error = f"远程索引拉取失败: {e}"
-                logger.warning("拉取远程索引失败 %s: %s", url, e)
-
-    # 远程失败或开发模式时回退本地索引
-    if data is None and use_local:
+    # 开发版优先本地商店：直接读本地 index.json，不拉远程
+    if use_local:
         data = _load_local_index()
         if data is not None:
-            source = "local"
-        else:
-            raise HTTPException(status_code=502, detail=error or "未配置索引地址，且本地无 app-store/index.json")
-    elif data is None and not use_local:
-        raise HTTPException(status_code=502, detail=error or "未配置索引地址")
+            _index_cache.update({"at": now, "source": "local", "data": data, "error": ""})
+            return "local", data, now, ""
+        error = "本地 app-store/index.json 缺失"
 
-    _index_cache.update({"at": now, "source": source, "data": data, "error": error})
-    return source, data, now, error
+    # 非开发版 或 本地缺失：拉取远程索引
+    cfg = _load_config()
+    url = cfg.get("index_url", "").strip() or DEFAULT_INDEX_URL
+
+    # 远程索引每天最多拉取一次：即使手动刷新，24h 内也直接返回缓存
+    if _index_cache["at"] and (now - _index_cache["at"]) < REMOTE_INDEX_TTL and _index_cache["data"] is not None:
+        src = "remote_cached" if refresh else _index_cache["source"]
+        err = "已达每日拉取上限（一天最多刷新一次），请明天再试" if refresh else _index_cache["error"]
+        return src, _index_cache["data"], _index_cache["at"], err
+
+    data = None
+    try:
+        raw = _fetch_url(url)
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict) and "apps" in parsed:
+            data = parsed
+        else:
+            error = "索引格式不正确（缺少 apps 字段）"
+            logger.warning("远程索引格式不正确: %s", url)
+    except Exception as e:
+        error = f"远程索引拉取失败: {e}"
+        logger.warning("拉取远程索引失败 %s: %s", url, e)
+
+    if data is None:
+        raise HTTPException(status_code=502, detail=error or "远程索引拉取失败")
+
+    _index_cache.update({"at": now, "source": "remote", "data": data, "error": ""})
+    return "remote", data, now, ""
 
 
 @router.get("/index")
