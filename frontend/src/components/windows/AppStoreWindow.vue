@@ -52,7 +52,10 @@
           <img class="app-icon" :src="app.icon" alt="" loading="lazy"
                @error="e => e.target.style.visibility = 'hidden'" />
           <div class="card-titles">
-            <div class="app-name">{{ app.name }}</div>
+            <div class="app-name">
+              <span class="name-text">{{ app.name }}</span>
+              <span v-for="t in (app.tags || [])" :key="t" class="app-tag" :class="tagClass(t)">{{ t }}</span>
+            </div>
             <div class="app-id mono">{{ app.id }}</div>
           </div>
           <div class="card-actions">
@@ -134,6 +137,13 @@ const emit = defineEmits(['openAppInstall', 'openReadme', 'close'])
 // 恶意索引注入 javascript: 链接即可在点击时执行任意脚本窃取 token
 function safeUrl(u) {
   return /^https?:\/\//i.test(u || '') ? u : ''
+}
+
+// 应用标签徽标样式映射：推荐=金色，官方=蓝色（其余标签不显示特殊样式）
+function tagClass(t) {
+  if (t === '推荐') return 'recommend'
+  if (t === '官方') return 'blue'
+  return ''
 }
 
 const apps = ref([])
@@ -363,7 +373,11 @@ onMounted(async () => {
 .card-head { display: flex; align-items: center; gap: 10px; }
 .app-icon { width: 42px; height: 42px; border-radius: 8px; object-fit: cover; background: #f3f4f6; }
 .card-titles { min-width: 0; flex: 1; }
-.app-name { font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app-name { font-weight: 700; font-size: 13.5px; display: flex; align-items: center; gap: 4px; min-width: 0; }
+.app-name .name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-tag { flex-shrink: 0; font-size: 10px; font-weight: 600; padding: 0 6px; border-radius: 999px; }
+.app-tag.recommend { background: #fff7e6; color: #d46b08; border: 1px solid #ffd591; }
+.app-tag.blue { background: #e6f4ff; color: #0958d9; border: 1px solid #91caff; }
 .app-id { font-size: 11px; color: #9ca3af; }
 .card-actions { display: flex; align-items: center; gap: 2px; }
 .icon-link { color: #6b7280; padding: 4px; border-radius: 6px; display: inline-flex; }
