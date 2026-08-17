@@ -154,6 +154,7 @@ export const databasesApi = {
   status: () => api.get('/databases/status').then(r => r.data),
   connections: () => api.get('/databases/connections').then(r => r.data),
   createConn: (body) => api.post('/databases/connections', body).then(r => r.data),
+  updateConn: (id, body) => api.put(`/databases/connections/${id}`, body).then(r => r.data),
   deleteConn: (id) => api.delete(`/databases/connections/${id}`).then(r => r.data),
   test: (id) => api.post(`/databases/connections/${id}/test`).then(r => r.data),
   listDBs: (id) => api.get(`/databases/connections/${id}/databases`).then(r => r.data),
@@ -222,6 +223,22 @@ export const tasksApi = {
   get: (id) => api.get(`/tasks/${encodeURIComponent(id)}`).then(r => r.data),
   log: (id) => api.get(`/tasks/${encodeURIComponent(id)}/log`).then(r => r.data),
   remove: (id) => api.delete(`/tasks/${encodeURIComponent(id)}`).then(r => r.data)
+}
+
+export const runtimeApi = {
+  // 运行环境：模板 / 列表 / 创建 / 删除 / 容器动作
+  templates: () => api.get('/runtime/templates').then(r => r.data),
+  list: () => api.get('/runtime/list').then(r => r.data),
+  create: (body) => api.post('/runtime/create', body).then(r => r.data),
+  delete: (id) => api.post(`/runtime/${encodeURIComponent(id)}/delete`).then(r => r.data),
+  action: (id, action) => api.post(`/runtime/${encodeURIComponent(id)}/action`, { action }).then(r => r.data)
+}
+
+export const disksApi = {
+  // 磁盘管理：查看块设备与分区信息
+  list: () => api.get('/disks/list').then(r => r.data),
+  // 挂载非系统盘分区
+  mount: (device, mountpoint) => api.post('/disks/mount', null, { params: { device: device.replace('/dev/', ''), mountpoint } }).then(r => r.data)
 }
 
 export const appStoreApi = {

@@ -195,17 +195,61 @@ def _rewrite_linux_cron(tasks: list):
         raise RuntimeError("crontab update failed")
 
 
+# 标准记录支持的任务类型 -> 由内容生成可执行命令的函数
+# 说明：shell_command 直接使用脚本内容，其余类型按各自语义拼装命令。
+_STANDARD_BUILDERS = {
+    "shell_command": lambda content: content,
+    "backup_container": lambda content: (
+        f"docker export {content} | gzip > 'backup_{content}_"
+        f"{datetime.now():%Y%m%d%H%M%S}.tar.gz'"
+    ),
+    "visit_url": lambda content: f"curl -sS -o /dev/null {content}",
+    "clean_logs": lambda content: (
+        f"find {content} -type f -name '*.log' -mtime +7 -delete"
+    ),
+    "sync_time": lambda content: (
+        "w32tm /resync" if IS_WIN else "ntpdate pool.ntp.org"
+    ),
+}
+
+# 可用的任务类型（用于后端校验，与前端下拉保持一致）
+TASK_TYPES = list(_STANDARD_BUILDERS.keys())
+
+
 class CreateTask(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
     schedule: str = Field(..., min_length=1)  # Cron format or compatible
-    command: str = Field(..., min_length=1)
+    # 常规记录：直接提供命令；标准记录可留空，由 task_type + content 生成
+    command: str = Field("", max_length=10000)
     enabled: Optional[bool] = True
+    # ---- 标准记录字段 ----
+    task_type: str = Field("shell_command", pattern=r"^[a-z_]+$")
+    content: str = Field("", max_length=10000)  # 脚本 / 容器名 / URL / 路径
+    group: str = Field("默认", max_length=64)
+    alert: bool = False  # 是否触发告警通知
 
 
 class UpdateTask(BaseModel):
     schedule: Optional[str] = None
     command: Optional[str] = None
     enabled: Optional[bool] = None
+    task_type: Optional[str] = None
+    content: Optional[str] = None
+    group: Optional[str] = None
+    alert: Optional[bool] = None
+
+
+def _resolve_command(task_type: str, content: str, fallback: str) -> str:
+    """根据任务类型解析实际执行命令。
+
+    标准记录（task_type + content）优先由类型构造器生成；
+    否则回退到常规记录直接传入的 command。
+    """
+    content = (content or "").strip()
+    if content or task_type != "shell_command":
+        builder = _STANDARD_BUILDERS.get(task_type, lambda c: c)
+        return builder(content) or fallback
+    return fallback
 
 
 @router.get("/list")
@@ -220,22 +264,33 @@ async def list_tasks():
 async def create_task(req: CreateTask):
     tasks = _load_tasks()
     tid = "task_" + str(uuid.uuid4())[:8]
+    # 校验任务类型合法性，避免非法枚举进入存储
+    task_type = req.task_type if req.task_type in TASK_TYPES else "shell_command"
+    # 解析最终执行命令：标准记录由类型构造，常规记录直接使用传入命令
+    command = _resolve_command(task_type, req.content, req.command)
+    if not command or not command.strip():
+        raise HTTPException(status_code=400, detail="命令内容不能为空")
     task = {
         "id": tid,
         "name": req.name,
         "schedule": req.schedule,
-        "command": req.command,
+        "command": command,
         "enabled": req.enabled if req.enabled is not None else True,
+        # ---- 标准记录字段 ----
+        "task_type": task_type,
+        "content": (req.content or "").strip(),
+        "group": (req.group or "默认").strip() or "默认",
+        "alert": bool(req.alert),
         "created_at": datetime.now().isoformat(),
     }
     if IS_WIN:
         try:
-            _create_windows_task(tid, req.name, req.command, req.schedule)
+            _create_windows_task(tid, req.name, command, req.schedule)
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     else:
         crons = _list_linux_cron()
-        crons.append({"schedule": req.schedule, "command": req.command})
+        crons.append({"schedule": req.schedule, "command": command})
         try:
             _rewrite_linux_cron(crons)
         except Exception as e:
@@ -257,6 +312,20 @@ async def update_task(task_id: str, req: UpdateTask):
         task["command"] = req.command
     if req.enabled is not None:
         task["enabled"] = req.enabled
+    # ---- 标准记录字段更新 ----
+    if req.task_type is not None:
+        task["task_type"] = req.task_type if req.task_type in TASK_TYPES else "shell_command"
+    if req.content is not None:
+        task["content"] = req.content
+    if req.group is not None:
+        task["group"] = (req.group or "默认").strip() or "默认"
+    if req.alert is not None:
+        task["alert"] = bool(req.alert)
+    # 若更新了类型或内容但未显式提供 command，则重新生成命令
+    if req.command is None and (req.task_type is not None or req.content is not None):
+        task["command"] = _resolve_command(
+            task.get("task_type", "shell_command"), task.get("content", ""), task.get("command", "")
+        )
     _save_tasks(tasks)
     return task
 

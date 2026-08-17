@@ -41,7 +41,7 @@
       @move="(x, y) => moveWindow(w.id, x, y)"
       @resize="(width, height) => resizeWindow(w.id, width, height)"
     >
-      <component :is="w.component" v-bind="w.props || {}" @close="handleCloseWindow(w.id)" @dirty="(v) => { const ww=openWindows.value.find(x=>x.id===w.id); if(ww) ww.dirty=v }" @openTerminal="openTerminalAt" @openEditor="openEditor" @openMedia="openMedia" @openUsers="openUsers" @openLogs="openContainerLogs" @openContainerTerminal="openContainerTerminal" @openContainerDetails="openContainerDetails" @openFiles="openFiles" @openDockerConfigEditor="openDockerConfigEditor" @openAppInstall="openAppStoreInstall" @openComposeEditor="openAppStoreComposeEditor" @openInstallLog="openAppStoreInstallLog" @openReadme="openAppStoreReadme" @openTaskCenter="openTasks" />
+      <component :is="w.component" v-bind="w.props || {}" @close="handleCloseWindow(w.id)" @dirty="(v) => { const ww=openWindows.value.find(x=>x.id===w.id); if(ww) ww.dirty=v }" @openTerminal="openTerminalAt" @openEditor="openEditor" @openMedia="openMedia" @openUsers="openUsers" @openLogs="openContainerLogs" @openContainerTerminal="openContainerTerminal" @openContainerDetails="openContainerDetails" @openFiles="openFiles" @openDockerConfigEditor="openDockerConfigEditor" @openAppInstall="openAppStoreInstall" @openComposeEditor="openAppStoreComposeEditor" @openInstallLog="openAppStoreInstallLog" @openReadme="openAppStoreReadme" @openTaskCenter="openTasks" @openRuntimeCreate="openRuntimeCreate" @openConnectionForm="openConnectionForm" />
     </WindowFrame>
 
     <!-- Dock -->
@@ -113,12 +113,16 @@ import AppStoreComposeEditorWindow from './components/windows/AppStoreComposeEdi
 import AppStoreInstallLogWindow from './components/windows/AppStoreInstallLogWindow.vue'
 import AppStoreReadmeWindow from './components/windows/AppStoreReadmeWindow.vue'
 import TaskCenterWindow from './components/windows/TaskCenterWindow.vue'
+import ConnectionFormWindow from './components/windows/ConnectionFormWindow.vue'
+import RuntimeWindow from './components/windows/RuntimeWindow.vue'
+import RuntimeCreateWindow from './components/windows/RuntimeCreateWindow.vue'
+import DisksWindow from './components/windows/DisksWindow.vue'
 import ShunXSetup from './components/ShunXSetup.vue'
 import Login from './views/Login.vue'
 import { systemApi, shunxApi } from './api'
 import { auth, clearAuth, isAdmin } from './store/auth'
 import { settings } from './store/settings'
-import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck, Store, BookOpen, ListChecks } from 'lucide-vue-next'
+import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive } from 'lucide-vue-next'
 
 const loggedIn = computed(() => !!auth.token)
 function onLoggedIn() {
@@ -137,8 +141,10 @@ const shortcuts = ref([
   { key: 'appstore', label: '应用商店', icon: markRaw(Store), component: markRaw(AppStoreWindow), w: 920, h: 580, adminOnly: true },
   { key: 'tasks', label: '任务中心', icon: markRaw(ListChecks), component: markRaw(TaskCenterWindow), w: 900, h: 560, adminOnly: true },
   { key: 'protection', label: 'Graw数据库保护机制', icon: markRaw(ShieldCheck), component: markRaw(ProtectionWindow), w: 860, h: 560, adminOnly: true },
+  { key: 'runtime', label: '运行环境', icon: markRaw(Cpu), component: markRaw(RuntimeWindow), w: 900, h: 560, adminOnly: true },
   { key: 'process', label: '进程管理', icon: markRaw(Settings), component: markRaw(ProcessWindow), w: 780, h: 520, adminOnly: true },
   { key: 'files', label: '文件管理', icon: markRaw(Folder), component: markRaw(FilesWindow), w: 820, h: 540, adminOnly: true },
+  { key: 'disks', label: '磁盘管理', icon: markRaw(HardDrive), component: markRaw(DisksWindow), w: 900, h: 560, adminOnly: true },
   { key: 'terminal', label: '终端', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true }
 ])
 
@@ -488,6 +494,52 @@ function openAppStoreReadme(app) {
     x: 180 + (openWindows.value.length * 30),
     y: 100 + (openWindows.value.length * 25),
     width: 800,
+    height: 560,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 运行环境：点选运行时时打开独立的新窗口填写配置
+function openRuntimeCreate(type) {
+  const id = ++windowSeq
+  const w = reactive({
+    id,
+    key: 'runtime-create',
+    title: '创建运行环境',
+    icon: markRaw(Cpu),
+    component: markRaw(RuntimeCreateWindow),
+    props: { type },
+    x: 200 + (openWindows.value.length * 30),
+    y: 120 + (openWindows.value.length * 25),
+    width: 760,
+    height: 700,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 数据库：添加/编辑连接在新的独立窗口打开表单（不再内嵌在主窗口弹层中）
+function openConnectionForm(conn = null) {
+  const id = ++windowSeq
+  const w = reactive({
+    id,
+    key: 'conn-form',
+    title: conn ? '编辑: ' + (conn.name || '') : '添加数据库连接',
+    icon: markRaw(Database),
+    component: markRaw(ConnectionFormWindow),
+    props: { conn },
+    x: 200 + (openWindows.value.length * 30),
+    y: 120 + (openWindows.value.length * 25),
+    width: 460,
     height: 560,
     z: ++zSeq,
     minimized: false,

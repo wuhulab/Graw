@@ -23,6 +23,8 @@ from app.routers import (
     shunx,
     appstore,
     tasks,
+    runtime,
+    disks,
 )
 from app.auth import (
     seed_default_users,
@@ -140,6 +142,16 @@ app.include_router(
 # 任务中心（长线任务：应用商店安装等，需管理员）
 app.include_router(
     tasks.router, prefix="/api/tasks", tags=["tasks"], dependencies=ADMIN
+)
+
+# 运行环境（创建语言运行时容器，需管理员）
+app.include_router(
+    runtime.router, prefix="/api/runtime", tags=["runtime"], dependencies=ADMIN
+)
+
+# 磁盘管理（查看块设备与分区，管理员）
+app.include_router(
+    disks.router, prefix="/api/disks", tags=["disks"], dependencies=ADMIN
 )
 
 
