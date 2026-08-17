@@ -2,6 +2,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 import asyncio
 import os
 import platform
+import re
 import threading
 import subprocess
 
@@ -12,6 +13,10 @@ from app.routers.docker_api import get_backend, _find_podman
 router = APIRouter()
 
 IS_WINDOWS = platform.system() == "Windows"
+
+# 容器 ID / 名称白名单：container 参数最终会拼入 exec 命令串（经 ConPTY
+# 或 shell 启动），必须校验格式，防止携带引号 / 分号等字符注入命令。
+_CONTAINER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
 if IS_WINDOWS:
     try:
@@ -29,6 +34,9 @@ def _container_exec_command(container_id: str) -> str:
     优先使用 podman/docker 的 exec -it 进入容器 shell；
     容器未运行或引擎不可用时抛出 RuntimeError。
     """
+    # container_id 拼入命令串执行：白名单校验，阻止引号/分号等注入
+    if not _CONTAINER_RE.match(container_id or ""):
+        raise RuntimeError("非法的容器标识")
     try:
         kind, _client = get_backend()
     except Exception as e:

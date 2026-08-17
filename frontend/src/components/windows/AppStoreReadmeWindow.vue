@@ -4,7 +4,7 @@
     <div class="toolbar">
       <span class="title"><BookOpen :size="15" /> README：{{ name }}</span>
       <span class="repo mono">{{ repo || '' }}</span>
-      <a v-if="source" class="btn" :href="source" target="_blank" rel="noopener" style="text-decoration:none;">GitHub</a>
+      <a v-if="safeSource" class="btn" :href="safeSource" target="_blank" rel="noopener" style="text-decoration:none;">GitHub</a>
       <button class="btn" style="margin-left:auto;" @click="emit('close')">关闭</button>
     </div>
 
@@ -22,6 +22,9 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import MarkdownIt from 'markdown-it'
+import taskLists from 'markdown-it-task-lists'
+import DOMPurify from 'dompurify'
 import { appStoreApi } from '../../api'
 import { BookOpen, AlertTriangle, Loader2 } from 'lucide-vue-next'
 
@@ -35,74 +38,69 @@ const raw = ref('')
 const loading = ref(true)
 const errorMsg = ref('')
 
-// ---------- 轻量 markdown 渲染 ----------
-function escapeHtml(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
+// ---------- 完整 Markdown 渲染（GitHub 兼容） ----------
+// markdown-it 默认 preset 已支持：标题 / 表格 / 删除线(~~) / 自动链接 /
+// 引用 / 代码块 / 有序无序列表 / 嵌套列表 / 图片。
+// markdown-it-task-lists 补充 GitHub 任务列表（- [ ] / - [x]）。
+// html: true 允许 GitHub README 中常见的原始 HTML 排版（<div align>、<a>、<img>），
+// 渲染结果统一经过 DOMPurify 白名单清理，移除 script / on* / javascript: 等危险内容。
+const md = new MarkdownIt({
+  html: true,      // 允许内联 HTML（如 GitHub README 中的 <div align=center> / <a> / <img src=>）
+  linkify: true,   // 裸 URL 自动转链接
+  breaks: false,   // 保留 GitHub 换行语义（段落内换行不强制 <br>）
+}).use(taskLists, { enabled: false, label: true })
 
-function renderInline(s) {
-  s = escapeHtml(s)
-  // 行内代码
-  s = s.replace(/`([^`]+)`/g, '<code>$1</code>')
-  // 加粗
-  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-  // 链接
-  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-  return s
-}
+// GitHub 仓库上下文：用于把 README 中的相对链接/图片转成可访问的绝对地址
+const repoCtx = { owner: '', name: '', rawBase: '', blobBase: '' }
 
-function renderMarkdown(md) {
-  const lines = md.split('\n')
-  const out = []
-  let inCode = false
-  let codeBuf = []
-  let listOpen = false
-  for (const rawLine of lines) {
-    const line = rawLine.trimEnd()
-    const codeMatch = line.match(/^```(\w*)\s*$/)
-    if (codeMatch) {
-      if (inCode) {
-        out.push('<pre><code>' + codeBuf.join('\n') + '</code></pre>')
-        codeBuf = []
-        inCode = false
-      } else {
-        inCode = true
-      }
-      continue
-    }
-    if (inCode) { codeBuf.push(escapeHtml(line)); continue }
-    // 关闭未闭合的列表
-    if (listOpen && !/^[-*]\s/.test(line)) { out.push('</ul>'); listOpen = false }
-    // 标题
-    const h = line.match(/^(#{1,4})\s+(.*)$/)
-    if (h) {
-      const lv = h[1].length
-      out.push(`<h${lv}>${renderInline(h[2])}</h${lv}>`)
-      continue
-    }
-    // 列表项
-    if (/^[-*]\s/.test(line)) {
-      if (!listOpen) { out.push('<ul>'); listOpen = true }
-      out.push('<li>' + renderInline(line.replace(/^[-*]\s/, '')) + '</li>')
-      continue
-    }
-    // 引用
-    if (line.startsWith('> ')) {
-      out.push('<blockquote>' + renderInline(line.slice(2)) + '</blockquote>')
-      continue
-    }
-    // 水平线
-    if (/^---+$/.test(line.trim())) { out.push('<hr />'); continue }
-    // 空行忽略
-    if (!line.trim()) continue
-    out.push('<p>' + renderInline(line) + '</p>')
+// 自定义图片渲染：相对路径 → https://github.com/<owner>/<repo>/raw/HEAD/<path>
+const _defaultImage = md.renderer.rules.image || function (tokens, idx, options, env, self) {
+  return self.renderToken(tokens, idx, options)
+}
+md.renderer.rules.image = function (tokens, idx, options, env, self) {
+  const token = tokens[idx]
+  const src = token.attrGet('src') || ''
+  if (src && !/^(https?:|data:|mailto:)/i.test(src) && repoCtx.rawBase) {
+    token.attrSet('src', repoCtx.rawBase + src.replace(/^\.\//, ''))
   }
-  if (inCode) out.push('<pre><code>' + codeBuf.join('\n') + '</code></pre>')
-  if (listOpen) out.push('</ul>')
-  return out.join('\n')
+  return _defaultImage(tokens, idx, options, env, self)
 }
 
-const html = computed(() => renderMarkdown(raw.value))
+// 自定义链接渲染：相对链接 → https://github.com/<owner>/<repo>/blob/HEAD/<path>
+const _defaultLinkOpen = md.renderer.rules.link_open || function (tokens, idx, options, env, self) {
+  return self.renderToken(tokens, idx, options)
+}
+md.renderer.rules.link_open = function (tokens, idx, options, env, self) {
+  const token = tokens[idx]
+  const href = token.attrGet('href') || ''
+  // 跳过绝对地址、锚点、邮件协议（javascript: 等危险协议已被 markdown-it 过滤）
+  if (href && !/^(https?:|mailto:|#)/i.test(href) && repoCtx.blobBase) {
+    token.attrSet('href', repoCtx.blobBase + href.replace(/^\.\//, ''))
+  }
+  token.attrSet('target', '_blank')
+  token.attrSet('rel', 'noopener')
+  return _defaultLinkOpen(tokens, idx, options, env, self)
+}
+
+// 外链协议白名单：source 来自后端 readme 接口 / 远程索引（不可信），
+// Vue 3 的 :href 绑定不会自动过滤 javascript: 等危险协议，必须显式校验
+const safeSource = computed(() => (/^https?:\/\//i.test(source.value || '') ? source.value : ''))
+
+const html = computed(() => {
+  if (!raw.value) return '<p class="md-empty">（该仓库没有 README 内容）</p>'
+  // 每次渲染前刷新仓库上下文，保证相对链接正确拼接
+  const [owner, name] = (repo.value || '/').split('/')
+  repoCtx.owner = owner || ''
+  repoCtx.name = name || ''
+  repoCtx.rawBase = repoCtx.owner && repoCtx.name ? `https://github.com/${repoCtx.owner}/${repoCtx.name}/raw/HEAD/` : ''
+  repoCtx.blobBase = repoCtx.owner && repoCtx.name ? `https://github.com/${repoCtx.owner}/${repoCtx.name}/blob/HEAD/` : ''
+  return DOMPurify.sanitize(md.render(raw.value), {
+    ADD_ATTR: ['target', 'rel'],        // 允许链接的 target/rel 属性
+    // URI 白名单：仅放行 http(s)/mailto 与相对地址；不放行 data:——
+    // data:image/svg+xml 可内嵌脚本，历史上多次出现 DOMPurify 相关绕过
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.-]|$))/i,
+  })
+})
 
 onMounted(async () => {
   try {
@@ -125,6 +123,7 @@ onMounted(async () => {
 .toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; flex-shrink: 0; }
 .title { font-weight: 700; font-size: 13.5px; display: inline-flex; align-items: center; gap: 6px; }
 .repo { font-size: 11.5px; color: #6b7280; }
+.mono { font-family: Consolas, monospace; }
 
 .body { flex: 1; overflow-y: auto; padding: 14px 18px; }
 .center { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #6b7280; font-size: 13px; }
@@ -132,21 +131,114 @@ onMounted(async () => {
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* markdown 内容样式 */
-.md-body { font-size: 13px; color: #1f2937; line-height: 1.7; word-break: break-word; }
-.md-body h1, .md-body h2, .md-body h3, .md-body h4 { margin: 16px 0 8px; line-height: 1.4; }
-.md-body h1 { font-size: 19px; border-bottom: 1px solid #e5e7eb; padding-bottom: 6px; }
-.md-body h2 { font-size: 16px; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px; }
-.md-body h3 { font-size: 14.5px; }
+/* ============ markdown 内容样式（GitHub 风格） ============ */
+.md-body { font-size: 13px; color: #24292f; line-height: 1.7; word-break: break-word; }
+
+.md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6 {
+  margin: 20px 0 10px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+.md-body h1 { font-size: 20px; border-bottom: 1px solid #d0d7de; padding-bottom: 7px; }
+.md-body h2 { font-size: 17px; border-bottom: 1px solid #d0d7de; padding-bottom: 5px; }
+.md-body h3 { font-size: 15px; }
 .md-body h4 { font-size: 13.5px; }
-.md-body p { margin: 6px 0; }
-.md-body a { color: #2563eb; }
-.md-body ul { margin: 6px 0; padding-left: 22px; }
-.md-body li { margin: 3px 0; }
-.md-body code { background: #f3f4f6; padding: 1px 5px; border-radius: 4px; font-family: Consolas, monospace; font-size: 12px; color: #b91c1c; }
-.md-body pre { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 10px 12px; overflow-x: auto; font-size: 12px; line-height: 1.55; }
-.md-body pre code { background: transparent; color: inherit; padding: 0; }
-.md-body blockquote { border-left: 3px solid #d1d5db; margin: 8px 0; padding: 2px 12px; color: #4b5563; }
-.md-body hr { border: none; border-top: 1px solid #e5e7eb; margin: 14px 0; }
-.md-body img { max-width: 100%; border-radius: 6px; }
+.md-body h5, .md-body h6 { font-size: 13px; }
+
+.md-body p { margin: 8px 0; }
+
+.md-body a { color: #0969da; text-decoration: none; }
+.md-body a:hover { text-decoration: underline; }
+
+.md-body ul, .md-body ol { margin: 8px 0; padding-left: 26px; }
+.md-body li { margin: 4px 0; }
+.md-body li > ul, .md-body li > ol { margin: 4px 0; }
+
+/* 任务列表 */
+.md-body li.task-list-item { list-style: none; margin-left: -20px; }
+.md-body input[type="checkbox"] { margin-right: 6px; vertical-align: -2px; }
+
+/* 行内代码 / 代码块 */
+.md-body code {
+  background: rgba(175, 184, 193, 0.2);
+  padding: 2px 5px;
+  border-radius: 5px;
+  font-family: Consolas, "SF Mono", monospace;
+  font-size: 12px;
+  color: #cf222e;
+}
+.md-body pre {
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.55;
+  margin: 10px 0;
+}
+.md-body pre code {
+  background: transparent;
+  color: #24292f;
+  padding: 0;
+  font-size: 12px;
+}
+
+/* 引用 */
+.md-body blockquote {
+  border-left: 4px solid #d0d7de;
+  margin: 10px 0;
+  padding: 2px 14px;
+  color: #57606a;
+  background: rgba(246, 248, 250, 0.6);
+}
+.md-body blockquote > p { margin: 6px 0; }
+
+/* 表格 */
+.md-body table {
+  border-collapse: collapse;
+  margin: 12px 0;
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  font-size: 12.5px;
+}
+.md-body th, .md-body td {
+  border: 1px solid #d0d7de;
+  padding: 6px 12px;
+  text-align: left;
+}
+.md-body th {
+  background: #f6f8fa;
+  font-weight: 600;
+}
+.md-body tr:nth-child(2n) td { background: #f8fafc; }
+
+/* 水平线 */
+.md-body hr { border: none; border-top: 1px solid #d0d7de; margin: 16px 0; }
+
+/* 图片 */
+.md-body img { max-width: 100%; border-radius: 6px; margin: 6px 0; }
+
+/* 删除线 */
+.md-body del { color: #57606a; }
+
+/* GitHub README 常用原始 HTML 元素 */
+.md-body kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  font: 11px Consolas, monospace;
+  color: #24292f;
+  vertical-align: middle;
+  background-color: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-bottom-color: #b6bcc4;
+  border-radius: 5px;
+  box-shadow: inset 0 -1px 0 #b6bcc4;
+}
+.md-body details { margin: 10px 0; }
+.md-body summary { cursor: pointer; font-weight: 600; }
+.md-body sup { font-size: 10px; }
+.md-body mark { background: #fff8c5; color: #24292f; padding: 0 2px; }
 </style>

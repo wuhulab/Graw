@@ -631,27 +631,49 @@ def _sanitize_name(path: str) -> str:
     return safe or "db"
 
 
+def _ps_quote(s: str) -> str:
+    """PowerShell 单引号字符串转义：内部单引号双写。"""
+    return "'" + s.replace("'", "''") + "'"
+
+
 def _build_backup_command(path: str) -> str:
-    """根据平台生成自动备份命令（Linux crontab / Windows 计划任务）。"""
+    """根据平台生成自动备份命令（Linux crontab / Windows 计划任务）。
+
+    安全说明：path 的 parent / base 会拼入 shell / PowerShell 命令串，
+    必须经过严格转义（Linux 用 shlex.quote，Windows 用 PowerShell 单引号
+    双写），否则路径中携带 ``;``、``&&``、``|`` 等字符即可注入额外命令，
+    且该命令会被写入 crontab 属于存储型注入（以宿主权限反复执行）。
+    """
     safe = _sanitize_name(path)
     path = path.rstrip("/")
+    # 校验：必须为绝对路径且不含控制字符（空字节等）
+    if not path or not os.path.isabs(path) or "\x00" in path:
+        raise HTTPException(status_code=400, detail="备份路径必须为绝对路径且不包含非法字符")
     parent, base = os.path.split(path)
     if not base:
         base = safe
+    if not parent:
+        parent = os.sep
     if IS_WINDOWS:
-        # Windows：用 PowerShell + tar（Win10 自带 bsdtar）
+        # Windows：用 PowerShell + tar（Win10 自带 bsdtar）。
+        # parent / base 用 PowerShell 单引号字面量包裹（内部单引号双写），
+        # 保证其中的特殊字符（; & | $ 等）一律按字面量处理，不被解释执行。
         return (
             "powershell -NoProfile -Command "
-            f'"New-Item -ItemType Directory -Force -Path C:\\GrawBackups | Out-Null; '
-            f"$d=Get-Date -Format yyyyMMdd_HHmmss; "
-            f'tar -czf \\"C:\\GrawBackups\\{safe}_$d.tar.gz\\" -C \\"{parent}\\" \\"{base}\\""'
+            '"New-Item -ItemType Directory -Force -Path C:\\GrawBackups | Out-Null; '
+            "$d=Get-Date -Format yyyyMMdd_HHmmss; "
+            'tar -czf \\"C:\\GrawBackups\\{safe}_$d.tar.gz\\" -C {parent} {base}"'.format(
+                safe=safe, parent=_ps_quote(parent), base=_ps_quote(base)
+            )
         )
+    import shlex
+
     # Linux：tar 打包到 /data/graw-backups，并清理超过保留天数的旧备份
     # 注意：crontab 中 % 需转义为 \%
     return (
         f"mkdir -p /data/graw-backups && "
         f"tar -czf /data/graw-backups/{safe}_$(date +\\%Y\\%m\\%d_\\%H\\%M\\%S).tar.gz "
-        f"-C {parent} {base} && "
+        f"-C {shlex.quote(parent)} {shlex.quote(base)} && "
         f"find /data/graw-backups -name '{safe}_*' -mtime +{BACKUP_KEEP_DAYS} -delete"
     )
 

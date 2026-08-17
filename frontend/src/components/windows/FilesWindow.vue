@@ -74,6 +74,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { filesApi, formatBytes } from '../../api'
+import { auth } from '../../store/auth'
 import { ArrowUp, Folder, FileText, Image as ImageIcon, Film, Upload } from 'lucide-vue-next'
 
 const items = ref([])
@@ -182,8 +183,28 @@ async function createFile() {
   }
 }
 
-function download(it) {
-  window.open(`/api/files/download?path=${encodeURIComponent(it.path)}`, '_blank')
+// 下载必须携带 Authorization 头：下载接口有登录鉴权，
+// window.open 打开的新窗口不会带 Bearer 头（原实现必 401），
+// 改用 fetch + blob 后由临时 <a> 触发浏览器保存
+async function download(it) {
+  try {
+    const resp = await fetch(`/api/files/download?path=${encodeURIComponent(it.path)}`, {
+      headers: { Authorization: `Bearer ${auth.token}` },
+    })
+    if (!resp.ok) {
+      const detail = await resp.json().catch(() => '')
+      throw new Error(detail?.detail || `HTTP ${resp.status}`)
+    }
+    const blob = await resp.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = it.name
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    alert('下载失败：' + (e.message || e))
+  }
 }
 
 function formatTime(t) {

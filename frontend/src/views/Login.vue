@@ -55,11 +55,11 @@
         </label>
         <label class="field">
           <span class="label">新密码</span>
-          <input v-model="newPassword" type="password" minlength="6" required />
+          <input v-model="newPassword" type="password" minlength="8" required />
         </label>
         <label class="field">
           <span class="label">确认新密码</span>
-          <input v-model="confirmPassword" type="password" minlength="6" required />
+          <input v-model="confirmPassword" type="password" minlength="8" required />
         </label>
         <div v-if="error" class="error">{{ error }}</div>
         <button class="btn-primary" type="submit" :disabled="loading">
@@ -139,8 +139,8 @@ async function handleLogin() {
 
 async function handleChangePassword() {
   if (loading.value) return
-  if (newPassword.value.length < 6) {
-    error.value = '新密码至少 6 位'
+  if (newPassword.value.length < 8) {
+    error.value = '新密码至少 8 位'
     return
   }
   if (newPassword.value !== confirmPassword.value) {

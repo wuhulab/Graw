@@ -21,12 +21,13 @@ import json
 import logging
 import os
 import threading
+import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from ..auth import get_current_user, require_admin
+from ..auth import get_current_user, require_admin, get_client_ip
 
 logger = logging.getLogger("graw.shunx")
 
@@ -82,13 +83,47 @@ def is_entry_enabled() -> bool:
 # ---------------------------------------------------------------------------
 # 公开接口：状态查询（不泄露入口路径本身）
 # ---------------------------------------------------------------------------
+# /status 的 matched 字段本质是一个「路径猜测是否命中」的公开预言机，
+# 不限流时攻击者可高频字典枚举入口路径，故必须按 IP 限流抬高攻击成本。
+_STATUS_MAX = 30        # 每个 IP 每窗口期内最大查询次数
+_STATUS_WINDOW = 60     # 窗口期（秒）
+_status_lock = threading.Lock()
+_status_hits: dict = {}
+
+
+def _status_throttle(request: Request) -> None:
+    """/status 按 IP 滑动窗口限流，超出抛 429。"""
+    # 与登录限流保持一致，使用 get_client_ip 兼容反代部署，
+    # 避免客户端伪造 XFF 绕过限流（未配置可信代理时忽略 XFF）。
+    ip = get_client_ip(request)
+    now = time.time()
+    with _status_lock:
+        hits = _status_hits.setdefault(ip, [])
+        # 淘汰窗口外的旧记录
+        while hits and hits[0] <= now - _STATUS_WINDOW:
+            hits.pop(0)
+        if len(hits) >= _STATUS_MAX:
+            raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
+        hits.append(now)
+        # 防止键空间无限增长：顺带清理长时间无活动的 IP
+        if len(_status_hits) > 10000:
+            stale = [
+                k
+                for k, v in _status_hits.items()
+                if not v or v[-1] <= now - _STATUS_WINDOW * 10
+            ]
+            for k in stale:
+                _status_hits.pop(k, None)
+
+
 @router.get("/status")
-async def get_status(path: str = ""):
+async def get_status(request: Request, path: str = ""):
     """查询安全入口状态及「给定路径是否匹配入口」。
 
     公开可访问。只返回 enabled 与 matched，不返回 entry_path，
-    防止陌生设备通过接口探测出入口路径。
+    防止陌生设备通过接口探测出入口路径；按 IP 限流防高频枚举。
     """
+    _status_throttle(request)
     entry = get_entry_path()
     enabled = entry is not None
     # 归一化比较：去掉首尾斜杠、忽略大小写，提升使用便利性

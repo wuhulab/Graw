@@ -56,8 +56,8 @@
             <div class="app-id mono">{{ app.id }}</div>
           </div>
           <div class="card-actions">
-            <a v-if="app.homepage" class="icon-link" :href="app.homepage" target="_blank" rel="noopener" title="官方网站"><Globe :size="14" /></a>
-            <a v-if="app.source" class="icon-link" :href="app.source" target="_blank" rel="noopener" title="开源社区"><Github :size="14" /></a>
+            <a v-if="safeUrl(app.homepage)" class="icon-link" :href="safeUrl(app.homepage)" target="_blank" rel="noopener" title="官方网站"><Globe :size="14" /></a>
+            <a v-if="safeUrl(app.source)" class="icon-link" :href="safeUrl(app.source)" target="_blank" rel="noopener" title="开源社区"><Github :size="14" /></a>
             <button v-if="app.source" class="readme-btn" title="查看 GitHub README" @click="emit('openReadme', app)"><BookOpen :size="14" /></button>
           </div>
         </div>
@@ -128,6 +128,13 @@ import { appStoreApi } from '../../api'
 import { Store, Settings2, Globe, Github, Container, AlertTriangle, Loader2, BookOpen, Search, ShieldAlert } from 'lucide-vue-next'
 
 const emit = defineEmits(['openAppInstall', 'openReadme', 'close'])
+
+// 外链协议白名单：homepage / source 来自索引数据（index_url 可指向任意
+// 远程源，属不可信输入），Vue 3 的 :href 不会自动过滤 javascript: 协议，
+// 恶意索引注入 javascript: 链接即可在点击时执行任意脚本窃取 token
+function safeUrl(u) {
+  return /^https?:\/\//i.test(u || '') ? u : ''
+}
 
 const apps = ref([])
 const loading = ref(false)

@@ -265,18 +265,24 @@ def _find_app(app_id: str) -> dict:
 
 def _get_compose_text(app: dict) -> str:
     """按 download_url 拉取 docker-compose.yml（本地模式读取仓库文件）。"""
+    app_id = app.get("id", "") or ""
+    # app_id 会被拼入本地文件路径：虽然正常来自官方索引，但 index_url 可被
+    # 管理员指向任意远程源，投毒索引（id 含 ../）可穿越读取任意 .yml 文件，
+    # 故此处做与安装参数一致的白名单校验。
+    if not APP_NAME_RE.match(app_id):
+        raise HTTPException(status_code=400, detail=f"应用 id 非法: {app_id}")
     url = app.get("compose_url", "")
     if url:
         try:
             return _fetch_url(url, timeout=60)
         except Exception as e:
             # 远程拉取失败时尝试本地文件兜底（开发模式）
-            local = os.path.join(LOCAL_APPS_DIR, app.get("id", ""), "docker-compose.yml")
+            local = os.path.join(LOCAL_APPS_DIR, app_id, "docker-compose.yml")
             if os.path.exists(local):
                 with open(local, "r", encoding="utf-8") as f:
                     return f.read()
             raise HTTPException(status_code=502, detail=f"拉取 docker-compose.yml 失败: {e}")
-    local = os.path.join(LOCAL_APPS_DIR, app.get("id", ""), "docker-compose.yml")
+    local = os.path.join(LOCAL_APPS_DIR, app_id, "docker-compose.yml")
     if os.path.exists(local):
         with open(local, "r", encoding="utf-8") as f:
             return f.read()

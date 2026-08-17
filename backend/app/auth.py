@@ -10,12 +10,15 @@ import json
 import time
 import secrets
 import threading
+import logging
 from collections import defaultdict
 from typing import Optional
 
+logger = logging.getLogger("graw.auth")
+
 import jwt
 import bcrypt
-from fastapi import Depends, HTTPException, Query, WebSocket
+from fastapi import Depends, HTTPException, Query, Request, WebSocket
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
@@ -71,6 +74,11 @@ def _get_secret() -> str:
     secret = secrets.token_urlsafe(48)
     with open(SECRET_FILE, "w", encoding="utf-8") as f:
         f.write(secret)
+    # 限制签名密钥文件权限（仅本进程/用户可读），Linux 上避免同机低权用户读取
+    try:
+        os.chmod(SECRET_FILE, 0o600)
+    except Exception:
+        pass  # Windows 上 chmod 无实际效果，忽略
     return secret
 
 
@@ -78,12 +86,18 @@ SECRET_KEY = _get_secret()
 
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    # bcrypt 仅使用输入的前 72 字节，超长输入在 bcrypt>=4.0 会抛 ValueError
+    # 导致接口 500。正常路径上游（_validate_password_strength）已拒绝超长
+    # 密码，此处显式截断仅为兜底防御，避免异常密码直接打挂接口。
+    pw = password.encode("utf-8")[:72]
+    return bcrypt.hashpw(pw, bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(password: str, hashed: str) -> bool:
     try:
-        return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+        # 与 hash_password 保持一致的 72 字节截断，避免校验时序/结果不一致
+        pw = password.encode("utf-8")[:72]
+        return bcrypt.checkpw(pw, hashed.encode("utf-8"))
     except Exception:
         return False
 
@@ -118,17 +132,67 @@ def seed_default_users() -> None:
         _save_users(users)
 
 
-def create_token(username: str) -> str:
+def _public_user(user: dict) -> dict:
+    """脱敏后的用户对象（不含密码哈希）。token_version 供客户端展示/调试用。"""
+    return {
+        "username": user["username"],
+        "role": user.get("role", "user"),
+        "must_change_password": user.get("must_change_password", False),
+        "created_at": user.get("created_at", 0),
+        "token_version": user.get("token_version", 0),
+    }
+
+
+def bump_token_version(username: str) -> None:
+    """递增用户 token 版本号：使该用户此前签发的所有 JWT 立即失效。
+
+    改密 / 重置密码 / 管理员重置 / 主动退出登录时调用，实现真正的会话撤销
+    （无需维护黑名单，签名校验时比对版本号即可）。
+    """
+    users = _load_users() or {}
+    target = users.get(username)
+    if target is None:
+        return
+    target["token_version"] = int(target.get("token_version", 0)) + 1
+    _save_users(users)
+    logger.info("已吊销用户 %s 的所有登录令牌（token_version -> %d）", username, target["token_version"])
+
+
+def create_token(username: str, token_version: int = 0) -> str:
+    """签发 JWT：携带用户名与 token 版本号（tv）。
+
+    改密/注销后 token_version 递增，旧令牌的 tv 与新值不一致而被拒绝。
+    """
     now = int(time.time())
-    payload = {"sub": username, "iat": now, "exp": now + TOKEN_TTL}
+    payload = {
+        "sub": username,
+        "tv": int(token_version or 0),
+        "iat": now,
+        "exp": now + TOKEN_TTL,
+    }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
 def decode_token(token: str) -> Optional[dict]:
     try:
-        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
     except Exception:
         return None
+
+
+def verify_token_version(token_payload: dict) -> bool:
+    """校验 JWT 中的 token_version（tv）是否与用户当前版本一致。
+
+    不一致说明令牌已被撤销，返回 False。
+    """
+    username = token_payload.get("sub", "")
+    token_tv = int(token_payload.get("tv", -1))
+    user = _get_user(username)
+    if user is None:
+        return False
+    current_tv = int(user.get("token_version", 0))
+    return token_tv == current_tv
 
 
 def _get_user(username: str) -> Optional[dict]:
@@ -136,15 +200,6 @@ def _get_user(username: str) -> Optional[dict]:
     if not users:
         return None
     return users.get(username)
-
-
-def _public_user(user: dict) -> dict:
-    return {
-        "username": user["username"],
-        "role": user.get("role", "user"),
-        "must_change_password": user.get("must_change_password", False),
-        "created_at": user.get("created_at", 0),
-    }
 
 
 async def get_current_user(
@@ -163,6 +218,9 @@ async def get_current_user(
     user = _get_user(payload.get("sub", ""))
     if user is None:
         raise HTTPException(status_code=401, detail="用户不存在")
+    # 会话撤销校验：改密/重置/注销后 token_version 递增，旧令牌失效
+    if not verify_token_version(payload):
+        raise HTTPException(status_code=401, detail="登录状态已失效，请重新登录")
     return _public_user(user)
 
 
@@ -179,6 +237,10 @@ async def get_current_user_ws(
         return None
     user = _get_user(payload.get("sub", ""))
     if user is None:
+        await websocket.close(code=4401)
+        return None
+    # 会话撤销校验：改密/注销后旧令牌不得继续建立连接
+    if not verify_token_version(payload):
         await websocket.close(code=4401)
         return None
     return _public_user(user)
@@ -223,3 +285,31 @@ async def get_current_user_ws_admin(
         await websocket.close(code=4403)
         return None
     return user
+
+
+# 可信代理链长度：直接部署（无反代）为 0；反代部署时应设置为代理层数，
+# 并确保上游代理剥离/覆盖 X-Forwarded-For（由部署方保证，不可由客户端注入）。
+TRUSTED_PROXY_DEPTH = int(os.environ.get("TRUSTED_PROXY_DEPTH", "0"))
+
+
+def get_client_ip(request: Request) -> str:
+    """获取客户端真实 IP（兼容反向代理）。
+
+    直接部署时取 socket 对端地址；反代部署时从 X-Forwarded-For 取
+    从右往左数第 TRUSTED_PROXY_DEPTH 个地址（XFF 由可信代理追加，
+    右侧为最近一跳，向左回退即真实客户端地址）。
+
+    - 未配置可信代理时完全忽略 XFF，防止客户端伪造 IP 绕过限流/审计。
+    - 配置后由部署方保证代理正确覆写 XFF，避免伪造。
+    """
+    client = request.client.host if request.client else ""
+    if TRUSTED_PROXY_DEPTH > 0:
+        xff = (request.headers.get("X-Forwarded-For") or "").strip()
+        if xff:
+            hops = [h.strip() for h in xff.split(",") if h.strip()]
+            if len(hops) >= TRUSTED_PROXY_DEPTH:
+                # 取从右往左第 TRUSTED_PROXY_DEPTH 个（最接近真实客户端）
+                candidate = hops[-TRUSTED_PROXY_DEPTH]
+                if candidate:
+                    return candidate
+    return client or "unknown"

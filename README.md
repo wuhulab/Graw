@@ -68,6 +68,9 @@ source .venv/bin/activate
 # Windows: .venv\Scripts\activate
 pip install -r requirements.txt # 首次
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+# 或者 如果你使用开发：
+py start.py
+
 ```
 
 **2. 启动前端**

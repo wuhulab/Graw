@@ -333,7 +333,26 @@ async def extract(req: ExtractRequest):
                 for member in tf.getmembers():
                     if not _is_within(dest, os.path.join(dest, member.name)):
                         raise HTTPException(status_code=400, detail="压缩包包含非法路径（Zip Slip）")
-                tf.extractall(dest)
+                    # 防 Tar Slip：符号/硬链接成员的指向目标也必须落在解压目录
+                    # 内——否则可先释放链接 evil->/etc，再经 evil/passwd 写出
+                    # 任意文件，仅校验成员名拦不住这种二次穿越。
+                    if member.issym() or member.islnk():
+                        link = member.linkname
+                        if os.path.isabs(link) or not _is_within(
+                            dest, os.path.join(dest, os.path.normpath(link))
+                        ):
+                            raise HTTPException(
+                                status_code=400, detail="压缩包包含越界链接（Tar Slip）"
+                            )
+                    # 拒绝设备文件 / 套接字等特殊成员
+                    if member.isdev():
+                        raise HTTPException(status_code=400, detail="压缩包包含特殊文件，已拒绝")
+                try:
+                    # Python 3.9.17+ / 3.12+ 提供 data 过滤器（拒绝绝对路径、
+                    # 越界链接、设备文件），作为第二道防线；旧版本忽略该参数
+                    tf.extractall(dest, filter="data")
+                except TypeError:
+                    tf.extractall(dest)
         return {"ok": True}
     except HTTPException:
         raise

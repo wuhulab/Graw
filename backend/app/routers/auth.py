@@ -21,6 +21,8 @@ from ..auth import (
     _get_user,
     _public_user,
     is_default_password,
+    bump_token_version,
+    get_client_ip,
     DEFAULT_PASSWORD,
 )
 from .shunx import verify_entry
@@ -29,8 +31,36 @@ logger = logging.getLogger("graw.auth")
 
 router = APIRouter()
 
-MIN_PASSWORD_LEN = 6
+# ---------------------------------------------------------------------------
+# 密码策略
+#   - 最小长度 8 位（登录入口安全底线，防止弱口令被字典爆破）
+#   - 禁止把密码设置为用户名本身
+#   - 后台管理员改密/重置时额外要求包含字母与数字（前台普通改密不强制，
+#     避免过严策略导致用户频繁忘记密码而流失）
+# ---------------------------------------------------------------------------
+MIN_PASSWORD_LEN = 8
 VALID_ROLES = ("admin", "user")
+
+
+def _validate_password_strength(password: str, username: str, strict: bool) -> None:
+    """校验密码策略；strict=True 时（管理员重置/后台创建）要求字母+数字。"""
+    if len(password) < MIN_PASSWORD_LEN:
+        raise HTTPException(
+            status_code=400, detail=f"密码至少 {MIN_PASSWORD_LEN} 位"
+        )
+    if len(password) > 128:
+        raise HTTPException(status_code=400, detail="密码不能超过 128 位")
+    # bcrypt 仅使用前 72 字节，超长密码既无意义又可能触发 bcrypt 异常，
+    # 在入口处按 UTF-8 字节数直接拒绝。
+    if len(password.encode("utf-8")) > 72:
+        raise HTTPException(status_code=400, detail="密码过长（超过 72 字节），请缩短")
+    if password.lower() == (username or "").lower():
+        raise HTTPException(status_code=400, detail="密码不能与用户名相同")
+    if strict:
+        if not any(c.isalpha() for c in password) or not any(c.isdigit() for c in password):
+            raise HTTPException(
+                status_code=400, detail="密码必须同时包含字母和数字"
+            )
 
 # ---------------------------------------------------------------------------
 # 登录暴力破解防护（进程内限流）
@@ -41,12 +71,34 @@ MAX_ATTEMPTS = 5
 LOCK_SECONDS = 10 * 60  # 10 分钟
 _lock = threading.Lock()
 _failures = defaultdict(lambda: {"count": 0, "locked_until": 0.0})
+# 限流字典上限：防止恶意构造不同 IP+username 组合撑爆内存
+_MAX_FAILURES = 100000
+
+# 分布式爆破防护（账号维度全局锁定）：
+#   逐 IP 限流挡不住攻击者轮换 IP 对同一账号发起字典攻击，这里再按
+#   「账号」维度做一次全局计数。为避免单一攻击者借此把合法用户锁出系统
+#   （DoS 权衡），仅当失败来源 IP 达到 _GLOBAL_MIN_IPS 个不同地址后才
+#   开始累计，且全局锁定期比逐 IP 更短。
+_GLOBAL_MIN_IPS = 3
+_GLOBAL_MAX_ATTEMPTS = 30
+_GLOBAL_LOCK_SECONDS = 5 * 60  # 5 分钟
+_global_failures = defaultdict(lambda: {"count": 0, "ips": set(), "locked_until": 0.0})
 
 
 def _throttle_key(request: Request, username: str) -> str:
-    """限流键：IP + 账号名。"""
-    ip = request.client.host if request.client else "unknown"
+    """限流键：IP + 账号名（使用 get_client_ip 兼容反代部署）。"""
+    ip = get_client_ip(request)
     return f"{ip}|{username}"
+
+
+def _throttle_cleanup_if_needed():
+    """限流字典超过上限时清理已过期的条目，防止内存 DoS。"""
+    if len(_failures) < _MAX_FAILURES:
+        return
+    now = time.time()
+    stale = [k for k, v in _failures.items() if v["locked_until"] <= now and v["count"] == 0]
+    for k in stale:
+        del _failures[k]
 
 
 def _check_throttle(request: Request, username: str) -> None:
@@ -59,10 +111,13 @@ def _check_throttle(request: Request, username: str) -> None:
             status_code=403,
             detail=f"登录失败次数过多，请 {int((rec['locked_until'] - now) // 60 + 1)} 分钟后再试",
         )
+    # 账号维度全局锁定检查（分布式爆破防护）
+    _check_global_lock(username)
 
 
 def _record_failure(request: Request, username: str) -> None:
-    """记录一次失败；达到阈值即锁定。"""
+    """记录一次失败；达到阈值即锁定（逐 IP + 账号）。"""
+    ip = get_client_ip(request)
     key = _throttle_key(request, username)
     now = time.time()
     with _lock:
@@ -73,18 +128,65 @@ def _record_failure(request: Request, username: str) -> None:
         if rec["count"] >= MAX_ATTEMPTS:
             rec["count"] = 0
             rec["locked_until"] = now + LOCK_SECONDS
-            logger.warning("账号 %s 触发登录锁定（IP %s）", username, request.client.host if request.client else "?")
+            logger.warning("账号 %s 触发登录锁定（IP %s）", username, ip)
+        _throttle_cleanup_if_needed()
+    # 分布式爆破防护：按账号维度累计失败（多 IP 轮换时生效）
+    _record_global_failure(username, ip)
 
 
 def _clear_failures(request: Request, username: str) -> None:
-    """登录成功后清零该键的失败记录。"""
+    """登录成功/注销后清零该键的失败记录。"""
     with _lock:
         _failures.pop(_throttle_key(request, username), None)
+    _clear_global_failures(username)
+
+
+def _record_global_failure(username: str, ip: str) -> None:
+    """账号维度失败累计：总失败次数达到阈值且来源为多个不同 IP 时锁定。
+
+    说明：单 IP 连续失败在达到 5 次后已被逐 IP 限流拦截，不会再走到这里，
+    因此这里的累计次数几乎全部来自不同 IP 的失败；count 与「来源 IP 数」
+    共同判定，阈值精确为 _GLOBAL_MAX_ATTEMPTS 次。
+    """
+    now = time.time()
+    with _lock:
+        rec = _global_failures[username]
+        if rec["locked_until"] > now:
+            return  # 已全局锁定
+        rec["count"] += 1
+        if len(rec["ips"]) < _GLOBAL_MAX_ATTEMPTS * 4:  # 防止集合无限膨胀
+            rec["ips"].add(ip)
+        # 仅当失败来源为多个不同 IP（分布式攻击特征）时启用全局锁定
+        if (
+            len(rec["ips"]) >= _GLOBAL_MIN_IPS
+            and rec["count"] >= _GLOBAL_MAX_ATTEMPTS
+        ):
+            rec["count"] = 0
+            rec["locked_until"] = now + _GLOBAL_LOCK_SECONDS
+            logger.warning(
+                "账号 %s 触发全局登录锁定（分布式爆破防护，来源 IP 数 %d）",
+                username, len(rec["ips"]),
+            )
+
+
+def _check_global_lock(username: str) -> None:
+    """账号维度全局锁定检查：已锁定时抛 403。"""
+    now = time.time()
+    with _lock:
+        rec = _global_failures[username]
+    if rec["locked_until"] > now:
+        raise HTTPException(status_code=403, detail="登录失败次数过多，请稍后再试")
+
+
+def _clear_global_failures(username: str) -> None:
+    """登录成功/注销后清零该账号的全局失败记录。"""
+    with _lock:
+        _global_failures.pop(username, None)
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(default="", min_length=1, max_length=64)
+    password: str = Field(default="", min_length=1, max_length=128)
 
 
 class LoginResponse(BaseModel):
@@ -92,26 +194,55 @@ class LoginResponse(BaseModel):
     user: dict
 
 
+# 哑 bcrypt 哈希：用户不存在时也执行一次同代价的密码比对，
+# 消除「用户存在→跑 bcrypt（约几十毫秒）/ 用户不存在→立即返回」的
+# 响应时序差，防止借此枚举有效用户名。
+_DUMMY_HASH = hash_password("graw-timing-equalizer")
+
+
 @router.post("/login", response_model=LoginResponse)
 async def login(req: LoginRequest, request: Request):
     # 暴力破解防护：先查是否已锁定
     _check_throttle(request, req.username)
+    # ShunX 保护：入口校验必须先于密码校验。
+    # 若先验密码后验入口，「密码正确+入口错误」会返回 403 而密码错误
+    # 返回 401，攻击者无需知道入口即可据此确认密码是否正确（预言机）；
+    # 入口不符同样计入失败次数，防止配合 /status 高频枚举入口路径。
+    try:
+        verify_entry(request)
+    except HTTPException:
+        _record_failure(request, req.username)
+        raise
     user = _get_user(req.username)
-    if user is None or not verify_password(req.password, user["password"]):
+    if user is None:
+        # 用户不存在：比对哑哈希抹平时序后同样返回 401
+        verify_password(req.password, _DUMMY_HASH)
         _record_failure(request, req.username)
         raise HTTPException(status_code=401, detail="用户名或密码错误")
-    # 登录成功，清零失败记录
+    if not verify_password(req.password, user["password"]):
+        _record_failure(request, req.username)
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+    # 登录成功，清零失败记录（入口与密码均已通过校验）
     _clear_failures(request, req.username)
-    # ShunX 保护：已配置安全入口时，必须通过安全入口才能登录
-    verify_entry(request)
     public = _public_user(user)
     # ShunX 保护：检测到使用默认密码 → 强制要求修改后才能使用面板
     if is_default_password(user["password"]):
         public["must_change_password"] = True
         public["default_password"] = True
         logger.warning("用户 %s 使用默认密码登录，已强制要求改密", req.username)
-    token = create_token(user["username"])
+    # 签发 JWT 时携带当前 token_version，改密/注销后旧令牌自动失效
+    token = create_token(user["username"], token_version=int(user.get("token_version", 0)))
+    logger.info("用户 %s 登录成功（IP %s）", req.username, get_client_ip(request))
     return {"token": token, "user": public}
+
+
+@router.post("/logout")
+async def logout(request: Request, user: dict = Depends(get_current_user)):
+    """注销登录：递增 token_version 使当前用户所有 JWT 立即失效。"""
+    bump_token_version(user["username"])
+    _clear_failures(request, user["username"])
+    logger.info("用户 %s 已注销（IP %s）", user["username"], get_client_ip(request))
+    return {"ok": True}
 
 
 @router.get("/me")
@@ -120,19 +251,28 @@ async def me(user: dict = Depends(get_current_user)):
 
 
 class ChangePasswordRequest(BaseModel):
-    old_password: str
-    new_password: str
+    old_password: str = Field(default="", min_length=1, max_length=128)
+    new_password: str = Field(default="", min_length=1, max_length=128)
 
 
 @router.post("/password")
 async def change_password(
-    req: ChangePasswordRequest, user: dict = Depends(get_current_user)
+    req: ChangePasswordRequest,
+    request: Request,
+    user: dict = Depends(get_current_user),
 ):
+    # 改密接口同样受登录限流保护，防止被用于高频爆破原密码
+    _check_throttle(request, user["username"])
     full = _get_user(user["username"])
     if full is None or not verify_password(req.old_password, full["password"]):
+        # 原密码错误同样计数失败，达到阈值锁定
+        _record_failure(request, user["username"])
         raise HTTPException(status_code=400, detail="原密码错误")
-    if len(req.new_password) < MIN_PASSWORD_LEN:
-        raise HTTPException(status_code=400, detail=f"新密码至少 {MIN_PASSWORD_LEN} 位")
+    if verify_password(req.new_password, full["password"]):
+        # 新密码不能与原密码相同
+        raise HTTPException(status_code=400, detail="新密码不能与原密码相同")
+    # 密码策略校验（严格模式：字母+数字）
+    _validate_password_strength(req.new_password, user["username"], strict=True)
     # ShunX 保护：禁止再次使用默认密码
     if req.new_password == DEFAULT_PASSWORD:
         raise HTTPException(status_code=400, detail="新密码不能使用默认密码，请更换")
@@ -143,12 +283,22 @@ async def change_password(
     target["password"] = hash_password(req.new_password)
     target["must_change_password"] = False
     _save_users(users)
-    return {"ok": True}
+    # 关键：改密后吊销该用户所有旧令牌（包括刚用于改密的这个），
+    # 并签发新令牌返回给前端，保证会话不中断。
+    bump_token_version(user["username"])
+    _clear_failures(request, user["username"])
+    # bump_token_version 已将 token_version 递增；必须读取递增后的新版本
+    # 签发，否则新令牌携带旧版本号，会被 verify_token_version 吊销校验拒绝。
+    users = _load_users() or {}
+    new_tv = int(users.get(user["username"], {}).get("token_version", 0))
+    new_token = create_token(user["username"], token_version=new_tv)
+    logger.info("用户 %s 已修改密码并刷新令牌（IP %s）", user["username"], get_client_ip(request))
+    return {"ok": True, "token": new_token}
 
 
 class CreateUserRequest(BaseModel):
-    username: str = Field(min_length=2, max_length=32)
-    password: str = Field(min_length=MIN_PASSWORD_LEN)
+    username: str = Field(min_length=2, max_length=32, pattern=r"^[A-Za-z0-9_.-]+$")
+    password: str = Field(min_length=MIN_PASSWORD_LEN, max_length=128)
     role: str = Field(default="user")
 
 
@@ -165,6 +315,8 @@ async def create_user(req: CreateUserRequest, _: dict = Depends(require_admin)):
     # ShunX 保护：禁止使用默认密码作为账号密码
     if req.password == DEFAULT_PASSWORD:
         raise HTTPException(status_code=400, detail="不能将默认密码作为账号密码")
+    # 密码策略校验（严格模式：字母+数字）
+    _validate_password_strength(req.password, req.username, strict=True)
     users = _load_users() or {}
     if req.username in users:
         raise HTTPException(status_code=400, detail="用户已存在")
@@ -173,14 +325,16 @@ async def create_user(req: CreateUserRequest, _: dict = Depends(require_admin)):
         "password": hash_password(req.password),
         "role": req.role,
         "must_change_password": False,
+        "token_version": 0,
         "created_at": time.time(),
     }
     _save_users(users)
+    logger.info("管理员创建账号 %s（角色 %s）", req.username, req.role)
     return {"ok": True}
 
 
 class UpdateUserRequest(BaseModel):
-    password: Optional[str] = None
+    password: Optional[str] = Field(default=None, max_length=128)
     role: Optional[str] = None
     must_change_password: Optional[bool] = None
 
@@ -194,18 +348,19 @@ async def update_user(
     if target is None:
         raise HTTPException(status_code=404, detail="用户不存在")
     if req.password is not None:
-        if len(req.password) < MIN_PASSWORD_LEN:
-            raise HTTPException(
-                status_code=400, detail=f"密码至少 {MIN_PASSWORD_LEN} 位"
-            )
         # ShunX 保护：禁止把密码重置为默认密码
         if req.password == DEFAULT_PASSWORD:
             raise HTTPException(status_code=400, detail="不能将默认密码作为账号密码")
+        # 密码策略校验（严格模式：字母+数字）
+        _validate_password_strength(req.password, username, strict=True)
         target["password"] = hash_password(req.password)
         # 重置密码后默认要求下次登录修改
         target["must_change_password"] = (
             req.must_change_password if req.must_change_password is not None else True
         )
+        # 重置密码后吊销该用户所有现有会话，强制重新登录
+        bump_token_version(username)
+        logger.info("管理员重置账号 %s 的密码，其所有会话已失效", username)
     if req.role is not None:
         if req.role not in VALID_ROLES:
             raise HTTPException(status_code=400, detail="角色无效")

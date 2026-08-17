@@ -1,6 +1,7 @@
 import json
 import os
 import platform
+import re
 import subprocess
 import uuid
 from datetime import datetime
@@ -10,6 +11,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 router = APIRouter()
+
+# 数据库名白名单：库名会拼入反引号 SQL 标识符（CREATE/DROP DATABASE），
+# 必须禁止反引号 / 引号 / 分号等字符，防止标识符逃逸注入多条 SQL。
+_DB_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 DB_FILE = os.path.join(DATA_DIR, "databases.json")
@@ -312,6 +317,11 @@ async def create_database(conn_id: str, body: dict):
     db_name = body.get("name", "").strip()
     if not db_name:
         raise HTTPException(status_code=400, detail="Database name required")
+    # 库名白名单校验，防止反引号逃逸注入 SQL
+    if not _DB_NAME_RE.match(db_name):
+        raise HTTPException(
+            status_code=400, detail="数据库名仅允许字母、数字、下划线和中划线（≤64 字符）"
+        )
     if conn["db_type"] == "mysql":
         if not MYSQL_LIBS:
             raise HTTPException(status_code=503, detail="PyMySQL not installed")
@@ -344,6 +354,11 @@ async def delete_database(conn_id: str, body: dict):
     db_name = body.get("name", "").strip()
     if not db_name:
         raise HTTPException(status_code=400, detail="Database name required")
+    # 库名白名单校验，防止反引号逃逸注入 SQL
+    if not _DB_NAME_RE.match(db_name):
+        raise HTTPException(
+            status_code=400, detail="数据库名仅允许字母、数字、下划线和中划线（≤64 字符）"
+        )
     if conn["db_type"] == "mysql":
         if not MYSQL_LIBS:
             raise HTTPException(status_code=503, detail="PyMySQL not installed")

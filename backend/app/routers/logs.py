@@ -15,6 +15,30 @@ router = APIRouter()
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 LOGS_FILE = os.path.join(DATA_DIR, "logs.json")
 IS_WIN = platform.system() == "Windows"
+_DATA_DIR_NORM = os.path.normpath(os.path.abspath(DATA_DIR))
+# 面板自身日志是预置日志源（位于 data/ 内），是 data 目录唯一放行的文件
+_PANEL_LOG_NORM = os.path.normpath(os.path.join(_DATA_DIR_NORM, "panel.log"))
+
+
+def _safe_log_path(path: str) -> str:
+    """日志路径安全校验：规范化为绝对路径并拦截面板数据目录。
+
+    data/ 目录内存放 users.json / secret.key / databases.json 等敏感文件：
+    secret.key 泄露即可伪造任意用户 JWT，users.json 被清空会导致面板
+    永久锁死（_load_users 返回空表后不会重新播种）。日志接口绝不能触达，
+    唯一例外是面板自身日志 panel.log。
+    """
+    sp = os.path.normpath(os.path.abspath(path))
+    if sp == _PANEL_LOG_NORM:
+        return sp
+    try:
+        common = os.path.commonpath([sp, _DATA_DIR_NORM])
+    except ValueError:
+        # Windows 下跨盘符时 commonpath 抛 ValueError：必然不在 data 目录内
+        return sp
+    if common == _DATA_DIR_NORM:
+        raise HTTPException(status_code=403, detail="无权访问面板数据目录")
+    return sp
 
 PREDEFINED = {
     "panel": {"path": os.path.join(DATA_DIR, "panel.log"), "desc": "面板日志"},
@@ -100,8 +124,9 @@ async def list_logs():
 
 @router.get("/read")
 async def read_log(path: str = Query(...), tail: int = Query(200, ge=1, le=5000)):
-    # 容器模式下映射到 /host 前缀，读取宿主机日志
-    real = host_path(path)
+    # 容器模式下映射到 /host 前缀，读取宿主机日志；
+    # 先经 _safe_log_path 拦截面板数据目录（防 secret.key/users.json 泄露）
+    real = host_path(_safe_log_path(path))
     if not os.path.isfile(real):
         raise HTTPException(status_code=404, detail="Log file not found")
     try:
@@ -144,9 +169,20 @@ async def add_log(req: AddLog):
     return {"ok": True}
 
 
+class ClearLogRequest(BaseModel):
+    path: str
+
+
 @router.post("/clear")
-async def clear_log(path: str):
-    real = host_path(path)
+async def clear_log(req: ClearLogRequest):
+    path = req.path
+    # 清空（截断）属于破坏性写操作：只允许操作日志列表中已登记的日志文件
+    # （预置 + 自定义），且同样禁止面板数据目录，防止任意文件被清空。
+    allowed = {meta["path"] for meta in PREDEFINED.values()}
+    allowed.update(c.get("path", "") for c in _load_custom())
+    if path not in allowed:
+        raise HTTPException(status_code=400, detail="仅允许清空日志列表中登记的日志文件")
+    real = host_path(_safe_log_path(path))
     if not os.path.isfile(real):
         raise HTTPException(status_code=404, detail="Log file not found")
     try:

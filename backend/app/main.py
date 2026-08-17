@@ -48,10 +48,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Graw Server Panel", version="1.0.0", lifespan=lifespan)
 
+# 跨域策略：面板前后端始终同源部署——开发模式经 Vite proxy 代理 /api，
+# 生产模式由本服务直接托管 frontend/dist，因此无需开放任何跨域来源。
+# 此前 allow_origins=["*"] + allow_credentials=True 的组合会向任意来源
+# 回显 CORS 头（Starlette 在 credentials 模式下反射 Origin），属危险配置。
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[],  # 不放行任何跨域来源（同源请求不受影响）
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -138,6 +142,12 @@ app.include_router(
     tasks.router, prefix="/api/tasks", tags=["tasks"], dependencies=ADMIN
 )
 
+
+@app.get("/api/health")
+async def health():
+    return {"status": "ok"}
+
+
 # Serve frontend static files if built
 FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
 if os.path.exists(FRONTEND_DIST):
@@ -167,11 +177,6 @@ if os.path.exists(FRONTEND_DIST):
         ):
             return FileResponse(candidate)
         return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
-
-
-@app.get("/api/health")
-async def health():
-    return {"status": "ok"}
 
 
 if __name__ == "__main__":
