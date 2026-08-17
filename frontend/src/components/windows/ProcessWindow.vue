@@ -1,28 +1,28 @@
 <template>
   <div style="display:flex; flex-direction:column; height:100%;" @click="closeMenus">
     <div class="toolbar">
-      <button class="btn" @click="refresh">刷新</button>
-      <label style="font-size:11px;color:#0a3d7a;">排序：</label>
+      <button class="btn" @click="refresh">{{ $t('common.refresh') }}</button>
+      <label style="font-size:11px;color:#0a3d7a;">{{ $t('process.sortLabel') }}</label>
       <select v-model="sortBy" @change="refresh" style="font-size:11px;">
-        <option value="cpu">CPU</option>
-        <option value="memory">内存</option>
-        <option value="pid">PID</option>
-        <option value="name">名称</option>
+        <option value="cpu">{{ $t('process.cpu') }}</option>
+        <option value="memory">{{ $t('process.memory') }}</option>
+        <option value="pid">{{ $t('process.pid') }}</option>
+        <option value="name">{{ $t('process.name') }}</option>
       </select>
-      <input type="text" v-model="filter" placeholder="过滤进程名..." style="max-width:200px;" />
-      <span v-if="loading" style="margin-left:auto;color:#888;">加载中...</span>
-      <span v-else style="margin-left:auto;color:#888;">共 {{ filteredList.length }} 项</span>
+      <input type="text" v-model="filter" :placeholder="$t('process.searchPlaceholder')" style="max-width:200px;" />
+      <span v-if="loading" style="margin-left:auto;color:#888;">{{ $t('common.loading') }}</span>
+      <span v-else style="margin-left:auto;color:#888;">{{ $t('process.count', { count: filteredList.length }) }}</span>
     </div>
     <div style="flex:1; overflow:auto;">
       <table class="dt">
         <thead>
           <tr>
-            <th style="width:70px;">PID</th>
-            <th>名称</th>
-            <th style="width:120px;">用户</th>
-            <th style="width:80px;">状态</th>
-            <th style="width:80px;">CPU%</th>
-            <th style="width:100px;">内存</th>
+            <th style="width:70px;">{{ $t('process.pidCol') }}</th>
+            <th>{{ $t('process.nameCol') }}</th>
+            <th style="width:120px;">{{ $t('process.userCol') }}</th>
+            <th style="width:80px;">{{ $t('process.statusCol') }}</th>
+            <th style="width:80px;">{{ $t('process.cpuCol') }}</th>
+            <th style="width:100px;">{{ $t('process.memoryCol') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -39,8 +39,8 @@
     </div>
     <Teleport to="body">
       <div v-if="contextMenu.show" class="context-menu" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }" @click.stop>
-        <div class="menu-item" @click="menuKill">结束进程</div>
-        <div class="menu-item" @click="menuForceKill">强制结束</div>
+        <div class="menu-item" @click="menuKill">{{ $t('process.kill') }}</div>
+        <div class="menu-item" @click="menuForceKill">{{ $t('process.forceKill') }}</div>
       </div>
     </Teleport>
   </div>
@@ -48,8 +48,10 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { processApi, formatBytes } from '../../api'
 
+const { t } = useI18n()
 const list = ref([])
 const sortBy = ref('cpu')
 const filter = ref('')
@@ -95,12 +97,12 @@ function menuForceKill() {
 }
 
 async function kill(pid, force) {
-  if (!confirm(`确认${force ? '强制' : ''}结束进程 ${pid}？`)) return
+  if (!confirm(t('process.confirmKill', { force: force ? t('process.force') : '', pid }))) return
   try {
     await processApi.kill(pid, force)
     await refresh()
   } catch (e) {
-    alert('操作失败：' + (e.response?.data?.detail || e.message))
+    alert(t('process.operationFailed', { error: e.response?.data?.detail || e.message }))
   }
 }
 

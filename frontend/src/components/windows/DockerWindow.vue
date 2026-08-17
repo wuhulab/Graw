@@ -246,8 +246,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { dockerApi } from '../../api'
+import { docker, startDocker, refresh as refreshDockerStore } from '../../store/docker'
 
 const emit = defineEmits(['openLogs', 'openContainerTerminal', 'openContainerDetails', 'openFiles', 'openDockerConfigEditor'])
 
@@ -260,7 +261,6 @@ const status = ref(null)
 const containers = ref([])
 const ctxMenu = ref({ show: false, x: 0, y: 0, item: null })
 const noteDialog = ref({ show: false, text: '', item: null })
-let timer = null
 
 // ---------- 配置 ----------
 const config = ref({})
@@ -304,16 +304,8 @@ function refreshCurrent() {
 }
 
 async function refreshContainers() {
-  try {
-    status.value = await dockerApi.status()
-    if (status.value.available) {
-      containers.value = await dockerApi.containers()
-    } else {
-      containers.value = []
-    }
-  } catch (e) {
-    status.value = { available: false, reason: e.message }
-  }
+  // 委托给共享 store：触发一次去重刷新，结果经下方 watch 自动回填到本地视图
+  await refreshDockerStore()
 }
 
 async function loadConfig() {
@@ -569,16 +561,33 @@ function formatTime(t) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+let stopWatch = null
+
 onMounted(() => {
+  // 1) 先立即回填上次缓存的容器快照，避免「打开后一直在加载」
+  if (docker.hasCache) {
+    status.value = docker.status
+    containers.value = docker.containers
+    loading.value = docker.loading
+  }
+  // 2) 订阅共享 store（多窗口共用同一份数据与同一轮询，连接池优化）
+  stopWatch = watch(
+    () => ({ s: docker.status, c: docker.containers, loading: docker.loading }),
+    (v) => {
+      status.value = v.s
+      containers.value = v.c
+      loading.value = v.loading
+    },
+    { deep: true }
+  )
+  // 3) 确保共享轮询已启动，并立即刷新一次最新数据
+  startDocker()
   refreshContainers()
-  // 仅容器视图定时刷新，其它视图按需加载
-  timer = setInterval(() => {
-    if (view.value === 'containers' && status.value?.available !== false) {
-      refreshContainers()
-    }
-  }, 5000)
 })
-onUnmounted(() => clearInterval(timer))
+onUnmounted(() => {
+  if (stopWatch) stopWatch()
+  // 不停止共享轮询：其他仍打开的 Docker 窗口（或后台预热）继续接收更新
+})
 </script>
 
 <style scoped>

@@ -1,37 +1,37 @@
 <template>
   <div style="display:flex; flex-direction:column; height:100%; background:#f5f5f7;" @click="closeMenus">
     <div class="toolbar">
-      <span style="color:#0a3d7a; font-weight:600;">账号管理</span>
-      <span style="color:#6e6e73; font-size:11px;">共 {{ users.length }} 个账号</span>
-      <button class="btn" style="margin-left:auto;" @click="openCreate">+ 新建</button>
-      <button class="btn" @click="refresh">刷新</button>
+      <span style="color:#0a3d7a; font-weight:600;">{{ $t('users.title') }}</span>
+      <span style="color:#6e6e73; font-size:11px;">{{ $t('users.count', { count: users.length }) }}</span>
+      <button class="btn" style="margin-left:auto;" @click="openCreate">+ {{ $t('users.create') }}</button>
+      <button class="btn" @click="refresh">{{ $t('users.refresh') }}</button>
     </div>
 
     <div style="flex:1; overflow:auto;">
       <table class="dt">
         <thead>
           <tr>
-            <th>账号</th>
-            <th>角色</th>
-            <th>状态</th>
-            <th>创建时间</th>
+            <th>{{ $t('users.username') }}</th>
+            <th>{{ $t('users.role') }}</th>
+            <th>{{ $t('users.status') }}</th>
+            <th>{{ $t('users.createdAt') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="users.length === 0">
-            <td colspan="4" class="empty">暂无账号</td>
+            <td colspan="4" class="empty">{{ $t('users.noUsers') }}</td>
           </tr>
           <tr v-for="u in users" :key="u.username" @contextmenu.prevent="onContextMenu($event, u)">
             <td>
               <span style="font-family: ui-monospace, monospace; font-weight:600;">{{ u.username }}</span>
-              <span v-if="u.username === currentUser" style="color:#0a84ff; font-size:11px; margin-left:6px;">(我)</span>
+              <span v-if="u.username === currentUser" style="color:#0a84ff; font-size:11px; margin-left:6px;">{{ $t('users.me') }}</span>
             </td>
             <td>
-              <span :class="['role-pill', u.role]">{{ u.role === 'admin' ? '管理员' : '用户' }}</span>
+              <span :class="['role-pill', u.role]">{{ u.role === 'admin' ? $t('users.admin') : $t('users.user') }}</span>
             </td>
             <td>
-              <span v-if="u.must_change_password" style="color:#c0392b; font-size:11px;">待改密</span>
-              <span v-else style="color:#67c23a; font-size:11px;">正常</span>
+              <span v-if="u.must_change_password" style="color:#c0392b; font-size:11px;">{{ $t('users.mustChange') }}</span>
+              <span v-else style="color:#67c23a; font-size:11px;">{{ $t('users.normal') }}</span>
             </td>
             <td style="font-size:11px; color:#6e6e73;">{{ formatTime(u.created_at) }}</td>
           </tr>
@@ -41,36 +41,36 @@
 
     <Teleport to="body">
       <div v-if="contextMenu.show" class="context-menu" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }" @click.stop>
-        <div class="menu-item" @click="menuResetPwd">重置密码</div>
-        <div class="menu-item" @click="menuToggleRole">{{ contextMenu.item?.role === 'admin' ? '降为用户' : '升为管理' }}</div>
-        <div class="menu-item danger" @click="menuDelete">删除</div>
+        <div class="menu-item" @click="menuResetPwd">{{ $t('users.resetPassword') }}</div>
+        <div class="menu-item" @click="menuToggleRole">{{ contextMenu.item?.role === 'admin' ? $t('users.demote') : $t('users.promote') }}</div>
+        <div class="menu-item danger" @click="menuDelete">{{ $t('users.delete') }}</div>
       </div>
     </Teleport>
 
     <!-- 创建对话框 -->
     <div v-if="showCreate" class="modal-mask" @click.self="showCreate = false">
       <div class="modal">
-        <div class="modal-title">新建账号</div>
+        <div class="modal-title">{{ $t('users.createTitle') }}</div>
         <label class="field">
-          <span class="label">账号 (2-32 字符)</span>
+          <span class="label">{{ $t('users.usernameLabel') }}</span>
           <input v-model.trim="form.username" maxlength="32" />
         </label>
         <label class="field">
-          <span class="label">密码 (至少 6 位)</span>
+          <span class="label">{{ $t('users.passwordLabel') }}</span>
           <input v-model="form.password" type="password" />
         </label>
         <label class="field">
-          <span class="label">角色</span>
+          <span class="label">{{ $t('users.roleLabel') }}</span>
           <select v-model="form.role">
-            <option value="user">用户</option>
-            <option value="admin">管理员</option>
+            <option value="user">{{ $t('users.user') }}</option>
+            <option value="admin">{{ $t('users.admin') }}</option>
           </select>
         </label>
         <div v-if="modalError" class="error">{{ modalError }}</div>
         <div class="modal-actions">
-          <button class="btn" @click="showCreate = false">取消</button>
+          <button class="btn" @click="showCreate = false">{{ $t('common.cancel') }}</button>
           <button class="btn-primary" :disabled="saving" @click="submitCreate">
-            {{ saving ? '创建中…' : '创建' }}
+            {{ saving ? $t('common.saving') : $t('common.create') }}
           </button>
         </div>
       </div>
@@ -79,20 +79,20 @@
     <!-- 重置密码对话框 -->
     <div v-if="showReset" class="modal-mask" @click.self="showReset = false">
       <div class="modal">
-        <div class="modal-title">重置密码 · {{ resetTarget?.username }}</div>
+        <div class="modal-title">{{ $t('users.resetTitle', { username: resetTarget?.username }) }}</div>
         <label class="field">
-          <span class="label">新密码 (至少 6 位)</span>
+          <span class="label">{{ $t('users.newPasswordLabel') }}</span>
           <input v-model="resetPwd" type="password" />
         </label>
         <label class="field checkbox">
           <input type="checkbox" v-model="resetMustChange" />
-          <span>下次登录必须修改</span>
+          <span>{{ $t('users.requireChange') }}</span>
         </label>
         <div v-if="modalError" class="error">{{ modalError }}</div>
         <div class="modal-actions">
-          <button class="btn" @click="showReset = false">取消</button>
+          <button class="btn" @click="showReset = false">{{ $t('common.cancel') }}</button>
           <button class="btn-primary" :disabled="saving" @click="submitReset">
-            {{ saving ? '提交中…' : '保存' }}
+            {{ saving ? $t('common.saving') : $t('common.save') }}
           </button>
         </div>
       </div>
@@ -102,9 +102,11 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { authApi } from '../../api'
 import { auth } from '../../store/auth'
 
+const { t } = useI18n()
 const users = ref([])
 const showCreate = ref(false)
 const showReset = ref(false)
@@ -138,8 +140,8 @@ function openCreate() {
 
 async function submitCreate() {
   if (saving.value) return
-  if (form.value.username.length < 2) { modalError.value = '账号至少 2 字符'; return }
-  if (form.value.password.length < 6) { modalError.value = '密码至少 6 位'; return }
+  if (form.value.username.length < 2) { modalError.value = t('users.usernameTooShort'); return }
+  if (form.value.password.length < 6) { modalError.value = t('users.passwordTooShort'); return }
   saving.value = true
   modalError.value = ''
   try {
@@ -147,7 +149,7 @@ async function submitCreate() {
     showCreate.value = false
     await refresh()
   } catch (e) {
-    modalError.value = e?.response?.data?.detail || '创建失败'
+    modalError.value = e?.response?.data?.detail || t('users.createFailed')
   } finally {
     saving.value = false
   }
@@ -163,7 +165,7 @@ function openResetPwd(u) {
 
 async function submitReset() {
   if (saving.value) return
-  if (resetPwd.value.length < 6) { modalError.value = '密码至少 6 位'; return }
+  if (resetPwd.value.length < 6) { modalError.value = t('users.passwordTooShort'); return }
   saving.value = true
   modalError.value = ''
   try {
@@ -173,7 +175,7 @@ async function submitReset() {
     })
     showReset.value = false
   } catch (e) {
-    modalError.value = e?.response?.data?.detail || '重置失败'
+    modalError.value = e?.response?.data?.detail || t('users.resetFailed')
   } finally {
     saving.value = false
   }
@@ -184,7 +186,7 @@ async function toggleRole(u) {
   if (u.role === 'admin' && next === 'user') {
     const admins = users.value.filter(u2 => u2.role === 'admin')
     if (admins.length <= 1) {
-      alert('至少需要保留一个管理员账号')
+      alert(t('users.atLeastOneAdmin'))
       return
     }
   }
@@ -192,18 +194,18 @@ async function toggleRole(u) {
     await authApi.updateUser(u.username, { role: next })
     await refresh()
   } catch (e) {
-    alert(e?.response?.data?.detail || '修改角色失败')
+    alert(e?.response?.data?.detail || t('users.toggleRoleFailed'))
   }
 }
 
 async function del(u) {
-  if (u.username === currentUser) { alert('不能删除当前登录账号'); return }
-  if (!confirm(`确认删除账号 ${u.username}?`)) return
+  if (u.username === currentUser) { alert(t('users.cannotDeleteSelf')); return }
+  if (!confirm(t('users.confirmDelete', { username: u.username }))) return
   try {
     await authApi.deleteUser(u.username)
     await refresh()
   } catch (e) {
-    alert(e?.response?.data?.detail || '删除失败')
+    alert(e?.response?.data?.detail || t('users.deleteFailed'))
   }
 }
 

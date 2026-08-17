@@ -4,20 +4,20 @@
       <!-- 安全入口门禁（已配置入口且当前路径不匹配） -->
       <template v-if="shunxChecked && shunx.enabled && !shunx.matched">
         <div class="login-title">ShunX</div>
-        <div class="login-subtitle">安全入口保护</div>
+        <div class="login-subtitle">{{ $t('login.shunxGate') }}</div>
         <div class="hint" style="background:rgba(255,59,48,0.08);border-color:rgba(255,59,48,0.2);color:#c0392b;">
-          请通过已配置的安全入口路径访问管理面板
+          {{ $t('login.shunxHint') }}
         </div>
       </template>
 
       <!-- 登录表单 -->
       <template v-else-if="!forceChange">
         <div class="login-title">Graw</div>
-        <div class="login-subtitle">服务器管理面板</div>
+        <div class="login-subtitle">{{ $t('login.subtitle') }}</div>
 
         <form @submit.prevent="handleLogin">
           <label class="field">
-            <span class="label">账号</span>
+            <span class="label">{{ $t('login.username') }}</span>
             <input
               v-model.trim="username"
               type="text"
@@ -28,7 +28,7 @@
             />
           </label>
           <label class="field">
-            <span class="label">密码</span>
+            <span class="label">{{ $t('login.password') }}</span>
             <input
               v-model="password"
               type="password"
@@ -38,7 +38,7 @@
           </label>
           <div v-if="error" class="error">{{ error }}</div>
           <button class="btn-primary" type="submit" :disabled="loading">
-            {{ loading ? '登录中…' : '登 录' }}
+            {{ loading ? $t('login.loggingIn') : $t('login.login') }}
           </button>
         </form>
       </template>
@@ -46,24 +46,24 @@
       <!-- 强制改密 -->
       <form v-else @submit.prevent="handleChangePassword">
         <div v-if="forceChangeReason === 'default'" class="hint danger">
-          检测到您正在使用默认密码，出于安全考虑，必须先修改密码才能使用面板。
+          {{ $t('login.defaultPwdHint') }}
         </div>
-        <div v-else class="hint">首次登录或密码已重置，请设置新密码</div>
+        <div v-else class="hint">{{ $t('login.resetPwdHint') }}</div>
         <label class="field">
-          <span class="label">原密码</span>
+          <span class="label">{{ $t('login.oldPassword') }}</span>
           <input v-model="oldPassword" type="password" required />
         </label>
         <label class="field">
-          <span class="label">新密码</span>
+          <span class="label">{{ $t('login.newPassword') }}</span>
           <input v-model="newPassword" type="password" minlength="8" required />
         </label>
         <label class="field">
-          <span class="label">确认新密码</span>
+          <span class="label">{{ $t('login.confirmPassword') }}</span>
           <input v-model="confirmPassword" type="password" minlength="8" required />
         </label>
         <div v-if="error" class="error">{{ error }}</div>
         <button class="btn-primary" type="submit" :disabled="loading">
-          {{ loading ? '提交中…' : '更新密码并进入' }}
+          {{ loading ? $t('login.submitting') : $t('login.updateAndEnter') }}
         </button>
       </form>
     </div>
@@ -72,9 +72,11 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { authApi, shunxApi } from '../api'
 import { setAuth } from '../store/auth'
 
+const { t } = useI18n()
 const emit = defineEmits(['login'])
 
 const username = ref('admin')

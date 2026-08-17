@@ -29,21 +29,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { systemApi, notesApi } from '../../api'
+import { ref, onMounted, computed } from 'vue'
+import { notesApi } from '../../api'
+import { systemState } from '../../store/systemMetrics'
 
 const mode = ref('info')
-const info = ref({
-  hostname: '-', system: '-', release: '', machine: '-',
-  cpu_count: 0, cpu_count_physical: 0, python_version: '-',
-  boot_time: '', uptime_seconds: 0
-})
+// 系统信息由共享「单条 WS」指标推送驱动（见 store/systemMetrics.js），
+// 无需再单独 5s 轮询 /api/system/info。
+const info = computed(() => systemState.info)
 const noteContent = ref('')
-let timer = null
 
-async function load() {
-  try { info.value = await systemApi.info() } catch (e) {}
-}
 async function loadNote() {
   try { noteContent.value = (await notesApi.get()).content || '' } catch (e) {}
 }
@@ -69,9 +64,6 @@ const uptimeStr = computed(() => {
 })
 
 onMounted(() => {
-  load()
   loadNote()
-  timer = setInterval(load, 5000)
 })
-onUnmounted(() => clearInterval(timer))
 </script>

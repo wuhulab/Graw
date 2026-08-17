@@ -1,8 +1,13 @@
 <template>
   <div class="db-window">
     <div class="toolbar">
-      <button class="btn primary" @click="$emit('openConnectionForm')"><Plus :size="14" /> 添加连接</button>
-      <span class="hint">MySQL: {{ status.mysql_libs ? '已安装' : '未安装' }} | Redis: {{ status.redis_libs ? '已安装' : '未安装' }} | PostgreSQL: {{ status.postgresql_libs ? '已安装' : '未安装' }} | MongoDB: {{ status.mongodb_libs ? '已安装' : '未安装' }}</span>
+      <button class="btn primary" @click="$emit('openConnectionForm')"><Plus :size="14" /> {{ $t('database.addConnection') }}</button>
+      <span class="hint">
+        {{ $t('database.mysqlInstalled', { installed: $t(status.mysql_libs ? 'database.installed' : 'database.notInstalled') }) }}
+        | {{ $t('database.redisInstalled', { installed: $t(status.redis_libs ? 'database.installed' : 'database.notInstalled') }) }}
+        | {{ $t('database.postgresqlInstalled', { installed: $t(status.postgresql_libs ? 'database.installed' : 'database.notInstalled') }) }}
+        | {{ $t('database.mongodbInstalled', { installed: $t(status.mongodb_libs ? 'database.installed' : 'database.notInstalled') }) }}
+      </span>
     </div>
     <div class="connections">
       <div v-for="c in connections" :key="c.id" class="conn-card">
@@ -11,42 +16,42 @@
           <div class="conn-addr">{{ c.host }}:{{ c.port }}<template v-if="c.database"> / {{ c.database }}</template></div>
         </div>
         <div class="conn-actions">
-          <button class="btn small" @click="testConn(c)">测试连接</button>
-          <button class="btn small" @click="$emit('openConnectionForm', c)">编辑</button>
-          <button class="btn small" @click="openManage(c)">管理</button>
-          <button class="btn small danger" @click="removeConn(c)">删除</button>
+          <button class="btn small" @click="testConn(c)">{{ $t('database.testConnection') }}</button>
+          <button class="btn small" @click="$emit('openConnectionForm', c)">{{ $t('database.edit') }}</button>
+          <button class="btn small" @click="openManage(c)">{{ $t('database.manage') }}</button>
+          <button class="btn small danger" @click="removeConn(c)">{{ $t('database.delete') }}</button>
         </div>
       </div>
-      <div v-if="connections.length === 0" class="empty">暂无数据库连接</div>
+      <div v-if="connections.length === 0" class="empty">{{ $t('database.noConnections') }}</div>
     </div>
 
     <!-- Manage Modal -->
     <div v-if="showManage" class="modal-overlay" @click.self="showManage = false">
       <div class="modal wide">
-        <h3>管理: {{ manageConn?.name }} <span class="tag">{{ typeLabel(manageConn?.db_type) }}</span></h3>
+        <h3>{{ $t('database.manageTitle', { name: manageConn?.name }) }} <span class="tag">{{ typeLabel(manageConn?.db_type) }}</span></h3>
         <div class="tabs">
-          <button class="tab" :class="{active: tab==='dbs'}" @click="tab='dbs'">数据库 / Keyspace</button>
-          <button class="tab" :class="{active: tab==='query'}" @click="tab='query'">查询 / CLI</button>
+          <button class="tab" :class="{active: tab==='dbs'}" @click="tab='dbs'">{{ $t('database.databases') }}</button>
+          <button class="tab" :class="{active: tab==='query'}" @click="tab='query'">{{ $t('database.query') }}</button>
         </div>
 
         <div v-if="tab==='dbs'" class="panel">
           <!-- MySQL / PostgreSQL：库列表 + 创建/删除 -->
           <div v-if="manageConn?.db_type==='mysql' || manageConn?.db_type==='postgresql'">
-            <button class="btn small primary" @click="showCreateDB=true">创建数据库</button>
+            <button class="btn small primary" @click="showCreateDB=true">{{ $t('database.createDB') }}</button>
             <table class="mini-table">
-              <thead><tr><th>数据库名</th><th>操作</th></tr></thead>
+              <thead><tr><th>{{ $t('database.dbNamePlaceholder') }}</th><th>{{ $t('common.action') }}</th></tr></thead>
               <tbody>
-                <tr v-for="db in dbList" :key="db"><td>{{ db }}</td><td><button class="btn small danger" @click="dropDB(db)">删除</button></td></tr>
+                <tr v-for="db in dbList" :key="db"><td>{{ db }}</td><td><button class="btn small danger" @click="dropDB(db)">{{ $t('database.dropDB') }}</button></td></tr>
               </tbody>
             </table>
           </div>
           <!-- MongoDB：库列表 + 删除（数据库随首次写入自动创建） -->
           <div v-else-if="manageConn?.db_type==='mongodb'">
-            <div class="hint" style="margin-bottom:8px">MongoDB 数据库随首次写入自动创建，无需手动新建。</div>
+            <div class="hint" style="margin-bottom:8px">{{ $t('database.mongoHint') }}</div>
             <table class="mini-table">
-              <thead><tr><th>数据库名</th><th>操作</th></tr></thead>
+              <thead><tr><th>{{ $t('database.dbNamePlaceholder') }}</th><th>{{ $t('common.action') }}</th></tr></thead>
               <tbody>
-                <tr v-for="db in dbList" :key="db"><td>{{ db }}</td><td><button class="btn small danger" @click="dropDB(db)">删除</button></td></tr>
+                <tr v-for="db in dbList" :key="db"><td>{{ db }}</td><td><button class="btn small danger" @click="dropDB(db)">{{ $t('database.dropDB') }}</button></td></tr>
               </tbody>
             </table>
           </div>
@@ -59,36 +64,36 @@
         <div v-if="tab==='query'" class="panel">
           <!-- MySQL / PostgreSQL：SQL 编辑器 -->
           <div v-if="manageConn?.db_type==='mysql' || manageConn?.db_type==='postgresql'">
-            <textarea v-model="sqlText" rows="4" placeholder="输入 SELECT / SHOW / DESCRIBE 等 SQL..." />
-            <button class="btn small primary" @click="execSql">执行</button>
+            <textarea v-model="sqlText" rows="4" :placeholder="$t('database.sqlPlaceholder')" />
+            <button class="btn small primary" @click="execSql">{{ $t('database.execute') }}</button>
             <div v-if="queryResult" class="result">
               <table v-if="queryResult.columns" class="mini-table">
                 <thead><tr><th v-for="col in queryResult.columns" :key="col">{{ col }}</th></tr></thead>
                 <tbody><tr v-for="(row,idx) in queryResult.rows" :key="idx"><td v-for="(cell, cidx) in row" :key="cidx">{{ cell }}</td></tr></tbody>
               </table>
-              <div v-else>影响行数: {{ queryResult.affected }}</div>
+              <div v-else>{{ $t('database.affectedRows', { count: queryResult.affected }) }}</div>
             </div>
           </div>
           <!-- MongoDB：集合 + JSON 过滤条件 -->
           <div v-else-if="manageConn?.db_type==='mongodb'">
             <div class="mongo-row">
-              <input v-model="mongoCollection" placeholder="集合名，如 users" />
-              <input v-model.number="mongoLimit" type="number" placeholder="条数" title="返回条数" style="width:80px" />
+              <input v-model="mongoCollection" :placeholder="$t('database.mongoCollectionPlaceholder')" />
+              <input v-model.number="mongoLimit" type="number" :placeholder="$t('database.mongoLimitPlaceholder')" :title="$t('database.mongoLimitTitle')" style="width:80px" />
             </div>
-            <textarea v-model="mongoFilter" rows="3" placeholder='过滤条件 JSON，如 {"age":{"$gt":18}}（可留空表示全部）' />
-            <button class="btn small primary" @click="execMongo">查询</button>
+            <textarea v-model="mongoFilter" rows="3" :placeholder="$t('database.mongoFilterPlaceholder')" />
+            <button class="btn small primary" @click="execMongo">{{ $t('database.mongoQuery') }}</button>
             <pre v-if="mongoResult !== null" class="pre">{{ mongoResult }}</pre>
           </div>
           <!-- Redis：命令输入 -->
           <div v-else>
-            <input v-model="redisCmd" placeholder="如: GET mykey 或 HGETALL myhash" />
-            <button class="btn small primary" @click="execRedis">执行</button>
+            <input v-model="redisCmd" :placeholder="$t('database.redisPlaceholder')" />
+            <button class="btn small primary" @click="execRedis">{{ $t('database.execute') }}</button>
             <pre v-if="redisResult !== null" class="pre">{{ redisResult }}</pre>
           </div>
         </div>
 
         <div class="actions">
-          <button class="btn" @click="showManage = false">关闭</button>
+          <button class="btn" @click="showManage = false">{{ $t('common.close') }}</button>
         </div>
       </div>
     </div>
@@ -96,11 +101,11 @@
     <!-- Create DB Modal -->
     <div v-if="showCreateDB" class="modal-overlay" @click.self="showCreateDB=false">
       <div class="modal">
-        <h3>创建数据库</h3>
-        <input v-model="newDbName" placeholder="数据库名" />
+        <h3>{{ $t('database.createDBTitle') }}</h3>
+        <input v-model="newDbName" :placeholder="$t('database.dbNamePlaceholder')" />
         <div class="actions">
-          <button class="btn" @click="showCreateDB=false">取消</button>
-          <button class="btn primary" @click="doCreateDB">创建</button>
+          <button class="btn" @click="showCreateDB=false">{{ $t('common.cancel') }}</button>
+          <button class="btn primary" @click="doCreateDB">{{ $t('common.create') }}</button>
         </div>
       </div>
     </div>
@@ -109,9 +114,12 @@
 
 <script setup>
 import { ref, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { databasesApi } from '../../api'
 import { dbVersion } from '../../store/databases'
 import { Plus } from 'lucide-vue-next'
+
+const { t } = useI18n()
 
 const emit = defineEmits(['openConnectionForm'])
 
@@ -148,7 +156,7 @@ async function load() {
 }
 
 async function removeConn(c) {
-  if (!confirm('删除此连接配置？')) return
+  if (!confirm(t('database.confirmDeleteConn'))) return
   await databasesApi.deleteConn(c.id)
   await load()
 }
@@ -156,9 +164,9 @@ async function removeConn(c) {
 async function testConn(c) {
   try {
     await databasesApi.test(c.id)
-    alert('连接成功')
+    alert(t('database.testSuccess'))
   } catch (e) {
-    alert('连接失败: ' + (e?.response?.data?.detail || e.message))
+    alert(t('database.testFailed', { error: e?.response?.data?.detail || e.message }))
   }
 }
 
@@ -204,7 +212,7 @@ async function doCreateDB() {
 }
 
 async function dropDB(name) {
-  if (!confirm(`删除数据库 ${name}？`)) return
+  if (!confirm(t('database.confirmDropDB', { name }))) return
   await databasesApi.deleteDB(manageConn.value.id, name)
   if (manageConn.value) openManage(manageConn.value)
 }

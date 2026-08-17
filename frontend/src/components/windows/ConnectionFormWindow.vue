@@ -1,43 +1,43 @@
 <template>
   <div class="conn-form">
-    <h3>{{ isEdit ? '编辑数据库连接' : '添加数据库连接' }}</h3>
+    <h3>{{ isEdit ? $t('connectionform.editTitle', { name: form.name }) : $t('connectionform.addTitle') }}</h3>
     <div class="form">
-      <label>名称 *</label>
-      <input v-model="form.name" placeholder="连接名称" />
+      <label>{{ $t('common.name') }} *</label>
+      <input v-model="form.name" :placeholder="$t('connectionform.namePlaceholder')" />
 
-      <label>类型</label>
+      <label>{{ $t('connectionform.type') }}</label>
       <select v-model="form.db_type">
-        <option value="mysql">MySQL / MariaDB</option>
-        <option value="postgresql">PostgreSQL</option>
-        <option value="mongodb">MongoDB</option>
-        <option value="redis">Redis</option>
+        <option value="mysql">{{ $t('connectionform.mysql') }}</option>
+        <option value="postgresql">{{ $t('connectionform.postgresql') }}</option>
+        <option value="mongodb">{{ $t('connectionform.mongodb') }}</option>
+        <option value="redis">{{ $t('connectionform.redis') }}</option>
       </select>
 
-      <label>主机</label>
+      <label>{{ $t('connectionform.host') }}</label>
       <input v-model="form.host" placeholder="127.0.0.1" />
 
-      <label>端口</label>
+      <label>{{ $t('connectionform.port') }}</label>
       <input v-model.number="form.port" type="number" />
 
       <template v-if="form.db_type !== 'redis'">
-        <label>用户名</label>
+        <label>{{ $t('connectionform.username') }}</label>
         <input v-model="form.username" :placeholder="usernamePlaceholder" />
       </template>
 
-      <label>密码</label>
-      <input v-model="form.password" type="password" placeholder="留空表示无密码" />
+      <label>{{ $t('connectionform.password') }}</label>
+      <input v-model="form.password" type="password" :placeholder="$t('connectionform.passwordPlaceholder')" />
 
       <template v-if="form.db_type !== 'redis'">
         <label>{{ dbLabel }}</label>
         <input v-model="form.database" :placeholder="dbPlaceholder" />
       </template>
-      <div v-else class="hint">Redis 默认使用 0 号库，连接后在「管理 → 查询/CLI」中可切换库号。</div>
+      <div v-else class="hint">{{ $t('connectionform.redisHint') }}</div>
 
       <div v-if="errorMsg" class="error">{{ errorMsg }}</div>
 
       <div class="actions">
-        <button class="btn" @click="$emit('close')">取消</button>
-        <button class="btn primary" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存' }}</button>
+        <button class="btn" @click="$emit('close')">{{ $t('connectionform.cancel') }}</button>
+        <button class="btn primary" :disabled="saving" @click="save">{{ saving ? $t('common.saving') : $t('connectionform.save') }}</button>
       </div>
     </div>
   </div>
@@ -45,8 +45,11 @@
 
 <script setup>
 import { reactive, ref, computed, watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { databasesApi } from '../../api'
 import { notifyDatabasesChanged } from '../../store/databases'
+
+const { t } = useI18n()
 
 const props = defineProps({
   // 传入连接对象则为编辑模式；为 null 表示新增
@@ -56,7 +59,7 @@ const emit = defineEmits(['close', 'saved'])
 
 const isEdit = !!props.conn
 
-// 各类型默认端口 / 用户名 / 数据库与表单文案
+// 各类型默认端口 / 用户名 / 数据库与表单文案（文案 key 走 i18n）
 const DEFAULTS = {
   mysql: { port: 3306, username: 'root', database: '' },
   postgresql: { port: 5432, username: 'postgres', database: 'postgres' },
@@ -64,11 +67,12 @@ const DEFAULTS = {
   redis: { port: 6379, username: '', database: '' }
 }
 
+// 各类型「默认数据库」标签 / 占位符对应的 i18n key
 const DB_LABELS = {
-  mysql: { label: '默认数据库（MySQL）', ph: '如：mydb（可留空）' },
-  postgresql: { label: '默认数据库（PostgreSQL）', ph: '如：postgres' },
-  mongodb: { label: '默认库 / 认证库（MongoDB）', ph: '如：admin' },
-  redis: { label: '', ph: '' }
+  mysql: { labelKey: 'connectionform.defaultDB', phKey: 'connectionform.dbPlaceholderMysql' },
+  postgresql: { labelKey: 'connectionform.defaultDBPg', phKey: 'connectionform.dbPlaceholderPg' },
+  mongodb: { labelKey: 'connectionform.defaultAuthDB', phKey: 'connectionform.dbPlaceholderMongo' },
+  redis: { labelKey: '', phKey: '' }
 }
 
 const form = reactive({ name: '', db_type: 'mysql', host: '127.0.0.1', port: 3306, username: 'root', password: '', database: '' })
@@ -78,10 +82,18 @@ const errorMsg = ref('')
 const suppressAuto = ref(false)
 
 const usernamePlaceholder = computed(() =>
-  form.db_type === 'mongodb' ? '可留空（无认证时）' : `如：${DEFAULTS[form.db_type]?.username || 'root'}`
+  form.db_type === 'mongodb'
+    ? t('connectionform.usernameHint')
+    : t('connectionform.usernameExampleValue', { username: DEFAULTS[form.db_type]?.username || 'root' })
 )
-const dbLabel = computed(() => DB_LABELS[form.db_type]?.label || '默认数据库')
-const dbPlaceholder = computed(() => DB_LABELS[form.db_type]?.ph || '')
+const dbLabel = computed(() => {
+  const key = DB_LABELS[form.db_type]?.labelKey
+  return key ? t(key) : t('connectionform.defaultDBGeneric')
+})
+const dbPlaceholder = computed(() => {
+  const key = DB_LABELS[form.db_type]?.phKey
+  return key ? t(key) : ''
+})
 
 // 切换类型时自动套用该类型的默认端口/用户名/数据库
 watch(
@@ -114,7 +126,7 @@ onMounted(() => {
 
 async function save() {
   if (!form.name.trim()) {
-    errorMsg.value = '请填写连接名称'
+    errorMsg.value = t('connectionform.nameRequired')
     return
   }
   errorMsg.value = ''

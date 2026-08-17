@@ -2,20 +2,20 @@
   <div class="tasks-window">
     <!-- 顶部工具栏 -->
     <div class="toolbar">
-      <span class="title"><ListChecks :size="15" /> 任务中心</span>
-      <span class="hint">刷新页面不会中断任务</span>
+      <span class="title"><ListChecks :size="15" /> {{ $t('taskcenter.title') }}</span>
+      <span class="hint">{{ $t('taskcenter.noRefreshHint') }}</span>
       <button class="btn" style="margin-left:auto;" :disabled="!selected" @click="removeSelected">
-        <Trash2 :size="13" /> 删除
+        <Trash2 :size="13" /> {{ $t('taskcenter.delete') }}
       </button>
       <button class="btn" :disabled="loading" @click="refreshAll">
-        <RefreshCw :size="13" :class="{ spin: loading }" /> 刷新
+        <RefreshCw :size="13" :class="{ spin: loading }" /> {{ $t('taskcenter.refresh') }}
       </button>
     </div>
 
     <div class="body">
       <!-- 左侧任务列表 -->
       <div class="task-list">
-        <div v-if="tasks.length === 0" class="empty">暂无任务</div>
+        <div v-if="tasks.length === 0" class="empty">{{ $t('taskcenter.noTasks') }}</div>
         <div
           v-for="t in tasks"
           :key="t.id"
@@ -41,7 +41,7 @@
           <div class="log-head">
             <span class="log-title">{{ selected.title }}</span>
             <span class="badge" :class="selected.status">{{ statusText(selected) }}</span>
-            <span v-if="selected.status === 'running'" class="live">● 实时更新</span>
+            <span v-if="selected.status === 'running'" class="live">● {{ $t('taskcenter.liveUpdate') }}</span>
           </div>
           <div ref="logBox" class="log-box">
             <div v-for="(l, i) in logLines" :key="i" class="line" :class="lineClass(l)">
@@ -50,10 +50,10 @@
               <span v-else-if="l.type === 'result'" class="arrow">{{ resultFailed(l) ? '✖' : '✔' }}</span>
               <span class="text">{{ lineText(l) }}</span>
             </div>
-            <div v-if="selected.status === 'running'" class="line status"><span class="arrow">»</span><span class="text">等待输出...</span></div>
+            <div v-if="selected.status === 'running'" class="line status"><span class="arrow">»</span><span class="text">{{ $t('taskcenter.waitingOutput') }}</span></div>
           </div>
         </template>
-        <div v-else class="empty">选择左侧任务查看日志</div>
+        <div v-else class="empty">{{ $t('taskcenter.noTasksSelected') }}</div>
       </div>
     </div>
   </div>
@@ -61,8 +61,11 @@
 
 <script setup>
 import { ref, nextTick, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { tasksApi } from '../../api'
 import { ListChecks, Trash2, RefreshCw } from 'lucide-vue-next'
+
+const { t } = useI18n()
 
 const tasks = ref([])
 const selected = ref(null)
@@ -72,10 +75,10 @@ const loading = ref(false)
 
 let timer = null
 
-function statusText(t) {
-  if (t.status === 'running') return '进行中'
-  if (t.status === 'error') return '失败'
-  return '完成'
+function statusText(task) {
+  if (task.status === 'running') return t('taskcenter.statusRunning')
+  if (task.status === 'error') return t('taskcenter.statusFailed')
+  return t('taskcenter.statusCompleted')
 }
 
 function fmtTime(t) {
@@ -102,12 +105,12 @@ function lineText(l) {
   const d = parseResult(l)
   if (d) {
     const parts = []
-    if (d.app_name) parts.push(`应用 ${d.app_name}`)
-    if (d.container_name) parts.push(`容器 ${d.container_name}`)
-    if (d.version) parts.push(`版本 ${d.version}`)
-    if (d.port) parts.push(`端口 ${d.port}`)
-    const head = d.ok === true ? '安装成功' : '安装失败'
-    return `${head}（${parts.join('，') || '见上方日志'}）`
+    if (d.app_name) parts.push(t('taskcenter.appLabel', { name: d.app_name }))
+    if (d.container_name) parts.push(t('taskcenter.containerLabel', { name: d.container_name }))
+    if (d.version) parts.push(t('taskcenter.versionLabel', { name: d.version }))
+    if (d.port) parts.push(t('taskcenter.portLabel', { name: d.port }))
+    const head = d.ok === true ? t('taskcenter.installSuccess') : t('taskcenter.installFailed')
+    return `${head}（${parts.join('，') || t('taskcenter.seeLogAbove')}）`
   }
   return l.text || ''
 }
@@ -159,13 +162,13 @@ function select(t) {
 
 async function removeSelected() {
   if (!selected.value) return
-  if (!confirm(`确认删除任务「${selected.value.title}」？日志将一并清除。`)) return
+  if (!confirm(t('taskcenter.confirmDelete', { title: selected.value.title }))) return
   try {
     await tasksApi.remove(selected.value.id)
     selected.value = null
     await refreshList()
   } catch (e) {
-    alert('删除失败：' + (e.response?.data?.detail || e.message))
+    alert(t('taskcenter.deleteFailed', { error: e.response?.data?.detail || e.message }))
   }
 }
 

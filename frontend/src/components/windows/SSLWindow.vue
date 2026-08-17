@@ -1,13 +1,13 @@
 <template>
   <div class="ssl-window">
     <div class="toolbar">
-      <button class="btn primary" @click="showUpload=true">上传证书</button>
-      <button class="btn primary" @click="showLE=true">Let's Encrypt</button>
-      <span class="hint">Certbot: {{ certbot ? '已安装' : '未安装' }}</span>
+      <button class="btn primary" @click="showUpload=true">{{ $t('ssl.upload') }}</button>
+      <button class="btn primary" @click="showLE=true">{{ $t('ssl.letsEncrypt') }}</button>
+      <span class="hint">{{ $t('ssl.certbot', { status: $t(certbot ? 'database.installed' : 'database.notInstalled') }) }}</span>
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>名称</th><th>域名</th><th>类型</th><th>路径</th><th>操作</th></tr></thead>
+        <thead><tr><th>{{ $t('ssl.name') }}</th><th>{{ $t('ssl.domains') }}</th><th>{{ $t('ssl.type') }}</th><th>{{ $t('ssl.path') }}</th><th>{{ $t('common.action') }}</th></tr></thead>
         <tbody>
           <tr v-for="c in certs" :key="c.id">
             <td>{{ c.name }}</td>
@@ -16,22 +16,22 @@
             <td class="mono">{{ c.cert_path }}</td>
             <td><button class="iconbtn danger" @click="remove(c.id)"><Trash2 :size="14"/></button></td>
           </tr>
-          <tr v-if="certs.length===0"><td colspan="5" class="empty">暂无证书</td></tr>
+          <tr v-if="certs.length===0"><td colspan="5" class="empty">{{ $t('ssl.noCerts') }}</td></tr>
         </tbody>
       </table>
     </div>
 
     <div v-if="showUpload" class="modal-overlay" @click.self="showUpload=false">
       <div class="modal">
-        <h3>上传自定义证书</h3>
+        <h3>{{ $t('ssl.uploadTitle') }}</h3>
         <div class="form">
-          <label>证书名称</label><input v-model="upForm.name" />
-          <label>域名（逗号分隔）</label><input v-model="upForm.domains" />
-          <label>证书文件 (.crt/.pem)</label><input type="file" @change="e=>upForm.cert=e.target.files[0]" />
-          <label>私钥文件 (.key)</label><input type="file" @change="e=>upForm.key=e.target.files[0]" />
+          <label>{{ $t('ssl.uploadName') }}</label><input v-model="upForm.name" />
+          <label>{{ $t('ssl.uploadDomains') }}</label><input v-model="upForm.domains" />
+          <label>{{ $t('ssl.certFile') }}</label><input type="file" @change="e=>upForm.cert=e.target.files[0]" />
+          <label>{{ $t('ssl.keyFile') }}</label><input type="file" @change="e=>upForm.key=e.target.files[0]" />
           <div class="actions">
-            <button class="btn" @click="showUpload=false">取消</button>
-            <button class="btn primary" @click="doUpload">上传</button>
+            <button class="btn" @click="showUpload=false">{{ $t('common.cancel') }}</button>
+            <button class="btn primary" @click="doUpload">{{ $t('ssl.upload') }}</button>
           </div>
         </div>
       </div>
@@ -39,13 +39,13 @@
 
     <div v-if="showLE" class="modal-overlay" @click.self="showLE=false">
       <div class="modal">
-        <h3>申请 Let's Encrypt</h3>
+        <h3>{{ $t('ssl.leTitle') }}</h3>
         <div class="form">
-          <label>域名列表（逗号分隔）</label><input v-model="leForm.domains" placeholder="example.com,www.example.com" />
-          <label>邮箱</label><input v-model="leForm.email" placeholder="admin@example.com" />
+          <label>{{ $t('ssl.leDomains') }}</label><input v-model="leForm.domains" placeholder="example.com,www.example.com" />
+          <label>{{ $t('ssl.leEmail') }}</label><input v-model="leForm.email" placeholder="admin@example.com" />
           <div class="actions">
-            <button class="btn" @click="showLE=false">取消</button>
-            <button class="btn primary" @click="doLE">申请</button>
+            <button class="btn" @click="showLE=false">{{ $t('common.cancel') }}</button>
+            <button class="btn primary" @click="doLE">{{ $t('ssl.apply') }}</button>
           </div>
         </div>
       </div>
@@ -55,8 +55,11 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { sslApi } from '../../api'
 import { Trash2 } from 'lucide-vue-next'
+
+const { t } = useI18n()
 
 const certs = ref([])
 const certbot = ref(false)
@@ -90,7 +93,7 @@ async function doLE() {
 }
 
 async function remove(id) {
-  if (!confirm('删除此证书？')) return
+  if (!confirm(t('ssl.confirmDelete'))) return
   await sslApi.delete(id)
   await load()
 }

@@ -1,9 +1,9 @@
 <template>
   <div style="display:flex; flex-direction:column; height:100%; background:#1e1e1e;">
     <div class="toolbar">
-      <span style="color:#0a3d7a;">终端{{ container ? ' · 容器内 ' + container : '' }} · {{ statusText }}</span>
-      <button class="btn" style="margin-left:auto;" @click="reconnect">重新连接</button>
-      <button class="btn" @click="clear">清屏</button>
+      <span style="color:#0a3d7a;">{{ $t('terminal.title') }}{{ container ? ' · ' + $t('terminal.inContainer', { name: container }) : '' }} · {{ statusText }}</span>
+      <button class="btn" style="margin-left:auto;" @click="reconnect">{{ $t('terminal.reconnect') }}</button>
+      <button class="btn" @click="clear">{{ $t('terminal.clear') }}</button>
     </div>
     <div ref="termEl" style="flex:1; min-height:0; padding:4px; background:#1e1e1e;"></div>
   </div>
@@ -11,15 +11,17 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { auth } from '../../store/auth'
 
 const props = defineProps({ cwd: String, container: String })
+const { t } = useI18n()
 
 const termEl = ref(null)
-const statusText = ref('未连接')
+const statusText = ref(t('terminal.notConnected'))
 let term = null
 let fit = null
 let ws = null
@@ -33,7 +35,7 @@ function setStatus(s) { statusText.value = s }
 function connect() {
   if (ws) { try { ws.close() } catch (e) {} }
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-  setStatus('连接中...')
+  setStatus(t('terminal.connecting'))
   // 浏览器 WebSocket 无法设置请求头，token 通过查询参数传递
   const tokenParam = auth.token ? `?token=${encodeURIComponent(auth.token)}` : ''
   try {
@@ -49,7 +51,7 @@ function connect() {
   }
   ws.onopen = () => {
     backoff = 500
-    setStatus('已连接')
+    setStatus(t('terminal.connected'))
     sendResize()
     if (props.cwd) {
       setTimeout(() => {
@@ -65,10 +67,10 @@ function connect() {
     if (term) term.write(e.data)
   }
   ws.onclose = () => {
-    setStatus('已断开')
+    setStatus(t('terminal.disconnectedShort'))
     if (alive) scheduleReconnect()
   }
-  ws.onerror = () => { setStatus('错误') }
+  ws.onerror = () => { setStatus(t('terminal.error')) }
 }
 
 function scheduleReconnect() {

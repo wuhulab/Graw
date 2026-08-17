@@ -4,19 +4,19 @@
     <div class="toolbar">
       <div class="create-wrap" @click.stop>
         <button class="btn primary" @click="toggleCreateMenu">
-          <Plus :size="14" /> 创建
+          <Plus :size="14" /> {{ $t('runtime.create') }}
         </button>
         <Teleport to="body">
           <div v-if="createMenuOpen" class="create-menu" :style="{ left: menuX + 'px', top: menuY + 'px' }" @click.stop>
-            <div class="menu-title">选择运行时</div>
+            <div class="menu-title">{{ $t('runtime.chooseRuntime') }}</div>
             <div v-for="rt in templates" :key="rt.type" class="menu-item" @click="pickType(rt.type)">
               <span class="rt-dot"></span>{{ rt.label }}
             </div>
           </div>
         </Teleport>
       </div>
-      <button class="btn" @click="load"><RefreshCw :size="13" /> 刷新</button>
-      <span class="hint">{{ count }} 个运行环境</span>
+      <button class="btn" @click="load"><RefreshCw :size="13" /> {{ $t('runtime.refresh') }}</button>
+      <span class="hint">{{ $t('runtime.count', { count }) }}</span>
     </div>
 
     <!-- 列表 -->
@@ -24,13 +24,13 @@
       <table>
         <thead>
           <tr>
-            <th>名称</th>
-            <th>运行时</th>
-            <th>镜像</th>
-            <th>容器名称</th>
-            <th>端口</th>
-            <th>状态</th>
-            <th style="width:120px;">操作</th>
+            <th>{{ $t('runtime.name') }}</th>
+            <th>{{ $t('runtime.runtime') }}</th>
+            <th>{{ $t('runtime.image') }}</th>
+            <th>{{ $t('runtime.container') }}</th>
+            <th>{{ $t('runtime.port') }}</th>
+            <th>{{ $t('runtime.status') }}</th>
+            <th style="width:120px;">{{ $t('runtime.operation') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -45,14 +45,14 @@
             <td class="mono">{{ portsText(r.ports) }}</td>
             <td><span class="badge" :class="stateClass(r.status?.state)">{{ stateText(r.status?.state) }}</span></td>
             <td class="actions">
-              <button class="iconbtn" title="启动" @click="act(r, 'start')" :disabled="r.status?.running"><Play :size="14" /></button>
-              <button class="iconbtn" title="停止" @click="act(r, 'stop')" :disabled="!r.status?.running"><Square :size="13" /></button>
-              <button class="iconbtn" title="重启" @click="act(r, 'restart')"><RotateCw :size="13" /></button>
-              <button class="iconbtn danger" title="删除" @click="remove(r)"><Trash2 :size="14" /></button>
+              <button class="iconbtn" :title="$t('runtime.start')" @click="act(r, 'start')" :disabled="r.status?.running"><Play :size="14" /></button>
+              <button class="iconbtn" :title="$t('runtime.stop')" @click="act(r, 'stop')" :disabled="!r.status?.running"><Square :size="13" /></button>
+              <button class="iconbtn" :title="$t('runtime.restart')" @click="act(r, 'restart')"><RotateCw :size="13" /></button>
+              <button class="iconbtn danger" :title="$t('runtime.delete')" @click="remove(r)"><Trash2 :size="14" /></button>
             </td>
           </tr>
           <tr v-if="!runtimes.length">
-            <td colspan="7"><div class="empty">暂无运行环境，点击「创建」开始</div></td>
+            <td colspan="7"><div class="empty">{{ $t('runtime.noRuntimes') }}</div></td>
           </tr>
         </tbody>
       </table>
@@ -62,9 +62,11 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { runtimeApi } from '../../api'
 import { Plus, RefreshCw, Play, Square, RotateCw, Trash2 } from 'lucide-vue-next'
 
+const { t } = useI18n()
 const emit = defineEmits(['close', 'openRuntimeCreate'])
 
 const runtimes = ref([])
@@ -92,10 +94,10 @@ function portsText(ports) {
 }
 
 function stateText(s) {
-  if (s === 'running') return '运行中'
-  if (s === 'exited') return '已停止'
-  if (s === 'unknown') return '未知'
-  return '不存在'
+  if (s === 'running') return t('common.running')
+  if (s === 'exited') return t('common.stopped')
+  if (s === 'unknown') return t('runtime.unknown')
+  return t('runtime.notExists')
 }
 function stateClass(s) {
   if (s === 'running') return 'ok'
@@ -109,7 +111,7 @@ async function load() {
     const data = await runtimeApi.list()
     runtimes.value = data.runtimes || []
   } catch (e) {
-    alert('加载失败：' + (e.response?.data?.detail || e.message))
+    alert(t('runtime.loadFailed', { error: e.response?.data?.detail || e.message }))
   }
 }
 
@@ -144,17 +146,17 @@ async function act(r, action) {
     await runtimeApi.action(r.id, action)
     await load()
   } catch (e) {
-    alert('操作失败：' + (e.response?.data?.detail || e.message))
+    alert(t('runtime.operationFailed', { error: e.response?.data?.detail || e.message }))
   }
 }
 
 async function remove(r) {
-  if (!confirm(`确定删除运行环境「${r.name}」？\n将强制删除其容器并清除配置。`)) return
+  if (!confirm(t('runtime.confirmDelete', { name: r.name }))) return
   try {
     await runtimeApi.delete(r.id)
     await load()
   } catch (e) {
-    alert('删除失败：' + (e.response?.data?.detail || e.message))
+    alert(t('runtime.deleteFailed', { error: e.response?.data?.detail || e.message }))
   }
 }
 

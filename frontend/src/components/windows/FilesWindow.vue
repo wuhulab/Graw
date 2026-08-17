@@ -5,40 +5,40 @@
     @dragleave.prevent="onDragLeave"
     @drop.prevent="onDrop">
     <div class="toolbar">
-      <button class="btn" @click="goUp" :disabled="!parent"><ArrowUp :size="14" /> 上级</button>
-      <button class="btn" @click="refresh">刷新</button>
+      <button class="btn" @click="goUp" :disabled="!parent"><ArrowUp :size="14" /> {{ $t('files.parent') }}</button>
+      <button class="btn" @click="refresh">{{ $t('files.refresh') }}</button>
       <input type="text" v-model="pathInput" @keyup.enter="go" />
       <div style="position:relative;">
-        <button class="btn" @click.stop="newMenuOpen = !newMenuOpen">新建</button>
+        <button class="btn" @click.stop="newMenuOpen = !newMenuOpen">{{ $t('files.new') }}</button>
         <div v-if="newMenuOpen" style="position:absolute; top:100%; left:0; margin-top:4px; background:#fff; border:1px solid rgba(0,0,0,0.1); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.12); z-index:100; min-width:120px;">
-          <div class="menu-item" @click="createFolder">文件夹</div>
-          <div class="menu-item" @click="createFile">文件</div>
+          <div class="menu-item" @click="createFolder">{{ $t('files.newFolder') }}</div>
+          <div class="menu-item" @click="createFile">{{ $t('files.newFile') }}</div>
         </div>
       </div>
       <label class="btn" style="cursor:pointer;">
         <input type="file" style="display:none;" @change="onUpload" />
-        <Upload :size="14" /> 上传
+        <Upload :size="14" /> {{ $t('files.upload') }}
       </label>
     </div>
     <!-- 拖拽上传提示遮罩 -->
     <div v-if="dragOver" class="drag-overlay">
       <div class="drag-inner">
         <Upload :size="48" />
-        <div class="drag-text">松开鼠标上传到 {{ path }}</div>
+        <div class="drag-text">{{ $t('files.dropUpload', { path }) }}</div>
       </div>
     </div>
     <!-- 批量上传进度条 -->
     <div v-if="uploadingFiles.length > 0" class="upload-progress">
-      <span>正在上传 {{ uploadIdx + 1 }}/{{ uploadingFiles.length }}</span>
+      <span>{{ $t('files.uploading', { current: uploadIdx + 1, total: uploadingFiles.length }) }}</span>
       <div class="progress-bar"><div class="progress-fill" :style="{ width: ((uploadIdx / uploadingFiles.length) * 100) + '%' }"></div></div>
     </div>
     <div style="flex:1; overflow:auto;">
       <table class="dt">
         <thead>
           <tr>
-            <th>名称</th>
-            <th style="width:120px;">大小</th>
-            <th style="width:160px;">修改时间</th>
+            <th>{{ $t('files.name') }}</th>
+            <th style="width:120px;">{{ $t('files.size') }}</th>
+            <th style="width:160px;">{{ $t('files.modified') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -50,22 +50,22 @@
             <td>{{ it.modified ? formatTime(it.modified) : '-' }}</td>
           </tr>
           <tr v-if="!items.length">
-            <td colspan="3"><div class="empty">空目录</div></td>
+            <td colspan="3"><div class="empty">{{ $t('files.emptyDir') }}</div></td>
           </tr>
         </tbody>
       </table>
     </div>
     <Teleport to="body">
       <div v-if="contextMenu.show" class="context-menu" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }" @click.stop>
-        <div class="menu-item" @click="menuEdit">编辑 / 打开</div>
-        <div class="menu-item" @click="menuRename">重命名</div>
-        <div class="menu-item" @click="menuDelete">删除</div>
-        <div class="menu-item" @click="menuCopy">复制到</div>
-        <div class="menu-item" @click="menuCompress">压缩</div>
-        <div class="menu-item" @click="menuExtract" v-if="isArchive(contextMenu.item?.name)">解压</div>
-        <div class="menu-item" @click="menuChmod">权限</div>
-        <div class="menu-item" @click="menuDownload">下载</div>
-        <div class="menu-item" @click="menuOpenTerminal">在此处打开终端</div>
+        <div class="menu-item" @click="menuEdit">{{ $t('files.openEdit') }}</div>
+        <div class="menu-item" @click="menuRename">{{ $t('files.rename') }}</div>
+        <div class="menu-item" @click="menuDelete">{{ $t('files.delete') }}</div>
+        <div class="menu-item" @click="menuCopy">{{ $t('files.copyTo') }}</div>
+        <div class="menu-item" @click="menuCompress">{{ $t('files.compress') }}</div>
+        <div class="menu-item" @click="menuExtract" v-if="isArchive(contextMenu.item?.name)">{{ $t('files.extract') }}</div>
+        <div class="menu-item" @click="menuChmod">{{ $t('files.permissions') }}</div>
+        <div class="menu-item" @click="menuDownload">{{ $t('files.download') }}</div>
+        <div class="menu-item" @click="menuOpenTerminal">{{ $t('files.openTerminal') }}</div>
       </div>
     </Teleport>
   </div>
@@ -73,10 +73,12 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { filesApi, formatBytes } from '../../api'
 import { auth } from '../../store/auth'
 import { ArrowUp, Folder, FileText, Image as ImageIcon, Film, Upload } from 'lucide-vue-next'
 
+const { t } = useI18n()
 const items = ref([])
 const parent = ref(null)
 const path = ref('')
@@ -99,7 +101,7 @@ async function load(p) {
     path.value = r.path
     pathInput.value = r.path
   } catch (e) {
-    alert('无法访问：' + (e.response?.data?.detail || e.message))
+    alert(t('files.accessFailed', { error: e.response?.data?.detail || e.message }))
   }
 }
 
@@ -129,35 +131,35 @@ async function openEditorWindow(it) {
     const r = await filesApi.read(it.path)
     emit('openEditor', { path: r.path, content: r.content })
   } catch (e) {
-    alert('读取失败：' + (e.response?.data?.detail || e.message))
+    alert(t('files.readFailed', { error: e.response?.data?.detail || e.message }))
   }
 }
 
 async function remove(it) {
-  if (!confirm(`确认删除 ${it.name}？`)) return
+  if (!confirm(t('files.confirmDelete', { name: it.name }))) return
   try {
     await filesApi.remove(it.path)
     refresh()
   } catch (e) {
-    alert('删除失败：' + (e.response?.data?.detail || e.message))
+    alert(t('files.deleteFailed', { error: e.response?.data?.detail || e.message }))
   }
 }
 
 async function renameItem(it) {
-  const name = prompt('新名称', it.name)
+  const name = prompt(t('files.renamePrompt'), it.name)
   if (!name || name === it.name) return
   const dst = it.path.replace(/[\\/][^\\/]+$/, m => m[0] + name)
   try {
     await filesApi.rename(it.path, dst)
     refresh()
   } catch (e) {
-    alert('重命名失败：' + (e.response?.data?.detail || e.message))
+    alert(t('files.renameFailed', { error: e.response?.data?.detail || e.message }))
   }
 }
 
 async function createFolder() {
   newMenuOpen.value = false
-  const name = prompt('新建文件夹名称')
+  const name = prompt(t('files.newFolderPrompt'))
   if (!name) return
   const sep = path.value.includes('\\') ? '\\' : '/'
   const newPath = path.value.replace(/[\\/]$/, '') + sep + name
@@ -165,13 +167,13 @@ async function createFolder() {
     await filesApi.mkdir(newPath)
     refresh()
   } catch (e) {
-    alert('创建失败：' + (e.response?.data?.detail || e.message))
+    alert(t('files.createFailed', { error: e.response?.data?.detail || e.message }))
   }
 }
 
 async function createFile() {
   newMenuOpen.value = false
-  const name = prompt('新建文件名称')
+  const name = prompt(t('files.newFilePrompt'))
   if (!name) return
   const sep = path.value.includes('\\') ? '\\' : '/'
   const newPath = path.value.replace(/[\\/]$/, '') + sep + name
@@ -179,7 +181,7 @@ async function createFile() {
     await filesApi.write(newPath, '')
     refresh()
   } catch (e) {
-    alert('创建失败：' + (e.response?.data?.detail || e.message))
+    alert(t('files.createFailed', { error: e.response?.data?.detail || e.message }))
   }
 }
 
@@ -203,7 +205,7 @@ async function download(it) {
     a.click()
     URL.revokeObjectURL(url)
   } catch (e) {
-    alert('下载失败：' + (e.message || e))
+    alert(t('files.downloadFailed', { error: e.message || e }))
   }
 }
 
@@ -261,40 +263,40 @@ async function menuCopy() {
   const it = contextMenu.value.item
   closeMenus()
   if (!it) return
-  const dst = prompt('复制到路径', it.path + '_copy')
+  const dst = prompt(t('files.copyToPrompt'), it.path + '_copy')
   if (!dst) return
-  try { await filesApi.copy(it.path, dst); refresh() } catch (e) { alert('复制失败：' + (e.response?.data?.detail || e.message)) }
+  try { await filesApi.copy(it.path, dst); refresh() } catch (e) { alert(t('files.copyFailed', { error: e.response?.data?.detail || e.message })) }
 }
 
 async function menuCompress() {
   const it = contextMenu.value.item
   closeMenus()
   if (!it) return
-  const fmt = prompt('格式: zip / tar / tar.gz', 'zip')
+  const fmt = prompt(t('files.compressFormatPrompt'), 'zip')
   if (!fmt) return
-  const archive = prompt('压缩包完整路径', it.path + (fmt==='zip'?'.zip':'.tar.gz'))
+  const archive = prompt(t('files.compressPathPrompt'), it.path + (fmt==='zip'?'.zip':'.tar.gz'))
   if (!archive) return
-  try { await filesApi.compress([it.path], archive, fmt); refresh() } catch (e) { alert('压缩失败：' + (e.response?.data?.detail || e.message)) }
+  try { await filesApi.compress([it.path], archive, fmt); refresh() } catch (e) { alert(t('files.compressFailed', { error: e.response?.data?.detail || e.message })) }
 }
 
 async function menuExtract() {
   const it = contextMenu.value.item
   closeMenus()
   if (!it) return
-  const dest = prompt('解压到目录', path.value)
+  const dest = prompt(t('files.extractToPrompt'), path.value)
   if (!dest) return
-  try { await filesApi.extract(it.path, dest); refresh() } catch (e) { alert('解压失败：' + (e.response?.data?.detail || e.message)) }
+  try { await filesApi.extract(it.path, dest); refresh() } catch (e) { alert(t('files.extractFailed', { error: e.response?.data?.detail || e.message })) }
 }
 
 async function menuChmod() {
   const it = contextMenu.value.item
   closeMenus()
   if (!it) return
-  const modeStr = prompt('输入权限数字 (如 755, 644)', '755')
+  const modeStr = prompt(t('files.permissionPrompt'), '755')
   if (!modeStr) return
   const mode = parseInt(modeStr, 8)
-  if (isNaN(mode)) { alert('无效的权限数字'); return }
-  try { await filesApi.chmod(it.path, mode); refresh() } catch (e) { alert('修改权限失败：' + (e.response?.data?.detail || e.message)) }
+  if (isNaN(mode)) { alert(t('files.permissionInvalid')); return }
+  try { await filesApi.chmod(it.path, mode); refresh() } catch (e) { alert(t('files.permissionFailed', { error: e.response?.data?.detail || e.message })) }
 }
 
 async function onUpload(e) {
@@ -307,7 +309,7 @@ async function onUpload(e) {
     await filesApi.upload(fd)
     refresh()
   } catch (e) {
-    alert('上传失败：' + (e.response?.data?.detail || e.message))
+    alert(t('files.uploadFailed', { error: e.response?.data?.detail || e.message }))
   }
 }
 
@@ -335,7 +337,7 @@ async function onDrop(e) {
       fd.append('file', files[i])
       await filesApi.upload(fd)
     } catch (err) {
-      alert(`上传 ${files[i].name} 失败：` + (err.response?.data?.detail || err.message))
+      alert(t('files.uploadFileFailed', { name: files[i].name, error: err.response?.data?.detail || err.message }))
     }
   }
   uploadingFiles.value = []

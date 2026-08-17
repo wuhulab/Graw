@@ -1,21 +1,24 @@
 <template>
   <div style="display:flex; flex-direction:column; height:100%;">
     <div class="toolbar">
-      <span style="color:#0a3d7a; font-weight:600;">Docker 配置文件</span>
-      <span style="font-size:11px; color:#888; font-family:Consolas,monospace;">{{ configPath || '加载中...' }}</span>
-      <button class="btn" style="margin-left:auto;" @click="load">重新加载</button>
-      <button class="btn primary" @click="save">保存</button>
-      <button class="btn" @click="$emit('close')">关闭</button>
+      <span style="color:#0a3d7a; font-weight:600;">{{ $t('dockerconfig.title') }}</span>
+      <span style="font-size:11px; color:#888; font-family:Consolas,monospace;">{{ configPath || $t('common.loading') }}</span>
+      <button class="btn" style="margin-left:auto;" @click="load">{{ $t('dockerconfig.reload') }}</button>
+      <button class="btn primary" @click="save">{{ $t('dockerconfig.save') }}</button>
+      <button class="btn" @click="$emit('close')">{{ $t('dockerconfig.close') }}</button>
     </div>
     <textarea ref="editor" v-model="content" class="cfg-editor" spellcheck="false"
-      :placeholder="error || '加载配置文件...'"></textarea>
+      :placeholder="error || $t('dockerconfig.loadPlaceholder')"></textarea>
     <div v-if="msg" class="msg" :class="{ err: msgErr }">{{ msg }}</div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { dockerApi } from '../../api'
+
+const { t } = useI18n()
 
 const emit = defineEmits(['close'])
 
@@ -33,7 +36,7 @@ async function load() {
     content.value = cfg.content || ''
     error.value = ''
   } catch (e) {
-    error.value = '加载失败：' + (e.response?.data?.detail || e.message)
+    error.value = t('dockerconfig.loadFailed', { error: e.response?.data?.detail || e.message })
   }
 }
 
@@ -42,10 +45,10 @@ async function save() {
   try {
     const r = await dockerApi.saveConfigRaw(content.value)
     msgErr = false
-    msg.value = `已保存 → ${r.config_path}`
+    msg.value = t('dockerconfig.saved', { path: r.config_path })
   } catch (e) {
     msgErr = true
-    msg.value = '保存失败：' + (e.response?.data?.detail || e.message)
+    msg.value = t('dockerconfig.saveFailed', { error: e.response?.data?.detail || e.message })
   }
 }
 

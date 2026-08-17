@@ -1,22 +1,22 @@
 <template>
   <div class="logs-window">
     <div class="toolbar">
-      <button class="btn primary" @click="showAdd=true">添加日志</button>
-      <button class="btn" @click="refresh">刷新</button>
+      <button class="btn primary" @click="showAdd=true">{{ $t('logs.add') }}</button>
+      <button class="btn" @click="refresh">{{ $t('logs.refresh') }}</button>
     </div>
     <div class="layout">
       <div class="sidebar">
         <div v-for="log in logs" :key="log.id" class="log-item" :class="{active: currentId===log.id}" @click="select(log)">
           <div class="log-name">{{ log.name }}</div>
           <div class="log-path">{{ log.path }}</div>
-          <span class="exist" :class="log.exists?'ok':'warn'">{{ log.exists?'存在':'缺失' }}</span>
+          <span class="exist" :class="log.exists?'ok':'warn'">{{ log.exists ? $t('logs.exists') : $t('logs.missing') }}</span>
         </div>
       </div>
       <div class="viewer">
         <div class="viewer-toolbar" v-if="current">
-          <span class="meta">{{ current.path }} ({{ lines.length }} 行)</span>
-          <button class="btn small" @click="clearLog(current.path)">清空</button>
-          <button class="btn small" @click="loadLog(current.path)">刷新</button>
+          <span class="meta">{{ $t('logs.viewing', { path: current.path, lines: lines.length }) }}</span>
+          <button class="btn small" @click="clearLog(current.path)">{{ $t('logs.clear') }}</button>
+          <button class="btn small" @click="loadLog(current.path)">{{ $t('logs.refresh') }}</button>
         </div>
         <pre class="content">{{ contentText }}</pre>
       </div>
@@ -24,13 +24,13 @@
 
     <div v-if="showAdd" class="modal-overlay" @click.self="showAdd=false">
       <div class="modal">
-        <h3>添加自定义日志</h3>
+        <h3>{{ $t('logs.addTitle') }}</h3>
         <div class="form">
-          <label>名称</label><input v-model="addForm.name" />
-          <label>路径</label><input v-model="addForm.path" placeholder="/var/log/xxx.log" />
+          <label>{{ $t('logs.nameLabel') }}</label><input v-model="addForm.name" />
+          <label>{{ $t('logs.pathLabel') }}</label><input v-model="addForm.path" placeholder="/var/log/xxx.log" />
           <div class="actions">
-            <button class="btn" @click="showAdd=false">取消</button>
-            <button class="btn primary" @click="doAdd">保存</button>
+            <button class="btn" @click="showAdd=false">{{ $t('common.cancel') }}</button>
+            <button class="btn primary" @click="doAdd">{{ $t('common.save') }}</button>
           </div>
         </div>
       </div>
@@ -40,8 +40,10 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { logsApi } from '../../api'
 
+const { t } = useI18n()
 const logs = ref([])
 const currentId = ref(null)
 const current = ref(null)
@@ -68,7 +70,7 @@ async function loadLog(path) {
 }
 
 async function clearLog(path) {
-  if (!confirm('清空此日志文件？')) return
+  if (!confirm(t('logs.confirmClear'))) return
   await logsApi.clear(path)
   await loadLog(path)
 }

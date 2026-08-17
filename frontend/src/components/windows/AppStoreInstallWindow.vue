@@ -2,9 +2,9 @@
   <div class="install-window">
     <!-- 顶部工具栏 -->
     <div class="toolbar">
-      <span class="title"><Download :size="15" /> 安装「{{ app?.name }}」</span>
+      <span class="title"><Download :size="15" /> {{ $t('appinstall.title', { name: $t('appstore.appNames.' + app.id, app?.name) }) }}</span>
       <span class="badge mono">{{ fmtVersion(installForm.version) }}</span>
-      <button class="btn" style="margin-left:auto;" @click="emit('close')">关闭</button>
+      <button class="btn" style="margin-left:auto;" @click="emit('close')">{{ $t('common.close') }}</button>
     </div>
 
     <div class="body">
@@ -16,80 +16,80 @@
       <div class="form-grid">
         <!-- Graw 维护应用名称：默认 <app-id>-<随机6位> -->
         <label class="field">
-          <span class="field-label">Graw 维护应用名称 <b class="req">*</b></span>
+          <span class="field-label">{{ $t('appinstall.appNameLabel') }} <b class="req">*</b></span>
           <input v-model.trim="installForm.app_name" class="inp mono" placeholder="如: my-uptime"
                  :class="{ err: appNameError }" @input="appNameError = ''" />
-          <span class="field-hint">仅英文/数字/_/-/.，用作 compose 项目名</span>
+          <span class="field-hint">{{ $t('appinstall.appNameHint') }}</span>
         </label>
 
         <!-- 版本 -->
         <label class="field" v-if="(app?.versions || []).length > 0">
-          <span class="field-label">版本</span>
+          <span class="field-label">{{ $t('appinstall.version') }}</span>
           <select v-model="installForm.version" class="inp">
             <option v-for="v in app?.versions" :key="v.tag" :value="v.tag">
               {{ v.label }}（{{ v.tag }}）
             </option>
           </select>
-          <span class="field-hint">默认显示最新版本</span>
+          <span class="field-hint">{{ $t('appinstall.defaultVersionHint') }}</span>
         </label>
 
         <!-- 端口（支持多端口分别映射） -->
         <div class="field">
-          <span class="field-label">外部访问端口</span>
+          <span class="field-label">{{ $t('appinstall.portsLabel') }}</span>
           <div v-if="app?.ports?.length" class="port-list">
             <div v-for="p in installForm.ports" :key="p.container" class="port-row">
               <span class="port-container" :title="portLabel(p.container)">
                 {{ p.container }}<em v-if="portLabel(p.container)"> · {{ portLabel(p.container) }}</em>
               </span>
               <input v-model.number="p.external" type="number" min="1" max="65535" class="inp port-inp"
-                     :placeholder="'默认 ' + p.container" />
+                     :placeholder="$t('appinstall.portDefault', { port: p.container })" />
             </div>
-            <span class="field-hint">可分别修改每个端口的宿主端口，留空表示不映射</span>
+            <span class="field-hint">{{ $t('appinstall.portsHint') }}</span>
           </div>
-          <span class="field-hint" v-else>该应用不暴露端口</span>
+          <span class="field-hint" v-else>{{ $t('appinstall.noPorts') }}</span>
         </div>
 
         <!-- 时区 -->
         <label class="field">
-          <span class="field-label">时区</span>
+          <span class="field-label">{{ $t('appinstall.timezone') }}</span>
           <input v-model="installForm.timezone" class="inp mono" list="tz-list" placeholder="Asia/Shanghai" />
           <datalist id="tz-list">
             <option v-for="z in commonTimezones" :key="z" :value="z" />
           </datalist>
-          <span class="field-hint">注入容器的 TZ 环境变量</span>
+          <span class="field-hint">{{ $t('appinstall.timezoneHint') }}</span>
         </label>
 
         <!-- 容器名称 -->
         <label class="field">
-          <span class="field-label">容器名称</span>
-          <input v-model.trim="installForm.container_name" class="inp mono" placeholder="留空自动生成"
+          <span class="field-label">{{ $t('appinstall.containerName') }}</span>
+          <input v-model.trim="installForm.container_name" class="inp mono" :placeholder="$t('appinstall.containerNamePlaceholder')"
                  @input="containerTouched = true" />
-          <span class="field-hint">留空自动生成 graw-&lt;名称&gt;</span>
+          <span class="field-hint">{{ $t('appinstall.containerNameHint') }}</span>
         </label>
 
         <!-- 重启规则 -->
         <label class="field">
-          <span class="field-label">重启规则</span>
+          <span class="field-label">{{ $t('appinstall.restartRule') }}</span>
           <select v-model="installForm.restart" class="inp">
-            <option value="always">总是重启（always）</option>
-            <option value="unless-stopped">除非手动停止（unless-stopped）</option>
-            <option value="on-failure">异常退出时（on-failure）</option>
-            <option value="no">不自动重启（no）</option>
+            <option value="always">{{ $t('appinstall.restartAlways') }}</option>
+            <option value="unless-stopped">{{ $t('appinstall.restartUnlessStopped') }}</option>
+            <option value="on-failure">{{ $t('appinstall.restartOnFailure') }}</option>
+            <option value="no">{{ $t('appinstall.restartNo') }}</option>
           </select>
         </label>
 
         <!-- CPU 限制 -->
         <label class="field">
-          <span class="field-label">CPU 限制（核）</span>
+          <span class="field-label">{{ $t('appinstall.cpuLimit') }}</span>
           <input v-model.number="installForm.cpu_limit" type="number" min="0" step="0.5" class="inp" placeholder="0" />
-          <span class="field-hint">0 表示不限制</span>
+          <span class="field-hint">{{ $t('appinstall.cpuLimitHint') }}</span>
         </label>
 
         <!-- 内存限制 -->
         <label class="field">
-          <span class="field-label">内存限制（MB）</span>
+          <span class="field-label">{{ $t('appinstall.memoryLimit') }}</span>
           <input v-model.number="installForm.mem_limit_mb" type="number" min="0" step="64" class="inp" placeholder="0" />
-          <span class="field-hint">0 表示不限制，如 512 = 512MB</span>
+          <span class="field-hint">{{ $t('appinstall.memoryLimitHint') }}</span>
         </label>
       </div>
 
@@ -97,34 +97,34 @@
       <div class="options">
         <label class="check-label">
           <input type="checkbox" v-model="installForm.expose_port" :disabled="!exposePortsText || exposePortsText === '—'" />
-          <span>允许端口外部访问（放行防火墙端口 {{ exposePortsText }}）</span>
+          <span>{{ $t('appinstall.allowExternalAccess', { ports: exposePortsText }) }}</span>
         </label>
         <label class="check-label">
           <input type="checkbox" v-model="installForm.pull" />
-          <span>拉取镜像</span>
+          <span>{{ $t('appinstall.pullImage') }}</span>
         </label>
         <button class="btn" @click="openComposeEditor" :disabled="composeLoading">
-          <Pencil :size="13" /> {{ composeLoading ? '加载中...' : '编辑 compose' }}
+          <Pencil :size="13" /> {{ composeLoading ? $t('common.loading') : $t('appinstall.editCompose') }}
         </button>
-        <span v-if="composeEdited" class="edited-hint"><CheckCircle2 :size="12" /> 已编辑</span>
+        <span v-if="composeEdited" class="edited-hint"><CheckCircle2 :size="12" /> {{ $t('appinstall.edited') }}</span>
       </div>
 
       <div v-if="appNameError" class="error-banner">{{ appNameError }}</div>
 
       <div class="actions">
-        <button class="btn" @click="emit('close')">取消</button>
-        <button class="btn primary" @click="doInstall">确认安装</button>
+        <button class="btn" @click="emit('close')">{{ $t('common.cancel') }}</button>
+        <button class="btn primary" @click="doInstall">{{ $t('appinstall.confirmInstall') }}</button>
       </div>
     </div>
 
     <!-- 版本安全警告居中弹窗（应用存在 warn 元数据时弹出） -->
     <div v-if="showWarnModal" class="modal-overlay">
       <div class="modal" role="dialog" aria-modal="true">
-        <div class="modal-head"><AlertTriangle :size="18" /> 版本安全提醒</div>
+        <div class="modal-head"><AlertTriangle :size="18" /> {{ $t('appinstall.warnTitle') }}</div>
         <p class="modal-msg">{{ app?.warn }}</p>
         <div class="modal-actions">
-          <button class="btn" @click="emit('close')">取消</button>
-          <button class="btn primary" @click="showWarnModal = false">我已知晓，继续安装</button>
+          <button class="btn" @click="emit('close')">{{ $t('common.cancel') }}</button>
+          <button class="btn primary" @click="showWarnModal = false">{{ $t('appinstall.iUnderstand') }}</button>
         </div>
       </div>
     </div>
@@ -133,9 +133,12 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { appStoreApi } from '../../api'
 import { appStoreComposeState } from '../../store/appStoreCompose'
 import { Download, Pencil, CheckCircle2, AlertTriangle } from 'lucide-vue-next'
+
+const { t } = useI18n()
 
 const props = defineProps({ app: Object })
 const emit = defineEmits(['close', 'openComposeEditor', 'openInstallLog'])
@@ -198,9 +201,9 @@ const exposePortsText = computed(() => {
 
 function doInstall() {
   const name = installForm.app_name
-  if (!name) { appNameError.value = '请填写 Graw 维护应用名称（仅英文）'; return }
+  if (!name) { appNameError.value = t('appinstall.errNameRequired'); return }
   if (!APP_NAME_RE.test(name)) {
-    appNameError.value = '名称只能包含英文字母 / 数字 / _ / - / .，且必须以字母或数字开头'
+    appNameError.value = t('appinstall.errNameFormat')
     return
   }
   appNameError.value = ''
@@ -256,7 +259,7 @@ async function openComposeEditor() {
     appStoreComposeState.content = content
     emit('openComposeEditor', { appId: props.app.id, compose: content })
   } catch (e) {
-    alert('获取 docker-compose.yml 失败：' + (e.response?.data?.detail || e.message))
+    alert(t('appcompose.fetchFailed', { error: e.response?.data?.detail || e.message }))
   } finally {
     composeLoading.value = false
   }

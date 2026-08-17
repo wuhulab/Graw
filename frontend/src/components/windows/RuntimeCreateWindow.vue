@@ -2,76 +2,76 @@
   <div class="rt-create">
     <!-- 顶部工具栏 -->
     <div class="toolbar">
-      <span class="title"><Box :size="15" /> 创建运行环境 · {{ template?.label || selectedType }}</span>
-      <button class="btn" style="margin-left:auto;" @click="emit('close')">关闭</button>
+      <span class="title"><Box :size="15" /> {{ $t('runtimeCreate.title', { template: template?.label || selectedType }) }}</span>
+      <button class="btn" style="margin-left:auto;" @click="emit('close')">{{ $t('runtimeCreate.close') }}</button>
     </div>
 
     <div class="body">
-      <div v-if="loadingTemplates" class="empty">模板加载中...</div>
-      <div v-else-if="!templates.length" class="empty">模板不可用（后端未返回运行时模板）</div>
+      <div v-if="loadingTemplates" class="empty">{{ $t('runtimeCreate.loadingTemplates') }}</div>
+      <div v-else-if="!templates.length" class="empty">{{ $t('runtimeCreate.templatesUnavailable') }}</div>
 
       <template v-else>
         <!-- 基础信息 -->
         <div class="form-grid">
           <label class="field span-2">
-            <span class="field-label">名称 <b class="req">*</b></span>
-            <input v-model.trim="form.name" class="inp" placeholder="如: 我的Python项目"
+            <span class="field-label">{{ $t('runtimeCreate.name') }} <b class="req">*</b></span>
+            <input v-model.trim="form.name" class="inp" :placeholder="$t('runtimeCreate.namePlaceholder')"
                    :class="{ err: err && !form.name }" />
           </label>
 
           <label class="field span-2">
-            <span class="field-label">项目目录 <b class="req">*</b></span>
+            <span class="field-label">{{ $t('runtimeCreate.projectDir') }} <b class="req">*</b></span>
             <input v-model.trim="form.project_dir" class="inp mono"
-                   placeholder="/www/myapp 或 C:\www\myapp" />
-            <span class="field-hint">宿主机上的绝对路径，将挂载到容器内工作目录 {{ form.workdir }}</span>
+                   :placeholder="$t('runtimeCreate.projectDirPlaceholder')" />
+            <span class="field-hint">{{ $t('runtimeCreate.projectDirHint', { workdir: form.workdir }) }}</span>
           </label>
 
           <label class="field span-2">
-            <span class="field-label">启动命令</span>
+            <span class="field-label">{{ $t('runtimeCreate.startCommand') }}</span>
             <input v-model="form.start_command" class="inp mono" :placeholder="template?.suggest_cmd" />
-            <span class="field-hint">在容器工作目录内执行的启动命令，留空使用 {{ template?.suggest_cmd }}</span>
+            <span class="field-hint">{{ $t('runtimeCreate.startCommandHint', { cmd: template?.suggest_cmd }) }}</span>
           </label>
 
           <label class="field">
-            <span class="field-label">应用（语言版本）<b class="req">*</b></span>
+            <span class="field-label">{{ $t('runtimeCreate.appVersion') }} <b class="req">*</b></span>
             <select v-model="form.app_version" class="inp">
               <option v-for="v in template?.versions" :key="v" :value="v">{{ v }}</option>
             </select>
-            <span class="field-hint">对应镜像 {{ template?.image }}</span>
+            <span class="field-hint">{{ $t('runtimeCreate.imageHint', { image: template?.image }) }}</span>
           </label>
 
           <label class="field">
-            <span class="field-label">容器名称</span>
-            <input v-model.trim="form.container_name" class="inp mono" placeholder="留空自动生成"
+            <span class="field-label">{{ $t('runtimeCreate.containerName') }}</span>
+            <input v-model.trim="form.container_name" class="inp mono" :placeholder="$t('runtimeCreate.autoGeneratePlaceholder')"
                    :class="{ err: err && form.container_name && !containerNameValid }" />
-            <span class="field-hint">仅字母/数字/_/-/.，留空自动生成 graw-rt-&lt;名称&gt;</span>
+            <span class="field-hint">{{ $t('runtimeCreate.containerNameHint') }}</span>
           </label>
 
           <label class="field span-2">
-            <span class="field-label">备注</span>
-            <textarea v-model="form.notes" class="inp" rows="2" placeholder="可选，记录该运行环境的用途"></textarea>
+            <span class="field-label">{{ $t('runtimeCreate.description') }}</span>
+            <textarea v-model="form.notes" class="inp" rows="2" :placeholder="$t('runtimeCreate.descriptionPlaceholder')"></textarea>
           </label>
         </div>
 
         <!-- 高级配置 -->
         <div class="adv-head" @click="advOpen = !advOpen">
           <ChevronDown :size="14" :class="{ 'rot': advOpen }" />
-          <span>高级配置</span>
-          <span class="adv-count">端口 {{ form.ports.length }} · 环境变量 {{ form.env.length }} · 挂载 {{ form.mounts.length }} · 主机映射 {{ form.hosts.length }}</span>
+          <span>{{ $t('runtimeCreate.advanced') }}</span>
+          <span class="adv-count">{{ $t('runtimeCreate.portsCount', { count: form.ports.length }) }} · {{ $t('runtimeCreate.envsCount', { count: form.env.length }) }} · {{ $t('runtimeCreate.mountsCount', { count: form.mounts.length }) }} · {{ $t('runtimeCreate.bindsCount', { count: form.hosts.length }) }}</span>
         </div>
 
         <div v-if="advOpen" class="adv-body">
           <!-- 端口映射 -->
           <section class="adv-sec">
             <div class="sec-head">
-              <span>端口映射</span>
-              <button class="btn sm" @click="form.ports.push({ external: '', internal: '', protocol: 'tcp' })">添加端口</button>
+              <span>{{ $t('runtimeCreate.portMapping') }}</span>
+              <button class="btn sm" @click="form.ports.push({ external: '', internal: '', protocol: 'tcp' })">{{ $t('runtimeCreate.addPort') }}</button>
             </div>
             <div v-if="form.ports.length" class="kv-list">
               <div v-for="(p, i) in form.ports" :key="i" class="kv-row">
-                <input v-model.trim="p.external" class="inp sm mono" placeholder="外部端口" />
+                <input v-model.trim="p.external" class="inp sm mono" :placeholder="$t('runtimeCreate.externalPort')" />
                 <span class="colon">:</span>
-                <input v-model.trim="p.internal" class="inp sm mono" placeholder="内部端口" />
+                <input v-model.trim="p.internal" class="inp sm mono" :placeholder="$t('runtimeCreate.internalPort')" />
                 <select v-model="p.protocol" class="inp sm proto">
                   <option value="tcp">tcp</option>
                   <option value="udp">udp</option>
@@ -79,71 +79,71 @@
                 <button class="iconbtn danger" @click="form.ports.splice(i, 1)"><X :size="13" /></button>
               </div>
             </div>
-            <span class="field-hint" v-else>未配置端口映射</span>
+            <span class="field-hint" v-else>{{ $t('runtimeCreate.noPorts') }}</span>
           </section>
 
           <!-- 环境变量 -->
           <section class="adv-sec">
             <div class="sec-head">
-              <span>环境变量</span>
-              <button class="btn sm" @click="form.env.push({ name: '', value: '' })">添加变量</button>
+              <span>{{ $t('runtimeCreate.envVars') }}</span>
+              <button class="btn sm" @click="form.env.push({ name: '', value: '' })">{{ $t('runtimeCreate.addEnv') }}</button>
             </div>
             <div v-if="form.env.length" class="kv-list">
               <div v-for="(e, i) in form.env" :key="i" class="kv-row">
-                <input v-model.trim="e.name" class="inp sm mono" placeholder="名称" />
+                <input v-model.trim="e.name" class="inp sm mono" :placeholder="$t('runtimeCreate.envName')" />
                 <span class="eq">=</span>
-                <input v-model.trim="e.value" class="inp sm mono grow" placeholder="值" />
+                <input v-model.trim="e.value" class="inp sm mono grow" :placeholder="$t('runtimeCreate.envValue')" />
                 <button class="iconbtn danger" @click="form.env.splice(i, 1)"><X :size="13" /></button>
               </div>
             </div>
-            <span class="field-hint" v-else>未配置环境变量</span>
+            <span class="field-hint" v-else>{{ $t('runtimeCreate.noEnv') }}</span>
           </section>
 
           <!-- 挂载 -->
           <section class="adv-sec">
             <div class="sec-head">
-              <span>挂载</span>
-              <button class="btn sm" @click="form.mounts.push({ host: '', container: '', mode: 'rw' })">添加挂载</button>
+              <span>{{ $t('runtimeCreate.mountSection') }}</span>
+              <button class="btn sm" @click="form.mounts.push({ host: '', container: '', mode: 'rw' })">{{ $t('runtimeCreate.addMount') }}</button>
             </div>
             <div v-if="form.mounts.length" class="kv-list">
               <div v-for="(m, i) in form.mounts" :key="i" class="kv-row">
-                <input v-model.trim="m.host" class="inp sm mono grow" placeholder="本机目录" />
+                <input v-model.trim="m.host" class="inp sm mono grow" :placeholder="$t('runtimeCreate.hostDir')" />
                 <span class="colon">→</span>
-                <input v-model.trim="m.container" class="inp sm mono grow2" placeholder="容器目录" />
+                <input v-model.trim="m.container" class="inp sm mono grow2" :placeholder="$t('runtimeCreate.containerDir')" />
                 <select v-model="m.mode" class="inp sm proto">
-                  <option value="rw">读写</option>
-                  <option value="ro">只读</option>
+                  <option value="rw">{{ $t('runtimeCreate.rw') }}</option>
+                  <option value="ro">{{ $t('runtimeCreate.ro') }}</option>
                 </select>
                 <button class="iconbtn danger" @click="form.mounts.splice(i, 1)"><X :size="13" /></button>
               </div>
             </div>
-            <span class="field-hint" v-else>未配置额外挂载（项目目录已自动挂载到 {{ form.workdir }}）</span>
+            <span class="field-hint" v-else>{{ $t('runtimeCreate.noMount', { workdir: form.workdir }) }}</span>
           </section>
 
           <!-- 主机映射 -->
           <section class="adv-sec">
             <div class="sec-head">
-              <span>主机映射</span>
-              <button class="btn sm" @click="form.hosts.push({ hostname: '', ip: '' })">添加映射</button>
+              <span>{{ $t('runtimeCreate.bindHosts') }}</span>
+              <button class="btn sm" @click="form.hosts.push({ hostname: '', ip: '' })">{{ $t('runtimeCreate.addBind') }}</button>
             </div>
             <div v-if="form.hosts.length" class="kv-list">
               <div v-for="(h, i) in form.hosts" :key="i" class="kv-row">
-                <input v-model.trim="h.hostname" class="inp sm mono" placeholder="主机名" />
+                <input v-model.trim="h.hostname" class="inp sm mono" :placeholder="$t('runtimeCreate.hostname')" />
                 <span class="colon">→</span>
                 <input v-model.trim="h.ip" class="inp sm mono grow" placeholder="IP" />
                 <button class="iconbtn danger" @click="form.hosts.splice(i, 1)"><X :size="13" /></button>
               </div>
             </div>
-            <span class="field-hint" v-else>未配置主机名到 IP 的映射（--add-host）</span>
+            <span class="field-hint" v-else>{{ $t('runtimeCreate.noBind') }}</span>
           </section>
         </div>
 
         <div v-if="err" class="error-banner">{{ err }}</div>
 
         <div class="actions">
-          <button class="btn" @click="emit('close')">取消</button>
+          <button class="btn" @click="emit('close')">{{ $t('common.cancel') }}</button>
           <button class="btn primary" @click="save" :disabled="saving">
-            <Loader2 v-if="saving" :size="14" class="spin" /> 创建并启动
+            <Loader2 v-if="saving" :size="14" class="spin" /> {{ $t('runtimeCreate.createAndStart') }}
           </button>
         </div>
       </template>
@@ -153,9 +153,11 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { runtimeApi } from '../../api'
 import { Box, ChevronDown, X, Loader2 } from 'lucide-vue-next'
 
+const { t } = useI18n()
 const props = defineProps({ type: { type: String, default: 'python' } })
 const emit = defineEmits(['close', 'created'])
 
@@ -209,7 +211,7 @@ async function loadTemplates() {
     form.workdir = template.value?.workdir || '/app'
     form.start_command = template.value?.suggest_cmd || ''
   } catch (e) {
-    err.value = '加载运行时模板失败：' + (e.response?.data?.detail || e.message)
+    err.value = t('runtimeCreate.loadTemplatesFailed', { error: e.response?.data?.detail || e.message })
   } finally {
     loadingTemplates.value = false
   }
@@ -223,10 +225,10 @@ function isAbs(p) {
 async function save() {
   err.value = ''
   // 表单校验
-  if (!form.name) { err.value = '请填写名称'; return }
-  if (!form.project_dir.trim()) { err.value = '请填写项目目录'; return }
-  if (!isAbs(form.project_dir.trim())) { err.value = '项目目录必须为绝对路径'; return }
-  if (form.container_name && !containerNameValid.value) { err.value = '容器名称只能包含字母/数字/_/./-' ; return }
+  if (!form.name) { err.value = t('runtimeCreate.nameRequired'); return }
+  if (!form.project_dir.trim()) { err.value = t('runtimeCreate.projectDirRequired'); return }
+  if (!isAbs(form.project_dir.trim())) { err.value = t('runtimeCreate.projectDirAbsolute'); return }
+  if (form.container_name && !containerNameValid.value) { err.value = t('runtimeCreate.containerNameInvalid') ; return }
 
   const body = {
     type: selectedType.value,
@@ -252,7 +254,7 @@ async function save() {
     emit('created', created)
     emit('close')
   } catch (e) {
-    err.value = '创建失败：' + (e.response?.data?.detail || e.message)
+    err.value = t('runtimeCreate.createFailed', { error: e.response?.data?.detail || e.message })
   } finally {
     saving.value = false
   }

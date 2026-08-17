@@ -11,7 +11,7 @@
       @mousedown="startDrag"
       @dblclick="$emit('maximize')"
     >
-      <span class="title">{{ window.title }}</span>
+      <span class="title">{{ $t(window.titleKey, window.titleArgs) }}</span>
       <div class="actions">
         <button class="min" @click.stop="$emit('minimize')" title="Minimize"><Minus :size="14" /></button>
         <button class="max" @click.stop="$emit('maximize')" title="Maximize"><Square :size="12" /></button>

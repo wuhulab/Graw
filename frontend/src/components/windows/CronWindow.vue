@@ -4,19 +4,19 @@
       <!-- 添加任务：点击展开「常规记录 / 标准记录」下拉 -->
       <div class="add-wrap">
         <button class="btn primary" @click="toggleMenu">
-          <Plus :size="14" /> 添加任务 <ChevronDown :size="12" />
+          <Plus :size="14" /> {{ $t('cron.addTask') }} <ChevronDown :size="12" />
         </button>
         <div v-if="showMenu" class="dropdown" @click.self="showMenu = false">
-          <div class="dropdown-item" @click="openRegular">常规记录</div>
-          <div class="dropdown-item" @click="openStandard">标准记录</div>
+          <div class="dropdown-item" @click="openRegular">{{ $t('cron.regular') }}</div>
+          <div class="dropdown-item" @click="openStandard">{{ $t('cron.standard') }}</div>
         </div>
       </div>
-      <span class="hint">平台: {{ platform }}</span>
+      <span class="hint">{{ $t('cron.platform', { platform }) }}</span>
     </div>
     <div class="table-wrap">
       <table>
         <thead>
-          <tr><th>名称</th><th>周期</th><th>类型 / 命令</th><th>状态</th><th>操作</th></tr>
+          <tr><th>{{ $t('cron.name') }}</th><th>{{ $t('cron.schedule') }}</th><th>{{ $t('cron.typeCommand') }}</th><th>{{ $t('common.status') }}</th><th>{{ $t('cron.action') }}</th></tr>
         </thead>
         <tbody>
           <tr v-for="t in tasks" :key="t.id">
@@ -28,16 +28,16 @@
             <td class="mono">
               <span class="type-tag">{{ typeText(t.task_type) }}</span>
               <span class="cmd-text" :title="t.command">{{ t.command }}</span>
-              <span v-if="t.alert" class="bell" title="已开启告警通知">🔔</span>
+              <span v-if="t.alert" class="bell" :title="$t('cron.alertEnabled')">🔔</span>
             </td>
-            <td><span class="badge" :class="t.enabled ? 'ok' : 'off'">{{ t.enabled ? '启用' : '停用' }}</span></td>
+            <td><span class="badge" :class="t.enabled ? 'ok' : 'off'">{{ t.enabled ? $t('cron.enabled') : $t('cron.disabled') }}</span></td>
             <td class="actions">
-              <button class="iconbtn" title="立即执行" @click="runNow(t)"><Play :size="14" /></button>
-              <button class="iconbtn" title="停用/启用" @click="toggleEnable(t)"><Power :size="14" /></button>
-              <button class="iconbtn danger" title="删除" @click="remove(t)"><Trash2 :size="14" /></button>
+              <button class="iconbtn" :title="$t('cron.runNow')" @click="runNow(t)"><Play :size="14" /></button>
+              <button class="iconbtn" :title="$t('cron.toggleEnable')" @click="toggleEnable(t)"><Power :size="14" /></button>
+              <button class="iconbtn danger" :title="$t('common.delete')" @click="remove(t)"><Trash2 :size="14" /></button>
             </td>
           </tr>
-          <tr v-if="tasks.length === 0"><td colspan="5" class="empty">暂无计划任务</td></tr>
+          <tr v-if="tasks.length === 0"><td colspan="5" class="empty">{{ $t('cron.noCrons') }}</td></tr>
         </tbody>
       </table>
     </div>
@@ -45,17 +45,17 @@
     <!-- 常规记录弹窗 -->
     <div v-if="showRegular" class="modal-overlay" @click.self="showRegular = false">
       <div class="modal">
-        <h3>常规记录</h3>
+        <h3>{{ $t('cron.regular') }}</h3>
         <div class="form">
-          <label>任务名称</label>
-          <input v-model="form.name" placeholder="备份数据库" />
-          <label>Cron 表达式（分 时 日 月 周）</label>
+          <label>{{ $t('cron.name') }}</label>
+          <input v-model="form.name" :placeholder="$t('cron.namePlaceholder')" />
+          <label>{{ $t('cron.scheduleLabel') }}</label>
           <input v-model="form.schedule" placeholder="0 3 * * *" />
-          <label>执行命令</label>
-          <textarea v-model="form.command" rows="3" placeholder="bash 命令或脚本路径" />
+          <label>{{ $t('cron.commandLabel') }}</label>
+          <textarea v-model="form.command" rows="3" :placeholder="$t('cron.commandPlaceholder')" />
           <div class="actions">
-            <button class="btn" @click="showRegular = false">取消</button>
-            <button class="btn primary" @click="saveRegular">保存</button>
+            <button class="btn" @click="showRegular = false">{{ $t('common.cancel') }}</button>
+            <button class="btn primary" @click="saveRegular">{{ $t('common.save') }}</button>
           </div>
         </div>
       </div>
@@ -64,61 +64,61 @@
     <!-- 标准记录弹窗 -->
     <div v-if="showStandard" class="modal-overlay" @click.self="showStandard = false">
       <div class="modal std-modal">
-        <h3>标准记录</h3>
+        <h3>{{ $t('cron.standard') }}</h3>
         <div class="form">
-          <label>任务名称</label>
-          <input v-model="std.name" placeholder="如：备份数据库" />
-          <label>分组</label>
-          <input v-model="std.group" placeholder="默认" />
-          <label>任务类型</label>
+          <label>{{ $t('cron.name') }}</label>
+          <input v-model="std.name" :placeholder="$t('cron.namePlaceholderStd')" />
+          <label>{{ $t('cron.group') }}</label>
+          <input v-model="std.group" :placeholder="$t('cron.groupPlaceholder')" />
+          <label>{{ $t('cron.typeLabel') }}</label>
           <select v-model="std.taskType">
-            <option value="shell_command">shell命令</option>
-            <option value="backup_container">备份容器</option>
-            <option value="visit_url">访问url</option>
-            <option value="clean_logs">清理日志</option>
-            <option value="sync_time">同步服务器时间</option>
+            <option value="shell_command">{{ $t('cron.shell') }}</option>
+            <option value="backup_container">{{ $t('cron.backup') }}</option>
+            <option value="visit_url">{{ $t('cron.visitUrl') }}</option>
+            <option value="clean_logs">{{ $t('cron.cleanLogs') }}</option>
+            <option value="sync_time">{{ $t('cron.syncTime') }}</option>
           </select>
-          <label>执行周期</label>
+          <label>{{ $t('cron.freqLabel') }}</label>
           <div class="period">
             <select v-model="std.freq">
-              <option value="daily">每天</option>
-              <option value="weekly">每周</option>
-              <option value="monthly">每月</option>
+              <option value="daily">{{ $t('cron.daily') }}</option>
+              <option value="weekly">{{ $t('cron.weekly') }}</option>
+              <option value="monthly">{{ $t('cron.monthly') }}</option>
             </select>
             <select v-if="std.freq === 'weekly'" v-model="std.weekday">
               <option v-for="(d, i) in weekdays" :key="i" :value="i">{{ d }}</option>
             </select>
             <select v-if="std.freq === 'monthly'" v-model="std.dayOfMonth">
-              <option v-for="d in 31" :key="d" :value="d">{{ d }} 日</option>
+              <option v-for="d in 31" :key="d" :value="d">{{ $t('cron.dayOfMonth', { d }) }}</option>
             </select>
             <input type="time" v-model="std.time" />
           </div>
           <!-- 按任务类型动态展示内容输入 -->
           <template v-if="std.taskType === 'shell_command'">
-            <label>脚本内容</label>
-            <textarea v-model="std.content" rows="4" placeholder="输入要执行的 shell 脚本" />
+            <label>{{ $t('cron.scriptContent') }}</label>
+            <textarea v-model="std.content" rows="4" :placeholder="$t('cron.scriptPlaceholder')" />
           </template>
           <template v-else-if="std.taskType === 'backup_container'">
-            <label>容器名称</label>
-            <input v-model="std.content" placeholder="如：mysql" />
+            <label>{{ $t('cron.containerName') }}</label>
+            <input v-model="std.content" :placeholder="$t('cron.containerNamePlaceholder')" />
           </template>
           <template v-else-if="std.taskType === 'visit_url'">
-            <label>访问地址</label>
+            <label>{{ $t('cron.visitUrlLabel') }}</label>
             <input v-model="std.content" placeholder="https://example.com/health" />
           </template>
           <template v-else-if="std.taskType === 'clean_logs'">
-            <label>日志目录</label>
+            <label>{{ $t('cron.logDir') }}</label>
             <input v-model="std.content" placeholder="如：/var/log" />
           </template>
           <template v-else>
-            <p class="note">同步服务器时间无需额外内容，将自动执行系统时间同步。</p>
+            <p class="note">{{ $t('cron.syncTimeNote') }}</p>
           </template>
           <label class="check">
-            <input type="checkbox" v-model="std.alert" /> 触发告警通知
+            <input type="checkbox" v-model="std.alert" /> {{ $t('cron.alertLabel') }}
           </label>
           <div class="actions">
-            <button class="btn" @click="showStandard = false">取消</button>
-            <button class="btn primary" @click="saveStandard">保存</button>
+            <button class="btn" @click="showStandard = false">{{ $t('common.cancel') }}</button>
+            <button class="btn primary" @click="saveStandard">{{ $t('common.save') }}</button>
           </div>
         </div>
       </div>
@@ -127,9 +127,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { cronApi } from '../../api'
 import { Plus, Play, Power, Trash2, ChevronDown } from 'lucide-vue-next'
+
+const { t } = useI18n()
 
 const tasks = ref([])
 const platform = ref('')
@@ -141,19 +144,23 @@ const showStandard = ref(false)
 const form = ref({ name: '', schedule: '0 3 * * *', command: '' })
 // 标准记录表单
 const std = ref(defaultStd())
-const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+const weekdays = computed(() => [
+  t('cron.weekdays.sun'), t('cron.weekdays.mon'), t('cron.weekdays.tue'),
+  t('cron.weekdays.wed'), t('cron.weekdays.thu'), t('cron.weekdays.fri'), t('cron.weekdays.sat')
+])
 
-// 任务类型中文名映射
-const TYPE_TEXT = {
-  shell_command: 'shell命令',
-  backup_container: '备份容器',
-  visit_url: '访问url',
-  clean_logs: '清理日志',
-  sync_time: '同步时间'
+// 任务类型名称：映射到 i18n key
+const TYPE_KEYS = {
+  shell_command: 'cron.shell',
+  backup_container: 'cron.backup',
+  visit_url: 'cron.visitUrl',
+  clean_logs: 'cron.cleanLogs',
+  sync_time: 'cron.syncTime'
 }
 
 function typeText(type) {
-  return TYPE_TEXT[type] || type || 'shell命令'
+  const key = TYPE_KEYS[type]
+  return key ? t(key) : (type || t('cron.shell'))
 }
 
 // 标准记录表单默认值
@@ -178,7 +185,7 @@ async function load() {
     platform.value = data.platform || ''
   } catch (e) {
     console.error('加载计划任务失败', e)
-    alert('加载计划任务失败：' + (e?.message || e))
+    alert(t('cron.loadFailed', { error: e?.message || e }))
   }
 }
 
@@ -210,7 +217,7 @@ function stdSchedule() {
 
 async function saveRegular() {
   if (!form.value.name.trim() || !form.value.command.trim()) {
-    alert('请填写任务名称和执行命令')
+    alert(t('cron.nameContentRequired'))
     return
   }
   try {
@@ -223,17 +230,17 @@ async function saveRegular() {
     await load()
   } catch (e) {
     console.error('保存常规记录失败', e)
-    alert('保存失败：' + (e?.message || e))
+    alert(t('cron.saveFailed', { error: e?.message || e }))
   }
 }
 
 async function saveStandard() {
   if (!std.value.name.trim()) {
-    alert('请填写任务名称')
+    alert(t('cron.nameRequired'))
     return
   }
   if (std.value.taskType !== 'sync_time' && !std.value.content.trim()) {
-    alert('请填写任务内容')
+    alert(t('cron.contentRequired'))
     return
   }
   try {
@@ -249,38 +256,38 @@ async function saveStandard() {
     await load()
   } catch (e) {
     console.error('保存标准记录失败', e)
-    alert('保存失败：' + (e?.message || e))
+    alert(t('cron.saveFailed', { error: e?.message || e }))
   }
 }
 
-async function runNow(t) {
+async function runNow(task) {
   try {
-    await cronApi.run(t.id)
-    alert('任务已触发执行')
+    await cronApi.run(task.id)
+    alert(t('cron.executed'))
   } catch (e) {
     console.error('执行任务失败', e)
-    alert('执行失败：' + (e?.message || e))
+    alert(t('cron.executeFailed', { error: e?.message || e }))
   }
 }
 
-async function toggleEnable(t) {
+async function toggleEnable(task) {
   try {
-    await cronApi.update(t.id, { enabled: !t.enabled })
+    await cronApi.update(task.id, { enabled: !task.enabled })
     await load()
   } catch (e) {
     console.error('切换任务状态失败', e)
-    alert('操作失败：' + (e?.message || e))
+    alert(t('cron.operationFailed', { error: e?.message || e }))
   }
 }
 
-async function remove(t) {
-  if (!confirm('确定删除此任务？')) return
+async function remove(task) {
+  if (!confirm(t('cron.confirmDelete'))) return
   try {
-    await cronApi.delete(t.id)
+    await cronApi.delete(task.id)
     await load()
   } catch (e) {
     console.error('删除任务失败', e)
-    alert('删除失败：' + (e?.message || e))
+    alert(t('cron.deleteFailed', { error: e?.message || e }))
   }
 }
 

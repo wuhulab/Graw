@@ -1,56 +1,56 @@
 <template>
   <div class="fw-window">
     <div class="toolbar">
-      <span class="badge" :class="enabled ? 'ok' : 'off'">防火墙 {{ enabled ? '已启用' : '已停用' }}</span>
-      <button class="btn" @click="toggle">{{ enabled ? '停用' : '启用' }}</button>
-      <button class="btn primary" @click="showPortModal=true">添加端口规则</button>
-      <button class="btn primary" @click="showIpModal=true">添加IP规则</button>
-      <span class="hint">平台: {{ platform }}</span>
+      <span class="badge" :class="enabled ? 'ok' : 'off'">{{ $t('firewall.title') }} {{ $t(enabled ? 'firewall.enabled' : 'firewall.disabled') }}</span>
+      <button class="btn" @click="toggle">{{ $t(enabled ? 'firewall.disable' : 'firewall.enable') }}</button>
+      <button class="btn primary" @click="showPortModal=true">{{ $t('firewall.addPortRule') }}</button>
+      <button class="btn primary" @click="showIpModal=true">{{ $t('firewall.addIpRule') }}</button>
+      <span class="hint">{{ $t('firewall.platform', { platform }) }}</span>
     </div>
 
-    <h4>端口规则</h4>
+    <h4>{{ $t('firewall.portRules') }}</h4>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>端口</th><th>协议</th><th>动作</th><th>备注</th><th>操作</th></tr></thead>
+        <thead><tr><th>{{ $t('firewall.port') }}</th><th>{{ $t('firewall.protocol') }}</th><th>{{ $t('firewall.action') }}</th><th>{{ $t('firewall.remark') }}</th><th>{{ $t('common.action') }}</th></tr></thead>
         <tbody>
           <tr v-for="r in portRules" :key="r.id"><td>{{ r.port }}</td><td>{{ r.protocol }}</td>
-            <td><span class="badge" :class="r.action==='allow'?'ok':'warn'">{{ r.action }}</span></td>
+            <td><span class="badge" :class="r.action==='allow'?'ok':'warn'">{{ r.action === 'allow' ? $t('firewall.allow') : $t('firewall.deny') }}</span></td>
             <td>{{ r.comment }}</td>
             <td><button class="iconbtn danger" @click="delPort(r.id)"><Trash2 :size="14"/></button></td>
           </tr>
-          <tr v-if="portRules.length===0"><td colspan="5" class="empty">暂无端口规则</td></tr>
+          <tr v-if="portRules.length===0"><td colspan="5" class="empty">{{ $t('firewall.noPortRules') }}</td></tr>
         </tbody>
       </table>
     </div>
 
-    <h4>IP 规则</h4>
+    <h4>{{ $t('firewall.ipRules') }}</h4>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>IP</th><th>动作</th><th>备注</th><th>操作</th></tr></thead>
+        <thead><tr><th>{{ $t('firewall.ip') }}</th><th>{{ $t('firewall.action') }}</th><th>{{ $t('firewall.remark') }}</th><th>{{ $t('common.action') }}</th></tr></thead>
         <tbody>
           <tr v-for="r in ipRules" :key="r.id"><td>{{ r.ip }}</td>
-            <td><span class="badge" :class="r.action==='allow'?'ok':'warn'">{{ r.action }}</span></td>
+            <td><span class="badge" :class="r.action==='allow'?'ok':'warn'">{{ r.action === 'allow' ? $t('firewall.allow') : $t('firewall.deny') }}</span></td>
             <td>{{ r.comment }}</td>
             <td><button class="iconbtn danger" @click="delIp(r.id)"><Trash2 :size="14"/></button></td>
           </tr>
-          <tr v-if="ipRules.length===0"><td colspan="4" class="empty">暂无IP规则</td></tr>
+          <tr v-if="ipRules.length===0"><td colspan="4" class="empty">{{ $t('firewall.noIpRules') }}</td></tr>
         </tbody>
       </table>
     </div>
 
     <div v-if="showPortModal" class="modal-overlay" @click.self="showPortModal=false">
       <div class="modal">
-        <h3>添加端口规则</h3>
+        <h3>{{ $t('firewall.addPortRule') }}</h3>
         <div class="form">
-          <label>端口</label><input v-model.number="portForm.port" type="number" />
-          <label>协议</label>
+          <label>{{ $t('firewall.port') }}</label><input v-model.number="portForm.port" type="number" />
+          <label>{{ $t('firewall.protocol') }}</label>
           <select v-model="portForm.protocol"><option value="tcp">TCP</option><option value="udp">UDP</option></select>
-          <label>动作</label>
-          <select v-model="portForm.action"><option value="allow">允许</option><option value="deny">拒绝</option></select>
-          <label>备注</label><input v-model="portForm.comment" />
+          <label>{{ $t('firewall.action') }}</label>
+          <select v-model="portForm.action"><option value="allow">{{ $t('firewall.allow') }}</option><option value="deny">{{ $t('firewall.deny') }}</option></select>
+          <label>{{ $t('firewall.remark') }}</label><input v-model="portForm.comment" />
           <div class="actions">
-            <button class="btn" @click="showPortModal=false">取消</button>
-            <button class="btn primary" @click="addPort">保存</button>
+            <button class="btn" @click="showPortModal=false">{{ $t('common.cancel') }}</button>
+            <button class="btn primary" @click="addPort">{{ $t('common.save') }}</button>
           </div>
         </div>
       </div>
@@ -58,15 +58,15 @@
 
     <div v-if="showIpModal" class="modal-overlay" @click.self="showIpModal=false">
       <div class="modal">
-        <h3>添加IP规则</h3>
+        <h3>{{ $t('firewall.addIpRule') }}</h3>
         <div class="form">
-          <label>IP / CIDR</label><input v-model="ipForm.ip" placeholder="如: 192.168.1.0/24" />
-          <label>动作</label>
-          <select v-model="ipForm.action"><option value="allow">允许</option><option value="deny">拒绝</option></select>
-          <label>备注</label><input v-model="ipForm.comment" />
+          <label>{{ $t('firewall.ipCidr') }}</label><input v-model="ipForm.ip" placeholder="如: 192.168.1.0/24" />
+          <label>{{ $t('firewall.action') }}</label>
+          <select v-model="ipForm.action"><option value="allow">{{ $t('firewall.allow') }}</option><option value="deny">{{ $t('firewall.deny') }}</option></select>
+          <label>{{ $t('firewall.remark') }}</label><input v-model="ipForm.comment" />
           <div class="actions">
-            <button class="btn" @click="showIpModal=false">取消</button>
-            <button class="btn primary" @click="addIp">保存</button>
+            <button class="btn" @click="showIpModal=false">{{ $t('common.cancel') }}</button>
+            <button class="btn primary" @click="addIp">{{ $t('common.save') }}</button>
           </div>
         </div>
       </div>
@@ -76,8 +76,11 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { firewallApi } from '../../api'
 import { Trash2 } from 'lucide-vue-next'
+
+const { t } = useI18n()
 
 const enabled = ref(true)
 const platform = ref('')
@@ -109,7 +112,7 @@ async function addPort() {
 }
 
 async function delPort(id) {
-  if (!confirm('删除此端口规则？')) return
+  if (!confirm(t('firewall.confirmDeletePort'))) return
   await firewallApi.delPort(id)
   await load()
 }
@@ -121,7 +124,7 @@ async function addIp() {
 }
 
 async function delIp(id) {
-  if (!confirm('删除此IP规则？')) return
+  if (!confirm(t('firewall.confirmDeleteIp'))) return
   await firewallApi.delIp(id)
   await load()
 }

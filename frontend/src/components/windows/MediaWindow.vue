@@ -7,7 +7,10 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { auth } from '../../store/auth'
+
+const { t } = useI18n()
 
 const props = defineProps({ path: String, name: String, type: String })
 const url = ref('')
@@ -21,7 +24,7 @@ onMounted(async () => {
     const blob = await resp.blob()
     url.value = URL.createObjectURL(blob)
   } catch (e) {
-    alert('加载失败：' + e.message)
+    alert(t('media.loadFailed', { error: e.message }))
   }
 })
 

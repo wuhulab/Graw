@@ -3,12 +3,12 @@
     <!-- 顶部工具栏：与标准文件编辑器一致 -->
     <div class="toolbar">
       <strong style="font-family:monospace; font-size:12px;">
-        docker-compose.yml ({{ appId }})
+        {{ $t('appcompose.title', { appId }) }}
         <span v-if="isDirty" style="color:#ff3b30; font-weight:600;"> *</span>
       </strong>
-      <span v-if="saved" class="saved-hint">已应用，安装时将使用此内容</span>
-      <button class="btn" style="margin-left:auto;" @click="save">保存</button>
-      <button class="btn" @click="emit('close')">关闭</button>
+      <span v-if="saved" class="saved-hint">{{ $t('appcompose.applied') }}</span>
+      <button class="btn" style="margin-left:auto;" @click="save">{{ $t('appcompose.save') }}</button>
+      <button class="btn" @click="emit('close')">{{ $t('appcompose.close') }}</button>
     </div>
     <textarea v-model="localContent" spellcheck="false" class="editor-area"></textarea>
   </div>

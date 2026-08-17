@@ -45,7 +45,11 @@ ADMIN = [Depends(require_admin)]
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     seed_default_users()
+    # 启动统一系统指标采集（供首页三卡片共享单条 WS），预热缓存并后台广播
+    await system.start_metrics_producer()
     yield
+    # 关闭后台采集协程
+    await system.stop_metrics_producer()
 
 
 app = FastAPI(title="Graw Server Panel", version="1.0.0", lifespan=lifespan)
@@ -90,10 +94,11 @@ async def security_headers(request: Request, call_next):
 # 公开路由：登录、当前用户、改密、健康检查
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 
-# 只读信息路由：登录即可（桌面系统概览卡片 / 备忘录）
-app.include_router(
-    system.router, prefix="/api/system", tags=["system"], dependencies=PROTECTED
-)
+# 只读信息路由：登录即可（桌面系统概览卡片 / 备忘录）。
+# 注意：system 路由鉴权改为在各个 HTTP 端点内声明（_PROTECTED），
+# 以便其 WebSocket 端点改用 ?token= 鉴权，而不是继承这里的全局依赖
+# （全局 HTTPException 依赖会让 WS 连接无法建立）。
+app.include_router(system.router, prefix="/api/system", tags=["system"])
 app.include_router(
     notes.router, prefix="/api/notes", tags=["notes"], dependencies=PROTECTED
 )

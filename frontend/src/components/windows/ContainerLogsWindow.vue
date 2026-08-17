@@ -4,18 +4,18 @@
     <div class="log-toolbar">
       <span class="log-title">{{ name }}</span>
       <span class="log-id">{{ id }}</span>
-      <button class="btn" :disabled="!autoRefresh" @click="load">刷新</button>
+      <button class="btn" :disabled="!autoRefresh" @click="load">{{ $t('containerlogs.refresh') }}</button>
       <button class="btn" @click="autoRefresh = !autoRefresh; toggleAuto()">
-        {{ autoRefresh ? '暂停' : '自动刷新' }}
+        {{ autoRefresh ? $t('containerlogs.pause') : $t('containerlogs.autoRefresh') }}
       </button>
       <select class="tail-select" v-model="tail" @change="load">
-        <option :value="100">最近 100 行</option>
-        <option :value="300">最近 300 行</option>
-        <option :value="1000">最近 1000 行</option>
-        <option :value="5000">最近 5000 行</option>
+        <option :value="100">{{ $t('containerlogs.recentLines', { count: 100 }) }}</option>
+        <option :value="300">{{ $t('containerlogs.recentLines', { count: 300 }) }}</option>
+        <option :value="1000">{{ $t('containerlogs.recentLines', { count: 1000 }) }}</option>
+        <option :value="5000">{{ $t('containerlogs.recentLines', { count: 5000 }) }}</option>
       </select>
-      <span v-if="loading" class="loading">加载中...</span>
-      <button class="btn close-btn" @click="$emit('close')">关闭</button>
+      <span v-if="loading" class="loading">{{ $t('common.loading') }}</span>
+      <button class="btn close-btn" @click="$emit('close')">{{ $t('containerlogs.close') }}</button>
     </div>
     <!-- 日志内容 -->
     <pre ref="logBox" class="log-content" @scroll="onScroll">{{ logs }}</pre>
@@ -24,13 +24,16 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { dockerApi } from '../../api'
+
+const { t } = useI18n()
 
 // props: id 容器 ID, name 容器名称；emit: close 关闭窗口
 const props = defineProps({ id: String, name: String })
 const emit = defineEmits(['close'])
 
-const logs = ref('(正在获取日志...)')
+const logs = ref(t('containerlogs.fetching'))
 const loading = ref(false)
 const tail = ref(300)
 const autoRefresh = ref(true)
@@ -42,9 +45,9 @@ async function load() {
   loading.value = true
   try {
     const r = await dockerApi.logs(props.id, tail.value)
-    logs.value = r.logs || '(空)'
+    logs.value = r.logs || t('containerlogs.empty')
   } catch (e) {
-    logs.value = '(获取日志失败：' + (e.response?.data?.detail || e.message) + ')'
+    logs.value = t('containerlogs.fetchFailed', { error: e.response?.data?.detail || e.message })
   } finally {
     loading.value = false
     if (stickBottom) scrollBottom()

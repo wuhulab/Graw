@@ -1,20 +1,20 @@
 <template>
   <div class="sites-window">
     <div class="toolbar">
-      <button class="btn primary" @click="openTypePicker"><Plus :size="14" /> 添加</button>
-      <span class="hint">Web服务器: {{ webServer || '无' }}</span>
+      <button class="btn primary" @click="openTypePicker"><Plus :size="14" /> {{ $t('sites.add') }}</button>
+      <span class="hint">{{ $t('sites.webServer', { server: webServer || $t('sites.none') }) }}</span>
     </div>
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>名称</th>
-            <th>类型</th>
-            <th>域名</th>
-            <th>根目录 / 目标</th>
-            <th>端口</th>
-            <th>状态</th>
-            <th>操作</th>
+            <th>{{ $t('sites.name') }}</th>
+            <th>{{ $t('sites.type') }}</th>
+            <th>{{ $t('sites.domain') }}</th>
+            <th>{{ $t('sites.targetRoot') }}</th>
+            <th>{{ $t('sites.port') }}</th>
+            <th>{{ $t('sites.status') }}</th>
+            <th>{{ $t('sites.action') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -25,26 +25,26 @@
             <td class="mono">{{ displayTarget(s) }}</td>
             <td>{{ s.port }}</td>
             <td>
-              <span class="badge" :class="s.enabled ? 'ok' : 'off'">{{ s.enabled ? '已启用' : '已停用' }}</span>
-              <span class="badge" :class="s.online ? 'ok' : 'warn'">{{ s.online ? '运行中' : '离线' }}</span>
+              <span class="badge" :class="s.enabled ? 'ok' : 'off'">{{ s.enabled ? $t('sites.enabled') : $t('sites.disabled') }}</span>
+              <span class="badge" :class="s.online ? 'ok' : 'warn'">{{ s.online ? $t('sites.online') : $t('sites.offline') }}</span>
             </td>
             <td class="actions">
-              <button class="iconbtn" title="启用/停用" @click="toggleEnable(s)">
+              <button class="iconbtn" :title="$t('sites.toggleEnable')" @click="toggleEnable(s)">
                 <Power :size="14" />
               </button>
-              <button class="iconbtn" title="配置" @click="openEdit(s)">
+              <button class="iconbtn" :title="$t('sites.config')" @click="openEdit(s)">
                 <Settings :size="14" />
               </button>
-              <button class="iconbtn" title="查看配置" @click="viewConfig(s)">
+              <button class="iconbtn" :title="$t('sites.viewConfigHint')" @click="viewConfig(s)">
                 <FileText :size="14" />
               </button>
-              <button class="iconbtn danger" title="删除" @click="remove(s)">
+              <button class="iconbtn danger" :title="$t('common.delete')" @click="remove(s)">
                 <Trash2 :size="14" />
               </button>
             </td>
           </tr>
           <tr v-if="sites.length === 0">
-            <td colspan="7" class="empty">暂无站点</td>
+            <td colspan="7" class="empty">{{ $t('sites.noSites') }}</td>
           </tr>
         </tbody>
       </table>
@@ -53,7 +53,7 @@
     <!-- 类型选择弹窗 -->
     <div v-if="showTypePicker" class="modal-overlay" @click.self="showTypePicker = false">
       <div class="modal type-modal">
-        <h3>选择站点类型</h3>
+        <h3>{{ $t('sites.selectType') }}</h3>
         <div class="type-grid">
           <div
             v-for="t in typeItems"
@@ -68,8 +68,8 @@
           </div>
         </div>
         <div class="actions">
-          <button class="btn" @click="showTypePicker = false">取消</button>
-          <button class="btn primary" :disabled="!pickedType" @click="confirmType">下一步</button>
+          <button class="btn" @click="showTypePicker = false">{{ $t('common.cancel') }}</button>
+          <button class="btn primary" :disabled="!pickedType" @click="confirmType">{{ $t('common.next') }}</button>
         </div>
       </div>
     </div>
@@ -77,59 +77,59 @@
     <!-- 创建 / 编辑 Modal -->
     <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
       <div class="modal">
-        <h3>{{ editing ? '编辑：' + typeLabel(form.type) : '创建：' + typeLabel(form.type) }}</h3>
+        <h3>{{ $t(editing ? 'sites.editLabel' : 'sites.createLabel', { type: typeLabel(form.type) }) }}</h3>
         <div class="form">
-          <label>站点名称</label>
-          <input v-model="form.name" :disabled="editing" placeholder="如: my-site" />
+          <label>{{ $t('sites.siteName') }}</label>
+          <input v-model="form.name" :disabled="editing" :placeholder="$t('sites.namePlaceholder')" />
 
           <!-- 静态网址 -->
           <template v-if="form.type === 'static'">
-            <label>域名列表（逗号分隔）</label>
-            <input v-model="domainsText" placeholder="如: example.com, www.example.com" />
-            <label>根目录</label>
-            <input v-model="form.root" placeholder="如: /var/www/html" />
-            <label>端口</label>
+            <label>{{ $t('sites.domains') }}</label>
+            <input v-model="domainsText" :placeholder="$t('sites.domainsPlaceholder')" />
+            <label>{{ $t('sites.root') }}</label>
+            <input v-model="form.root" :placeholder="$t('sites.rootPlaceholder')" />
+            <label>{{ $t('sites.port') }}</label>
             <input v-model.number="form.port" type="number" />
           </template>
 
           <!-- 反向代理 -->
           <template v-else-if="form.type === 'proxy'">
-            <label>域名列表（逗号分隔）</label>
-            <input v-model="domainsText" placeholder="如: api.example.com" />
-            <label>监听端口</label>
+            <label>{{ $t('sites.domains') }}</label>
+            <input v-model="domainsText" :placeholder="$t('sites.domainsPlaceholder')" />
+            <label>{{ $t('sites.listenPort') }}</label>
             <input v-model.number="form.port" type="number" />
-            <label>目标后端地址</label>
-            <input v-model="form.reverse_proxy" placeholder="如: http://localhost:3000" />
+            <label>{{ $t('sites.reverseProxy') }}</label>
+            <input v-model="form.reverse_proxy" :placeholder="$t('sites.reverseProxyPlaceholder')" />
           </template>
 
           <!-- TCP/UDP 代理 -->
           <template v-else-if="form.type === 'tcpudp'">
-            <label>协议</label>
+            <label>{{ $t('sites.protocol') }}</label>
             <div class="radio-row">
-              <label class="radio"><input type="radio" value="tcp" v-model="form.protocol" /> TCP</label>
-              <label class="radio"><input type="radio" value="udp" v-model="form.protocol" /> UDP</label>
+              <label class="radio"><input type="radio" value="tcp" v-model="form.protocol" /> {{ $t('sites.tcp') }}</label>
+              <label class="radio"><input type="radio" value="udp" v-model="form.protocol" /> {{ $t('sites.udp') }}</label>
             </div>
-            <label>监听端口</label>
+            <label>{{ $t('sites.listenPort') }}</label>
             <input v-model.number="form.port" type="number" />
-            <label>上游地址（IP:端口）</label>
-            <input v-model="form.upstream" placeholder="如: 127.0.0.1:3306" />
+            <label>{{ $t('sites.upstream') }}</label>
+            <input v-model="form.upstream" :placeholder="$t('sites.upstreamPlaceholder')" />
           </template>
 
           <!-- 子网站 -->
           <template v-else-if="form.type === 'subsite'">
-            <label>子域名</label>
-            <input v-model="form.subdomain" placeholder="如: blog" />
-            <label>根域名</label>
-            <input v-model="form.domain" placeholder="如: example.com" />
-            <label>根目录</label>
-            <input v-model="form.root" placeholder="如: /var/www/html/blog" />
-            <label>端口</label>
+            <label>{{ $t('sites.subdomain') }}</label>
+            <input v-model="form.subdomain" :placeholder="$t('sites.subdomainPlaceholder')" />
+            <label>{{ $t('sites.domainRoot') }}</label>
+            <input v-model="form.domain" :placeholder="$t('sites.domainRootPlaceholder')" />
+            <label>{{ $t('sites.root') }}</label>
+            <input v-model="form.root" :placeholder="$t('sites.rootPlaceholder')" />
+            <label>{{ $t('sites.port') }}</label>
             <input v-model.number="form.port" type="number" />
           </template>
 
           <div class="actions">
-            <button class="btn" @click="closeModal">取消</button>
-            <button class="btn primary" @click="saveSite">保存</button>
+            <button class="btn" @click="closeModal">{{ $t('common.cancel') }}</button>
+            <button class="btn primary" @click="saveSite">{{ $t('common.save') }}</button>
           </div>
         </div>
       </div>
@@ -138,10 +138,10 @@
     <!-- Config viewer -->
     <div v-if="showConfig" class="modal-overlay" @click.self="showConfig = false">
       <div class="modal wide">
-        <h3>站点配置: {{ configSite?.name }}</h3>
+        <h3>{{ $t('sites.viewConfig', { name: configSite?.name }) }}</h3>
         <pre class="code">{{ configText }}</pre>
         <div class="actions">
-          <button class="btn" @click="showConfig = false">关闭</button>
+          <button class="btn" @click="showConfig = false">{{ $t('sites.close') }}</button>
         </div>
       </div>
     </div>
@@ -149,24 +149,27 @@
 </template>
 
 <script setup>
-import { ref, onMounted, markRaw } from 'vue'
+import { ref, onMounted, markRaw, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { sitesApi } from '../../api'
 import {
   Plus, Power, Settings, FileText, Trash2,
   Globe, Share2, Network, Layers
 } from 'lucide-vue-next'
 
-// 站点类型定义
-const typeItems = [
-  { value: 'static', label: '静态网址', desc: '托管静态文件', icon: markRaw(Globe) },
-  { value: 'proxy', label: '反向代理', desc: '转发到后端Web服务', icon: markRaw(Share2) },
-  { value: 'tcpudp', label: 'TCP/UDP代理', desc: '转发TCP/UDP流量', icon: markRaw(Network) },
-  { value: 'subsite', label: '子网站', desc: '子域名绑定到根域名', icon: markRaw(Layers) }
-]
+const { t } = useI18n()
+
+// 站点类型定义（文案走 i18n）
+const typeItems = computed(() => [
+  { value: 'static', label: t('sites.static'), desc: t('sites.staticDesc'), icon: markRaw(Globe) },
+  { value: 'proxy', label: t('sites.proxy'), desc: t('sites.proxyDesc'), icon: markRaw(Share2) },
+  { value: 'tcpudp', label: t('sites.tcpudp'), desc: t('sites.tcpudpDesc'), icon: markRaw(Network) },
+  { value: 'subsite', label: t('sites.subsite'), desc: t('sites.subsiteDesc'), icon: markRaw(Layers) }
+])
 
 function typeLabel(type) {
-  const t = typeItems.find(i => i.value === type)
-  return t ? t.label : type || '静态网址'
+  const item = typeItems.value.find(i => i.value === type)
+  return item ? item.label : type || t('sites.static')
 }
 
 const sites = ref([])
@@ -287,7 +290,7 @@ async function viewConfig(s) {
 }
 
 async function remove(s) {
-  if (!confirm(`确定删除站点 "${s.name}" 吗？`)) return
+  if (!confirm(t('sites.confirmDelete', { name: s.name }))) return
   await sitesApi.delete(s.id)
   await load()
 }

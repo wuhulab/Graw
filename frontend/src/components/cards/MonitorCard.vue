@@ -14,13 +14,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
-import { systemApi, formatSpeed } from '../../api'
+import { formatSpeed } from '../../api'
+import { systemState } from '../../store/systemMetrics'
 
 use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent])
 
@@ -30,33 +31,43 @@ const MAX_POINTS = 30
 const netSeries = ref({ up: [], down: [], times: [] })
 const diskSeries = ref({ read: [], write: [], times: [] })
 
-let timer = null
-async function tick() {
-  try {
-    if (mode.value === 'net') {
-      const d = await systemApi.network()
-      const t = new Date(d.timestamp).toLocaleTimeString().slice(0, 8)
-      netSeries.value.times.push(t)
-      netSeries.value.up.push(d.upload)
-      netSeries.value.down.push(d.download)
-      if (netSeries.value.times.length > MAX_POINTS) {
-        netSeries.value.times.shift(); netSeries.value.up.shift(); netSeries.value.down.shift()
-      }
-    } else {
-      const d = await systemApi.diskio()
-      const t = new Date(d.timestamp).toLocaleTimeString().slice(0, 8)
-      diskSeries.value.times.push(t)
-      diskSeries.value.read.push(d.read)
-      diskSeries.value.write.push(d.write)
-      if (diskSeries.value.times.length > MAX_POINTS) {
-        diskSeries.value.times.shift(); diskSeries.value.read.shift(); diskSeries.value.write.shift()
-      }
+// 由共享「单条 WS」指标推送驱动（见 store/systemMetrics.js）。
+// systemState.network / systemState.diskio 每次推送即新增一个采样点，
+// 取代原先各自 2s 的 HTTP 轮询。
+watch(
+  () => ({
+    up: systemState.network.upload,
+    down: systemState.network.download,
+    read: systemState.diskio.read,
+    write: systemState.diskio.write,
+  }),
+  (v) => {
+    const t = new Date().toLocaleTimeString().slice(0, 8)
+    netSeries.value.times.push(t)
+    netSeries.value.up.push(v.up)
+    netSeries.value.down.push(v.down)
+    diskSeries.value.times.push(t)
+    diskSeries.value.read.push(v.read)
+    diskSeries.value.write.push(v.write)
+    if (netSeries.value.times.length > MAX_POINTS) {
+      netSeries.value.times.shift()
+      netSeries.value.up.shift()
+      netSeries.value.down.shift()
+      diskSeries.value.times.shift()
+      diskSeries.value.read.shift()
+      diskSeries.value.write.shift()
     }
-  } catch (e) { /* ignore */ }
-}
+  }
+)
 
-onMounted(() => { tick(); timer = setInterval(tick, 2000) })
-onUnmounted(() => clearInterval(timer))
+watch(mode, () => {
+  netSeries.value.times.length = 0
+  netSeries.value.up.length = 0
+  netSeries.value.down.length = 0
+  diskSeries.value.times.length = 0
+  diskSeries.value.read.length = 0
+  diskSeries.value.write.length = 0
+})
 
 const option = computed(() => {
   const isNet = mode.value === 'net'

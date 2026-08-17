@@ -2,21 +2,21 @@
   <div class="change-pwd">
     <form @submit.prevent="submit">
       <label class="field">
-        <span class="label">原密码</span>
+        <span class="label">{{ $t('changepassword.oldPassword') }}</span>
         <input v-model="oldPassword" type="password" required />
       </label>
       <label class="field">
-        <span class="label">新密码 (至少 6 位)</span>
+        <span class="label">{{ $t('changepassword.newPassword') }}</span>
         <input v-model="newPassword" type="password" minlength="6" required />
       </label>
       <label class="field">
-        <span class="label">确认新密码</span>
+        <span class="label">{{ $t('changepassword.confirmPassword') }}</span>
         <input v-model="confirmPassword" type="password" minlength="6" required />
       </label>
       <div v-if="error" class="error">{{ error }}</div>
-      <div v-if="ok" class="ok">密码已更新</div>
+      <div v-if="ok" class="ok">{{ $t('changepassword.changeSuccess') }}</div>
       <button class="btn-primary" type="submit" :disabled="saving">
-        {{ saving ? '提交中…' : '保存' }}
+        {{ saving ? $t('changepassword.submitting') : $t('changepassword.save') }}
       </button>
     </form>
   </div>
@@ -24,8 +24,11 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { authApi } from '../../api'
 import { auth, setAuth } from '../../store/auth'
+
+const { t } = useI18n()
 
 const oldPassword = ref('')
 const newPassword = ref('')
@@ -38,8 +41,8 @@ async function submit() {
   if (saving.value) return
   error.value = ''
   ok.value = false
-  if (newPassword.value.length < 6) { error.value = '新密码至少 6 位'; return }
-  if (newPassword.value !== confirmPassword.value) { error.value = '两次输入的新密码不一致'; return }
+  if (newPassword.value.length < 6) { error.value = t('changepassword.pwdTooShort'); return }
+  if (newPassword.value !== confirmPassword.value) { error.value = t('changepassword.pwdMismatch'); return }
   saving.value = true
   try {
     await authApi.changePassword(oldPassword.value, newPassword.value)
@@ -52,7 +55,7 @@ async function submit() {
     newPassword.value = ''
     confirmPassword.value = ''
   } catch (e) {
-    error.value = e?.response?.data?.detail || '修改失败'
+    error.value = e?.response?.data?.detail || t('changepassword.changeFailed')
   } finally {
     saving.value = false
   }

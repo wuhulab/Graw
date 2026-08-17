@@ -2,12 +2,12 @@
   <div class="log-window">
     <!-- 顶部工具栏 -->
     <div class="toolbar">
-      <span class="title"><Terminal :size="15" /> 安装日志：{{ app?.name || '' }}</span>
+      <span class="title"><Terminal :size="15" /> {{ $t('appinstalllog.title', { name: $t('appstore.appNames.' + app.id, app?.name || '') }) }}</span>
       <span class="badge" :class="phaseClass">{{ phaseText }}</span>
-      <span v-if="taskId" class="task-hint" title="任务已挂载到任务中心，刷新页面不会中断"><ListChecks :size="12" /> 已挂载任务</span>
-      <button class="btn" style="margin-left:auto;" @click="copyAll">{{ copied ? '已复制 ✓' : '复制日志' }}</button>
-      <button class="btn" @click="emit('openTaskCenter')"><ListChecks :size="13" /> 任务中心</button>
-      <button class="btn" @click="emit('close')">关闭</button>
+      <span v-if="taskId" class="task-hint" :title="$t('appinstalllog.taskMountedHint')"><ListChecks :size="12" /> {{ $t('appinstalllog.taskMounted') }}</span>
+      <button class="btn" style="margin-left:auto;" @click="copyAll">{{ copied ? $t('appinstalllog.copied') : $t('appinstalllog.copy') }}</button>
+      <button class="btn" @click="emit('openTaskCenter')"><ListChecks :size="13" /> {{ $t('appinstalllog.taskCenter') }}</button>
+      <button class="btn" @click="emit('close')">{{ $t('appinstalllog.close') }}</button>
     </div>
 
     <div class="body">
@@ -18,16 +18,16 @@
           <span v-else-if="l.type === 'error'" class="arrow">✖</span>
           <span class="text">{{ l.text }}</span>
         </div>
-        <div v-if="phase === 'running'" class="line status"><span class="arrow">»</span><span class="text">等待输出...</span></div>
+        <div v-if="phase === 'running'" class="line status"><span class="arrow">»</span><span class="text">{{ $t('appinstalllog.waitingOutput') }}</span></div>
       </div>
 
       <!-- 结果框 -->
       <div v-if="result" class="result-box">
-        <div class="result-row"><span>应用</span><b>{{ result.app_name }}</b></div>
-        <div class="result-row"><span>容器名称</span><b class="mono">{{ result.container_name }}</b></div>
-        <div class="result-row"><span>版本</span><b class="mono">{{ result.version }}</b></div>
-        <div class="result-row" v-if="result.port"><span>访问地址</span><b class="mono">http://&lt;服务器IP&gt;:{{ result.port }}</b></div>
-        <div class="result-row"><span>项目目录</span><b class="mono">{{ result.project_dir }}</b></div>
+        <div class="result-row"><span>{{ $t('appinstalllog.app') }}</span><b>{{ result.app_name }}</b></div>
+        <div class="result-row"><span>{{ $t('appinstalllog.containerName') }}</span><b class="mono">{{ result.container_name }}</b></div>
+        <div class="result-row"><span>{{ $t('appinstalllog.version') }}</span><b class="mono">{{ result.version }}</b></div>
+        <div class="result-row" v-if="result.port"><span>{{ $t('appinstalllog.accessUrl') }}</span><b class="mono">{{ $t('appinstalllog.accessUrlHint', { port: result.port }) }}</b></div>
+        <div class="result-row"><span>{{ $t('appinstalllog.projectDir') }}</span><b class="mono">{{ result.project_dir }}</b></div>
         <div v-if="result.warnings && result.warnings.length" class="warn-box">
           <div v-for="(w, i) in result.warnings" :key="i" class="warn-line"><AlertTriangle :size="13" /> {{ w }}</div>
         </div>
@@ -44,8 +44,11 @@
 
 <script setup>
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { appStoreApi } from '../../api'
 import { Terminal, AlertTriangle, ListChecks } from 'lucide-vue-next'
+
+const { t } = useI18n()
 
 const props = defineProps({
   app: Object,
@@ -65,9 +68,9 @@ let controller = null
 let copiedTimer = null
 
 const phaseText = computed(() => {
-  if (phase.value === 'running') return '正在安装...'
-  if (phase.value === 'error') return '安装失败'
-  return '安装完成'
+  if (phase.value === 'running') return t('appinstalllog.installing')
+  if (phase.value === 'error') return t('appinstalllog.installFailed')
+  return t('appinstalllog.installComplete')
 })
 const phaseClass = computed(() => {
   if (phase.value === 'running') return 'warn'
@@ -95,17 +98,18 @@ function onEvent(evt) {
     push('log', evt.line)
   } else if (evt.type === 'result') {
     result.value = evt.data
-    push('status', '安装成功，容器已启动。')
+    push('status', t('appinstalllog.installSuccess'))
     phase.value = 'done'
   } else if (evt.type === 'error') {
-    errorMsg.value = evt.message || '未知错误'
-    push('error', evt.message || '未知错误')
+    errorMsg.value = evt.message || t('appinstalllog.unknownError')
+    push('error', evt.message || t('appinstalllog.unknownError'))
     phase.value = 'error'
   }
 }
 
 onMounted(() => {
-  push('status', `开始安装 ${props.app?.name || ''}（${props.app?.id || ''}）...`)
+  const displayName = props.app?.name ? t('appstore.appNames.' + props.app.id, props.app.name) : ''
+  push('status', t('appinstalllog.installStarted', { name: displayName, id: props.app?.id || '' }))
   // 启动流式安装
   controller = appStoreApi.installStream(props.request, onEvent)
 })

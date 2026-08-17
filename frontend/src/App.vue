@@ -119,9 +119,11 @@ import RuntimeCreateWindow from './components/windows/RuntimeCreateWindow.vue'
 import DisksWindow from './components/windows/DisksWindow.vue'
 import ShunXSetup from './components/ShunXSetup.vue'
 import Login from './views/Login.vue'
-import { systemApi, shunxApi } from './api'
+import { shunxApi } from './api'
 import { auth, clearAuth, isAdmin } from './store/auth'
 import { settings } from './store/settings'
+import { systemState, startMetrics, stopMetrics } from './store/systemMetrics'
+import { startDocker, stopDocker, refresh as refreshDocker } from './store/docker'
 import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive } from 'lucide-vue-next'
 
 const loggedIn = computed(() => !!auth.token)
@@ -616,26 +618,23 @@ function taskClick(id) {
   }
 }
 
-// Overview polling
-const overview = ref({
-  cpu: 0,
-  memory: { percent: 0, total: 0, used: 0 },
-  storage: { percent: 0, total: 0, used: 0 },
-  load: { percent: 0, load1: 0 }
-})
-let overviewTimer = null
-async function refreshOverview() {
-  if (!auth.token) return
-  try { overview.value = await systemApi.overview() } catch (e) { /* ignore */ }
-}
+// 系统概览：改由共享的「单条 WS」指标推送驱动（见 store/systemMetrics.js），
+// 这里仅做一块响应式视图，不再各自开 HTTP 轮询。
+const overview = computed(() => systemState.overview)
 
-function startOverview() {
-  if (overviewTimer) return
-  refreshOverview()
-  overviewTimer = setInterval(refreshOverview, 2000)
+// 连接池启动/停止：登录后统一建立共享指标 WS，并预启动 Docker 后台轮询；
+// 退出登录时全部停止，避免未登录时持续请求。
+function startRealtime() {
+  startMetrics()
+  // Docker 为管理员功能：登录即后台预热并缓存，打开窗口可直接渲染上次数据
+  if (isAdmin()) {
+    startDocker()
+    refreshDocker()
+  }
 }
-function stopOverview() {
-  if (overviewTimer) { clearInterval(overviewTimer); overviewTimer = null }
+function stopRealtime() {
+  stopMetrics()
+  stopDocker()
 }
 
 // Clock
@@ -656,9 +655,9 @@ onMounted(() => {
     location.href = '/'
     return
   }
-  // 仅在已登录时启动业务轮询；登录态变化时通过 watch 启停
+  // 仅在已登录时启动共享实时数据（指标 WS + Docker 轮询）；登录态变化时通过 watch 启停
   if (loggedIn.value) {
-    startOverview()
+    startRealtime()
     checkShunxRequired()
   }
   updateClock()
@@ -666,14 +665,14 @@ onMounted(() => {
   document.addEventListener('mousedown', onDocClick)
 })
 
-// 登录态变化时启停系统概览轮询，避免未登录时持续打 401
+// 登录态变化时启停共享实时数据，避免未登录时持续请求
 watch(loggedIn, (v) => {
-  if (v) startOverview()
-  else stopOverview()
+  if (v) startRealtime()
+  else stopRealtime()
 })
 
 onUnmounted(() => {
-  stopOverview()
+  stopRealtime()
   clearInterval(clockTimer)
   document.removeEventListener('mousedown', onDocClick)
 })

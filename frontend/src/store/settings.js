@@ -5,6 +5,8 @@ const STORAGE_KEY = 'graw_settings'
 const defaults = {
   showTaskbarText: true,
   taskbarTextOnly: false,
+  // 界面语言（locale code，与 locales/index.js 中 LANGUAGES 对应）
+  locale: 'zh-CN',
 }
 
 function load() {
@@ -20,7 +22,11 @@ function load() {
 export const settings = reactive(load())
 
 watch(
-  () => ({ showTaskbarText: settings.showTaskbarText, taskbarTextOnly: settings.taskbarTextOnly }),
+  () => ({
+    showTaskbarText: settings.showTaskbarText,
+    taskbarTextOnly: settings.taskbarTextOnly,
+    locale: settings.locale,
+  }),
   (val) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(val))
   },

@@ -4,8 +4,8 @@
       <strong style="font-family:monospace; font-size:12px;">{{ path }}
         <span v-if="isDirty" style="color:#ff3b30; font-weight:600;"> *</span>
       </strong>
-      <button class="btn" style="margin-left:auto;" @click="save">保存</button>
-      <button class="btn" @click="emit('close')">关闭</button>
+      <button class="btn" style="margin-left:auto;" @click="save">{{ $t('editor.save') }}</button>
+      <button class="btn" @click="emit('close')">{{ $t('editor.close') }}</button>
     </div>
     <textarea v-model="localContent" spellcheck="false" style="flex:1;border:none;outline:none;padding:8px;font-family:Consolas,monospace;font-size:12px;resize:none;"></textarea>
   </div>
@@ -13,7 +13,10 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { filesApi } from '../../api'
+
+const { t } = useI18n()
 
 const props = defineProps({ path: String, content: String })
 const emit = defineEmits(['close', 'dirty'])
@@ -28,7 +31,7 @@ async function save() {
     await filesApi.write(props.path, localContent.value)
     savedContent.value = localContent.value
   } catch (e) {
-    alert('保存失败：' + (e.response?.data?.detail || e.message))
+    alert(t('editor.saveFailed', { error: e.response?.data?.detail || e.message }))
   }
 }
 </script>

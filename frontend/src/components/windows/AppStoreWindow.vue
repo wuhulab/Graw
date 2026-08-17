@@ -3,46 +3,46 @@
     <!-- 顶部工具栏 -->
     <div class="toolbar">
       <div class="title-wrap">
-        <span class="title"><Store :size="16" /> Graw 社区应用商店</span>
+        <span class="title"><Store :size="16" /> {{ $t('appstore.title') }}</span>
         <span class="badge" :class="indexState.source === 'remote' ? 'ok' : 'warn'">
-          {{ indexState.source === 'remote' ? '远程索引' : '本地索引' }}
+          {{ indexState.source === 'remote' ? $t('appstore.remoteIndex') : $t('appstore.localIndex') }}
         </span>
-        <span v-if="indexState.updated_at" class="updated">更新于 {{ fmtTime(indexState.updated_at) }}</span>
+        <span v-if="indexState.updated_at" class="updated">{{ $t('appstore.updatedAt', { time: fmtTime(indexState.updated_at) }) }}</span>
       </div>
       <!-- 分类筛选下拉 -->
-      <select class="cat-select" v-model="selectedCategory" title="按分类筛选">
-        <option value="">全部分类</option>
-        <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
+      <select class="cat-select" v-model="selectedCategory" :title="$t('appstore.filterByCategory')">
+        <option value="">{{ $t('appstore.allCategories') }}</option>
+        <option v-for="cat in categories" :key="cat" :value="cat">{{ $t('appstore.categories.' + cat, cat) }}</option>
       </select>
       <!-- 搜索输入框 -->
       <input class="search-inp" type="text" v-model.trim="searchQuery"
-             placeholder="搜索应用名称 / ID / 描述..." />
+             :placeholder="$t('appstore.searchPlaceholder')" />
       <button class="btn" :disabled="loading" @click="loadIndex(false)">
-        {{ loading ? '加载中...' : '刷新' }}
+        {{ loading ? $t('common.loading') : $t('common.refresh') }}
       </button>
-      <button class="btn" @click="showConfigModal = true"><Settings2 :size="14" /> 索引地址</button>
+      <button class="btn" @click="showConfigModal = true"><Settings2 :size="14" /> {{ $t('appstore.indexConfig') }}</button>
     </div>
 
     <!-- 索引错误提示 -->
     <div v-if="indexState.error" class="error-banner">
       <AlertTriangle :size="14" /> {{ indexState.error }}
-      <span class="hint">（已回退到本地索引，可点击"索引地址"配置远程地址）</span>
+      <span class="hint">{{ $t('appstore.indexFallbackHint') }}</span>
     </div>
 
     <!-- 加载 / 空状态 -->
     <div v-if="loading && apps.length === 0" class="empty">
       <Loader2 :size="36" class="spin" />
-      <div>正在加载应用商店索引...</div>
+      <div>{{ $t('appstore.loadingIndex') }}</div>
     </div>
     <div v-else-if="apps.length === 0" class="empty">
       <Store :size="40" style="color:#6b7280;" />
-      <div>应用商店暂无可用应用。</div>
+      <div>{{ $t('appstore.noApps') }}</div>
     </div>
     <!-- 筛选无结果 -->
     <div v-else-if="filteredApps.length === 0" class="empty">
       <Search :size="40" style="color:#6b7280;" />
-      <div>没有找到匹配的应用。</div>
-      <div class="hint">试试更换分类或清空搜索关键词。</div>
+      <div>{{ $t('appstore.noMatch') }}</div>
+      <div class="hint">{{ $t('appstore.noMatchHint') }}</div>
     </div>
 
     <!-- 应用卡片网格（按分类 / 搜索过滤） -->
@@ -53,15 +53,15 @@
                @error="e => e.target.style.visibility = 'hidden'" />
           <div class="card-titles">
             <div class="app-name">
-              <span class="name-text">{{ app.name }}</span>
-              <span v-for="t in (app.tags || [])" :key="t" class="app-tag" :class="tagClass(t)">{{ t }}</span>
+              <span class="name-text">{{ $t('appstore.appNames.' + app.id, app.name) }}</span>
+              <span v-for="t in (app.tags || [])" :key="t" class="app-tag" :class="tagClass(t)">{{ $t('appstore.tags.' + t, t) }}</span>
             </div>
             <div class="app-id mono">{{ app.id }}</div>
           </div>
           <div class="card-actions">
-            <a v-if="safeUrl(app.homepage)" class="icon-link" :href="safeUrl(app.homepage)" target="_blank" rel="noopener" title="官方网站"><Globe :size="14" /></a>
-            <a v-if="safeUrl(app.source)" class="icon-link" :href="safeUrl(app.source)" target="_blank" rel="noopener" title="开源社区"><Github :size="14" /></a>
-            <button v-if="app.source" class="readme-btn" title="查看 GitHub README" @click="emit('openReadme', app)"><BookOpen :size="14" /></button>
+            <a v-if="safeUrl(app.homepage)" class="icon-link" :href="safeUrl(app.homepage)" target="_blank" rel="noopener" :title="$t('appstore.officialWebsite')"><Globe :size="14" /></a>
+            <a v-if="safeUrl(app.source)" class="icon-link" :href="safeUrl(app.source)" target="_blank" rel="noopener" :title="$t('appstore.openSource')"><Github :size="14" /></a>
+            <button v-if="app.source" class="readme-btn" :title="$t('appstore.viewReadme')" @click="emit('openReadme', app)"><BookOpen :size="14" /></button>
           </div>
         </div>
 
@@ -69,13 +69,13 @@
 
         <div class="card-foot">
           <div class="tags">
-            <span class="tag" :title="'默认版本 ' + app.version">{{ fmtVersion(app.version) }}</span>
+            <span class="tag" :title="$t('appstore.defaultVersion', { version: app.version })">{{ fmtVersion(app.version) }}</span>
             <span v-for="a in (app.arch || []).slice(0, 3)" :key="a" class="tag arch">{{ a }}</span>
             <span v-if="app.ports && app.ports.length" class="tag port">
               <Container :size="11" /> {{ app.ports.map(p => p.container).join(', ') }}
             </span>
           </div>
-          <button class="btn primary install" @click="emit('openAppInstall', app)">安装</button>
+          <button class="btn primary install" @click="emit('openAppInstall', app)">{{ $t('appstore.install') }}</button>
         </div>
       </div>
     </div>
@@ -83,14 +83,14 @@
     <!-- ============ 索引地址配置弹窗 ============ -->
     <div v-if="showConfigModal" class="modal-overlay" @click.self="showConfigModal = false">
       <div class="modal">
-        <h3><Settings2 :size="16" /> 应用商店索引地址</h3>
-        <p class="modal-desc">填写托管在 GitHub Pages 的 index.json 地址，留空则使用仓库内置的本地索引。</p>
+        <h3><Settings2 :size="16" /> {{ $t('appstore.indexConfigTitle') }}</h3>
+        <p class="modal-desc">{{ $t('appstore.indexConfigDesc') }}</p>
         <input v-model.trim="configForm.index_url" class="inp mono" style="width:100%;"
-               placeholder="https://&lt;owner&gt;.github.io/&lt;repo&gt;/index.json" />
+               :placeholder="$t('appstore.indexConfigPlaceholder')" />
         <div class="actions">
-          <button class="btn" @click="showConfigModal = false">取消</button>
+          <button class="btn" @click="showConfigModal = false">{{ $t('common.cancel') }}</button>
           <button class="btn primary" :disabled="savingConfig" @click="saveConfig">
-            {{ savingConfig ? '保存中...' : '保存并刷新' }}
+            {{ savingConfig ? $t('common.saving') : $t('appstore.saveAndRefresh') }}
           </button>
         </div>
       </div>
@@ -101,7 +101,7 @@
       <div class="disc-modal">
         <div class="disc-head">
           <ShieldAlert :size="20" />
-          <span>Graw 社区应用商店 免责声明</span>
+          <span>{{ $t('appstore.disclaimerTitle') }}</span>
           <span class="disc-version">v1.1.0</span>
         </div>
         <div class="disc-body" ref="discBodyEl" @scroll="onDiscScroll">
@@ -111,13 +111,13 @@
           <label class="disc-agree-label">
             <input type="checkbox" :disabled="!discScrolled" v-model="discAgreed" />
             <span>
-              同意并继续使用：我已完整阅读、理解并接受本免责声明的全部内容。
-              <em v-if="!discScrolled" style="color:#dc2626;">（请滚动到最底部以勾选）</em>
+              {{ $t('appstore.disclaimerAgree') }}
+              <em v-if="!discScrolled" style="color:#dc2626;">{{ $t('appstore.disclaimerScrollHint') }}</em>
             </span>
           </label>
           <div class="disc-actions">
-            <button class="btn" @click="emit('close')">拒绝并关闭</button>
-            <button class="btn primary" :disabled="!discAgreed" @click="acceptDisclaimer">进入应用商店</button>
+            <button class="btn" @click="emit('close')">{{ $t('appstore.close') }}</button>
+            <button class="btn primary" :disabled="!discAgreed" @click="acceptDisclaimer">{{ $t('appstore.enter') }}</button>
           </div>
         </div>
       </div>
@@ -127,9 +127,11 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { appStoreApi } from '../../api'
 import { Store, Settings2, Globe, Github, Container, AlertTriangle, Loader2, BookOpen, Search, ShieldAlert } from 'lucide-vue-next'
 
+const { t } = useI18n()
 const emit = defineEmits(['openAppInstall', 'openReadme', 'close'])
 
 // 外链协议白名单：homepage / source 来自索引数据（index_url 可指向任意
@@ -301,7 +303,7 @@ async function saveConfig() {
     showConfigModal.value = false
     await loadIndex(true)
   } catch (e) {
-    alert('保存失败：' + (e.response?.data?.detail || e.message))
+    alert(t('appstore.saveConfigFailed', { error: e.response?.data?.detail || e.message }))
   } finally {
     savingConfig.value = false
   }

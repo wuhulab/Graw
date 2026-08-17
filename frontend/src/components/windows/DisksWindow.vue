@@ -2,9 +2,9 @@
   <div style="display:flex; flex-direction:column; height:100%;">
     <!-- 顶部工具栏 -->
     <div class="toolbar">
-      <button class="btn" @click="refresh">刷新</button>
-      <span v-if="loading" style="margin-left:auto;color:#888;">加载中...</span>
-      <span v-else style="margin-left:auto;color:#888;">共 {{ partitions.length }} 个分区</span>
+      <button class="btn" @click="refresh">{{ $t('disks.refresh') }}</button>
+      <span v-if="loading" style="margin-left:auto;color:#888;">{{ $t('common.loading') }}</span>
+      <span v-else style="margin-left:auto;color:#888;">{{ $t('disks.total', { count: partitions.length }) }}</span>
     </div>
 
     <div style="flex:1; overflow:auto;">
@@ -12,22 +12,22 @@
       <table class="dt">
         <thead>
           <tr>
-            <th style="width:80px;">磁盘</th>
-            <th style="width:110px;">分区名称</th>
-            <th style="width:90px;">大小</th>
-            <th style="width:100px;">已用</th>
-            <th style="width:100px;">可用</th>
-            <th style="width:130px;">使用率</th>
-            <th>挂载目录</th>
-            <th style="width:90px;">文件系统</th>
-            <th style="width:150px;">操作</th>
+            <th style="width:80px;">{{ $t('disks.disk') }}</th>
+            <th style="width:110px;">{{ $t('disks.partition') }}</th>
+            <th style="width:90px;">{{ $t('disks.size') }}</th>
+            <th style="width:100px;">{{ $t('disks.used') }}</th>
+            <th style="width:100px;">{{ $t('disks.available') }}</th>
+            <th style="width:130px;">{{ $t('disks.usage') }}</th>
+            <th>{{ $t('disks.mountPoint') }}</th>
+            <th style="width:90px;">{{ $t('disks.filesystem') }}</th>
+            <th style="width:150px;">{{ $t('disks.action') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="(p, i) in partitions" :key="i">
             <td>
               {{ p.diskName }}
-              <span v-if="p.system" class="badge badge-sys">系统盘</span>
+              <span v-if="p.system" class="badge badge-sys">{{ $t('disks.system') }}</span>
             </td>
             <td>{{ p.name }}</td>
             <td>{{ p.size_display || formatBytes(p.size) }}</td>
@@ -45,13 +45,13 @@
             <td>{{ p.mountpoint || '-' }}</td>
             <td>{{ p.fstype || '-' }}</td>
             <td>
-              <span v-if="p.system" class="op-disabled" title="当前磁盘为系统盘，无法进行操作">无法操作</span>
-              <button v-else-if="!p.mountpoint" class="btn action" @click="openMount(p)">挂载</button>
-              <span v-else class="op-mounted">已挂载</span>
+              <span v-if="p.system" class="op-disabled" :title="$t('disks.cannotOperateTitle')">{{ $t('disks.cannotOperate') }}</span>
+              <button v-else-if="!p.mountpoint" class="btn action" @click="openMount(p)">{{ $t('disks.mount') }}</button>
+              <span v-else class="op-mounted">{{ $t('disks.mounted') }}</span>
             </td>
           </tr>
           <tr v-if="partitions.length === 0">
-            <td colspan="9" class="empty-cell">未获取到磁盘分区信息</td>
+            <td colspan="9" class="empty-cell">{{ $t('disks.empty') }}</td>
           </tr>
         </tbody>
       </table>
@@ -61,21 +61,21 @@
     <Teleport to="body">
       <div v-if="mountDlg.show" class="dlg-mask" @click.self="mountDlg.show = false">
         <div class="dlg">
-          <div class="dlg-title">挂载分区 {{ mountDlg.name }}</div>
+          <div class="dlg-title">{{ $t('disks.mountTitle', { name: mountDlg.name }) }}</div>
           <div class="dlg-body">
             <div class="field">
-              <label>设备</label>
+              <label>{{ $t('disks.deviceLabel') }}</label>
               <input :value="mountDlg.device" disabled />
             </div>
             <div class="field">
-              <label>挂载目录</label>
+              <label>{{ $t('disks.mountPointLabel') }}</label>
               <input v-model="mountDlg.mountpoint" placeholder="/mnt/data" />
             </div>
             <div v-if="mountDlg.msg" class="msg" :class="{ err: mountDlg.err }">{{ mountDlg.msg }}</div>
           </div>
           <div class="dlg-foot">
-            <button class="btn" @click="mountDlg.show = false">取消</button>
-            <button class="btn primary" :disabled="mountDlg.busy" @click="doMount">挂载</button>
+            <button class="btn" @click="mountDlg.show = false">{{ $t('common.cancel') }}</button>
+            <button class="btn primary" :disabled="mountDlg.busy" @click="doMount">{{ $t('disks.mount') }}</button>
           </div>
         </div>
       </div>
@@ -85,8 +85,10 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { disksApi, formatBytes } from '../../api'
 
+const { t } = useI18n()
 // 磁盘列表（内含分区），加载状态与挂载弹窗状态
 const disks = ref([])
 const loading = ref(false)
@@ -112,7 +114,7 @@ async function refresh() {
     disks.value = data.disks || []
   } catch (e) {
     console.error(e)
-    alert('获取磁盘信息失败：' + (e.response?.data?.detail || e.message))
+    alert(t('disks.loadFailed', { error: e.response?.data?.detail || e.message }))
   } finally {
     loading.value = false
   }
@@ -127,7 +129,7 @@ function openMount(p) {
 async function doMount() {
   const d = mountDlg.value
   if (!d.mountpoint.trim()) {
-    d.msg = '请输入挂载目录'
+    d.msg = t('disks.mountPointRequired')
     d.err = true
     return
   }
@@ -141,11 +143,11 @@ async function doMount() {
       await refresh()
       setTimeout(() => { d.show = false }, 800)
     } else {
-      d.msg = res.message || '挂载失败'
+      d.msg = res.message || t('disks.mountFailedFallback')
       d.err = true
     }
   } catch (e) {
-    d.msg = '挂载失败：' + (e.response?.data?.detail || e.message)
+    d.msg = t('disks.mountFailed', { error: e.response?.data?.detail || e.message })
     d.err = true
   } finally {
     d.busy = false

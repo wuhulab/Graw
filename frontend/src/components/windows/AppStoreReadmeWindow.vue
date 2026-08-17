@@ -2,15 +2,15 @@
   <div class="readme-window">
     <!-- 顶部工具栏 -->
     <div class="toolbar">
-      <span class="title"><BookOpen :size="15" /> README：{{ name }}</span>
+      <span class="title"><BookOpen :size="15" /> {{ $t('appreadme.title', { name }) }}</span>
       <span class="repo mono">{{ repo || '' }}</span>
-      <a v-if="safeSource" class="btn" :href="safeSource" target="_blank" rel="noopener" style="text-decoration:none;">GitHub</a>
-      <button class="btn" style="margin-left:auto;" @click="emit('close')">关闭</button>
+      <a v-if="safeSource" class="btn" :href="safeSource" target="_blank" rel="noopener" style="text-decoration:none;">{{ $t('appreadme.github') }}</a>
+      <button class="btn" style="margin-left:auto;" @click="emit('close')">{{ $t('appreadme.close') }}</button>
     </div>
 
     <!-- 加载 / 错误 / 内容 -->
     <div class="body">
-      <div v-if="loading" class="center"><Loader2 :size="28" class="spin" /> 正在拉取 README...</div>
+      <div v-if="loading" class="center"><Loader2 :size="28" class="spin" /> {{ $t('appreadme.loading') }}</div>
       <div v-else-if="errorMsg" class="center err">
         <AlertTriangle :size="28" />
         <div>{{ errorMsg }}</div>
@@ -22,11 +22,14 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import MarkdownIt from 'markdown-it'
 import taskLists from 'markdown-it-task-lists'
 import DOMPurify from 'dompurify'
 import { appStoreApi } from '../../api'
 import { BookOpen, AlertTriangle, Loader2 } from 'lucide-vue-next'
+
+const { t } = useI18n()
 
 const props = defineProps({ app: Object })
 const emit = defineEmits(['close'])
@@ -87,7 +90,7 @@ md.renderer.rules.link_open = function (tokens, idx, options, env, self) {
 const safeSource = computed(() => (/^https?:\/\//i.test(source.value || '') ? source.value : ''))
 
 const html = computed(() => {
-  if (!raw.value) return '<p class="md-empty">（该仓库没有 README 内容）</p>'
+  if (!raw.value) return `<p class="md-empty">${t('appreadme.noContent')}</p>`
   // 每次渲染前刷新仓库上下文，保证相对链接正确拼接
   const [owner, name] = (repo.value || '/').split('/')
   repoCtx.owner = owner || ''
@@ -110,7 +113,7 @@ onMounted(async () => {
     source.value = r.source || props.app.source || ''
     raw.value = r.readme || ''
   } catch (e) {
-    errorMsg.value = e.response?.data?.detail || e.message || '拉取 README 失败'
+    errorMsg.value = e.response?.data?.detail || e.message || t('appreadme.loadFailed')
   } finally {
     loading.value = false
   }

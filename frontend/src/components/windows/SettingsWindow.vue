@@ -2,14 +2,14 @@
   <div style="display:flex; flex-direction:column; height:100%; background:#f5f5f7;">
     <div style="flex:1; overflow:auto; padding:16px; display:flex; flex-direction:column; gap:14px;">
       <div class="block">
-        <div class="block-title">账号</div>
-        <button class="btn" @click="emit('openUsers')" :disabled="!isAdmin()">打开账号管理</button>
-        <span v-if="!isAdmin()" style="font-size:11px;color:#6e6e73;margin-left:8px;">仅管理员可用</span>
+        <div class="block-title">{{ $t('settings.title') }}</div>
+        <button class="btn" @click="emit('openUsers')" :disabled="!isAdmin()">{{ $t('settings.openUsers') }}</button>
+        <span v-if="!isAdmin()" style="font-size:11px;color:#6e6e73;margin-left:8px;">{{ $t('common.adminOnly') }}</span>
       </div>
 
       <!-- ShunX 安全入口管理（仅管理员） -->
       <div class="block" v-if="isAdmin()">
-        <div class="block-title">ShunX 安全入口</div>
+        <div class="block-title">{{ $t('settings.shunxTitle') }}</div>
         <div class="row" style="flex-wrap:wrap; gap:6px;">
           <span class="status-dot" :class="currentEntry ? 'on' : 'off'"></span>
           <span style="font-size:12px;color:#1d1d1f;">
@@ -17,30 +17,41 @@
           </span>
         </div>
         <div class="row" style="flex-direction:column; align-items:stretch; gap:8px;">
-          <input v-model="entryPath" placeholder="例如 shunx-8f3k2q7m（留空保存则清除）" spellcheck="false" @keyup.enter="saveEntry" />
+          <input v-model="entryPath" :placeholder="$t('settings.shunxPlaceholder')" spellcheck="false" @keyup.enter="saveEntry" />
           <div style="display:flex; gap:8px;">
-            <button class="btn" :disabled="saving" @click="saveEntry">{{ saving ? '保存中…' : '保存' }}</button>
-            <button class="btn btn-danger" v-if="currentEntry" :disabled="saving" @click="clearEntry">清除安全入口</button>
+            <button class="btn" :disabled="saving" @click="saveEntry">{{ saving ? $t('settings.saveSaving') : $t('settings.save') }}</button>
+            <button class="btn btn-danger" v-if="currentEntry" :disabled="saving" @click="clearEntry">{{ $t('settings.clearEntry') }}</button>
           </div>
           <div v-if="msg" :class="['msg', msgType]">{{ msg }}</div>
         </div>
         <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-top:4px;">
-          设置后陌生设备必须先访问 <code style="background:rgba(10,132,255,0.1);padding:1px 4px;border-radius:4px;">{{ origin }}/{{ currentEntry || '你的入口路径' }}</code> 才能看到登录页。建议使用足够长的随机路径。
+          {{ $t('settings.entryHint', { url: origin + '/' + (currentEntry || '...') }) }}
         </div>
       </div>
 
       <div class="block">
-        <div class="block-title">面板</div>
+        <div class="block-title">{{ $t('settings.panelTitle') }}</div>
         <div class="row">
           <label class="switch-label">
             <input type="checkbox" v-model="settings.showTaskbarText" />
-            <span>底栏显示详细文字</span>
+            <span>{{ $t('settings.showTaskbarText') }}</span>
           </label>
         </div>
         <div class="row">
           <label class="switch-label">
             <input type="checkbox" v-model="settings.taskbarTextOnly" />
-            <span>底栏只显示文字（隐藏图标）</span>
+            <span>{{ $t('settings.taskbarTextOnly') }}</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 界面语言 -->
+      <div class="block">
+        <div class="block-title">{{ $t('settings.language') }}</div>
+        <div class="row" style="flex-wrap:wrap; gap:6px;">
+          <label class="switch-label" v-for="lang in LANGUAGES" :key="lang.code" :style="{ fontWeight: settings.locale === lang.code ? 700 : 400 }">
+            <input type="radio" name="locale" :value="lang.code" :checked="settings.locale === lang.code" @change="changeLocale(lang.code)" />
+            <span>{{ lang.name }}</span>
           </label>
         </div>
       </div>
@@ -50,10 +61,13 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { settings } from '../../store/settings'
 import { isAdmin } from '../../store/auth'
 import { shunxApi } from '../../api'
+import { LANGUAGES, setLocale } from '../../locales'
 
+const { t } = useI18n()
 const emit = defineEmits(['openUsers'])
 
 // ShunX 安全入口状态
@@ -65,8 +79,8 @@ const msgType = ref('')
 const origin = computed(() => window.location.origin)
 
 const statusText = computed(() => {
-  if (!currentEntry.value) return '未设置安全入口（当前允许直接登录）'
-  return `已启用：/ ${currentEntry.value}`
+  if (!currentEntry.value) return t('settings.shunxNotSet')
+  return t('settings.shunxEnabled', { path: currentEntry.value })
 })
 
 onMounted(async () => {
@@ -79,6 +93,11 @@ onMounted(async () => {
   }
 })
 
+// 切换界面语言
+function changeLocale(code) {
+  setLocale(code)
+}
+
 async function saveEntry() {
   if (saving.value) return
   saving.value = true
@@ -89,11 +108,11 @@ async function saveEntry() {
     currentEntry.value = config.entry_path || ''
     entryPath.value = currentEntry.value
     msg.value = currentEntry.value
-      ? `安全入口已设置：${origin.value}/${currentEntry.value}`
-      : '已清除安全入口'
+      ? t('settings.entrySet', { url: `${origin.value}/${currentEntry.value}` })
+      : t('settings.entryCleared')
     msgType.value = 'ok'
   } catch (e) {
-    msg.value = e?.response?.data?.detail || '保存失败'
+    msg.value = e?.response?.data?.detail || t('settings.saveFailed')
     msgType.value = 'err'
   } finally {
     saving.value = false
@@ -102,17 +121,17 @@ async function saveEntry() {
 
 async function clearEntry() {
   if (saving.value) return
-  if (!confirm('确定清除 ShunX 安全入口吗？清除后任何设备将可直接访问登录页。')) return
+  if (!confirm(t('settings.clearConfirm'))) return
   saving.value = true
   msg.value = ''
   try {
     await shunxApi.update('')
     currentEntry.value = ''
     entryPath.value = ''
-    msg.value = '已清除安全入口'
+    msg.value = t('settings.entryCleared')
     msgType.value = 'ok'
   } catch (e) {
-    msg.value = e?.response?.data?.detail || '清除失败'
+    msg.value = e?.response?.data?.detail || t('settings.clearFailed')
     msgType.value = 'err'
   } finally {
     saving.value = false
