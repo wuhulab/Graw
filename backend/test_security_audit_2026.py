@@ -611,6 +611,470 @@ def test_round3_spa_fallback_cross_drive():
             FAIL += 1
 
 
+def test_round4_docs_disabled():
+    """默认配置下 /docs /redoc /openapi.json 必须 404（API 结构不外泄）。"""
+    print("\n== main.py：交互式 API 文档端点默认关闭 ==")
+    global PASS, FAIL
+    from app import main as app_main
+
+    # 当前进程未设置 GRAW_ENABLE_DOCS 时，文档端点应全部关闭
+    if os.environ.get("GRAW_ENABLE_DOCS", "") == "1":
+        print("[skip] 当前进程已启用 GRAW_ENABLE_DOCS=1，跳过关闭断言")
+        return
+    try:
+        from fastapi.testclient import TestClient
+    except Exception as e:
+        print(f"[skip] TestClient 不可用: {e}")
+        return
+
+    with TestClient(app_main.app) as client:
+        # 注意：docs 路由关闭后请求会落入 SPA catch-all 返回 200 的
+        # index.html——功能上安全（未泄露 API 结构）。因此断言基于
+        # 响应内容而非状态码：不得出现 Swagger UI / Redoc / OpenAPI schema。
+        r = client.get("/docs")
+        body = (r.text or "").lower()
+        if "swagger" not in body and r.status_code in (200, 404):
+            print(f"[ ok ] /docs 未提供 Swagger UI（{r.status_code}）")
+            PASS += 1
+        else:
+            print(f"[FAIL] /docs 泄露交互式文档（{r.status_code}）")
+            FAIL += 1
+
+        r = client.get("/redoc")
+        body = (r.text or "").lower()
+        if "redoc" not in body and r.status_code in (200, 404):
+            print(f"[ ok ] /redoc 未提供 ReDoc（{r.status_code}）")
+            PASS += 1
+        else:
+            print(f"[FAIL] /redoc 泄露交互式文档（{r.status_code}）")
+            FAIL += 1
+
+        r = client.get("/openapi.json")
+        body = (r.text or "").lstrip()[:1]
+        is_schema = r.status_code == 200 and body == "{" and '"openapi"' in (r.text or "")
+        if not is_schema:
+            print(f"[ ok ] /openapi.json 未泄露 API schema（{r.status_code}）")
+            PASS += 1
+        else:
+            print("[FAIL] /openapi.json 返回完整 API 结构（攻击面地图外泄）")
+            FAIL += 1
+
+
+def test_round4_task_id_guard():
+    """tasks.py：task_id 白名单拦截路径穿越（Windows 反斜杠 / 上跳）。"""
+    print("\n== tasks.py：任务 ID 白名单 ==")
+    global PASS, FAIL
+    from app.routers import tasks
+
+    evil_ids = [
+        "..", "..\\..\\secret", "a/b", "a\\b",      # 穿越与分隔符
+        "..%5C..%5Cusers",                            # URL 编码反斜杠
+        "x" * 65,                                     # 超长
+        "id;rm", "id|x", "id y",                      # 元字符/空白
+    ]
+    for tid in evil_ids:
+        try:
+            tasks._validate_task_id(tid)
+            print(f"[FAIL] 未拒绝非法任务 ID: {tid!r}")
+            FAIL += 1
+        except HTTPException as e:
+            if e.status_code == 400:
+                print(f"[ ok ] 拒绝 {tid!r}（400）")
+                PASS += 1
+            else:
+                print(f"[FAIL] {tid!r} 异常状态码 {e.status_code}")
+                FAIL += 1
+
+    # 合法 ID 放行（uuid hex / 内部 record id 形态）
+    for tid in ("a1b2c3d4", "rt-task-01", "Install_2026"):
+        try:
+            tasks._validate_task_id(tid)
+            print(f"[ ok ] 放行 {tid!r}")
+            PASS += 1
+        except Exception as e:
+            print(f"[FAIL] 误拒合法任务 ID {tid!r}: {e}")
+            FAIL += 1
+
+
+def test_round4_logs_addlog_validation():
+    """logs.py：add_log 输入校验（控制字符 / 长度 / 空值）。"""
+    print("\n== logs.py：自定义日志源输入校验 ==")
+    global PASS, FAIL
+    from pydantic import ValidationError
+
+    from app.routers import logs as logs_router
+
+    # 控制字符（含空字节 / 换行）必须被拒绝
+    for bad_path in ("/var/log/x\x00.log", "/var/log/a\nb.log", "/var/log/\x1b[31m"):
+        try:
+            logs_router._reject_control_chars(bad_path, "日志路径")
+            print(f"[FAIL] 未拒绝含控制字符的路径: {bad_path!r}")
+            FAIL += 1
+        except HTTPException as e:
+            if e.status_code == 400:
+                print(f"[ ok ] 拒绝控制字符路径（400）")
+                PASS += 1
+            else:
+                print(f"[FAIL] 异常状态码 {e.status_code}")
+                FAIL += 1
+
+    # 正常路径放行
+    try:
+        logs_router._reject_control_chars("/var/log/nginx/access.log", "日志路径")
+        print("[ ok ] 正常路径放行")
+        PASS += 1
+    except Exception as e:
+        print(f"[FAIL] 误拒正常路径: {e}")
+        FAIL += 1
+
+    # 模型层：超长 / 空值被 pydantic 422 拒绝
+    bad_payloads = [
+        {"name": "n" * 65, "path": "/var/log/x.log"},          # name 超长
+        {"name": "ok", "path": "x" * 2000},                    # path 超长
+        {"name": "", "path": "/var/log/x.log"},                # name 为空
+        {"name": "ok", "path": ""},                            # path 为空
+    ]
+    for payload in bad_payloads:
+        try:
+            logs_router.AddLog(**payload)
+            print(f"[FAIL] 未按预期拒绝: {payload}")
+            FAIL += 1
+        except ValidationError:
+            print("[ ok ] 非法负载被模型校验拒绝（422）")
+            PASS += 1
+
+    # 合法负载放行
+    try:
+        logs_router.AddLog(name="应用日志", path="/var/log/app.log", desc="测试")
+        print("[ ok ] 合法负载放行")
+        PASS += 1
+    except Exception as e:
+        print(f"[FAIL] 误拒合法负载: {e}")
+        FAIL += 1
+
+
+def test_round4_runtime_patterns():
+    """runtime.py：版本/端口/env/容器路径白名单（Docker 选项注入防护）。"""
+    print("\n== runtime.py：运行环境参数白名单 ==")
+    global PASS, FAIL
+    from pydantic import ValidationError
+
+    from app.routers.runtime import RuntimeCreate
+
+    base = {
+        "type": "python", "name": "dev", "project_dir": "/opt/proj",
+        "app_version": "3.12", "container_name": "", "notes": "",
+        "ports": [], "env": [], "mounts": [], "hosts": [],
+    }
+
+    # app_version 选项注入：以 - 开头 / 含空格
+    for evil_ver in ("--privileged", "-v /etc:/etc", "3.12;rm -rf /", "a b"):
+        try:
+            RuntimeCreate(**{**base, "app_version": evil_ver})
+            print(f"[FAIL] 未拒绝非法版本号: {evil_ver!r}")
+            FAIL += 1
+        except ValidationError:
+            print(f"[ ok ] 拒绝版本号 {evil_ver!r}（422）")
+            PASS += 1
+
+    # 端口非数字 / 选项形态
+    for evil_port in ("-p", "8080:9090", "99999", "8 0"):
+        try:
+            RuntimeCreate(**{**base, "ports": [{"external": evil_port, "internal": "80"}]})
+            print(f"[FAIL] 未拒绝非法端口: {evil_port!r}")
+            FAIL += 1
+        except ValidationError:
+            print(f"[ ok ] 拒绝端口 {evil_port!r}（422）")
+            PASS += 1
+
+    # env 名称注入（以 - 开头或含特殊字符）
+    for evil_env in ("-e", "EV IL", "A=B;C", "1BAD"):
+        try:
+            RuntimeCreate(**{**base, "env": [{"name": evil_env, "value": "x"}]})
+            print(f"[FAIL] 未拒绝非法环境变量名: {evil_env!r}")
+            FAIL += 1
+        except ValidationError:
+            print(f"[ ok ] 拒绝环境变量名 {evil_env!r}（422）")
+            PASS += 1
+
+    # 挂载容器路径必须是绝对路径
+    for evil_container in ("-v", "relative/path", "../escape"):
+        try:
+            RuntimeCreate(**{**base, "mounts": [{"host": "/data", "container": evil_container}]})
+            print(f"[FAIL] 未拒绝非法容器路径: {evil_container!r}")
+            FAIL += 1
+        except ValidationError:
+            print(f"[ ok ] 拒绝容器路径 {evil_container!r}（422）")
+            PASS += 1
+
+    # --add-host hostname 注入
+    for evil_host in ("-flag", "host;cmd", "a b"):
+        try:
+            RuntimeCreate(**{**base, "hosts": [{"hostname": evil_host, "ip": "1.2.3.4"}]})
+            print(f"[FAIL] 未拒绝非法 hostname: {evil_host!r}")
+            FAIL += 1
+        except ValidationError:
+            print(f"[ ok ] 拒绝 hostname {evil_host!r}（422）")
+            PASS += 1
+
+    # --add-host IP 非法文本（必须是合法 IPv4/IPv6）
+    for evil_ip in ("not-an-ip", "1.2.3.4;rm", "999.999.999.999", "-inject"):
+        try:
+            RuntimeCreate(**{**base, "hosts": [{"hostname": "db", "ip": evil_ip}]})
+            print(f"[FAIL] 未拒绝非法 IP: {evil_ip!r}")
+            FAIL += 1
+        except ValidationError:
+            print(f"[ ok ] 拒绝 IP {evil_ip!r}（422）")
+            PASS += 1
+
+    # 合法负载放行
+    try:
+        RuntimeCreate(**{**base, "ports": [{"external": "8080", "internal": "80", "protocol": "tcp"}],
+                         "env": [{"name": "MODE", "value": "dev"}],
+                         "mounts": [{"host": "/data", "container": "/data", "mode": "ro"}],
+                         "hosts": [{"hostname": "db.internal", "ip": "10.0.0.5"}]})
+        print("[ ok ] 合法负载放行")
+        PASS += 1
+    except Exception as e:
+        print(f"[FAIL] 误拒合法负载: {e}")
+        FAIL += 1
+
+
+def test_round4_multipart_version():
+    """python-multipart 已升级到修复版（>=0.0.18，目标 0.0.31）。"""
+    print("\n== 依赖：python-multipart CVE-2024-53981/CVE-2026-53537 修复版本 ==")
+    global PASS, FAIL
+    try:
+        import multipart  # python-multipart 0.0.12+ 的包名
+
+        ver = getattr(multipart, "__version__", "") or ""
+        # 0.0.12 旧版可能无 __version__，此时通过 pip 元数据兜底
+        if not ver:
+            from importlib.metadata import version as _v
+
+            ver = _v("python-multipart")
+        parts = tuple(int(x) for x in ver.split(".")[:3])
+        if parts >= (0, 0, 31):
+            print(f"[ ok ] python-multipart {ver}（>=0.0.31，两项 CVE 均已修复）")
+            PASS += 1
+        elif parts >= (0, 0, 18):
+            print(f"[WARN] python-multipart {ver} 修复了 CVE-2024-53981 但 <0.0.31（CVE-2026-53537 未修复）")
+            FAIL += 1
+        else:
+            print(f"[FAIL] python-multipart {ver} 受 CVE-2024-53981 影响（需 >=0.0.18）")
+            FAIL += 1
+    except Exception as e:
+        print(f"[FAIL] 检测 python-multipart 版本失败: {e}")
+        FAIL += 1
+
+
+def test_round5_protection_tar_option_injection():
+    """第五轮：protection 备份命令的 tar 选项注入防护。
+
+    basename 以 "-" 开头（如 --checkpoint-action=exec=...）会被 GNU tar
+    解析为选项而非文件名，构成存储型 RCE；修复后入口直接 400，
+    且 Linux 命令含 "--" 分隔符双保险。
+    """
+    print("\n== 第五轮：protection 备份命令 tar 选项注入 ==")
+    global PASS, FAIL
+    import unittest.mock as mock
+
+    from app.routers import protection
+
+    ok = True
+    # 1) 恶意 basename（tar checkpoint exec 注入）必须被 400 拒绝
+    #    注意：载荷不能含空格/斜杠结尾，否则 basename 会被切错
+    for evil in (
+        "/data/--checkpoint-action=exec=id",
+        "/srv/db/--checkpoint=1",
+        "/home/x/-oExtractOptions=...",
+    ):
+        try:
+            protection._build_backup_command(evil)
+            print(f"[FAIL] 恶意路径未被拒绝: {evil}")
+            ok = False
+        except HTTPException as e:
+            if e.status_code == 400:
+                print(f"[ ok ] 已拒绝恶意 basename: {evil.split('/')[-1][:40]}")
+            else:
+                print(f"[FAIL] 拒绝但状态码异常 {e.status_code}: {evil}")
+                ok = False
+
+    # 2) Linux 分支：正常路径生成命令须含 "--" 分隔符且 base 被正确转义
+    with mock.patch.object(protection, "IS_WINDOWS", False):
+        import shlex
+
+        cmd = protection._build_backup_command("/var/lib/mysql")
+        if " -- " in cmd and shlex.quote("mysql") in cmd:
+            print("[ ok ] Linux 备份命令含 -- 分隔符（纵深防御生效）")
+        else:
+            print(f"[FAIL] Linux 备份命令缺少 -- 分隔符: {cmd}")
+            ok = False
+        # 含空格等特殊字符的目录名必须整体被 shlex.quote 包裹
+        cmd2 = protection._build_backup_command("/srv/my data;rm -rf x")
+        if shlex.quote("my data;rm -rf x") in cmd2:
+            print("[ ok ] 特殊字符目录名被 shlex.quote 完整包裹")
+        else:
+            print(f"[FAIL] 特殊字符目录名转义异常: {cmd2}")
+            ok = False
+
+    # 3) Windows 分支：base 以 - 开头同样被入口拒绝（PowerShell 5.1 会吞
+    #    "--"，依赖源头拒绝而非分隔符）
+    with mock.patch.object(protection, "IS_WINDOWS", True):
+        try:
+            protection._build_backup_command(r"C:\data\--checkpoint-action=exec=x")
+            print("[FAIL] Windows 分支未拒绝恶意 basename")
+            ok = False
+        except HTTPException as e:
+            if e.status_code == 400:
+                print("[ ok ] Windows 分支同样拒绝恶意 basename")
+            else:
+                print(f"[FAIL] Windows 分支状态码异常: {e.status_code}")
+                ok = False
+        # 正常 Windows 路径仍可用（单引号双写转义）
+        cmd3 = protection._build_backup_command(r"C:\GrawData\db")
+        if "powershell" in cmd3 and "'db'" in cmd3:
+            print("[ ok ] Windows 正常路径命令生成不受影响")
+        else:
+            print(f"[FAIL] Windows 正常路径命令异常: {cmd3}")
+            ok = False
+
+    PASS, FAIL = PASS + (1 if ok else 0), FAIL + (0 if ok else 1)
+
+
+def test_round5_ssl_upload_validation():
+    """第五轮：ssl 上传接口的输入校验（名称/大小/控制字符）。"""
+    print("\n== 第五轮：ssl upload 输入校验 ==")
+    global PASS, FAIL
+    import io
+    import shutil as _shutil
+    import tempfile
+    import unittest.mock as mock
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.routers import ssl as ssl_router
+
+    tmp = tempfile.mkdtemp(prefix="graw_ssl_test_")
+    ok = True
+    try:
+        # 重定向存储位置，避免污染真实 ssl.json / ssl 目录
+        with mock.patch.object(ssl_router, "SSL_DIR", tmp), \
+                mock.patch.object(ssl_router, "SSL_FILE", os.path.join(tmp, "ssl.json")):
+            app = FastAPI()
+            app.include_router(ssl_router.router)
+            client = TestClient(app)
+
+            pem = b"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+
+            # 1) 正常上传成功
+            r = client.post(
+                "/upload",
+                data={"name": "my-cert", "domains": "a.com, b.com"},
+                files={"cert": ("c.pem", io.BytesIO(pem)), "key": ("k.pem", io.BytesIO(pem))},
+            )
+            if r.status_code == 200 and r.json().get("ok"):
+                print("[ ok ] 正常上传成功")
+            else:
+                print(f"[FAIL] 正常上传失败: {r.status_code} {r.text[:120]}")
+                ok = False
+
+            # 2) 名称以 - 开头（certbot --cert-name 污染面）必须 400
+            r = client.post(
+                "/upload",
+                data={"name": "--standalone", "domains": ""},
+                files={"cert": ("c.pem", io.BytesIO(pem)), "key": ("k.pem", io.BytesIO(pem))},
+            )
+            if r.status_code == 400:
+                print("[ ok ] 拒绝以 - 开头的证书名称")
+            else:
+                print(f"[FAIL] - 开头名称未被拒绝: {r.status_code}")
+                ok = False
+
+            # 3) 名称含控制字符必须 400
+            r = client.post(
+                "/upload",
+                data={"name": "bad\nname", "domains": ""},
+                files={"cert": ("c.pem", io.BytesIO(pem)), "key": ("k.pem", io.BytesIO(pem))},
+            )
+            if r.status_code == 400:
+                print("[ ok ] 拒绝含控制字符的名称")
+            else:
+                print(f"[FAIL] 控制字符名称未被拒绝: {r.status_code}")
+                ok = False
+
+            # 4) 超大文件（>1MB）必须 413（磁盘 DoS 防护）
+            big = b"x" * (ssl_router._CERT_MAX_BYTES + 1)
+            r = client.post(
+                "/upload",
+                data={"name": "big", "domains": ""},
+                files={"cert": ("c.pem", io.BytesIO(big)), "key": ("k.pem", io.BytesIO(pem))},
+            )
+            if r.status_code == 413:
+                print("[ ok ] 拒绝超过 1MB 的证书文件")
+            else:
+                print(f"[FAIL] 超大文件未被拒绝: {r.status_code}")
+                ok = False
+
+            # 5) 空文件必须 400
+            r = client.post(
+                "/upload",
+                data={"name": "empty", "domains": ""},
+                files={"cert": ("c.pem", io.BytesIO(b"")), "key": ("k.pem", io.BytesIO(pem))},
+            )
+            if r.status_code == 400:
+                print("[ ok ] 拒绝空文件")
+            else:
+                print(f"[FAIL] 空文件未被拒绝: {r.status_code}")
+                ok = False
+
+            # 6) domains 超长必须 400
+            r = client.post(
+                "/upload",
+                data={"name": "d", "domains": "x" * 513},
+                files={"cert": ("c.pem", io.BytesIO(pem)), "key": ("k.pem", io.BytesIO(pem))},
+            )
+            if r.status_code == 400:
+                print("[ ok ] 拒绝超长 domains 备注")
+            else:
+                print(f"[FAIL] 超长 domains 未被拒绝: {r.status_code}")
+                ok = False
+    finally:
+        # 清理临时目录，失败不中断测试结果
+        try:
+            _shutil.rmtree(tmp, ignore_errors=True)
+        except Exception:
+            pass
+
+    PASS, FAIL = PASS + (1 if ok else 0), FAIL + (0 if ok else 1)
+
+
+def test_round5_starlette_cve_2024_47874():
+    """第五轮：starlette >= 0.40.0（修复 CVE-2024-47874 multipart 内存 DoS）。
+
+    受影响版本在解析 multipart 表单时对单 part 体积无上限，可被构造
+    超大表单耗尽内存（DoS）；0.40.0 起逐块流式解析。fastapi 0.115.0
+    锁死 starlette<0.39，故连带升级 fastapi 至 0.115.14。
+    """
+    print("\n== 依赖：starlette CVE-2024-47874 修复版本 ==")
+    global PASS, FAIL
+    try:
+        from importlib.metadata import version as _v
+
+        sv = tuple(int(x) for x in _v("starlette").split(".")[:2])
+        fv = _v("fastapi")
+        if sv >= (0, 40):
+            print(f"[ ok ] starlette {_v('starlette')}（>=0.40.0，CVE-2024-47874 已修复；fastapi {fv}）")
+            PASS += 1
+        else:
+            print(f"[FAIL] starlette {_v('starlette')} 受 CVE-2024-47874 影响（需 >=0.40.0）")
+            FAIL += 1
+    except Exception as e:
+        print(f"[FAIL] 检测 starlette 版本失败: {e}")
+        FAIL += 1
+
+
 if __name__ == "__main__":
     test_sites()
     test_ssl()
@@ -627,5 +1091,13 @@ if __name__ == "__main__":
     test_round3_docker_ref_guard()
     test_round3_install_dir_label_traversal()
     test_round3_spa_fallback_cross_drive()
+    test_round4_docs_disabled()
+    test_round4_task_id_guard()
+    test_round4_logs_addlog_validation()
+    test_round4_runtime_patterns()
+    test_round4_multipart_version()
+    test_round5_protection_tar_option_injection()
+    test_round5_ssl_upload_validation()
+    test_round5_starlette_cve_2024_47874()
     print(f"\n结果：{PASS} 通过，{FAIL} 失败")
     sys.exit(1 if FAIL else 0)

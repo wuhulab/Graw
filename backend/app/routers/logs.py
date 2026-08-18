@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app import node_manager
 from app.node_manager import host_path
@@ -89,9 +89,24 @@ def _save_custom(items: list):
 
 
 class AddLog(BaseModel):
-    name: str
-    path: str
-    desc: Optional[str] = ""
+    """新增自定义日志源请求。
+
+    安全：name/path/desc 限制长度并拒绝控制字符——该记录会持久化到
+    logs.json 并用于后续读取/清空操作的路径解析；路径合法性（绝对/
+    可达）由读取时的 _safe_log_path + isfile 兜底，此处先行拦截
+    空值、超长与含空字节/换行的脏数据（防 JSON 膨胀与解析歧义）。
+    """
+
+    name: str = Field(min_length=1, max_length=64)
+    path: str = Field(min_length=1, max_length=1024)
+    desc: Optional[str] = Field(default="", max_length=200)
+
+
+def _reject_control_chars(value: str, field: str) -> str:
+    """拒绝包含 C0 控制字符（含空字节/换行）的字符串。"""
+    if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value):
+        raise HTTPException(status_code=400, detail=f"{field} 含非法控制字符")
+    return value
 
 
 @router.get("/list")
@@ -167,6 +182,9 @@ async def read_log(path: str = Query(...), tail: int = Query(200, ge=1, le=5000)
 
 @router.post("/add")
 async def add_log(req: AddLog):
+    # 控制字符拦截：防止空字节/换行进入持久化路径与后续 shell 拼接
+    _reject_control_chars(req.path, "日志路径")
+    _reject_control_chars(req.name, "日志名称")
     custom = _load_custom()
     cid = f"custom_{int(datetime.now().timestamp())}"
     custom.append(

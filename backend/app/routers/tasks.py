@@ -19,6 +19,7 @@ tasks.py - 任务中心
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
@@ -27,6 +28,12 @@ from fastapi import APIRouter, HTTPException
 
 logger = logging.getLogger("tasks")
 router = APIRouter()
+
+# 任务 ID 白名单：task_id 会拼入日志文件路径（TASKS_DIR/<id>.log）。
+# Windows 下 URL 编码的反斜杠（..%5C）可进入路径参数，若 tasks.json
+# 中存在被污染的 id 记录，即可构造任意文件读/删的穿越面。此处统一
+# 拒绝非法格式（合法 id 由 uuid4().hex[:8] 或内部 record 提供）。
+_TASK_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 _ROUTERS_DIR = os.path.dirname(os.path.abspath(__file__))
 # s:\Graw\backend\app\routers -> s:\Graw\backend\data
@@ -178,6 +185,13 @@ def read_log(task_id: str) -> list:
     return lines
 
 
+def _validate_task_id(task_id: str) -> str:
+    """校验任务 ID 格式，非法即 400（防路径拼接穿越）。"""
+    if not _TASK_ID_RE.match(task_id or ""):
+        raise HTTPException(status_code=400, detail="非法的任务 ID")
+    return task_id
+
+
 @router.get("")
 async def list_endpoint():
     return {"tasks": list_tasks()}
@@ -185,6 +199,7 @@ async def list_endpoint():
 
 @router.get("/{task_id}")
 async def get_endpoint(task_id: str):
+    _validate_task_id(task_id)
     task = get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -193,6 +208,7 @@ async def get_endpoint(task_id: str):
 
 @router.get("/{task_id}/log")
 async def log_endpoint(task_id: str):
+    _validate_task_id(task_id)
     task = get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -206,6 +222,7 @@ async def log_endpoint(task_id: str):
 
 @router.delete("/{task_id}")
 async def delete_endpoint(task_id: str):
+    _validate_task_id(task_id)
     task = get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")

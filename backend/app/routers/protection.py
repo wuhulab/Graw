@@ -663,6 +663,13 @@ def _build_backup_command(path: str) -> str:
         base = safe
     if not parent:
         parent = os.sep
+    # 安全：basename 以 "-" 开头会被 tar 解析为选项而非文件名（argv 选项
+    # 注入，如 --checkpoint-action=exec=... 可致存储型 RCE，经 crontab 以
+    # 宿主权限反复执行）。shlex.quote / PowerShell 单引号只防 shell 元字符，
+    # 不防选项注入，故必须在源头直接拒绝（Windows PowerShell 5.1 调用原生
+    # 命令时还会吞掉 "--" 分隔符，不能只依赖分隔符防御）。
+    if base.startswith("-"):
+        raise HTTPException(status_code=400, detail="备份路径的文件/目录名不能以 - 开头")
     if IS_WINDOWS:
         # Windows：用 PowerShell + tar（Win10 自带 bsdtar）。
         # parent / base 用 PowerShell 单引号字面量包裹（内部单引号双写），
@@ -678,11 +685,12 @@ def _build_backup_command(path: str) -> str:
     import shlex
 
     # Linux：tar 打包到 /data/graw-backups，并清理超过保留天数的旧备份
-    # 注意：crontab 中 % 需转义为 \%
+    # 注意：crontab 中 % 需转义为 \%；base 前置 "--" 终结选项解析，
+    # 与入口处 base.startswith("-") 拒绝形成双保险（纵深防御）。
     return (
         f"mkdir -p /data/graw-backups && "
         f"tar -czf /data/graw-backups/{safe}_$(date +\\%Y\\%m\\%d_\\%H\\%M\\%S).tar.gz "
-        f"-C {shlex.quote(parent)} {shlex.quote(base)} && "
+        f"-C {shlex.quote(parent)} -- {shlex.quote(base)} && "
         f"find /data/graw-backups -name '{safe}_*' -mtime +{BACKUP_KEEP_DAYS} -delete"
     )
 

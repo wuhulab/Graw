@@ -30,7 +30,7 @@ import time
 import uuid
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 
 # 复用 docker_api 的引擎发现 / CLI 执行 / 路径转换辅助
@@ -304,33 +304,90 @@ def _create_container(cfg: dict) -> dict:
 # 请求模型
 # ------------------------------------------------------------
 class PortMap(BaseModel):
-    external: Optional[str] = None
-    internal: Optional[str] = None
+    """端口映射：external/internal 为端口号（1-65535 数字字符串）。
+
+    安全：值最终拼入 `-p ext:int/proto`，必须是纯数字，防止以 `-`
+    开头的值被容器引擎解析为额外选项（选项注入）。
+    """
+
+    external: Optional[str] = Field(None, pattern=r"^\d{1,5}$")
+    internal: Optional[str] = Field(None, pattern=r"^\d{1,5}$")
     protocol: str = "tcp"
 
 
 class EnvVar(BaseModel):
-    name: str = ""
+    """环境变量：名称必须是合法 POSIX 环境变量名（防选项注入）。"""
+
+    name: str = Field("", pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
     value: str = ""
 
 
 class MountItem(BaseModel):
+    """自定义挂载：container 必须是容器内绝对路径（防选项注入）。"""
+
     host: str = ""
-    container: str = ""
+    container: str = Field("", pattern=r"^/")
     mode: str = "rw"
 
 
 class HostMap(BaseModel):
-    hostname: str = ""
+    """主机映射：hostname 白名单 + ip 必须可解析为合法 IP。"""
+
+    hostname: str = Field("", pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,253}$")
     ip: str = ""
 
 
-class RuntimeCreate(BaseModel):
+def _check_port_range(ports: List["PortMap"]) -> List["PortMap"]:
+    """端口范围校验（1-65535）：pattern 只约束数字格式，范围在此统一拦截。"""
+    for p in ports:
+        for side in (p.external, p.internal):
+            if side is not None and not (1 <= int(side) <= 65535):
+                raise ValueError(f"端口越界: {side}（必须在 1-65535）")
+    return ports
+
+
+def _check_host_ips(hosts: List["HostMap"]) -> List["HostMap"]:
+    """主机映射 IP 合法性校验（IPv4/IPv6），拦截任意文本注入 --add-host。"""
+    import ipaddress
+
+    for h in hosts:
+        if h.ip:
+            try:
+                ipaddress.ip_address(h.ip)
+            except ValueError:
+                raise ValueError(f"主机映射 IP 不合法: {h.ip}")
+    return hosts
+
+
+class _RuntimeValidatorMixin(BaseModel):
+    """运行环境创建请求的公共校验器（字段级白名单 + 范围校验）。
+
+    安全：所有字段最终会拼入容器引擎 CLI argv——以 `-` 开头的版本号/
+    端口/变量名会被 docker 解析为额外选项（选项注入，如 --privileged），
+    故各字段均加 pattern 白名单；端口范围与 IP 合法性由 validator 拦截。
+    """
+
+    # check_fields=False：ports/hosts 字段声明在子类 RuntimeCreate 中，
+    # 校验器在 Mixin 层定义时需显式跳过基类字段存在性检查
+    @field_validator("ports", check_fields=False)
+    @classmethod
+    def _ports_range(cls, v):
+        return _check_port_range(v)
+
+    @field_validator("hosts", check_fields=False)
+    @classmethod
+    def _hosts_ip(cls, v):
+        return _check_host_ips(v)
+
+
+class RuntimeCreate(_RuntimeValidatorMixin):
     type: str = Field(..., pattern="^(python|java|node|go|dotnet)$")
     name: str = Field(..., min_length=1, max_length=64)
     project_dir: str = Field(..., min_length=1)
     start_command: str = ""
-    app_version: str = ""
+    # 版本号白名单：值会拼入镜像名（如 python:<version>），
+    # 以 `-` 开头的版本会被 docker 解析为选项（如 --privileged）
+    app_version: str = Field("", pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$")
     container_name: str = ""
     notes: str = ""
     ports: List[PortMap] = []
@@ -389,6 +446,7 @@ async def create_runtime(req: RuntimeCreate):
         raise HTTPException(status_code=400, detail="项目目录必须为绝对路径")
     if req.container_name and not _CONTAINER_NAME_RE.match(req.container_name):
         raise HTTPException(status_code=400, detail="容器名称只能包含字母、数字、_、-、.，且不能以 - 开头")
+    # 端口范围 / 主机映射 IP 已由 RuntimeCreate 的 field_validator 拦截
 
     cfg = {
         "id": "rt_" + uuid.uuid4().hex[:8],

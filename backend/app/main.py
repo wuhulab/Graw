@@ -81,7 +81,19 @@ async def lifespan(app: FastAPI):
     await tamper.stop_tamper_monitor()
 
 
-app = FastAPI(title="Graw Server Panel", version="1.0.0", lifespan=lifespan)
+# 安全：默认关闭交互式 API 文档（/docs、/redoc、/openapi.json）。
+# 这些端点注册在顶层路径（不在 /api 前缀下），会向任意陌生设备完整
+# 暴露全部接口结构与参数（包括管理员端点），等于绕过 ShunX 安全入口
+# 直接送上攻击面地图。开发调试时可通过环境变量 GRAW_ENABLE_DOCS=1 打开。
+_ENABLE_DOCS = os.environ.get("GRAW_ENABLE_DOCS", "").strip() == "1"
+app = FastAPI(
+    title="Graw Server Panel",
+    version="1.0.0",
+    lifespan=lifespan,
+    docs_url="/docs" if _ENABLE_DOCS else None,
+    redoc_url="/redoc" if _ENABLE_DOCS else None,
+    openapi_url="/openapi.json" if _ENABLE_DOCS else None,
+)
 
 # 跨域策略：面板前后端始终同源部署——开发模式经 Vite proxy 代理 /api，
 # 生产模式由本服务直接托管 frontend/dist，因此无需开放任何跨域来源。
