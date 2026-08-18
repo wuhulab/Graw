@@ -27,6 +27,7 @@ from app.routers import (
     runtime,
     disks,
     nodes,
+    ui,
 )
 from app.auth import (
     seed_default_users,
@@ -196,6 +197,10 @@ app.include_router(
     nodes.router, prefix="/api/nodes", tags=["nodes"], dependencies=ADMIN
 )
 
+# 界面设置：/public 为公开接口（登录页展示用），/config 内部自行做管理员鉴权，
+# 故不在此处挂全局 ADMIN 依赖（否则登录页无法公开读取网站名/欢迎语/Logo）。
+app.include_router(ui.router, prefix="/api/ui", tags=["ui"])
+
 
 @app.get("/api/health")
 async def health():
@@ -203,7 +208,12 @@ async def health():
 
 
 # Serve frontend static files if built
-FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
+# normpath 去掉路径中的 ".." 组件：spa_fallback 的 commonpath 防穿越
+# 检查需要与规范化后的 candidate 同基比较，否则带 ".." 的前缀
+# 永不相等导致静态回退静默失效（安全上 fail-closed，但功能不可用）。
+FRONTEND_DIST = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
+)
 if os.path.exists(FRONTEND_DIST):
     app.mount(
         "/assets",

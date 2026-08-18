@@ -20,6 +20,7 @@ node_manager.py - 多节点（多机）管理
 
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -40,6 +41,24 @@ LOCAL_ID = "local"
 # SSH 连接默认值与超时（秒）
 _DEFAULT_PORT = 22
 _SSH_CONNECT_TIMEOUT = 10
+
+# SSH 目标格式白名单：host 允许主机名 / IPv4 / IPv6（含端口形式以外的冒号），
+# user 允许常规 POSIX 用户名字符。二者最终会拼入 ssh 的 argv：
+#   ssh -p <port> <user>@<host> <remote_cmd>
+# 若 host / user 以 "-" 开头或携带空白，会被 ssh 解析为额外选项
+# （如 -oProxyCommand=...），造成 SSH 参数注入，故入口即校验。
+_SSH_HOST_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.\-:]*[A-Za-z0-9])?$")
+_SSH_USER_RE = re.compile(r"^[A-Za-z0-9_]([A-Za-z0-9_.\-]*[A-Za-z0-9_\-])?$")
+
+
+def _validate_ssh_target(host: str, user: str, key_path: str = "") -> None:
+    """校验 SSH 节点的 host / user / key_path，阻止 ssh 参数注入。"""
+    if not host or not _SSH_HOST_RE.match(host):
+        raise ValueError("host 格式非法：仅允许主机名 / IP 字符，且不能以 - 开头")
+    if not user or not _SSH_USER_RE.match(user):
+        raise ValueError("user 格式非法：仅允许字母 / 数字 / _ . -，且不能以 - 开头")
+    if key_path and ("\r" in key_path or "\n" in key_path or "\x00" in key_path):
+        raise ValueError("key_path 含非法字符")
 
 _lock = threading.RLock()
 # 内存缓存，避免每次调用都读文件
@@ -200,6 +219,8 @@ def upsert_ssh_node(node: dict) -> dict:
     # 基础字段校验
     if not cleaned["host"] or not cleaned["user"]:
         raise ValueError("host 与 user 不能为空")
+    # SSH 参数注入防护：host/user 以 - 开头或携带空白会被 ssh 解析为选项
+    _validate_ssh_target(cleaned["host"], cleaned["user"], cleaned["key_path"])
     if cleaned["auth"] == "key" and not cleaned["key_path"]:
         raise ValueError("密钥认证必须提供 key_path")
 

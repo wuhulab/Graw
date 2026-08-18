@@ -1,5 +1,6 @@
 <template>
-  <div class="login-page">
+  <!-- 登录页背景：优先使用自定义背景（data URL），否则回退内置 hero.png -->
+  <div class="login-page" :style="bgStyle">
     <div class="login-card">
       <!-- 安全入口门禁（已配置入口且当前路径不匹配） -->
       <template v-if="shunxChecked && shunx.enabled && !shunx.matched">
@@ -12,8 +13,10 @@
 
       <!-- 登录表单 -->
       <template v-else-if="!forceChange">
-        <div class="login-title">Graw</div>
-        <div class="login-subtitle">{{ $t('login.subtitle') }}</div>
+        <!-- 自定义 Logo（若有） -->
+        <img v-if="ui.logo" class="login-logo" :src="ui.logo" alt="logo" />
+        <div class="login-title">{{ ui.site_name }}</div>
+        <div class="login-subtitle">{{ ui.welcome || $t('login.subtitle') }}</div>
 
         <form @submit.prevent="handleLogin">
           <label class="field">
@@ -71,13 +74,29 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { authApi, shunxApi } from '../api'
 import { setAuth } from '../store/auth'
+import { uiState, loadUi } from '../store/ui'
 
 const { t } = useI18n()
 const emit = defineEmits(['login'])
+
+// 界面品牌配置（共享 store）：自定义网站名 / 欢迎语 / Logo / 背景
+const ui = uiState
+
+// 登录页背景样式：配置了背景则使用自定义图（覆盖后裁切），否则交给 CSS 回退默认背景
+const bgStyle = computed(() => {
+  if (uiState.background) {
+    return {
+      backgroundImage: `url('${uiState.background}')`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+    }
+  }
+  return {}
+})
 
 const username = ref('admin')
 const password = ref('')
@@ -98,6 +117,16 @@ const shunxChecked = ref(false)
 const shunx = ref({ enabled: false, matched: false })
 
 onMounted(async () => {
+  // 加载界面品牌配置（网站名 / 欢迎语 / Logo / 背景）并更新浏览器标签标题
+  try {
+    await loadUi()
+    if (document.title !== uiState.site_name && uiState.site_name) {
+      document.title = uiState.site_name
+    }
+  } catch (e) {
+    // 接口失败时使用默认品牌（兼容旧版后端）
+    console.warn('[login] 加载界面配置失败:', e)
+  }
   try {
     // 取当前 URL 路径（去掉可能的多余斜杠）
     const currentPath = window.location.pathname.replace(/\/+$/, '') || '/'
@@ -204,6 +233,14 @@ async function handleChangePassword() {
   font-weight: 700;
   color: #0a3d7a;
   letter-spacing: 0.5px;
+}
+
+.login-logo {
+  display: block;
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  margin: 0 auto 12px;
 }
 
 .login-subtitle {

@@ -8,6 +8,12 @@ test_security_audit_2026.py — 2026-08 安全审查修复项单元测试
   3. firewall.py— IP / CIDR 白名单
   4. cron.py    — cron 调度表达式白名单（防 crontab 换行注入额外任务行）
   5. appstore.py— SSRF 公网地址校验（拒绝内网 / 回环 / 非法 scheme）
+  6. cron.py    — 命令换行注入（Linux crontab 单行语义）
+  7. notes.py   — 备忘录大小限制（磁盘填充 DoS）
+  8. databases.py— 连接密码脱敏（列表不回传明文 / 留空保持原密码）
+  9. node_manager.py— SSH host/user/key_path 白名单（防 ssh 参数注入）
+ 10. appstore.py— 安装参数 version/timezone 白名单（防 YAML 重解析注入）
+ 11. main.py    — SPA 静态回退路径规范化（防穿越检查真实生效）
 
 运行：.venv\\Scripts\\python.exe test_security_audit_2026.py
 """
@@ -196,11 +202,261 @@ def test_appstore_ssrf():
         print("[FAIL] 公网地址校验异常")
 
 
+# ----------------------------------------------------------------------
+# 6. cron.py：命令换行注入（Linux crontab 单行语义）
+# ----------------------------------------------------------------------
+def test_cron_command():
+    print("\n== cron.py：命令换行注入 ==")
+    global PASS, FAIL
+    import unittest.mock as mock
+
+    orig = cron.IS_WIN
+    # 模拟 Linux：换行命令必须被拒
+    with mock.patch.object(cron, "IS_WIN", False):
+        check("Linux 多行命令拒绝", cron._validate_cron_command,
+              "echo a\necho b", should_raise=True)
+        check("Linux CR 注入拒绝", cron._validate_cron_command,
+              "echo a\r\n* * * * * evil", should_raise=True)
+        check("Linux 空命令拒绝", cron._validate_cron_command, "", should_raise=True)
+        check("Linux 单行命令放行", cron._validate_cron_command, "echo a && echo b")
+        check("Linux 单行脚本放行", cron._validate_cron_command, "find /var/log -name '*.log' -delete")
+    # Windows（.bat 脚本）多行应放行
+    cron.IS_WIN = True
+    try:
+        check("Windows 多行命令放行（bat 脚本语义）", cron._validate_cron_command, "echo a\necho b")
+    finally:
+        cron.IS_WIN = orig
+
+
+# ----------------------------------------------------------------------
+# 7. notes.py：备忘录大小限制（磁盘填充 DoS）
+# ----------------------------------------------------------------------
+def test_notes_limit():
+    print("\n== notes.py：备忘录大小限制 ==")
+    global PASS, FAIL
+    import asyncio
+    import tempfile
+    from app.routers import notes as notes_router
+    from app.routers.notes import NoteUpdate
+
+    # 成功路径写入临时文件，避免污染真实 notes.json
+    orig_file = notes_router.NOTES_FILE
+    tmpdir = tempfile.mkdtemp()
+    notes_router.NOTES_FILE = os.path.join(tmpdir, "notes.json")
+    try:
+        # 超限内容必须 413
+        try:
+            asyncio.run(notes_router.update_notes(NoteUpdate(content="x" * (notes_router.MAX_CONTENT_BYTES + 1))))
+            print("[FAIL] 超限备忘录未按预期拒绝")
+            FAIL += 1
+        except HTTPException as e:
+            if e.status_code == 413:
+                print(f"[ ok ] 超限备忘录拒绝（413: {e.detail}）")
+                PASS += 1
+            else:
+                print(f"[FAIL] 超限备忘录异常状态码 {e.status_code}")
+                FAIL += 1
+        # 边界内内容放行（写入临时文件）
+        try:
+            asyncio.run(notes_router.update_notes(NoteUpdate(content="x" * 1024)))
+            print("[ ok ] 1KB 备忘录放行")
+            PASS += 1
+        except Exception as e:
+            print(f"[FAIL] 1KB 备忘录异常: {e}")
+            FAIL += 1
+        # 恶意多字节放大：UTF-8 下 4 字节字符同样计入字节数
+        try:
+            asyncio.run(notes_router.update_notes(NoteUpdate(content="🙂" * (notes_router.MAX_CONTENT_BYTES // 4 + 1))))
+            print("[FAIL] 多字节超限内容未按预期拒绝")
+            FAIL += 1
+        except HTTPException as e:
+            if e.status_code == 413:
+                print("[ ok ] 多字节超限内容拒绝（413）")
+                PASS += 1
+            else:
+                print(f"[FAIL] 多字节超限异常状态码 {e.status_code}")
+                FAIL += 1
+    finally:
+        notes_router.NOTES_FILE = orig_file
+        import shutil as _shutil
+        _shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+# ----------------------------------------------------------------------
+# 8. databases.py：连接密码脱敏
+# ----------------------------------------------------------------------
+def test_databases_masking():
+    print("\n== databases.py：连接密码脱敏 ==")
+    global PASS, FAIL
+    import asyncio
+    import tempfile
+    from app.routers import databases as db_router
+    from app.routers.databases import DBConnection
+
+    orig_file = db_router.DB_FILE
+    tmpdir = tempfile.mkdtemp()
+    db_router.DB_FILE = os.path.join(tmpdir, "databases.json")
+    try:
+        # 准备一条带密码的连接
+        asyncio.run(db_router.add_connection(DBConnection(
+            name="t", db_type="mysql", host="127.0.0.1", port=3306,
+            username="root", password="s3cret!", database="db",
+        )))
+        # 列表接口不得回传明文密码
+        conns = asyncio.run(db_router.list_connections())["connections"]
+        c = conns[0]
+        if c.get("password") == "" and c.get("has_password") is True:
+            print("[ ok ] 列表不回传明文密码（has_password=True）")
+            PASS += 1
+        else:
+            print(f"[FAIL] 列表回传了密码或缺失标记: password={c.get('password')!r}")
+            FAIL += 1
+        cid = c["id"]
+        # 编辑时密码留空 → 保持原密码
+        asyncio.run(db_router.update_connection(cid, DBConnection(
+            name="t2", db_type="mysql", host="127.0.0.1", port=3306,
+            username="root", password="", database="db",
+        )))
+        raw = db_router._load_connections()
+        if raw[0]["password"] == "s3cret!":
+            print("[ ok ] 编辑留空保持原密码")
+            PASS += 1
+        else:
+            print("[FAIL] 编辑留空丢失了原密码")
+            FAIL += 1
+        # 编辑时显式输入新密码 → 覆盖
+        asyncio.run(db_router.update_connection(cid, DBConnection(
+            name="t3", db_type="mysql", host="127.0.0.1", port=3306,
+            username="root", password="n3wpass", database="db",
+        )))
+        raw = db_router._load_connections()
+        if raw[0]["password"] == "n3wpass":
+            print("[ ok ] 显式新密码覆盖")
+            PASS += 1
+        else:
+            print("[FAIL] 显式新密码未覆盖")
+            FAIL += 1
+    finally:
+        db_router.DB_FILE = orig_file
+        import shutil as _shutil
+        _shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+# ----------------------------------------------------------------------
+# 9. node_manager.py：SSH 参数注入防护
+# ----------------------------------------------------------------------
+def test_node_ssh_target():
+    print("\n== node_manager.py：SSH 参数注入防护 ==")
+    global PASS, FAIL
+    from app import node_manager as nm
+
+    vt = nm._validate_ssh_target
+
+    def check_value(name, fn, *args, should_raise: bool = False):
+        """与 check() 相同，但接受 ValueError（node_manager 抛 ValueError 而非 HTTPException）。"""
+        global PASS, FAIL
+        try:
+            fn(*args)
+            if should_raise:
+                print(f"[FAIL] {name}: 未按预期拒绝")
+                FAIL += 1
+            else:
+                print(f"[ ok ] {name}")
+                PASS += 1
+        except ValueError as e:
+            if should_raise:
+                print(f"[ ok ] {name}（ValueError: {e}）")
+                PASS += 1
+            else:
+                print(f"[FAIL] {name}: 非预期 ValueError: {e}")
+                FAIL += 1
+        except Exception as e:  # noqa: BLE001
+            print(f"[FAIL] {name}: 非预期异常 {type(e).__name__}: {e}")
+            FAIL += 1
+
+    check_value("合法主机名放行", vt, "server1.example.com", "root")
+    check_value("合法 IPv4 放行", vt, "192.168.1.10", "admin")
+    check_value("合法 IPv6 放行", vt, "fe80::1", "root")
+    check_value("host 选项注入拒绝", vt, "-oProxyCommand=evil", "root", should_raise=True)
+    check_value("host 前导短横线拒绝", vt, "-badhost", "root", should_raise=True)
+    check_value("host 含空白拒绝", vt, "host; evil", "root", should_raise=True)
+    check_value("host 换行拒绝", vt, "good.com\n-oProxyCommand=x", "root", should_raise=True)
+    check_value("user 选项注入拒绝", vt, "example.com", "-oBadOption=x", should_raise=True)
+    check_value("user 含空白拒绝", vt, "example.com", "root evil", should_raise=True)
+    check_value("user 空拒绝", vt, "example.com", "", should_raise=True)
+    check_value("key_path 换行拒绝", vt, "example.com", "root", "/home/k/.ssh/id\nrsa", should_raise=True)
+    check_value("合法 key_path 放行", vt, "example.com", "root", "/home/k/.ssh/id_rsa")
+
+
+# ----------------------------------------------------------------------
+# 10. appstore.py：安装参数 YAML 注入白名单
+# ----------------------------------------------------------------------
+def test_appstore_install_patterns():
+    print("\n== appstore.py：安装参数 YAML 注入 ==")
+    global PASS, FAIL
+    from pydantic import ValidationError
+
+    def expect_ok(name, **kw):
+        global PASS, FAIL
+        try:
+            appstore.InstallRequest(**{"app_id": "x", "app_name": "demo", **kw})
+            print(f"[ ok ] {name}")
+            PASS += 1
+        except Exception as e:
+            print(f"[FAIL] {name}: {e}")
+            FAIL += 1
+
+    def expect_reject(name, **kw):
+        global PASS, FAIL
+        try:
+            appstore.InstallRequest(**{"app_id": "x", "app_name": "demo", **kw})
+            print(f"[FAIL] {name}: 未按预期拒绝")
+            FAIL += 1
+        except ValidationError:
+            print(f"[ ok ] {name}（422 拒绝）")
+            PASS += 1
+        except Exception as e:
+            print(f"[FAIL] {name}: 非预期异常 {e}")
+            FAIL += 1
+
+    expect_ok("合法版本号放行", version="3.12")
+    expect_ok("latest 放行", version="latest")
+    expect_reject("版本号换行注入拒绝", version="3.12\nprivileged: true")
+    expect_reject("版本号空格注入拒绝", version="3.12 -v /:/host")
+    expect_ok("合法时区放行", timezone="Asia/Shanghai")
+    expect_ok("UTC 时区放行", timezone="UTC")
+    expect_reject("时区换行注入拒绝", timezone="UTC\nrestart: no")
+    expect_reject("时区特殊字符拒绝", timezone="UTC; rm -rf /")
+
+
+# ----------------------------------------------------------------------
+# 11. main.py：SPA 静态回退路径规范化
+# ----------------------------------------------------------------------
+def test_main_dist_norm():
+    print("\n== main.py：SPA 静态回退路径规范化 ==")
+    global PASS, FAIL
+    from app import main as app_main
+
+    dist = app_main.FRONTEND_DIST
+    if dist == os.path.normpath(dist) and ".." not in dist.split(os.sep):
+        print(f"[ ok ] FRONTEND_DIST 已规范化: {dist}")
+        PASS += 1
+    else:
+        print(f"[FAIL] FRONTEND_DIST 未规范化: {dist}")
+        FAIL += 1
+
+
 if __name__ == "__main__":
     test_sites()
     test_ssl()
     test_firewall()
     test_cron()
     test_appstore_ssrf()
+    test_cron_command()
+    test_notes_limit()
+    test_databases_masking()
+    test_node_ssh_target()
+    test_appstore_install_patterns()
+    test_main_dist_norm()
     print(f"\n结果：{PASS} 通过，{FAIL} 失败")
     sys.exit(1 if FAIL else 0)

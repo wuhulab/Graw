@@ -410,14 +410,16 @@ class InstallRequest(BaseModel):
     app_id: str = Field(..., min_length=1)
     # Graw 维护应用名称（仅英文），同时用作 compose 项目名
     app_name: str = Field(..., min_length=1, max_length=64)
-    # 选择的版本 tag（对应 data.yml versions[].tag）
-    version: str = Field(default="latest", max_length=128)
+    # 选择的版本 tag（对应 data.yml versions[].tag）。
+    # version / timezone 会先做字符串替换再经 safe_load 重解析，
+    # 必须白名单约束，防止借 ${VERSION} 注入额外 YAML 键（如 privileged）
+    version: str = Field(default="latest", max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._+~/-]*$")
     # 外部访问端口（None 表示不映射）
     port: Optional[int] = Field(default=None, ge=1, le=65535)
     # 多端口映射：[{container, external}]，允许为应用声明的每个容器端口分别指定外部端口
     ports: Optional[list] = Field(default=None, description="多端口映射 [{container, external}]")
-    # 时区（注入 TZ 环境变量）
-    timezone: str = Field(default="Asia/Shanghai", max_length=64)
+    # 时区（注入 TZ 环境变量，IANA 时区名格式）
+    timezone: str = Field(default="Asia/Shanghai", max_length=64, pattern=r"^[A-Za-z0-9_+\-/]+$")
     # 容器名称（留空自动生成 graw-<app_name>-<随机>）
     container_name: Optional[str] = Field(default=None, max_length=64)
     # 是否放行防火墙端口（仅外部访问）

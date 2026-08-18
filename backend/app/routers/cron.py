@@ -30,6 +30,23 @@ def _validate_schedule(schedule: str) -> None:
             detail="调度表达式非法：需为 5 字段 cron 格式（分 时 日 月 周）",
         )
 
+
+def _validate_cron_command(command: str) -> None:
+    """校验 Linux 下写入 crontab 的命令必须为单行。
+
+    crontab 文件按行解析，命令中的换行符会把后续内容解析为独立
+    任务行（若带 5 字段则成为新任务），属于存储型注入；schedule
+    白名单只约束了首行。多命令请用 && 或 ; 连接为单行。
+    Windows 计划任务写入独立 .bat 脚本文件，无此约束（多行即脚本）。
+    """
+    if IS_WIN:
+        return
+    if not command or "\n" in command or "\r" in command:
+        raise HTTPException(
+            status_code=400,
+            detail="Linux 计划任务命令必须为单行（多命令请用 && 或 ; 连接），不支持换行",
+        )
+
 router = APIRouter()
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
@@ -290,6 +307,8 @@ async def create_task(req: CreateTask):
     command = _resolve_command(task_type, req.content, req.command)
     if not command or not command.strip():
         raise HTTPException(status_code=400, detail="命令内容不能为空")
+    # 安全校验：Linux 下命令必须单行，防止换行注入额外 crontab 任务行
+    _validate_cron_command(command)
     task = {
         "id": tid,
         "name": req.name,
@@ -331,6 +350,8 @@ async def update_task(task_id: str, req: UpdateTask):
         _validate_schedule(req.schedule)
         task["schedule"] = req.schedule
     if req.command is not None:
+        # 安全校验：更新命令同样必须单行（Linux crontab 语义，防存储型注入）
+        _validate_cron_command(req.command)
         task["command"] = req.command
     if req.enabled is not None:
         task["enabled"] = req.enabled
@@ -345,9 +366,12 @@ async def update_task(task_id: str, req: UpdateTask):
         task["alert"] = bool(req.alert)
     # 若更新了类型或内容但未显式提供 command，则重新生成命令
     if req.command is None and (req.task_type is not None or req.content is not None):
-        task["command"] = _resolve_command(
+        regenerated = _resolve_command(
             task.get("task_type", "shell_command"), task.get("content", ""), task.get("command", "")
         )
+        # 重新生成的命令同样走单行校验（Linux crontab 语义）
+        _validate_cron_command(regenerated)
+        task["command"] = regenerated
     _save_tasks(tasks)
     return task
 

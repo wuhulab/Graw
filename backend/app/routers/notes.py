@@ -8,6 +8,10 @@ router = APIRouter()
 NOTES_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "notes.json")
 os.makedirs(os.path.dirname(NOTES_FILE), exist_ok=True)
 
+# 备忘录内容上限：该接口对普通登录用户开放（非管理员），
+# 若不限长，恶意用户可循环写入超大内容撑爆 data 分区（磁盘 DoS）。
+MAX_CONTENT_BYTES = 256 * 1024  # 256KB
+
 
 def _load():
     if not os.path.exists(NOTES_FILE):
@@ -35,6 +39,11 @@ async def get_notes():
 
 @router.post("/")
 async def update_notes(req: NoteUpdate):
+    # 内容大小限制：备忘录对普通登录用户开放，防止无限写入撑爆磁盘
+    if len(req.content.encode("utf-8")) > MAX_CONTENT_BYTES:
+        raise HTTPException(
+            status_code=413, detail="备忘录内容过大（最大 256KB），请精简后保存"
+        )
     data = {"content": req.content}
     try:
         _save(data)

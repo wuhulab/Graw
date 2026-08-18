@@ -25,7 +25,7 @@
       </template>
 
       <label>{{ $t('connectionform.password') }}</label>
-      <input v-model="form.password" type="password" :placeholder="$t('connectionform.passwordPlaceholder')" />
+      <input v-model="form.password" type="password" :placeholder="passwordPlaceholder" />
 
       <template v-if="form.db_type !== 'redis'">
         <label>{{ dbLabel }}</label>
@@ -86,6 +86,12 @@ const usernamePlaceholder = computed(() =>
     ? t('connectionform.usernameHint')
     : t('connectionform.usernameExampleValue', { username: DEFAULTS[form.db_type]?.username || 'root' })
 )
+// 编辑模式密码已脱敏（后端不回传明文）：留空提交表示保持原密码
+const passwordPlaceholder = computed(() =>
+  isEdit && props.conn?.has_password
+    ? t('connectionform.passwordKeepPlaceholder')
+    : t('connectionform.passwordPlaceholder')
+)
 const dbLabel = computed(() => {
   const key = DB_LABELS[form.db_type]?.labelKey
   return key ? t(key) : t('connectionform.defaultDBGeneric')
@@ -117,7 +123,8 @@ onMounted(() => {
       host: props.conn.host || '127.0.0.1',
       port: props.conn.port || d.port,
       username: props.conn.username || '',
-      password: props.conn.password || '',
+      // 密码已脱敏：编辑时留空提交即保持原密码（后端配合处理）
+      password: '',
       database: props.conn.database || ''
     })
   }

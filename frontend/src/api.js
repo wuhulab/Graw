@@ -269,6 +269,14 @@ export const nodesApi = {
   test: (node_id) => api.post(`/nodes/${encodeURIComponent(node_id)}/test`).then(r => r.data)
 }
 
+export const uiApi = {
+  // 界面设置：公开接口（登录页展示使用），无需登录
+  public: () => api.get('/ui/public').then(r => r.data),
+  // 界面设置：管理员读取 / 更新配置（网站名 / 欢迎语 / Logo）
+  config: () => api.get('/ui/config').then(r => r.data),
+  update: (body) => api.put('/ui/config', body).then(r => r.data)
+}
+
 export const appStoreApi = {
   // 索引地址配置
   config: () => api.get('/appstore/config').then(r => r.data),

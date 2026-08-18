@@ -243,8 +243,16 @@ async def db_status():
 
 @router.get("/connections")
 async def list_connections():
-    """返回全部数据库连接配置。"""
-    return {"connections": _load_connections()}
+    """返回全部数据库连接配置（密码脱敏，不回传明文）。
+
+    密码只返回 has_password 布尔标记；编辑时前端留空表示保持原密码。
+    减少凭据暴露面：即使管理员会话被 XSS/抓包，也无法读回已保存的密码。
+    """
+    conns = _load_connections()
+    for c in conns:
+        c["has_password"] = bool(c.get("password"))
+        c["password"] = ""
+    return {"connections": conns}
 
 
 @router.post("/connections")
@@ -265,12 +273,13 @@ async def add_connection(req: DBConnection):
     data.append(conn)
     _save_connections(data)
     logger.info("新增数据库连接: %s (%s@%s:%s)", conn["name"], conn["db_type"], conn["host"], conn["port"])
-    return conn
+    # 响应同样脱敏（调用方本来就知道刚输入的密码）
+    return {**conn, "has_password": bool(conn.get("password")), "password": ""}
 
 
 @router.put("/connections/{conn_id}")
 async def update_connection(conn_id: str, req: DBConnection):
-    """编辑数据库连接配置。"""
+    """编辑数据库连接配置（密码留空表示保持原密码）。"""
     data = _load_connections()
     conn = next((c for c in data if c["id"] == conn_id), None)
     if not conn:
@@ -280,12 +289,17 @@ async def update_connection(conn_id: str, req: DBConnection):
     conn["host"] = req.host
     conn["port"] = req.port
     conn["username"] = req.username or ""
-    conn["password"] = req.password or ""
+    # 密码脱敏配套：列表不再回传明文，编辑时留空即保持已保存的密码
+    conn["password"] = req.password or "" if (req.password or "").strip() else conn.get("password", "")
     conn["database"] = req.database or ""
     conn["updated_at"] = datetime.now().isoformat()
     _save_connections(data)
     logger.info("编辑数据库连接: %s (%s)", conn["name"], conn["id"])
-    return conn
+    return {
+        **conn,
+        "has_password": bool(conn.get("password")),
+        "password": "",
+    }
 
 
 @router.delete("/connections/{conn_id}")
