@@ -161,18 +161,29 @@ def _valid_rel(rel: str) -> bool:
 
 
 def _validate_root(root: str) -> str:
-    """校验网站根目录（宿主机视角绝对路径），非法时抛出 400。"""
+    """校验网站根目录（宿主机视角绝对路径），非法时抛出 400。
+
+    Windows 加固（第六轮审计修复）：
+    - 拒绝 \\?\\ / \\\\.\\ 设备命名空间前缀：其盘符解析差异会使
+      commonpath 抛 ValueError 走 fail-open 分支，可借此把面板数据目录
+      设为防篡改范围进而读写其中文件；
+    - 比较前统一 normcase：否则大小写变体（S:\\GRaw\\...\\DATA）可绕过
+      包含性判断。
+    """
     root = (root or "").strip()
     if not root or not os.path.isabs(root):
         raise HTTPException(status_code=400, detail="网站根目录必须是绝对路径")
+    if root.startswith("\\\\?\\") or root.startswith("\\\\.\\"):
+        raise HTTPException(status_code=400, detail="非法的网站根目录（不支持设备命名空间路径）")
     norm = os.path.normpath(root)
     if norm in ("/", "\\"):
         raise HTTPException(status_code=400, detail="不允许将整个文件系统根目录作为防护范围")
-    data_norm = os.path.normpath(DATA_DIR)
+    data_norm = os.path.normcase(os.path.normpath(DATA_DIR))
     try:
-        if os.path.commonpath([data_norm, norm]) == data_norm:
+        if os.path.commonpath([data_norm, os.path.normcase(norm)]) == data_norm:
             raise HTTPException(status_code=400, detail="不允许将面板数据目录作为防护范围")
     except ValueError:
+        # 跨盘符 / UNC 路径与本地 data 目录不可能同根
         pass
     return root
 

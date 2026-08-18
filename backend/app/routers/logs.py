@@ -28,16 +28,26 @@ def _safe_log_path(path: str) -> str:
     secret.key 泄露即可伪造任意用户 JWT，users.json 被清空会导致面板
     永久锁死（_load_users 返回空表后不会重新播种）。日志接口绝不能触达，
     唯一例外是面板自身日志 panel.log。
+
+    Windows 加固（第六轮审计修复）：
+    - 拒绝 \\?\\ / \\\\.\\ 设备命名空间前缀：其盘符解析差异会使
+      commonpath 抛 ValueError 走 fail-open 分支，实测可读取 secret.key；
+    - 比较前统一 normcase：否则大小写变体（S:\\GRaw\\...\\DATA）可绕过
+      包含性判断（文件系统本身大小写不敏感，文件仍可被读取）。
     """
+    if path.startswith("\\\\?\\") or path.startswith("\\\\.\\"):
+        raise HTTPException(status_code=400, detail="非法日志路径")
     sp = os.path.normpath(os.path.abspath(path))
-    if sp == _PANEL_LOG_NORM:
+    if os.path.normcase(sp) == os.path.normcase(_PANEL_LOG_NORM):
         return sp
     try:
-        common = os.path.commonpath([sp, _DATA_DIR_NORM])
+        common = os.path.commonpath(
+            [os.path.normcase(sp), os.path.normcase(_DATA_DIR_NORM)]
+        )
     except ValueError:
         # Windows 下跨盘符时 commonpath 抛 ValueError：必然不在 data 目录内
         return sp
-    if common == _DATA_DIR_NORM:
+    if common == os.path.normcase(_DATA_DIR_NORM):
         raise HTTPException(status_code=403, detail="无权访问面板数据目录")
     return sp
 

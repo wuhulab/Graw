@@ -28,18 +28,32 @@ DATA_DIR = os.path.normpath(
 
 
 def _is_forbidden(host_view: str) -> bool:
-    """判断宿主机视角路径是否位于面板数据目录（data/）内。"""
+    """判断宿主机视角路径是否位于面板数据目录（data/）内。
+
+    Windows 加固（第六轮审计修复）：
+    - 比较前统一 normcase：否则 S:\\GRaw\\BACKEND\\DATA 这类大小写
+      变体可绕过包含性判断（isfile/open 均大小写不敏感，文件仍可读）；
+    - \\?\\ 设备命名空间前缀已在 _safe_path 入口拒绝；跨盘符路径
+      （commonpath 抛 ValueError）必然不在 data 目录内，安全放行。
+    """
     try:
-        common = os.path.commonpath([os.path.normpath(host_view), DATA_DIR])
+        p = os.path.normcase(os.path.normpath(host_view))
+        data = os.path.normcase(DATA_DIR)
+        return os.path.commonpath([p, data]) == data
     except ValueError:
+        # 跨盘符 / UNC：与本地 data 目录不可能同根，必然不在其内
         return False
-    return common == DATA_DIR
 
 
 def _safe_path(path: str) -> str:
     """规范化宿主机视角路径（绝对化），并拦截面板数据目录。"""
     if not path:
         path = "/"
+    # 拒绝 Windows 设备命名空间前缀（\\?\ 与 \\.）：此类路径绕过 Win32
+    # 路径规范化，且盘符解析差异会使 commonpath 抛 ValueError，导致下方
+    # data 目录拦截 fail-open（第六轮审计实测可借此读取 secret.key）
+    if path.startswith("\\\\?\\") or path.startswith("\\\\.\\"):
+        raise HTTPException(status_code=400, detail="非法路径（不支持设备命名空间路径）")
     sp = os.path.abspath(path)
     if _is_forbidden(sp):
         raise HTTPException(status_code=403, detail="无权访问面板数据目录")
