@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import shutil
 import subprocess
 import time
@@ -12,6 +13,23 @@ from typing import Optional, List
 router = APIRouter()
 
 IS_WINDOWS = os.name == "nt"
+
+# 容器 / 镜像 / 网络标识符白名单：这些标识符会直接拼入引擎 CLI 的 argv，
+# 若以 "-" 开头会被 podman/docker 解析为引擎选项（选项注入：如伪造
+# --log-level / --security-opt 等），携带空白也会破坏参数边界。
+# Docker 自身命名规则本就不允许以 "-" 开头；镜像引用额外允许 / : @。
+_DOCKER_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-/:@]*$")
+
+
+def _safe_docker_ref(ref: str, what: str = "标识符") -> str:
+    """校验并返回容器/镜像/网络标识符，拦截 CLI 选项注入。
+
+    非法（以 - 开头、含空白/引号/路径分隔符等）一律 400 拒绝。
+    """
+    ref = (ref or "").strip()
+    if not ref or not _DOCKER_REF_RE.match(ref):
+        raise HTTPException(status_code=400, detail=f"非法的{what}: {ref!r}")
+    return ref
 
 try:
     import docker
@@ -559,6 +577,7 @@ def _container_action_sync(container_id: str, req: ActionRequest):
     except HTTPException:
         raise
     if kind == "cli":
+        container_id = _safe_docker_ref(container_id, "容器标识")
         mapping = {"start": "start", "stop": "stop", "restart": "restart", "remove": "rm -f"}
         sub = mapping.get(req.action)
         if not sub:
@@ -598,6 +617,7 @@ def _container_logs_sync(container_id: str, tail: int = 200):
     except HTTPException:
         raise
     if kind == "cli":
+        container_id = _safe_docker_ref(container_id, "容器标识")
         cmd = _find_podman() + ["logs", "--tail", str(tail), container_id]
         rc, out, err = _run(cmd)
         if rc != 0:
@@ -670,7 +690,12 @@ def _find_install_dir(inspect_data: dict) -> str:
 
     优先使用 compose 项目标签定位 data/appstore/<project>；
     找不到时回退扫描 data/appstore 下 compose 内容包含该容器名的目录。
+
+    安全：label 来自镜像作者（不可信），project 名可能带 ../ 或绝对路径
+    穿越到 appstore 之外（如引导前端文件管理器打开面板 data 目录），
+    规范化后必须仍位于 appstore 目录内才返回。
     """
+    appstore_root = os.path.normpath(os.path.join(_DATA_DIR, "appstore"))
     config = inspect_data.get("Config", {}) or {}
     labels = config.get("Labels", {}) or {}
     project = (
@@ -679,9 +704,14 @@ def _find_install_dir(inspect_data: dict) -> str:
         or ""
     ).strip()
     if project:
-        candidate = os.path.join(_DATA_DIR, "appstore", project)
-        if os.path.isdir(candidate):
-            return os.path.normpath(candidate)
+        candidate = os.path.normpath(os.path.join(appstore_root, project))
+        try:
+            in_root = os.path.commonpath([candidate, appstore_root]) == appstore_root
+        except ValueError:
+            # Windows 跨盘符（project 为其他盘的绝对路径）：必然越界
+            in_root = False
+        if in_root and os.path.isdir(candidate):
+            return candidate
 
     name = (inspect_data.get("Name", "") or "").strip()
     appstore_dir = os.path.join(_DATA_DIR, "appstore")
@@ -713,6 +743,7 @@ def _container_inspect_sync(container_id: str):
     except HTTPException:
         raise
     if kind == "cli":
+        container_id = _safe_docker_ref(container_id, "容器标识")
         try:
             # 1) podman inspect 获取容器基础信息
             arr = _podman_json(["inspect", container_id])
@@ -954,6 +985,8 @@ def _backup_container_sync(container_id: str):
         kind, client = get_backend()
     except HTTPException:
         raise
+    # 校验容器标识：既拼入 CLI argv（选项注入），也用于备份文件名（路径注入）
+    container_id = _safe_docker_ref(container_id, "容器标识")
     os.makedirs(_BACKUP_DIR, exist_ok=True)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     backup_path = os.path.join(_BACKUP_DIR, f"{container_id[:12]}_{timestamp}.tar")
@@ -993,6 +1026,7 @@ def _upgrade_container_sync(container_id: str):
         kind, client = get_backend()
     except HTTPException:
         raise
+    container_id = _safe_docker_ref(container_id, "容器标识")
     if kind == "cli":
         # 1) 获取容器配置
         arr = _podman_json(["inspect", container_id])
@@ -1069,8 +1103,11 @@ def _commit_container_sync(container_id: str, req: CommitRequest = None):
         kind, client = get_backend()
     except HTTPException:
         raise
+    container_id = _safe_docker_ref(container_id, "容器标识")
     if kind == "cli":
         full_name = f"{repo}:{tag}" if tag else repo
+        # 镜像名同为 CLI 参数：拦截以 - 开头等选项注入
+        full_name = _safe_docker_ref(full_name, "镜像名")
         rc, out, err = _run(_find_podman() + ["commit", container_id, full_name], timeout=300)
         if rc != 0:
             raise HTTPException(status_code=500, detail=err.strip() or "制作镜像失败")
@@ -1546,6 +1583,7 @@ def _remove_image_sync(image_id: str):
     except HTTPException:
         raise
     if kind == "cli":
+        image_id = _safe_docker_ref(image_id, "镜像标识")
         rc, out, err = _run(_find_podman() + ["rmi", "-f", image_id], timeout=120)
         if rc != 0:
             raise HTTPException(status_code=500, detail=err.strip() or "删除镜像失败")
@@ -1632,6 +1670,7 @@ def _remove_network_sync(network_name: str):
     except HTTPException:
         raise
     if kind == "cli":
+        network_name = _safe_docker_ref(network_name, "网络标识")
         rc, out, err = _run(_find_podman() + ["network", "rm", network_name], timeout=60)
         if rc != 0:
             raise HTTPException(status_code=500, detail=err.strip() or "删除网络失败")

@@ -232,13 +232,16 @@ if os.path.exists(FRONTEND_DIST):
         # API 未命中的路径直接返回 404，避免误回退到前端页面
         if full_path.startswith("api/"):
             return JSONResponse(status_code=404, content={"detail": "Not Found"})
-        # 若对应静态文件真实存在则直接返回该文件
-        candidate = os.path.normpath(os.path.join(FRONTEND_DIST, full_path))
-        if (
-            full_path
-            and os.path.isfile(candidate)
-            and os.path.commonpath([candidate, FRONTEND_DIST]) == FRONTEND_DIST
-        ):
+        # 若对应静态文件真实存在则直接返回该文件。
+        # 注意：full_path 若是其他盘符的绝对路径（Windows 如 C:/x），
+        # os.path.join 会丢弃 FRONTEND_DIST 前缀，跨盘符时 commonpath
+        # 抛 ValueError——必须捕获，否则未穿越请求也会 500。
+        try:
+            candidate = os.path.normpath(os.path.join(FRONTEND_DIST, full_path))
+            in_dist = os.path.commonpath([candidate, FRONTEND_DIST]) == FRONTEND_DIST
+        except ValueError:
+            candidate, in_dist = "", False
+        if full_path and in_dist and os.path.isfile(candidate):
             return FileResponse(candidate)
         return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
 

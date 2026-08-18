@@ -18,6 +18,26 @@ router = APIRouter()
 # MySQL/PostgreSQL 均适用（PostgreSQL 使用双引号包裹标识符，白名单同样安全）。
 _DB_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
+# Redis 控制台危险方法黑名单：run_query 通过反射调用 redis.Redis 的方法，
+# 以下方法可关停服务 / 改配置写任意文件（RCE 链）/ 执行 Lua / 外带数据，
+# 必须与 MySQL/PG 的 SQL 黑名单（drop database / shutdown / grant all）同级拦截。
+_REDIS_FORBIDDEN_METHODS = {
+    "shutdown",            # 关停远程 Redis（DoS）
+    "config_set",          # 改 dir/dbfilename + save 即任意文件写（RCE 链）
+    "config_rewrite",
+    "save", "bgsave",      # 落盘触发上述文件写
+    "bgrewriteaof",
+    "eval", "evalsha",     # Lua 脚本任意执行
+    "script_load", "script",
+    "replicaof", "slaveof",  # 主从复制外带数据
+    "migrate", "restore",  # 跨实例搬数据
+    "cluster",             # 集群拓扑破坏
+    "swapdb",
+    "execute_command",     # 原始命令入口，绕过一切上层过滤
+    "register_script",     # 加载任意 Lua
+    "pubsub",
+}
+
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 DB_FILE = os.path.join(DATA_DIR, "databases.json")
 
@@ -500,6 +520,17 @@ async def run_query(conn_id: str, req: DBQuery):
             parts = cmd.split()
             method = parts[0].lower()
             args = parts[1:]
+            # 安全防护：禁止反射调用危险方法（与 MySQL/PG 的 forbidden 黑名单对齐）。
+            # hasattr+getattr 可触达 redis.Redis 的任意方法，包括：
+            #   shutdown（关停远程 Redis）、config_set/save/bgrewriteaof
+            #   （配合 dir/dbfilename 可写任意文件形成 RCE 链）、
+            #   eval/evalsha/script_load（Lua 任意执行）、
+            #   replicaof/slaveof/migrate/restore/cluster（数据外带与拓扑破坏）、
+            #   execute_command（绕过一切上层过滤的原始命令入口）。
+            if method in _REDIS_FORBIDDEN_METHODS or method.startswith("_"):
+                raise HTTPException(
+                    status_code=403, detail=f"Forbidden redis command: {method}"
+                )
             if hasattr(r, method):
                 result = getattr(r, method)(*args)
                 if isinstance(result, bytes):
@@ -509,6 +540,9 @@ async def run_query(conn_id: str, req: DBQuery):
                 raise HTTPException(
                     status_code=400, detail=f"Unknown redis command: {method}"
                 )
+        except HTTPException:
+            # 400/403 等业务校验异常原样放行，不被下方 502 兜底改写
+            raise
         except Exception as e:
             raise HTTPException(status_code=502, detail=str(e))
     elif conn["db_type"] == "postgresql":

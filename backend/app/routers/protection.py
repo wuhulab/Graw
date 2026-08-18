@@ -395,6 +395,15 @@ def _map_docker_container_sync(name: str) -> dict:
     if cli is None:
         raise RuntimeError("容器引擎 CLI（podman/docker）不可用，无法执行一键映射")
 
+    # 容器名会拼入引擎 CLI argv 与新卷/临时容器名：拦截以 "-" 开头等
+    # 选项注入与非法字符（与 docker_api._safe_docker_ref 同一基线）
+    from app.routers.docker_api import _safe_docker_ref
+
+    try:
+        name = _safe_docker_ref(name, "容器名")
+    except HTTPException as e:
+        raise RuntimeError(str(e.detail))
+
     def cli_run(args: list, timeout: int = 60):
         rc, out, err = _run_engine(args, timeout)
         if rc != 0:

@@ -446,6 +446,171 @@ def test_main_dist_norm():
         FAIL += 1
 
 
+# ----------------------------------------------------------------------
+# 12. 第三轮审计（2026-08-18）：Redis 反射调用 / Docker CLI 选项注入 /
+#     install_dir label 穿越 / spa_fallback 跨盘符异常
+# ----------------------------------------------------------------------
+def test_round3_redis_forbidden():
+    """Redis 控制台危险方法黑名单：关停 / 配置写文件 RCE 链 / Lua 执行。"""
+    print("\n== databases.py：Redis 危险方法黑名单 ==")
+    global PASS, FAIL
+    from app.routers import databases as db_router
+
+    dangerous = [
+        "shutdown", "config_set", "save", "bgsave", "bgrewriteaof",
+        "eval", "evalsha", "script_load", "replicaof", "slaveof",
+        "migrate", "restore", "cluster", "swapdb", "execute_command",
+    ]
+    missing = [m for m in dangerous if m not in db_router._REDIS_FORBIDDEN_METHODS]
+    if missing:
+        print(f"[FAIL] 黑名单缺少危险方法: {missing}")
+        FAIL += 1
+    else:
+        print(f"[ ok ] {len(dangerous)} 个危险方法均被黑名单拦截")
+        PASS += 1
+
+    # 正常读写命令不得被误伤
+    safe = ["get", "set", "keys", "scan", "info", "ttl", "exists", "dbsize", "type"]
+    blocked_safe = [m for m in safe if m in db_router._REDIS_FORBIDDEN_METHODS]
+    if blocked_safe:
+        print(f"[FAIL] 正常命令被误拦: {blocked_safe}")
+        FAIL += 1
+    else:
+        print(f"[ ok ] 正常命令（{len(safe)} 个）不受影响")
+        PASS += 1
+
+
+def test_round3_docker_ref_guard():
+    """容器/镜像/网络标识白名单：拦截 CLI 选项注入（- 开头）与空白/特殊字符。"""
+    print("\n== docker_api.py：CLI 标识符选项注入防护 ==")
+    global PASS, FAIL
+    from app.routers import docker_api
+
+    should_reject = [
+        "-evil", "--privileged", "--log-level=debug",  # 选项注入
+        "a b", "a\tb",                                  # 空白破坏参数边界
+        "a;b", "a$b", "a`b",                            # shell 元字符
+        "../etc", "/abs/path",                          # 路径穿越 / 绝对路径
+    ]
+    for ref in should_reject:
+        try:
+            docker_api._safe_docker_ref(ref)
+            print(f"[FAIL] 未拒绝非法标识符: {ref!r}")
+            FAIL += 1
+        except HTTPException as e:
+            if e.status_code == 400:
+                print(f"[ ok ] 拒绝 {ref!r}（400）")
+                PASS += 1
+            else:
+                print(f"[FAIL] {ref!r} 异常状态码 {e.status_code}")
+                FAIL += 1
+
+    should_pass = [
+        "abc123", "deadbeef1234",                      # 容器 ID
+        "my-container_1.0",                            # 常规容器名
+        "docker.io/library/nginx:latest",              # 完整镜像引用
+        "registry.example.com:5000/app@sha256:abc",    # registry:tag/digest
+    ]
+    for ref in should_pass:
+        try:
+            out = docker_api._safe_docker_ref(ref)
+            if out == ref:
+                print(f"[ ok ] 放行 {ref!r}")
+                PASS += 1
+            else:
+                print(f"[FAIL] {ref!r} 被改写为 {out!r}")
+                FAIL += 1
+        except Exception as e:
+            print(f"[FAIL] 误拒合法标识符 {ref!r}: {e}")
+            FAIL += 1
+
+
+def test_round3_install_dir_label_traversal():
+    """恶意镜像 compose project label 的 ../ 穿越不得逃出 appstore 目录。"""
+    print("\n== docker_api.py：install_dir label 穿越约束 ==")
+    global PASS, FAIL
+    from app.routers import docker_api
+
+    traversal_labels = [
+        "../../../../..",  # 相对路径上跳穿越
+        "..",              # 上跳一级（backend/data，真实存在也必须拒绝）
+        "/etc",            # 绝对路径注入
+        "C:/Windows",      # Windows 绝对路径（跨盘符）
+    ]
+    for evil in traversal_labels:
+        inspect_data = {
+            "Config": {"Labels": {"com.docker.compose.project": evil}},
+            "Name": "/no-match",
+        }
+        try:
+            result = docker_api._find_install_dir(inspect_data)
+            if result == "":
+                print(f"[ ok ] 穿越 label {evil!r} 返回空（未逃出 appstore）")
+                PASS += 1
+            else:
+                print(f"[FAIL] 穿越 label {evil!r} 仍返回目录: {result}")
+                FAIL += 1
+        except Exception as e:
+            print(f"[FAIL] label {evil!r} 触发异常: {type(e).__name__}: {e}")
+            FAIL += 1
+
+    # 常规不存在的项目名：安静返回空
+    inspect_data2 = {"Config": {"Labels": {"com.docker.compose.project": "no-such-proj"}}, "Name": "/x"}
+    try:
+        result2 = docker_api._find_install_dir(inspect_data2)
+        if result2 == "":
+            print("[ ok ] 不存在的项目名返回空")
+            PASS += 1
+        else:
+            print(f"[FAIL] 非预期返回: {result2}")
+            FAIL += 1
+    except Exception as e:
+        print(f"[FAIL] _find_install_dir(不存在项目) 异常: {e}")
+        FAIL += 1
+
+
+def test_round3_spa_fallback_cross_drive():
+    """spa_fallback：跨盘符绝对路径不得 500（commonpath ValueError 已捕获）。"""
+    print("\n== main.py：spa_fallback 跨盘符稳健性 ==")
+    global PASS, FAIL
+    from app import main as app_main
+
+    if not os.path.isdir(app_main.FRONTEND_DIST):
+        print("[skip] frontend/dist 未构建，跳过 spa_fallback E2E")
+        return
+    try:
+        from fastapi.testclient import TestClient
+    except Exception as e:
+        print(f"[skip] TestClient 不可用: {e}")
+        return
+
+    with TestClient(app_main.app) as client:
+        # Windows 跨盘符绝对路径：不得 500（应回退 200 index.html）
+        r = client.get("/C:/Windows/win.ini")
+        if r.status_code == 200:
+            print("[ ok ] 跨盘符路径回退 200（无 500）")
+            PASS += 1
+        else:
+            print(f"[FAIL] 跨盘符路径状态码 {r.status_code}")
+            FAIL += 1
+        # 未命中 API 前缀仍 404
+        r2 = client.get("/api/no-such-endpoint")
+        if r2.status_code == 404:
+            print("[ ok ] /api 未命中返回 404")
+            PASS += 1
+        else:
+            print(f"[FAIL] /api 未命中返回 {r2.status_code}")
+            FAIL += 1
+        # 普通不存在的页面路径回退 index.html
+        r3 = client.get("/some/random/page")
+        if r3.status_code == 200:
+            print("[ ok ] 随机路径回退 index.html")
+            PASS += 1
+        else:
+            print(f"[FAIL] 随机路径状态码 {r3.status_code}")
+            FAIL += 1
+
+
 if __name__ == "__main__":
     test_sites()
     test_ssl()
@@ -458,5 +623,9 @@ if __name__ == "__main__":
     test_node_ssh_target()
     test_appstore_install_patterns()
     test_main_dist_norm()
+    test_round3_redis_forbidden()
+    test_round3_docker_ref_guard()
+    test_round3_install_dir_label_traversal()
+    test_round3_spa_fallback_cross_drive()
     print(f"\n结果：{PASS} 通过，{FAIL} 失败")
     sys.exit(1 if FAIL else 0)

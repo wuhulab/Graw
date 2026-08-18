@@ -246,8 +246,10 @@ function openWindow(key) {
     }
     def = extras[key]
     if (!def) return
-    if (def.adminOnly && !isAdmin()) return
   }
+  // 统一守卫：无论主快捷方式还是 extras，adminOnly 窗口都要求管理员
+  // （后端 API 已有鉴权，此处为前端纵深防御，避免普通用户残留窗口 UI）
+  if (def.adminOnly && !isAdmin()) return
   const id = ++windowSeq
   const w = reactive({
     id,
