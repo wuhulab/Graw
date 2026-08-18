@@ -2,6 +2,12 @@
 
 一个基于 Web 的服务器管理面板，采用类桌面操作系统的交互设计。前端使用 Vue 3 + Vite，后端使用 FastAPI，提供实时系统监控、Docker 管理、进程管理、文件管理、Web 终端和备忘录等功能。
 
+## 怎么下载？
+
+docker run -d -p 8041:8000 --name graw-panel shunx/graw:latest
+
+8041 改成你的端口，Graw在Docker使用统一封装，只要一个端口就可以使用，不需要配置多个记录
+
 ## 功能特性
 
 - **账号与权限系统** —— 基于 JWT 的用户登录、角色（管理员/普通用户）、账号管理、强制改密，登录后所有受保护接口均需 `Authorization: Bearer <token>`

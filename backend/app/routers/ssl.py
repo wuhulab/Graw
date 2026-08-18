@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import uuid
 from datetime import datetime, timedelta
@@ -8,7 +9,13 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, Field
 
-from app.hostfs import host_path, host_cmd, host_which
+from app.node_manager import host_path, host_cmd, host_which
+
+# 证书域名白名单：字母/数字/中划线/点与通配符（*.example.com）
+# 域名会以 argv 形式传给 certbot -d，也会拼入 /etc/letsencrypt/live/<domain>
+# 路径；白名单校验可同时阻断「选项注入」（--standalone 等被当作域名）与
+# 路径穿越（../ 形式的域名）。
+_DOMAIN_RE = re.compile(r"^(\*\.)?([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$")
 
 router = APIRouter()
 
@@ -85,6 +92,15 @@ async def upload_cert(
 async def letsencrypt(req: LetsEncryptRequest):
     if not _which("certbot"):
         raise HTTPException(status_code=503, detail="certbot not installed")
+    # 安全校验：域名白名单（防 certbot 选项注入 / live 目录路径穿越）；
+    # 邮箱需含 @ 且不含空白（会作为 -m 的参数值传递）
+    if not req.domains or len(req.domains) > 32:
+        raise HTTPException(status_code=400, detail="domains 必须是 1-32 个域名")
+    for d in req.domains:
+        if not isinstance(d, str) or not _DOMAIN_RE.match(d):
+            raise HTTPException(status_code=400, detail=f"域名格式非法: {d!r}")
+    if not req.email or "@" not in req.email or any(c.isspace() for c in req.email):
+        raise HTTPException(status_code=400, detail="邮箱格式非法")
     cmd = [
         "certbot",
         "certonly",

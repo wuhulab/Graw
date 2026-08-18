@@ -10,7 +10,25 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.hostfs import host_cmd, host_shell
+from app.node_manager import host_cmd, host_shell
+
+# Cron 调度表达式白名单：恰好 5 个字段（分 时 日 月 周），
+# 每个字段仅允许数字 / * / , / - / / 与字母缩写（mon、jan 等）。
+# schedule 最终会拼进 crontab 文件（f"{schedule} {command}"），
+# 若允许换行等字符可注入额外的 cron 任务行。
+_CRON_FIELD = r"[0-9A-Za-z*,-/]+"
+_CRON_SCHEDULE_RE = re.compile(
+    rf"^{_CRON_FIELD}(\s+{_CRON_FIELD}){{4}}$"
+)
+
+
+def _validate_schedule(schedule: str) -> None:
+    """校验 cron 调度表达式格式，阻止向 crontab 注入额外任务行。"""
+    if not schedule or not _CRON_SCHEDULE_RE.match(schedule.strip()):
+        raise HTTPException(
+            status_code=400,
+            detail="调度表达式非法：需为 5 字段 cron 格式（分 时 日 月 周）",
+        )
 
 router = APIRouter()
 
@@ -263,6 +281,8 @@ async def list_tasks():
 @router.post("/create")
 async def create_task(req: CreateTask):
     tasks = _load_tasks()
+    # 安全校验：调度表达式白名单（防向 crontab 注入额外任务行）
+    _validate_schedule(req.schedule)
     tid = "task_" + str(uuid.uuid4())[:8]
     # 校验任务类型合法性，避免非法枚举进入存储
     task_type = req.task_type if req.task_type in TASK_TYPES else "shell_command"
@@ -307,6 +327,8 @@ async def update_task(task_id: str, req: UpdateTask):
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     if req.schedule is not None:
+        # 安全校验：更新调度表达式同样走白名单（防 crontab 注入）
+        _validate_schedule(req.schedule)
         task["schedule"] = req.schedule
     if req.command is not None:
         task["command"] = req.command

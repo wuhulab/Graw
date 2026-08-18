@@ -288,6 +288,32 @@ button {
   line-height: 1.3;
 }
 
+/* 当前管理主机指示（多机管理） */
+.host-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: #0a7d3b;
+}
+.host-badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #0a7d3b;
+  flex-shrink: 0;
+}
+.host-badge.remote {
+  color: #006ee6;
+}
+.host-badge.remote .dot {
+  background: #0a84ff;
+}
+
 .user-chip {
   display: inline-flex;
   align-items: center;

@@ -11,13 +11,15 @@ disks.py - 磁盘管理路由
   前端据此禁用其操作（格式化/删除分区等），避免误操作系统盘。
 """
 import logging
-import os
 import platform
+from typing import Optional
 
 import psutil
 from fastapi import APIRouter
 
-from app.hostfs import HOST_ROOT, host_cmd, host_path, host_which
+from app import node_manager
+from app.node_manager import host_cmd, host_path, host_which
+from app.hostfs import HOST_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -160,38 +162,69 @@ def _load_windows_disk() -> list:
     return list(seen.values())
 
 
+def _remote_disk_usage_df(mountpoint: str) -> Optional[dict]:
+    """远程：用 `df -kP <挂载点>` 获取单个分区的用量。"""
+    if not mountpoint:
+        return None
+    r = host_cmd(
+        ["df", "-kP", "--", mountpoint],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if r.returncode != 0:
+        return None
+    lines = r.stdout.strip().splitlines()
+    if not lines:
+        return None
+    # 取最后一行（非文件系统头信息的真实数据行）
+    parts = lines[-1].split()
+    if len(parts) < 5 or not parts[1].isdigit():
+        return None
+    total_kb, used_kb, avail_kb = int(parts[1]), int(parts[2]), int(parts[3])
+    total = total_kb * 1024
+    used = used_kb * 1024
+    avail = avail_kb * 1024
+    return {
+        "total": total,
+        "used": used,
+        "available": avail,
+        "percent": round(used / total * 100, 1) if total else 0,
+    }
+
+
 def _attach_usage(disks) -> None:
     """把每个分区的已用/可用/使用率挂到 parts 上。"""
-    usage_map = {}
-    for part in psutil.disk_partitions(all=False):
-        mp = part.mountpoint
-        usage_map[mp] = {"device": part.device, "fstype": part.fstype, "mountpoint": mp}
     for disk in disks:
         for p in disk["parts"]:
             mp = p["mountpoint"]
-            # 宿主机根的挂载点在容器模式下被映射到 HOST_ROOT
-            real_mp = host_path(mp) if mp == "/" else mp
-            if real_mp in usage_map:
-                info = usage_map[real_mp]
-                p["name"] = p["name"] or os.path.basename(info["device"])
-                p["fstype"] = p["fstype"] or info["fstype"]
-                try:
-                    usage = psutil.disk_usage(real_mp)
-                    total = usage.total
-                    used = usage.used
-                    avail = usage.free
-                    p["size"] = total
-                    p["used"] = used
-                    p["available"] = avail
-                    p["percent"] = round(used / total * 100, 1) if total else 0
-                    p["size_display"] = _gb(total)
-                    p["used_display"] = _gb(used)
-                    p["avail_display"] = _gb(avail)
-                except (PermissionError, OSError):
-                    logger.warning("无法获取挂载点 %s 的使用信息", real_mp)
-                    p["used"], p["available"], p["percent"] = 0, 0, 0
+            info = None
+            if mp:
+                if node_manager.is_remote():
+                    info = _remote_disk_usage_df(mp)
+                else:
+                    # 宿主机根的挂载点在容器模式下被映射到 HOST_ROOT
+                    real_mp = host_path(mp) if mp == "/" else mp
+                    try:
+                        usage = psutil.disk_usage(real_mp)
+                        info = {
+                            "total": usage.total,
+                            "used": usage.used,
+                            "available": usage.free,
+                            "percent": round(usage.used / usage.total * 100, 1) if usage.total else 0,
+                        }
+                    except (PermissionError, OSError):
+                        info = None
+            if info:
+                p["size"] = info["total"]
+                p["used"] = info["used"]
+                p["available"] = info["available"]
+                p["percent"] = info["percent"]
+                p["size_display"] = _gb(info["total"])
+                p["used_display"] = _gb(info["used"])
+                p["avail_display"] = _gb(info["available"])
             else:
-                # 未挂载分区 / 挂载点不在 psutil 中，标记为不可用
+                # 未挂载分区 / 无法读取用量，标记为不可用
                 p["used"], p["available"], p["percent"] = 0, 0, None
 
 

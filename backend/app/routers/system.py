@@ -8,6 +8,7 @@ import asyncio
 from datetime import datetime
 
 from app.hostfs import host_path
+from app import node_manager
 from app.auth import get_current_user, require_non_default_password, get_current_user_ws
 
 router = APIRouter()
@@ -15,6 +16,164 @@ router = APIRouter()
 # 鉴权：HTTP 只读接口沿用「登录 + 非默认密码」；
 # WebSocket 无法携带 Bearer 头，改用 ?token= 查询参数鉴权（get_current_user_ws）。
 _PROTECTED = [Depends(get_current_user), Depends(require_non_default_password)]
+
+
+# ----------------------------------------------------------------------
+# 远程节点采样辅助：当当前管理主机为 SSH 节点时，改用系统命令读取指标，
+# 这样「设置」切换主机后监控数据也随之切换。本地仍走 psutil。
+# ----------------------------------------------------------------------
+def _rrun(cmd: str) -> str:
+    """远程执行命令并返回 stdout（失败返回空串）。"""
+    r = node_manager.host_shell(cmd, capture_output=True, text=True, timeout=15)
+    return r.stdout or ""
+
+
+def _remote_overview() -> dict:
+    """远程：CPU/内存/磁盘/负载。"""
+    # CPU 利用率：两次采样 /proc/stat 计算非空闲占比
+    def _stat_total_idle(text: str):
+        parts = text.split("\n")[0].split()
+        if len(parts) < 5:
+            return 0, 0
+        idle = int(parts[4])
+        total = sum(int(x) for x in parts[1:] if x.isdigit())
+        return total, idle
+
+    t_pre, i_pre = _stat_total_idle(_rrun("cat /proc/stat 2>/dev/null | head -1"))
+    import time as _t
+    _t.sleep(0.12)
+    t_post, i_post = _stat_total_idle(_rrun("cat /proc/stat 2>/dev/null | head -1"))
+    cpu_pct = 0.0
+    if t_post > t_pre:
+        cpu_pct = 100.0 * (1 - (i_post - i_pre) / max(1, (t_post - t_pre)))
+
+    # 内存
+    meminfo = {}
+    for line in _rrun("cat /proc/meminfo 2>/dev/null").splitlines():
+        if ":" in line:
+            k, v = line.split(":", 1)
+            meminfo[k.strip()] = int("".join(c for c in v if c.isdigit()) or 0)
+    mem_total = meminfo.get("MemTotal", 0) * 1024
+    mem_avail = meminfo.get("MemAvailable", mem_total) * 1024
+    mem_used = max(0, mem_total - mem_avail)
+    mem_percent = round(mem_used / mem_total * 100, 1) if mem_total else 0.0
+
+    # 磁盘：/（远程即根）
+    disk_res = {"percent": 0.0, "total": 0, "used": 0, "free": 0}
+    for line in _rrun("df -kP / 2>/dev/null | tail -1").splitlines():
+        parts = line.split()
+        if len(parts) >= 5 and parts[1].isdigit():
+            total_kb, used_kb, avail_kb = int(parts[1]), int(parts[2]), int(parts[3])
+            disk_res = {
+                "percent": round(used_kb / total_kb * 100, 1) if total_kb else 0.0,
+                "total": total_kb * 1024,
+                "used": used_kb * 1024,
+                "free": avail_kb * 1024,
+            }
+        break
+
+    # 负载
+    load1 = load5 = load15 = 0.0
+    lparts = _rrun("cat /proc/loadavg 2>/dev/null").split()
+    if len(lparts) >= 3:
+        try:
+            load1, load5, load15 = map(float, lparts[:3])
+        except ValueError:
+            pass
+    ncores = int(node_manager.host_shell("nproc 2>/dev/null", capture_output=True, text=True, timeout=10).stdout.strip() or "1")
+    return {
+        "cpu": round(cpu_pct, 1),
+        "memory": {"percent": mem_percent, "total": mem_total, "used": mem_used, "available": mem_avail},
+        "storage": disk_res,
+        "load": {"percent": round(min(100, load1 / max(1, ncores) * 100), 1), "load1": round(load1, 2), "load5": round(load5, 2), "load15": round(load15, 2)},
+    }
+
+
+_rlast_net = {"time": 0.0, "sent": 0, "recv": 0}
+_rlast_disk = {"time": 0.0, "read": 0, "write": 0}
+
+
+def _remote_net_bytes() -> dict:
+    """远程：累加 /proc/net/dev 的字节计数。"""
+    sent = recv = 0
+    for line in _rrun("cat /proc/net/dev 2>/dev/null").splitlines():
+        if ":" not in line:
+            continue
+        _, rest = line.split(":", 1)
+        p = rest.split()
+        if len(p) >= 9:
+            recv += int(p[0] or 0)
+            sent += int(p[8] or 0)
+    return {"sent": sent, "recv": recv}
+
+
+def _remote_network() -> dict:
+    global _rlast_net
+    now = time.time()
+    counters = _remote_net_bytes()
+    elapsed = max(0.001, now - _rlast_net["time"])
+    up = (counters["sent"] - _rlast_net["sent"]) / elapsed
+    down = (counters["recv"] - _rlast_net["recv"]) / elapsed
+    _rlast_net = {"time": now, "sent": counters["sent"], "recv": counters["recv"]}
+    return {"timestamp": int(now * 1000), "upload": max(0, up), "download": max(0, down), "total_sent": counters["sent"], "total_recv": counters["recv"]}
+
+
+def _remote_diskio() -> dict:
+    global _rlast_disk
+    read = write = 0
+    for line in _rrun("cat /proc/diskstats 2>/dev/null | awk '{print $6, $10}'").splitlines():
+        p = line.split()
+        if len(p) >= 2 and p[0].isdigit() and p[1].isdigit():
+            read += int(p[0]) * 512
+            write += int(p[1]) * 512
+    now = time.time()
+    elapsed = max(0.001, now - _rlast_disk["time"])
+    rs = (read - _rlast_disk["read"]) / elapsed
+    ws = (write - _rlast_disk["write"]) / elapsed
+    _rlast_disk = {"time": now, "read": read, "write": write}
+    return {"timestamp": int(now * 1000), "read": max(0, rs), "write": max(0, ws)}
+
+
+def _remote_info() -> dict:
+    """远程：系统信息。"""
+    def _get(key):
+        return _rrun(f"cat /proc/uptime 2>/dev/null >/dev/null; uname {key} 2>/dev/null | head -1").strip()
+
+    hostname = _rrun("hostname 2>/dev/null | head -1").strip()
+    system = _get("-s") or "Linux"
+    release = _get("-r")
+    version = _get("-v")
+    machine = _get("-m")
+    # processor 从 /proc/cpuinfo 取 model name
+    processor = ""
+    for line in _rrun("grep 'model name' /proc/cpuinfo 2>/dev/null | head -1").splitlines():
+        if ":" in line:
+            processor = line.split(":", 1)[1].strip()
+            break
+    ncores = int(node_manager.host_shell("nproc 2>/dev/null", capture_output=True, text=True, timeout=10).stdout.strip() or "1")
+    btime = 0
+    for line in _rrun("cat /proc/stat 2>/dev/null").splitlines():
+        if line.startswith("btime"):
+            try:
+                btime = int(line.split()[1])
+            except (IndexError, ValueError):
+                btime = 0
+            break
+    now = time.time()
+    uptime = int(now - btime) if btime else 0
+    return {
+        "hostname": hostname,
+        "system": system,
+        "release": release,
+        "version": version,
+        "machine": machine,
+        "processor": processor,
+        "python_version": "",
+        "cpu_count": ncores,
+        "cpu_count_physical": ncores,
+        "boot_time": datetime.fromtimestamp(btime).isoformat() if btime else datetime.now().isoformat(),
+        "uptime_seconds": uptime,
+    }
 
 # Prime psutil.cpu_percent so subsequent calls with interval=None return meaningful
 # values instead of 0.0 on the very first invocation.
@@ -121,6 +280,8 @@ async def info():
 
 
 def _info_sync():
+    if node_manager.is_remote():
+        return _remote_info()
     boot_time = psutil.boot_time()
     uptime_seconds = int(time.time() - boot_time)
     return {

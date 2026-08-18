@@ -217,6 +217,23 @@ export const shunxApi = {
   update: (entry_path, enabled = true) => api.put('/shunx/config', { entry_path, enabled }).then(r => r.data)
 }
 
+export const tamperApi = {
+  // ShunX 网页防篡改：全局状态 + 站点防护 + 篡改历史
+  status: () => api.get('/tamper/status').then(r => r.data),
+  sites: () => api.get('/tamper/sites').then(r => r.data),
+  get: (siteId) => api.get(`/tamper/sites/${encodeURIComponent(siteId)}`).then(r => r.data),
+  create: (body) => api.post('/tamper/sites', body).then(r => r.data),
+  update: (siteId, body) => api.put(`/tamper/sites/${encodeURIComponent(siteId)}`, body).then(r => r.data),
+  remove: (siteId) => api.delete(`/tamper/sites/${encodeURIComponent(siteId)}`).then(r => r.data),
+  backupNow: (siteId) => api.post(`/tamper/sites/${encodeURIComponent(siteId)}/backup-now`).then(r => r.data),
+  scanNow: (siteId) => api.post(`/tamper/sites/${encodeURIComponent(siteId)}/scan-now`).then(r => r.data),
+  restore: (siteId, file) => api.post(`/tamper/sites/${encodeURIComponent(siteId)}/restore`, { file }).then(r => r.data),
+  // 关闭 / 启用（关闭模式：temporary 临时分钟数 / manual 完全关闭需手动开启）
+  disable: (minutes, mode = 'temporary') => api.post('/tamper/disable', { minutes, mode }).then(r => r.data),
+  enable: () => api.post('/tamper/enable').then(r => r.data),
+  history: () => api.get('/tamper/history').then(r => r.data)
+}
+
 export const tasksApi = {
   // 任务中心：长线任务（应用商店安装等）
   list: () => api.get('/tasks').then(r => r.data),
@@ -239,6 +256,17 @@ export const disksApi = {
   list: () => api.get('/disks/list').then(r => r.data),
   // 挂载非系统盘分区
   mount: (device, mountpoint) => api.post('/disks/mount', null, { params: { device: device.replace('/dev/', ''), mountpoint } }).then(r => r.data)
+}
+
+export const nodesApi = {
+  // 多节点（多机）管理：列表、当前主机、增删改、测试连接、切换
+  list: () => api.get('/nodes').then(r => r.data),
+  current: () => api.get('/nodes/current').then(r => r.data),
+  setCurrent: (node_id) => api.post('/nodes/current', { node_id }).then(r => r.data),
+  create: (body) => api.post('/nodes', body).then(r => r.data),
+  update: (node_id, body) => api.put(`/nodes/${encodeURIComponent(node_id)}`, body).then(r => r.data),
+  delete: (node_id) => api.delete(`/nodes/${encodeURIComponent(node_id)}`).then(r => r.data),
+  test: (node_id) => api.post(`/nodes/${encodeURIComponent(node_id)}/test`).then(r => r.data)
 }
 
 export const appStoreApi = {

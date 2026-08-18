@@ -134,17 +134,56 @@ async def update_config(req: ConfigRequest):
 # ------------------------------------------------------------
 # 索引获取（远程 URL 优先，本地 app-store/index.json 兜底）
 # ------------------------------------------------------------
-def _fetch_url(url: str, timeout: int = 30) -> str:
-    # SSRF 缓解：仅允许 http/https，拒绝 file:// / ftp:// 及本地回环等异常 scheme
+def _assert_public_http_url(url: str) -> None:
+    """SSRF 防护：仅允许 http/https 且目标主机必须是公网地址。
+
+    - 拒绝 file:// / ftp:// 等异常 scheme；
+    - 解析主机名的全部 IP，拒绝回环 / 私网 / 链路本地 / 保留地址，
+      防止经远程索引（index_url 可被投毒）探测内网服务与云 metadata。
+    - 需要访问内网私有商店时，可设置环境变量
+      GRAW_APPSTORE_ALLOW_PRIVATE_NET=1 显式关闭该限制。
+    """
     from urllib.parse import urlparse
+    import socket
+    import ipaddress
 
     scheme = (urlparse(url).scheme or "").lower()
     if scheme not in ("http", "https"):
         raise HTTPException(status_code=400, detail="仅支持 http/https 地址")
+    if os.environ.get("GRAW_APPSTORE_ALLOW_PRIVATE_NET") == "1":
+        return
+    hostname = urlparse(url).hostname or ""
+    if not hostname:
+        raise HTTPException(status_code=400, detail="URL 缺少主机名")
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except OSError:
+        raise HTTPException(status_code=400, detail=f"无法解析主机名: {hostname}")
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if not ip.is_global:
+            raise HTTPException(
+                status_code=400,
+                detail=f"目标主机 {hostname} 不是公网地址，已拒绝（SSRF 防护）",
+            )
+
+
+class _SSRFRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """重定向安全校验：每一跳的目标地址同样必须是公网 http(s)。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102
+        _assert_public_http_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _fetch_url(url: str, timeout: int = 30) -> str:
+    # SSRF 缓解：入口与每一跳重定向均校验 scheme 与公网地址
+    _assert_public_http_url(url)
+    opener = urllib.request.build_opener(_SSRFRedirectHandler)
     req = urllib.request.Request(
         url, headers={"User-Agent": "Graw-Panel/1.0", "Accept": "application/json"}
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with opener.open(req, timeout=timeout) as resp:
         return resp.read().decode("utf-8", "replace")
 
 

@@ -8,7 +8,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from app.hostfs import host_path
+from app import node_manager
+from app.node_manager import host_path
 
 router = APIRouter()
 
@@ -98,7 +99,7 @@ async def list_logs():
     custom = _load_custom()
     items = []
     for key, meta in PREDEFINED.items():
-        exists = os.path.isfile(host_path(meta["path"]))
+        exists = node_manager.isfile(meta["path"])
         items.append(
             {
                 "id": key,
@@ -109,7 +110,7 @@ async def list_logs():
             }
         )
     for c in custom:
-        exists = os.path.isfile(host_path(c["path"]))
+        exists = node_manager.isfile(c["path"])
         items.append(
             {
                 "id": c["id"],
@@ -124,13 +125,20 @@ async def list_logs():
 
 @router.get("/read")
 async def read_log(path: str = Query(...), tail: int = Query(200, ge=1, le=5000)):
-    # 容器模式下映射到 /host 前缀，读取宿主机日志；
     # 先经 _safe_log_path 拦截面板数据目录（防 secret.key/users.json 泄露）
-    real = host_path(_safe_log_path(path))
-    if not os.path.isfile(real):
+    safe = _safe_log_path(path)
+    if not node_manager.isfile(safe):
         raise HTTPException(status_code=404, detail="Log file not found")
+    # 远程节点：直接用 tail 读取最后 N 行
+    if node_manager.is_remote():
+        import shlex
+        cmd = f"tail -n {int(tail)} {shlex.quote(safe)} 2>/dev/null || true"
+        r = node_manager.host_shell(cmd, capture_output=True, text=True, timeout=20)
+        lines = r.stdout.splitlines()
+        return {"path": path, "lines": lines, "count": len(lines)}
+    # 本地：先映射容器挂载前缀再读取
+    real = host_path(safe)
     try:
-        # Limit file size first
         size = os.path.getsize(real)
         if size > 50 * 1024 * 1024:
             raise HTTPException(status_code=413, detail="Log file too large (>50MB)")
@@ -138,7 +146,6 @@ async def read_log(path: str = Query(...), tail: int = Query(200, ge=1, le=5000)
             return {
                 "content": "Windows .evtx files are binary; use Event Viewer directly."
             }
-        # Read last N lines using a ring buffer approach for large files
         lines = []
         with open(real, "r", encoding="utf-8", errors="replace") as f:
             if size < 2 * 1024 * 1024:
@@ -182,12 +189,9 @@ async def clear_log(req: ClearLogRequest):
     allowed.update(c.get("path", "") for c in _load_custom())
     if path not in allowed:
         raise HTTPException(status_code=400, detail="仅允许清空日志列表中登记的日志文件")
-    real = host_path(_safe_log_path(path))
-    if not os.path.isfile(real):
+    safe = _safe_log_path(path)
+    if not node_manager.isfile(safe):
         raise HTTPException(status_code=404, detail="Log file not found")
-    try:
-        with open(real, "w", encoding="utf-8") as f:
-            f.write("")
-        return {"ok": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # 清空 = 覆盖为空串；远程 / 本地统一走节点文件抽象
+    node_manager.write_text(safe, "")
+    return {"ok": True}

@@ -72,11 +72,17 @@
         </div>
       </div>
       <div class="clock">
+        <div v-if="hostBadgeText && isAdmin()" class="host-badge" :class="{ remote: hostBadgeRemote }" :title="hostBadgeRemote ? hostBadgeText : ''">
+          <span class="dot"></span>{{ hostBadgeText }}
+        </div>
         <div>{{ clockTime }}</div>
         <div>{{ clockDate }}</div>
       </div>
     </div>
   </div>
+
+  <!-- ShunX 网页防篡改告警弹窗：篡改发生时对在线面板用户弹窗 -->
+  <TamperAlert v-if="loggedIn && tamperState.alerts.length > 0" />
 
   <!-- ShunX 安全入口：登录后未配置入口时强制设置，阻止使用面板其他功能 -->
   <ShunXSetup v-if="loggedIn && shunxRequired" @saved="onShunxSaved" />
@@ -104,6 +110,7 @@ import SSLWindow from './components/windows/SSLWindow.vue'
 import LogsWindow from './components/windows/LogsWindow.vue'
 import SettingsWindow from './components/windows/SettingsWindow.vue'
 import ProtectionWindow from './components/windows/ProtectionWindow.vue'
+import TamperWindow from './components/windows/TamperWindow.vue'
 import ContainerLogsWindow from './components/windows/ContainerLogsWindow.vue'
 import ContainerDetailWindow from './components/windows/ContainerDetailWindow.vue'
 import DockerConfigEditorWindow from './components/windows/DockerConfigEditorWindow.vue'
@@ -118,15 +125,29 @@ import RuntimeWindow from './components/windows/RuntimeWindow.vue'
 import RuntimeCreateWindow from './components/windows/RuntimeCreateWindow.vue'
 import DisksWindow from './components/windows/DisksWindow.vue'
 import ShunXSetup from './components/ShunXSetup.vue'
+import TamperAlert from './components/TamperAlert.vue'
 import Login from './views/Login.vue'
 import { shunxApi } from './api'
 import { auth, clearAuth, isAdmin } from './store/auth'
 import { settings } from './store/settings'
 import { systemState, startMetrics, stopMetrics } from './store/systemMetrics'
 import { startDocker, stopDocker, refresh as refreshDocker } from './store/docker'
-import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive } from 'lucide-vue-next'
+import { nodes as nodesStore, refreshNodes } from './store/nodes'
+import { tamperState, startTamper, stopTamper } from './store/tamper'
+import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck, ShieldAlert, Store, BookOpen, ListChecks, Cpu, HardDrive } from 'lucide-vue-next'
 
 const loggedIn = computed(() => !!auth.token)
+
+// 当前管理主机：用于底栏指示（多机管理），切换后自动响应式更新
+const currentHost = computed(() => {
+  const cur = nodesStore.list.find((n) => n.id === nodesStore.currentId)
+  return cur || null
+})
+const hostBadgeText = computed(() => {
+  if (!currentHost.value) return ''
+  return currentHost.value.type === 'ssh' ? `${currentHost.value.name} · ${currentHost.value.user}@${currentHost.value.host}` : currentHost.value.name
+})
+const hostBadgeRemote = computed(() => !!(currentHost.value && currentHost.value.type === 'ssh'))
 function onLoggedIn() {
   // 触发响应式重渲染，并检查是否需要强制设置安全入口
   checkShunxRequired()
@@ -143,6 +164,7 @@ const shortcuts = ref([
   { key: 'appstore', label: '应用商店', titleKey: 'app.shortcut.appstore', icon: markRaw(Store), component: markRaw(AppStoreWindow), w: 920, h: 580, adminOnly: true },
   { key: 'tasks', label: '任务中心', titleKey: 'app.shortcut.tasks', icon: markRaw(ListChecks), component: markRaw(TaskCenterWindow), w: 900, h: 560, adminOnly: true },
   { key: 'protection', label: 'Graw数据库保护机制', titleKey: 'app.shortcut.protection', icon: markRaw(ShieldCheck), component: markRaw(ProtectionWindow), w: 860, h: 560, adminOnly: true },
+  { key: 'tamper', label: 'ShunX网页防篡改', titleKey: 'app.shortcut.tamper', icon: markRaw(ShieldAlert), component: markRaw(TamperWindow), w: 920, h: 580, adminOnly: true },
   { key: 'runtime', label: '运行环境', titleKey: 'app.shortcut.runtime', icon: markRaw(Cpu), component: markRaw(RuntimeWindow), w: 900, h: 560, adminOnly: true },
   { key: 'process', label: '进程管理', titleKey: 'app.shortcut.process', icon: markRaw(Settings), component: markRaw(ProcessWindow), w: 780, h: 520, adminOnly: true },
   { key: 'files', label: '文件管理', titleKey: 'app.shortcut.files', icon: markRaw(Folder), component: markRaw(FilesWindow), w: 820, h: 540, adminOnly: true },
@@ -652,14 +674,18 @@ const overview = computed(() => systemState.overview)
 // 退出登录时全部停止，避免未登录时持续请求。
 function startRealtime() {
   startMetrics()
+  // 网页防篡改告警订阅：登录即建立（篡改发生时对在线用户弹窗）
+  startTamper()
   // Docker 为管理员功能：登录即后台预热并缓存，打开窗口可直接渲染上次数据
   if (isAdmin()) {
     startDocker()
     refreshDocker()
+    refreshNodes()
   }
 }
 function stopRealtime() {
   stopMetrics()
+  stopTamper()
   stopDocker()
 }
 

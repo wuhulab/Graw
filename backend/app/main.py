@@ -21,10 +21,12 @@ from app.routers import (
     logs,
     protection,
     shunx,
+    tamper,
     appstore,
     tasks,
     runtime,
     disks,
+    nodes,
 )
 from app.auth import (
     seed_default_users,
@@ -42,14 +44,40 @@ PROTECTED = [Depends(get_current_user), Depends(require_non_default_password)]
 ADMIN = [Depends(require_admin)]
 
 
+def _secure_data_dir() -> None:
+    """收紧面板数据目录权限（Linux 生效）：目录 0700、文件 0600。
+
+    data/ 内含 users.json / secret.key / nodes.json（SSH 凭据）、
+    databases.json（数据库凭据）等敏感信息；默认 umask 下其他用户
+    可读。此处启动时统一收紧，避免同机低权用户窃取凭据或伪造 JWT。
+    Windows 上 chmod 无实际意义，静默忽略。
+    """
+    data_dir = os.path.join(os.path.dirname(__file__), "..", "data")
+    try:
+        os.chmod(data_dir, 0o700)
+        for root, dirs, files in os.walk(data_dir):
+            for d in dirs:
+                os.chmod(os.path.join(root, d), 0o700)
+            for f in files:
+                os.chmod(os.path.join(root, f), 0o600)
+    except OSError:
+        # Windows / 特殊文件系统（如 FAT）不支持时忽略，不影响功能
+        pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     seed_default_users()
+    # 安全加固：收紧 data 目录及敏感文件权限（Linux）
+    _secure_data_dir()
     # 启动统一系统指标采集（供首页三卡片共享单条 WS），预热缓存并后台广播
     await system.start_metrics_producer()
+    # 启动 ShunX 网页防篡改后台监控（定时备份 + 篡改检测回滚 + 在线告警推送）
+    await tamper.start_tamper_monitor()
     yield
     # 关闭后台采集协程
     await system.stop_metrics_producer()
+    await tamper.stop_tamper_monitor()
 
 
 app = FastAPI(title="Graw Server Panel", version="1.0.0", lifespan=lifespan)
@@ -135,6 +163,10 @@ app.include_router(
 # 因此不在此处挂全局 PROTECTED 依赖。
 app.include_router(shunx.router, prefix="/api/shunx", tags=["shunx"])
 
+# ShunX 网页防篡改：REST 端点内部自行鉴权（只读需登录、写需管理员），
+# 另有 /ws 告警推送 WebSocket（?token= 鉴权），故不挂全局依赖。
+app.include_router(tamper.router, prefix="/api/tamper", tags=["tamper"])
+
 # Graw 社区应用商店（安装会执行 docker compose，需管理员）
 app.include_router(
     appstore.router, prefix="/api/appstore", tags=["appstore"], dependencies=ADMIN
@@ -157,6 +189,11 @@ app.include_router(
 # 磁盘管理（查看块设备与分区，管理员）
 app.include_router(
     disks.router, prefix="/api/disks", tags=["disks"], dependencies=ADMIN
+)
+
+# 多节点（多机）管理：节点增删改查 / 连接测试 / 切换当前管理主机（管理员）
+app.include_router(
+    nodes.router, prefix="/api/nodes", tags=["nodes"], dependencies=ADMIN
 )
 
 

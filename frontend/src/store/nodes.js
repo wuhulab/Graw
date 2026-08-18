@@ -1,0 +1,41 @@
+import { reactive, readonly } from 'vue'
+import { nodesApi } from '../api'
+
+// 多节点（多机）全局状态：节点列表 + 当前管理的主机。
+// 「当前主机」由后端持久化；前端切换后同步刷新本地缓存，供各处展示。
+export const nodes = reactive({
+  list: [],
+  currentId: 'local',
+  loaded: false,
+})
+
+// 当前管理主机是否远程节点（供 UI 标记"远程/本机"）
+export const isRemote = () => {
+  const cur = nodes.list.find((n) => n.id === nodes.currentId)
+  return cur ? cur.type === 'ssh' : false
+}
+
+// 当前管理主机的显示名
+export const currentNodeName = () => {
+  const cur = nodes.list.find((n) => n.id === nodes.currentId)
+  return cur ? cur.name : 'local'
+}
+
+export async function refreshNodes() {
+  const data = await nodesApi.list()
+  nodes.list = data.nodes || []
+  nodes.currentId = data.current || 'local'
+  nodes.loaded = true
+  return data
+}
+
+export async function setCurrentNode(nodeId) {
+  const data = await nodesApi.setCurrent(nodeId)
+  nodes.currentId = data.current || nodeId
+  return data
+}
+
+// 供只读消费（如需要 reactive 的衍生）
+export function useNodes() {
+  return readonly(nodes)
+}

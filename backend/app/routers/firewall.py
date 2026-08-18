@@ -1,3 +1,4 @@
+import ipaddress
 import json
 import os
 import platform
@@ -9,7 +10,23 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.hostfs import host_cmd
+from app.node_manager import host_cmd
+
+
+def _validate_ip(value: str) -> str:
+    """校验 IP / CIDR 格式（支持 IPv4 与 IPv6）。
+
+    ip 值最终会传给 iptables -s / netsh remoteip=，白名单校验
+    可阻止畸形值破坏防火墙命令语义（如携带额外参数片段）。
+    """
+    try:
+        # ipaddress 同时接受单 IP（1.2.3.4）与 CIDR（10.0.0.0/8）
+        ipaddress.ip_network(value, strict=False)
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail=f"IP 或 CIDR 格式非法: {value!r}"
+        )
+    return value
 
 router = APIRouter()
 
@@ -191,6 +208,8 @@ async def delete_port_rule(rule_id: str):
 
 @router.post("/ip")
 async def add_ip_rule(req: IpRule):
+    # 安全校验：IP / CIDR 白名单，拒绝畸形值进入 iptables/netsh 参数
+    _validate_ip(req.ip)
     data = _load_fw()
     rule = {
         "id": str(uuid.uuid4())[:8],

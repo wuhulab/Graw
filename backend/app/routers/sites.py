@@ -1,6 +1,7 @@
 import json
 import os
 import platform
+import re
 import subprocess
 from datetime import datetime
 from typing import List, Optional
@@ -9,6 +10,35 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.hostfs import host_path, host_cmd, host_which
+
+# ---------------------------------------------------------------------------
+# 安全校验：防止 web 服务器配置注入与配置文件路径穿越
+#
+# 站点的 domains / root / reverse_proxy / upstream / ssl 路径等字段最终会被
+# 拼进 nginx/apache 配置文件（<id>.conf）。若允许换行、分号、花括号等字符，
+# 攻击者可注入任意 nginx 指令（如 alias / root 指向系统目录读取任意文件）。
+# 站点 id 直接用作配置文件名，也必须做白名单校验，防止 ../ 或 Windows 盘符
+# （c:）形式穿越写入任意路径。
+# ---------------------------------------------------------------------------
+# 嵌入配置文件的值绝不允许换行/分号/花括号（可截断当前指令注入新指令）
+_CONF_VALUE_FORBIDDEN = re.compile(r"[\r\n;{}]")
+
+# 站点 ID（同时是配置文件名）：仅小写字母/数字/中划线/下划线，防路径穿越
+_SITE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+# 域名：支持通配符子域（*.example.com）
+_DOMAIN_RE = re.compile(
+    r"^(\*\.)?([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$"
+)
+
+# 子域名前缀（拼入 server_name）：字母/数字/中划线，允许 * 通配
+_SUBDOMAIN_RE = re.compile(r"^[A-Za-z0-9*][A-Za-z0-9*-]*$")
+
+# 反向代理目标：http(s)://host[:port][/path]
+_PROXY_RE = re.compile(r"^https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+$")
+
+# TCP/UDP 上游地址：host:port（域名或 IP + 端口）
+_UPSTREAM_RE = re.compile(r"^[A-Za-z0-9._-]+:[0-9]{1,5}$")
 
 router = APIRouter()
 
@@ -30,6 +60,103 @@ SITE_TYPE_STATIC = "static"      # 静态网址：根目录 + 域名
 SITE_TYPE_PROXY = "proxy"        # 反向代理：监听端口 → 后端地址
 SITE_TYPE_TCPUDP = "tcpudp"      # TCP/UDP 代理：协议 + 监听端口 → 上游地址
 SITE_TYPE_SUBSITE = "subsite"    # 子网站：子域名绑定到根域名，指向根目录
+
+# 合法站点类型集合（create/update 共用校验）
+_SITE_TYPES = {
+    SITE_TYPE_STATIC,
+    SITE_TYPE_PROXY,
+    SITE_TYPE_TCPUDP,
+    SITE_TYPE_SUBSITE,
+}
+
+
+def _reject_conf_injection(value, field: str) -> None:
+    """拒绝会破坏 web 服务器配置结构的字符（换行/分号/花括号）。"""
+    if value and _CONF_VALUE_FORBIDDEN.search(str(value)):
+        raise HTTPException(
+            status_code=400, detail=f"字段 {field} 包含非法字符（换行/分号/花括号）"
+        )
+
+
+def _validate_conf_path(value, field: str) -> None:
+    """校验将写入配置文件的路径：Linux 绝对路径、无注入字符、无 .. 穿越。"""
+    if not value:
+        return
+    _reject_conf_injection(value, field)
+    v = str(value)
+    if not v.startswith("/") or ".." in v:
+        raise HTTPException(
+            status_code=400, detail=f"字段 {field} 必须是以 / 开头且不含 .. 的绝对路径"
+        )
+
+
+def _validate_site_payload(
+    *,
+    site_type=None,
+    domains=None,
+    root=None,
+    reverse_proxy=None,
+    locations=None,
+    protocol=None,
+    upstream=None,
+    subdomain=None,
+    domain=None,
+    ssl=None,
+) -> None:
+    """统一校验将写入 web 服务器配置的站点字段（create / update 共用）。
+
+    任何会拼进 nginx/apache 配置文件的值都在入口处校验，
+    从源头阻断「配置注入 → 任意指令/任意文件读取」的攻击链。
+    """
+    if site_type is not None and site_type not in _SITE_TYPES:
+        raise HTTPException(status_code=400, detail="站点类型非法")
+    if domains is not None:
+        if not isinstance(domains, list) or len(domains) > 32:
+            raise HTTPException(status_code=400, detail="domains 必须是最多 32 项的列表")
+        for d in domains:
+            if not isinstance(d, str) or not _DOMAIN_RE.match(d):
+                raise HTTPException(status_code=400, detail=f"域名格式非法: {d!r}")
+    if root is not None:
+        _validate_conf_path(root, "root")
+    if reverse_proxy is not None and reverse_proxy:
+        if not _PROXY_RE.match(reverse_proxy):
+            raise HTTPException(
+                status_code=400, detail="反向代理地址必须形如 http(s)://host[:port][/path]"
+            )
+        _reject_conf_injection(reverse_proxy, "reverse_proxy")
+    if locations is not None:
+        if not isinstance(locations, list) or len(locations) > 64:
+            raise HTTPException(status_code=400, detail="locations 必须是最多 64 项的列表")
+        for loc in locations:
+            if not isinstance(loc, dict):
+                raise HTTPException(status_code=400, detail="location 项必须是对象")
+            path = loc.get("path", "/")
+            if (
+                not isinstance(path, str)
+                or not path.startswith("/")
+                or _CONF_VALUE_FORBIDDEN.search(path)
+            ):
+                raise HTTPException(status_code=400, detail=f"location 路径非法: {path!r}")
+            _validate_conf_path(loc.get("root") or "", "location.root")
+    if protocol is not None and protocol not in ("tcp", "udp"):
+        raise HTTPException(status_code=400, detail="protocol 仅支持 tcp/udp")
+    if upstream is not None and upstream:
+        if not _UPSTREAM_RE.match(upstream):
+            raise HTTPException(status_code=400, detail="上游地址必须形如 host:port")
+        _reject_conf_injection(upstream, "upstream")
+    if subdomain is not None and subdomain:
+        if not _SUBDOMAIN_RE.match(subdomain):
+            raise HTTPException(
+                status_code=400, detail="子域名前缀仅允许字母、数字、中划线（可含 *）"
+            )
+    if domain is not None and domain:
+        if not _DOMAIN_RE.match(domain):
+            raise HTTPException(status_code=400, detail=f"根域名格式非法: {domain!r}")
+    if ssl:
+        if not isinstance(ssl, dict):
+            raise HTTPException(status_code=400, detail="ssl 配置必须是对象")
+        for key in ("cert", "key"):
+            _validate_conf_path(ssl.get(key) or "", f"ssl.{key}")
 
 
 def _load_sites() -> list:
@@ -94,40 +221,64 @@ def _site_status_by_port(port: int) -> bool:
     return False
 
 
+def _conf_token(value, default: str = "") -> str:
+    """纵深防御：清洗将嵌入 web 服务器配置的值（历史存量数据兜底）。
+
+    入口校验（_validate_site_payload）已阻断非法字符；此处对已存储
+    的历史数据再做一次清洗，确保配置生成/预览绝无注入可能。
+    """
+    if value is None:
+        return default
+    return _CONF_VALUE_FORBIDDEN.sub("", str(value))
+
+
 def _site_server_name(site: dict) -> str:
-    """根据站点类型计算 server_name。"""
+    """生成 server_name；非法/缺省时回退通配符 _。
+
+    纵深防御：入口校验（_validate_site_payload）已拒绝注入字符，
+    此处对历史存量脏数据再做白名单过滤——仅放行符合域名格式的
+    token，任何不符合的值整体丢弃（而非清洗后保留，避免残留
+    片段被写入配置）。
+    """
     site_type = site.get("type", SITE_TYPE_STATIC)
     if site_type == SITE_TYPE_SUBSITE:
         # 子网站：子域名.根域名，兼容通配子域名
-        sub = (site.get("subdomain") or "").strip()
-        domain = (site.get("domain") or "").strip()
-        if sub and domain:
+        sub = str(site.get("subdomain") or "").strip()
+        domain = str(site.get("domain") or "").strip()
+        if sub and domain and _SUBDOMAIN_RE.match(sub) and _DOMAIN_RE.match(domain):
             return f"{sub}.{domain}"
-        if domain:
+        if domain and _DOMAIN_RE.match(domain):
             return f"*.{domain}"
-    return " ".join(site.get("domains", [])) or "_"
+        return "_"
+    # 仅保留符合域名白名单的条目（脏数据整体丢弃）
+    names = " ".join(
+        d for d in site.get("domains", [])
+        if isinstance(d, str) and _DOMAIN_RE.match(d)
+    )
+    return names or "_"
 
 
 def _nginx_site_config(site: dict) -> str:
     """根据站点类型生成 nginx http server 配置。"""
     site_type = site.get("type", SITE_TYPE_STATIC)
     server_name = _site_server_name(site)
-    root_dir = site.get("root", "/var/www/html")
+    # 所有插值经 _conf_token 清洗（纵深防御，见函数注释）
+    root_dir = _conf_token(site.get("root") or "/var/www/html")
     port = site.get("port", 80)
-    ssl = site.get("ssl", {})
+    ssl = site.get("ssl", {}) or {}
     enable_ssl = ssl.get("enabled", False)
-    proxy = site.get("reverse_proxy", "")
-    locations = site.get("locations", [])
+    proxy = _conf_token(site.get("reverse_proxy", ""))
+    locations = site.get("locations", []) or []
 
     lines = [f"server {{"]
-    lines.append(f"    listen {port};")
+    lines.append(f"    listen {int(port)};")
     if enable_ssl and ssl.get("port", 443):
-        lines.append(f"    listen {ssl.get('port', 443)} ssl;")
+        lines.append(f"    listen {int(ssl.get('port', 443))} ssl;")
     lines.append(f"    server_name {server_name};")
 
     if enable_ssl and ssl.get("cert") and ssl.get("key"):
-        lines.append(f"    ssl_certificate {ssl['cert']};")
-        lines.append(f"    ssl_certificate_key {ssl['key']};")
+        lines.append(f"    ssl_certificate {_conf_token(ssl['cert'])};")
+        lines.append(f"    ssl_certificate_key {_conf_token(ssl['key'])};")
 
     if site_type == SITE_TYPE_PROXY:
         # 反向代理：整站转发到后端地址
@@ -151,8 +302,8 @@ def _nginx_site_config(site: dict) -> str:
             lines.append(f"    }}")
         else:
             for loc in locations:
-                path = loc.get("path", "/")
-                loc_root = loc.get("root", root_dir)
+                path = _conf_token(loc.get("path") or "/", "/")
+                loc_root = _conf_token(loc.get("root") or root_dir, root_dir)
                 lines.append(f"    location {path} {{")
                 lines.append(f"        root {loc_root};")
                 lines.append(f"        try_files $uri $uri/ =404;")
@@ -169,15 +320,18 @@ def _nginx_site_config(site: dict) -> str:
 def _nginx_stream_config(site: dict) -> str:
     """生成 TCP/UDP 代理的 nginx stream 配置块。"""
     protocol = site.get("protocol", "tcp")
-    listen_port = site.get("port", 443)
-    upstream = site.get("upstream", "")
+    if protocol not in ("tcp", "udp"):
+        protocol = "tcp"  # 纵深防御：非法协议回退 tcp
+    listen_port = int(site.get("port", 443))
+    upstream = _conf_token(site.get("upstream", ""))
+    sid = _conf_token(site.get("id", "site"), "site")
     lines = [f"stream {{"]
-    lines.append(f"    upstream {site.get('id', 'site')}_upstream {{")
+    lines.append(f"    upstream {sid}_upstream {{")
     lines.append(f"        server {upstream};")
     lines.append(f"    }}")
     lines.append(f"    server {{")
     lines.append(f"        listen {listen_port} {protocol};")
-    lines.append(f"        proxy_pass {site.get('id', 'site')}_upstream;")
+    lines.append(f"        proxy_pass {sid}_upstream;")
     lines.append(f"    }}")
     lines.append("}")
     return "\n".join(lines)
@@ -252,9 +406,9 @@ def _reload_nginx():
 
 
 def _apache_site_config(site: dict) -> str:
-    domains = " ".join(site.get("domains", []))
-    root_dir = site.get("root", "/var/www/html")
-    port = site.get("port", 80)
+    domains = " ".join(_conf_token(d) for d in site.get("domains", []) if d)
+    root_dir = _conf_token(site.get("root") or "/var/www/html")
+    port = int(site.get("port", 80))
     lines = [f"<VirtualHost *:{port}>"]
     lines.append(f"    ServerName {domains}")
     lines.append(f"    DocumentRoot {root_dir}")
@@ -339,11 +493,32 @@ async def create_site(req: CreateSite):
     sites = _load_sites()
     if any(s["name"] == req.name for s in sites):
         raise HTTPException(status_code=400, detail="Site name already exists")
+    # 安全校验：所有将写入 web 服务器配置的字段必须在入口处校验
+    _validate_site_payload(
+        site_type=req.type,
+        domains=req.domains,
+        root=req.root,
+        reverse_proxy=req.reverse_proxy,
+        protocol=req.protocol,
+        upstream=req.upstream,
+        subdomain=req.subdomain,
+        domain=req.domain,
+        ssl=req.ssl,
+    )
+    # 站点 ID 直接用作配置文件名（<id>.conf）：将名称规范化为白名单字符，
+    # 阻止路径分隔符 / Windows 盘符（c:）等造成任意路径写入
+    site_id = re.sub(r"[^a-z0-9_-]+", "-", req.name.lower()).strip("-")
+    if not _SITE_ID_RE.match(site_id):
+        raise HTTPException(
+            status_code=400, detail="站点名称仅允许字母、数字与空格（自动转中划线）"
+        )
+    if any(s["id"] == site_id for s in sites):
+        raise HTTPException(status_code=400, detail="站点 ID 已存在，请更换名称")
     # 仅静态网址/子网站需要创建根目录
     if req.type in (SITE_TYPE_STATIC, SITE_TYPE_SUBSITE) and req.root:
         os.makedirs(host_path(req.root), exist_ok=True)
     site = {
-        "id": req.name.lower().replace(" ", "-").replace(".", "-"),
+        "id": site_id,
         "name": req.name,
         "type": req.type,
         "domains": req.domains,
@@ -424,6 +599,19 @@ async def update_site(site_id: str, req: UpdateSite):
     site = next((s for s in sites if s["id"] == site_id), None)
     if not site:
         raise HTTPException(status_code=404, detail="Site not found")
+    # 安全校验：与 create 一致，更新值同样禁止配置注入字符
+    _validate_site_payload(
+        site_type=req.type,
+        domains=req.domains,
+        root=req.root,
+        reverse_proxy=req.reverse_proxy,
+        locations=req.locations,
+        protocol=req.protocol,
+        upstream=req.upstream,
+        subdomain=req.subdomain,
+        domain=req.domain,
+        ssl=req.ssl,
+    )
     if req.type is not None:
         site["type"] = req.type
     if req.domains is not None:

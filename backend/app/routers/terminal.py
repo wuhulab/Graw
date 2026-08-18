@@ -8,6 +8,7 @@ import subprocess
 
 from app.auth import get_current_user_ws_admin
 from app.hostfs import get_host_root
+from app import node_manager
 from app.routers.docker_api import get_backend, _find_podman
 
 router = APIRouter()
@@ -310,6 +311,18 @@ async def _unix_terminal(websocket: WebSocket):
     import signal
 
     shell = os.environ.get("SHELL", "/bin/bash")
+
+    # 多机：当当前管理主机为远程节点时，直接 `ssh -tt` 进入该节点交互终端
+    if node_manager.is_remote():
+        remote_node = node_manager.get_current_node()
+        argv = node_manager.remote_terminal_argv(remote_node)
+        pid, fd = pty.fork()
+        if pid == 0:
+            os.execv(argv[0], argv)
+            return
+        await _interactive_tty(websocket, fd, pid)
+        return
+
     pid, fd = pty.fork()
     if pid == 0:
         # 容器模式下 chroot 到宿主机根目录，让终端直接操作宿主机
@@ -323,6 +336,16 @@ async def _unix_terminal(websocket: WebSocket):
                 pass
         os.execv(shell, [shell])
         return
+
+    await _interactive_tty(websocket, fd, pid)
+
+
+async def _interactive_tty(websocket: WebSocket, fd, pid):
+    """共享的 pty 读写循环：驱动一个已 fork 出的伪终端会话。"""
+    import fcntl
+    import termios
+    import struct
+    import signal
 
     loop = asyncio.get_running_loop()
     out_queue: "asyncio.Queue[bytes]" = asyncio.Queue()
