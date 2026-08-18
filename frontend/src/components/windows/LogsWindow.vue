@@ -7,7 +7,7 @@
     <div class="layout">
       <div class="sidebar">
         <div v-for="log in logs" :key="log.id" class="log-item" :class="{active: currentId===log.id}" @click="select(log)">
-          <div class="log-name">{{ log.name }}</div>
+          <div class="log-name">{{ logName(log) }}</div>
           <div class="log-path">{{ log.path }}</div>
           <span class="exist" :class="log.exists?'ok':'warn'">{{ log.exists ? $t('logs.exists') : $t('logs.missing') }}</span>
         </div>
@@ -52,6 +52,18 @@ const showAdd = ref(false)
 const addForm = ref({ name: '', path: '' })
 
 const contentText = computed(() => lines.value.join(''))
+
+// 内置日志的 desc（如“面板日志”）由后端返回中文名，这里按 id 走 i18n 翻译；
+// 自定义日志用用户填写的名称。
+function logName(log) {
+  if (log && log.builtin) {
+    const key = `logs.source.${log.id}`
+    const translated = t(key)
+    // 若该键缺失，t 会原样返回 key 路径，此时退回后端名称
+    return translated === key ? (log.name || '') : translated
+  }
+  return log ? log.name : ''
+}
 
 async function refresh() {
   const data = await logsApi.list()

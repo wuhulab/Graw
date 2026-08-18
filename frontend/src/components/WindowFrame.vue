@@ -11,7 +11,7 @@
       @mousedown="startDrag"
       @dblclick="$emit('maximize')"
     >
-      <span class="title">{{ $t(window.titleKey, window.titleArgs) }}</span>
+      <span class="title">{{ titleText }}</span>
       <div class="actions">
         <button class="min" @click.stop="$emit('minimize')" title="Minimize"><Minus :size="14" /></button>
         <button class="max" @click.stop="$emit('maximize')" title="Maximize"><Square :size="12" /></button>
@@ -30,7 +30,8 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { X, Minus, Square } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -38,6 +39,20 @@ const props = defineProps({
   active: Boolean
 })
 const emit = defineEmits(['focus', 'close', 'minimize', 'maximize', 'move', 'resize'])
+
+const { t } = useI18n()
+
+// 窗口标题：本应用绝大多数标题为动态拼接（如“日志: xxx”“编辑: xxx”），
+// 由 openWindow 直接传给 window.title，不经过 i18n。仅当调用方显式
+// 提供 window.titleKey 时才走 i18n 翻译，避免 `$t(undefined)` 抛「Invalid
+// arguments」导致窗口无法挂载（此前回滚引入的问题）。
+const titleText = computed(() => {
+  const w = props.window
+  if (w && w.titleKey) {
+    return t(w.titleKey, w.titleArgs)
+  }
+  return (w && w.title) || ''
+})
 
 const dragging = ref(false)
 let dragStart = null

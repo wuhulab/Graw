@@ -1,10 +1,10 @@
 <template>
   <div class="win7-card" style="display:flex; flex-direction:column;">
     <div class="card-title">
-      <span>实时监控</span>
+      <span>{{ $t('cards.realtimeMonitor') }}</span>
       <div class="tabs">
-        <button :class="{ active: mode === 'net' }" @click="mode = 'net'">流量</button>
-        <button :class="{ active: mode === 'disk' }" @click="mode = 'disk'">磁盘IO</button>
+        <button :class="{ active: mode === 'net' }" @click="mode = 'net'">{{ $t('cards.traffic') }}</button>
+        <button :class="{ active: mode === 'disk' }" @click="mode = 'disk'">{{ $t('cards.diskIO') }}</button>
       </div>
     </div>
     <div class="chart-area">

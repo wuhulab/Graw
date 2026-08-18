@@ -1,24 +1,24 @@
 <template>
   <div class="win7-card">
     <div class="card-title">
-      <span>系统概览</span>
+      <span>{{ $t('cards.systemOverview') }}</span>
     </div>
     <div class="ring-row" style="height: calc(100% - 24px)">
       <div class="ring-cell">
         <v-chart class="ring-chart" :option="loadOption" autoresize />
-        <div class="ring-label">负载</div>
+        <div class="ring-label">{{ $t('cards.ring.load') }}</div>
       </div>
       <div class="ring-cell">
         <v-chart class="ring-chart" :option="cpuOption" autoresize />
-        <div class="ring-label">CPU</div>
+        <div class="ring-label">{{ $t('cards.ring.cpu') }}</div>
       </div>
       <div class="ring-cell">
         <v-chart class="ring-chart" :option="memOption" autoresize />
-        <div class="ring-label">内存</div>
+        <div class="ring-label">{{ $t('cards.ring.memory') }}</div>
       </div>
       <div class="ring-cell">
         <v-chart class="ring-chart" :option="storageOption" autoresize />
-        <div class="ring-label">储存</div>
+        <div class="ring-label">{{ $t('cards.ring.storage') }}</div>
       </div>
     </div>
   </div>

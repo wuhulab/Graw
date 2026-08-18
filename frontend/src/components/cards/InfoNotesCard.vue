@@ -1,27 +1,27 @@
 <template>
   <div class="win7-card" style="display:flex; flex-direction:column;">
     <div class="card-title">
-      <span>{{ mode === 'info' ? '系统信息' : '备忘录' }}</span>
+      <span>{{ $t(mode === 'info' ? 'cards.systemInfo' : 'cards.notes') }}</span>
       <div class="tabs">
-        <button :class="{ active: mode === 'info' }" @click="mode = 'info'">系统信息</button>
-        <button :class="{ active: mode === 'notes' }" @click="mode = 'notes'">备忘录</button>
+        <button :class="{ active: mode === 'info' }" @click="mode = 'info'">{{ $t('cards.systemInfo') }}</button>
+        <button :class="{ active: mode === 'notes' }" @click="mode = 'notes'">{{ $t('cards.notes') }}</button>
       </div>
     </div>
     <div style="flex:1; min-height:0; overflow:auto;">
       <div v-if="mode === 'info'" class="sysinfo">
-        <div class="row"><span class="k">主机名</span><span class="v">{{ info.hostname }}</span></div>
-        <div class="row"><span class="k">系统</span><span class="v">{{ info.system }} {{ info.release }}</span></div>
-        <div class="row"><span class="k">架构</span><span class="v">{{ info.machine }}</span></div>
-        <div class="row"><span class="k">CPU 核心</span><span class="v">{{ info.cpu_count_physical }}核 / {{ info.cpu_count }}线程</span></div>
+        <div class="row"><span class="k">{{ $t('cards.info.hostname') }}</span><span class="v">{{ info.hostname }}</span></div>
+        <div class="row"><span class="k">{{ $t('cards.info.system') }}</span><span class="v">{{ info.system }} {{ info.release }}</span></div>
+        <div class="row"><span class="k">{{ $t('cards.info.arch') }}</span><span class="v">{{ info.machine }}</span></div>
+        <div class="row"><span class="k">{{ $t('cards.info.cpuCount') }}</span><span class="v">{{ $t('cards.info.cpuCountValue', { physical: info.cpu_count_physical, logical: info.cpu_count }) }}</span></div>
         <div class="row"><span class="k">Python</span><span class="v">{{ info.python_version }}</span></div>
-        <div class="row"><span class="k">启动时间</span><span class="v">{{ formatTime(info.boot_time) }}</span></div>
-        <div class="row"><span class="k">运行时长</span><span class="v">{{ uptimeStr }}</span></div>
+        <div class="row"><span class="k">{{ $t('cards.info.bootTime') }}</span><span class="v">{{ formatTime(info.boot_time) }}</span></div>
+        <div class="row"><span class="k">{{ $t('cards.info.uptime') }}</span><span class="v">{{ uptimeStr }}</span></div>
       </div>
       <textarea
         v-else
         v-model="noteContent"
         class="notes-area"
-        placeholder="在此记录备忘..."
+        :placeholder="$t('cards.notesPlaceholder')"
         @blur="saveNote"
       ></textarea>
     </div>

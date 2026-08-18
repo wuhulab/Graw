@@ -13,7 +13,7 @@
           @dblclick="openWindow(sc.key)"
         >
           <div class="icon"><component :is="sc.icon" :size="32" /></div>
-          <div class="label" :title="sc.label">{{ sc.label }}</div>
+          <div class="label" :title="sc.titleKey ? $t(sc.titleKey) : sc.label">{{ sc.titleKey ? $t(sc.titleKey) : sc.label }}</div>
         </div>
       </div>
 
@@ -50,13 +50,13 @@
       <div v-if="startMenuOpen" class="start-menu" @click.stop>
         <div class="start-header">
           <div style="font-weight:700;">{{ auth.user?.username }}</div>
-          <div style="font-size:11px;color:#6e6e73;">{{ auth.user?.role === 'admin' ? '管理员' : '普通用户' }}</div>
+          <div style="font-size:11px;color:#6e6e73;">{{ $t(auth.user?.role === 'admin' ? 'app.admin' : 'app.normalUser') }}</div>
         </div>
         <div class="start-list">
-          <button v-if="isAdmin()" class="start-item" @click="openUsers(); startMenuOpen = false"><UserCircle2 :size="16" /> 账号管理</button>
-          <button class="start-item" @click="openChangePwd(); startMenuOpen = false"><UserCircle2 :size="16" /> 修改密码</button>
-          <button class="start-item" @click="openSettings(); startMenuOpen = false"><Settings :size="16" /> 设置</button>
-          <button class="start-item danger" @click="doLogout"><LogOut :size="16" /> 退出登录</button>
+          <button v-if="isAdmin()" class="start-item" @click="openUsers(); startMenuOpen = false"><UserCircle2 :size="16" /> {{ $t('app.accountManage') }}</button>
+          <button class="start-item" @click="openChangePwd(); startMenuOpen = false"><UserCircle2 :size="16" /> {{ $t('app.changePassword') }}</button>
+          <button class="start-item" @click="openSettings(); startMenuOpen = false"><Settings :size="16" /> {{ $t('app.settings') }}</button>
+          <button class="start-item danger" @click="doLogout"><LogOut :size="16" /> {{ $t('app.logout') }}</button>
         </div>
       </div>
       <div class="task-items">
@@ -68,7 +68,7 @@
           @click="taskClick(w.id)"
         >
           <span v-if="!settings.taskbarTextOnly" class="icon"><component :is="w.icon" :size="20" /></span>
-          <span v-if="settings.showTaskbarText || settings.taskbarTextOnly" class="title">{{ w.title }}</span>
+          <span v-if="settings.showTaskbarText || settings.taskbarTextOnly" class="title">{{ w.titleKey ? $t(w.titleKey, w.titleArgs) : w.title }}</span>
         </div>
       </div>
       <div class="clock">
@@ -133,21 +133,21 @@ function onLoggedIn() {
 }
 
 const shortcuts = ref([
-  { key: 'sites', label: '网站', icon: markRaw(Globe), component: markRaw(SitesWindow), w: 900, h: 560, adminOnly: true },
-  { key: 'database', label: '数据库', icon: markRaw(Database), component: markRaw(DatabaseWindow), w: 860, h: 540, adminOnly: true },
-  { key: 'cron', label: '计划任务', icon: markRaw(Clock), component: markRaw(CronWindow), w: 800, h: 520, adminOnly: true },
-  { key: 'firewall', label: '防火墙', icon: markRaw(Shield), component: markRaw(FirewallWindow), w: 800, h: 540, adminOnly: true },
-  { key: 'ssl', label: 'SSL', icon: markRaw(Lock), component: markRaw(SSLWindow), w: 820, h: 520, adminOnly: true },
-  { key: 'logs', label: '日志', icon: markRaw(ScrollText), component: markRaw(LogsWindow), w: 900, h: 560, adminOnly: true },
-  { key: 'docker', label: 'Docker', icon: markRaw(Container), component: markRaw(DockerWindow), w: 820, h: 520, adminOnly: true },
-  { key: 'appstore', label: '应用商店', icon: markRaw(Store), component: markRaw(AppStoreWindow), w: 920, h: 580, adminOnly: true },
-  { key: 'tasks', label: '任务中心', icon: markRaw(ListChecks), component: markRaw(TaskCenterWindow), w: 900, h: 560, adminOnly: true },
-  { key: 'protection', label: 'Graw数据库保护机制', icon: markRaw(ShieldCheck), component: markRaw(ProtectionWindow), w: 860, h: 560, adminOnly: true },
-  { key: 'runtime', label: '运行环境', icon: markRaw(Cpu), component: markRaw(RuntimeWindow), w: 900, h: 560, adminOnly: true },
-  { key: 'process', label: '进程管理', icon: markRaw(Settings), component: markRaw(ProcessWindow), w: 780, h: 520, adminOnly: true },
-  { key: 'files', label: '文件管理', icon: markRaw(Folder), component: markRaw(FilesWindow), w: 820, h: 540, adminOnly: true },
-  { key: 'disks', label: '磁盘管理', icon: markRaw(HardDrive), component: markRaw(DisksWindow), w: 900, h: 560, adminOnly: true },
-  { key: 'terminal', label: '终端', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true }
+  { key: 'sites', label: '网站', titleKey: 'app.shortcut.sites', icon: markRaw(Globe), component: markRaw(SitesWindow), w: 900, h: 560, adminOnly: true },
+  { key: 'database', label: '数据库', titleKey: 'app.shortcut.database', icon: markRaw(Database), component: markRaw(DatabaseWindow), w: 860, h: 540, adminOnly: true },
+  { key: 'cron', label: '计划任务', titleKey: 'app.shortcut.cron', icon: markRaw(Clock), component: markRaw(CronWindow), w: 800, h: 520, adminOnly: true },
+  { key: 'firewall', label: '防火墙', titleKey: 'app.shortcut.firewall', icon: markRaw(Shield), component: markRaw(FirewallWindow), w: 800, h: 540, adminOnly: true },
+  { key: 'ssl', label: 'SSL', titleKey: 'app.shortcut.ssl', icon: markRaw(Lock), component: markRaw(SSLWindow), w: 820, h: 520, adminOnly: true },
+  { key: 'logs', label: '日志', titleKey: 'app.shortcut.logs', icon: markRaw(ScrollText), component: markRaw(LogsWindow), w: 900, h: 560, adminOnly: true },
+  { key: 'docker', label: 'Docker', titleKey: 'app.shortcut.docker', icon: markRaw(Container), component: markRaw(DockerWindow), w: 820, h: 520, adminOnly: true },
+  { key: 'appstore', label: '应用商店', titleKey: 'app.shortcut.appstore', icon: markRaw(Store), component: markRaw(AppStoreWindow), w: 920, h: 580, adminOnly: true },
+  { key: 'tasks', label: '任务中心', titleKey: 'app.shortcut.tasks', icon: markRaw(ListChecks), component: markRaw(TaskCenterWindow), w: 900, h: 560, adminOnly: true },
+  { key: 'protection', label: 'Graw数据库保护机制', titleKey: 'app.shortcut.protection', icon: markRaw(ShieldCheck), component: markRaw(ProtectionWindow), w: 860, h: 560, adminOnly: true },
+  { key: 'runtime', label: '运行环境', titleKey: 'app.shortcut.runtime', icon: markRaw(Cpu), component: markRaw(RuntimeWindow), w: 900, h: 560, adminOnly: true },
+  { key: 'process', label: '进程管理', titleKey: 'app.shortcut.process', icon: markRaw(Settings), component: markRaw(ProcessWindow), w: 780, h: 520, adminOnly: true },
+  { key: 'files', label: '文件管理', titleKey: 'app.shortcut.files', icon: markRaw(Folder), component: markRaw(FilesWindow), w: 820, h: 540, adminOnly: true },
+  { key: 'disks', label: '磁盘管理', titleKey: 'app.shortcut.disks', icon: markRaw(HardDrive), component: markRaw(DisksWindow), w: 900, h: 560, adminOnly: true },
+  { key: 'terminal', label: '终端', titleKey: 'app.shortcut.terminal', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true }
 ])
 
 // 桌面快捷方式：管理员可见全部，普通用户仅可见非管理功能
@@ -203,9 +203,9 @@ function openWindow(key) {
   let def = shortcuts.value.find(s => s.key === key)
   if (!def) {
     const extras = {
-      users: { label: '账号管理', icon: markRaw(UserCircle2), component: markRaw(UserWindow), w: 600, h: 460, adminOnly: true },
-      changepwd: { label: '修改密码', icon: markRaw(UserCircle2), component: markRaw(ChangePasswordWindow), w: 420, h: 360 },
-      settings: { label: '设置', icon: markRaw(Settings), component: markRaw(SettingsWindow), w: 520, h: 480 }
+      users: { label: '账号管理', titleKey: 'app.winTitle.users', icon: markRaw(UserCircle2), component: markRaw(UserWindow), w: 600, h: 460, adminOnly: true },
+      changepwd: { label: '修改密码', titleKey: 'app.winTitle.changepwd', icon: markRaw(UserCircle2), component: markRaw(ChangePasswordWindow), w: 420, h: 360 },
+      settings: { label: '设置', titleKey: 'app.winTitle.settings', icon: markRaw(Settings), component: markRaw(SettingsWindow), w: 520, h: 480 }
     }
     def = extras[key]
     if (!def) return
@@ -216,6 +216,8 @@ function openWindow(key) {
     id,
     key,
     title: def.label,
+    titleKey: def.titleKey,
+    titleArgs: def.titleArgs,
     icon: def.icon,
     component: def.component,
     props: {},
@@ -238,6 +240,7 @@ function openTerminalAt(cwd) {
     id,
     key: 'terminal',
     title: '终端',
+    titleKey: 'app.shortcut.terminal',
     icon: markRaw(Terminal),
     component: markRaw(TerminalWindow),
     props: { cwd },
@@ -260,6 +263,8 @@ function openEditor({ path, content }) {
     id,
     key: 'editor',
     title: '编辑: ' + path.split(/[\\/]/).pop(),
+    titleKey: 'app.winTitle.editor',
+    titleArgs: { name: path.split(/[\\/]/).pop() },
     icon: markRaw(FileText),
     component: markRaw(EditorWindow),
     props: { path, content },
@@ -284,6 +289,8 @@ function openMedia({ path, name, type }) {
     id,
     key: 'media',
     title,
+    titleKey: type === 'image' ? 'app.winTitle.image' : 'app.winTitle.video',
+    titleArgs: { name },
     icon: markRaw(type === 'image' ? ImageIcon : Film),
     component: markRaw(MediaWindow),
     props: { path, name, type },
@@ -306,6 +313,8 @@ function openContainerLogs({ id, name }) {
     id: id2,
     key: 'container-logs',
     title: '日志: ' + name,
+    titleKey: 'app.winTitle.containerLogs',
+    titleArgs: { name },
     icon: markRaw(ScrollText),
     component: markRaw(ContainerLogsWindow),
     props: { id, name },
@@ -329,6 +338,8 @@ function openContainerTerminal({ id, name }) {
     id: id2,
     key: 'terminal',
     title: '容器终端: ' + name,
+    titleKey: 'app.winTitle.containerTerminal',
+    titleArgs: { name },
     icon: markRaw(Terminal),
     component: markRaw(TerminalWindow),
     props: { container: id },
@@ -352,6 +363,8 @@ function openContainerDetails({ id, name }) {
     id: id2,
     key: 'container-details',
     title: '容器详情: ' + name,
+    titleKey: 'app.winTitle.containerDetails',
+    titleArgs: { name },
     icon: markRaw(Container),
     component: markRaw(ContainerDetailWindow),
     props: { id, name },
@@ -375,6 +388,7 @@ function openFiles({ path }) {
     id: id2,
     key: 'files',
     title: '文件管理',
+    titleKey: 'app.winTitle.files',
     icon: markRaw(Folder),
     component: markRaw(FilesWindow),
     props: { path },
@@ -398,6 +412,7 @@ function openDockerConfigEditor() {
     id: id2,
     key: 'docker-config-editor',
     title: 'Docker 配置文件',
+    titleKey: 'app.winTitle.dockerConfig',
     icon: markRaw(FileText),
     component: markRaw(DockerConfigEditorWindow),
     props: {},
@@ -421,6 +436,8 @@ function openAppStoreInstall(app) {
     id,
     key: 'appstore-install',
     title: '安装: ' + (app?.name || ''),
+    titleKey: 'app.winTitle.appInstall',
+    titleArgs: { name: app?.name || '' },
     icon: markRaw(Store),
     component: markRaw(AppStoreInstallWindow),
     props: { app },
@@ -444,6 +461,8 @@ function openAppStoreComposeEditor({ appId, compose }) {
     id,
     key: 'appstore-compose-editor',
     title: '编辑: docker-compose.yml (' + appId + ')',
+    titleKey: 'app.winTitle.appComposeEditor',
+    titleArgs: { name: appId },
     icon: markRaw(FileText),
     component: markRaw(AppStoreComposeEditorWindow),
     props: { appId, compose },
@@ -467,6 +486,8 @@ function openAppStoreInstallLog({ app, request }) {
     id,
     key: 'appstore-install-log',
     title: '安装日志: ' + (app?.name || ''),
+    titleKey: 'app.winTitle.appInstallLog',
+    titleArgs: { name: app?.name || '' },
     icon: markRaw(ScrollText),
     component: markRaw(AppStoreInstallLogWindow),
     props: { app, request },
@@ -490,6 +511,8 @@ function openAppStoreReadme(app) {
     id,
     key: 'appstore-readme',
     title: 'README: ' + (app?.name || ''),
+    titleKey: 'app.winTitle.appReadme',
+    titleArgs: { name: app?.name || '' },
     icon: markRaw(BookOpen),
     component: markRaw(AppStoreReadmeWindow),
     props: { app },
@@ -513,6 +536,7 @@ function openRuntimeCreate(type) {
     id,
     key: 'runtime-create',
     title: '创建运行环境',
+    titleKey: 'app.winTitle.runtimeCreate',
     icon: markRaw(Cpu),
     component: markRaw(RuntimeCreateWindow),
     props: { type },
@@ -536,6 +560,8 @@ function openConnectionForm(conn = null) {
     id,
     key: 'conn-form',
     title: conn ? '编辑: ' + (conn.name || '') : '添加数据库连接',
+    titleKey: conn ? 'app.winTitle.connEdit' : 'app.winTitle.connAdd',
+    titleArgs: conn ? { name: conn.name || '' } : undefined,
     icon: markRaw(Database),
     component: markRaw(ConnectionFormWindow),
     props: { conn },
