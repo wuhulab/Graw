@@ -511,6 +511,12 @@ export default {
     disconnectedShort: '연결 끊김',
     error: '오류',
     connectFailed: '연결 실패, 새로고침 후 다시 시도하세요',
+    mouse: '마우스',
+    on: 'ON',
+    off: 'OFF',
+    mouseOnHint: '클릭 시 마우스 모드 비활성화',
+    mouseOffHint: 'TUI 클릭 조작 활성화 (vim/tmux/ranger 등)',
+    mouseUnsupported: '이 시스템은 TUI 마우스 클릭을 지원하지 않습니다 (Windows 10 ConPTY 제한)',
   },
   // Graw 데이터베이스 보호
   protection: {

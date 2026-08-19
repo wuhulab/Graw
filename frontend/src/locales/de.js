@@ -511,6 +511,12 @@ export default {
     disconnectedShort: 'Getrennt',
     error: 'Fehler',
     connectFailed: 'Verbindung fehlgeschlagen, bitte Seite aktualisieren und erneut versuchen',
+    mouse: 'Maus',
+    on: 'AN',
+    off: 'AUS',
+    mouseOnHint: 'Klicken, um den Mausmodus zu deaktivieren',
+    mouseOffHint: 'Mausmodus für TUI-Klicks aktivieren (vim/tmux/ranger...)',
+    mouseUnsupported: 'TUI-Mausklicks werden auf diesem System nicht unterstützt (Windows-10-ConPTY-Einschränkung)',
   },
   // Graw-Datenbankschutz
   protection: {

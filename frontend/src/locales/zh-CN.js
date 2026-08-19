@@ -513,6 +513,12 @@ export default {
     disconnectedShort: '已断开',
     error: '错误',
     connectFailed: '连接失败，请刷新重试',
+    mouse: '鼠标',
+    on: '开',
+    off: '关',
+    mouseOnHint: '点击关闭鼠标模式',
+    mouseOffHint: '点击启用鼠标模式，支持 TUI（vim/tmux/ranger 等）点击交互',
+    mouseUnsupported: '当前系统不支持 TUI 鼠标点击（Windows 10 的 ConPTY 限制）',
   },
   // Graw数据库保护机制
   protection: {

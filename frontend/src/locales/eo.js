@@ -511,6 +511,12 @@ export default {
     disconnectedShort: 'Malkonektita',
     error: 'Eraro',
     connectFailed: 'Konekto malsukcesis, bonvolu refreŝigi kaj reprovi',
+    mouse: 'Muso',
+    on: 'ŜALT',
+    off: 'MALŜALT',
+    mouseOnHint: 'Alklaku por malŝalti muso-reĝimon',
+    mouseOffHint: 'Enŝalti muso-reĝimon por TUI-alklakoj (vim/tmux/ranger...)',
+    mouseUnsupported: 'TUI-musoalklakoj ne estas subtenataj en ĉi tiu sistemo (ConPTY-limigo de Windows 10)',
   },
   // Graw-datumbaza protekto
   protection: {

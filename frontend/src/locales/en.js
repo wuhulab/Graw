@@ -835,6 +835,12 @@ export default {
     disconnectedShort: 'Disconnected',
     error: 'Error',
     connectFailed: 'Connection failed, please refresh and retry',
+    mouse: 'Mouse',
+    on: 'ON',
+    off: 'OFF',
+    mouseOnHint: 'Click to disable mouse mode',
+    mouseOffHint: 'Enable mouse mode for TUI clicks (vim/tmux/ranger...)',
+    mouseUnsupported: 'TUI mouse clicks are not supported on this system (Windows 10 ConPTY limitation)',
   },
   // Graw database protection mechanism
   protection: {

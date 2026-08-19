@@ -511,6 +511,12 @@ export default {
     disconnectedShort: '切断済み',
     error: 'エラー',
     connectFailed: '接続に失敗しました。更新して再試行してください',
+    mouse: 'マウス',
+    on: 'ON',
+    off: 'OFF',
+    mouseOnHint: 'クリックでマウスモードを無効化',
+    mouseOffHint: 'TUI クリック操作を有効化（vim/tmux/ranger など）',
+    mouseUnsupported: 'このシステムでは TUI マウスクリックは非対応（Windows 10 の ConPTY 制限）',
   },
   // Graw データベース保護
   protection: {

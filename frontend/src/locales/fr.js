@@ -511,6 +511,12 @@ export default {
     disconnectedShort: 'Déconnecté',
     error: 'Erreur',
     connectFailed: 'Échec de la connexion, actualisez la page et réessayez',
+    mouse: 'Souris',
+    on: 'ON',
+    off: 'OFF',
+    mouseOnHint: 'Cliquez pour désactiver le mode souris',
+    mouseOffHint: 'Activer le mode souris pour les clics TUI (vim/tmux/ranger...)',
+    mouseUnsupported: 'Les clics souris TUI ne sont pas pris en charge sur ce système (limitation ConPTY de Windows 10)',
   },
   // Protection de base de données Graw
   protection: {

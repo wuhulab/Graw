@@ -511,6 +511,12 @@ export default {
     disconnectedShort: 'Отключено',
     error: 'Ошибка',
     connectFailed: 'Ошибка подключения, обновите страницу и попробуйте снова',
+    mouse: 'Мышь',
+    on: 'ВКЛ',
+    off: 'ВЫКЛ',
+    mouseOnHint: 'Нажмите, чтобы отключить режим мыши',
+    mouseOffHint: 'Включить режим мыши для TUI-кликов (vim/tmux/ranger...)',
+    mouseUnsupported: 'Клики мыши TUI не поддерживаются в этой системе (ограничение ConPTY в Windows 10)',
   },
   // Защита базы данных Graw
   protection: {

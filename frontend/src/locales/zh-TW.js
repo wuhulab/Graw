@@ -511,6 +511,12 @@ export default {
     disconnectedShort: '已中斷',
     error: '錯誤',
     connectFailed: '連線失敗，請重新整理後重試',
+    mouse: '滑鼠',
+    on: '開',
+    off: '關',
+    mouseOnHint: '點擊關閉滑鼠模式',
+    mouseOffHint: '點擊啟用滑鼠模式，支援 TUI（vim/tmux/ranger 等）點擊互動',
+    mouseUnsupported: '目前系統不支援 TUI 滑鼠點擊（Windows 10 的 ConPTY 限制）',
   },
   // Graw資料庫保護機制
   protection: {

@@ -6,7 +6,7 @@ import re
 import threading
 import subprocess
 
-from app.auth import get_current_user_ws_admin
+from app.auth import get_current_user, get_current_user_ws_admin
 from app.hostfs import get_host_root
 from app import node_manager
 from app import auditlog
@@ -15,6 +15,50 @@ from app.routers.docker_api import get_backend, _find_podman
 router = APIRouter()
 
 IS_WINDOWS = platform.system() == "Windows"
+
+# Windows 11 22H2（build 22523）起 ConPTY 才支持把宿主侧输入的鼠标
+# 序列转换为控制台 MOUSE_EVENT 投递给 TUI；Windows 10 及更早版本
+# 会静默丢弃这些字节（microsoft/terminal#376），甚至可能触发 conhost
+# 崩溃（psmux#457），因此低于该版本必须禁用 TUI 鼠标注入。
+_WIN_MOUSE_MIN_BUILD = 22523
+
+# 浏览器侧（xterm）发出的鼠标相关序列：SGR 报告 / X10 报告头 / DECSET
+# 鼠标模式开关。在不支持鼠标输入的平台上，这些字节对 TUI 无效且有
+# 崩溃风险，需要在下发到 ConPTY 前剔除。
+_MOUSE_INPUT_RE = re.compile(
+    # SGR 扩展鼠标报告，如 ESC[<0;28;1M（按下）/ ESC[<0;28;1m（释放）
+    r"\x1b\[<(?:[0-9]+;)*[0-9]+[Mm]"
+    # 传统 X10 鼠标报告头（ESC[M + 3 字节坐标）
+    r"|\x1b\[M"
+    # DECSET/DECRST 鼠标模式开关：?9 / ?1000 / ?1002 / ?1003 / ?1004 /
+    # ?1005 / ?1006 / ?1015 / ?1016（h 启用 / l 禁用）
+    r"|\x1b\[\?(?:9|1000|1002|1003|1004|1005|1006|1015|1016)[hl]"
+)
+
+
+def _conpty_mouse_supported() -> tuple:
+    """检测当前平台是否支持向 ConPTY/PTY 注入 TUI 鼠标。
+
+    返回 (supported, reason)：
+    - 非 Windows（Linux/macOS）：pty 原生透传鼠标序列，恒支持。
+    - Windows build >= 22523（Windows 11 22H2+）：支持。
+    - Windows build < 22523（Windows 10 及更早）：不支持，返回原因。
+    """
+    if not IS_WINDOWS:
+        return True, ""
+    try:
+        # platform.version() 在 Windows 形如 "10.0.19045"，取末段为 build
+        build = int(platform.version().rsplit(".", 1)[-1])
+    except (ValueError, IndexError):
+        # 无法确认版本时按不支持处理，避免引入崩溃风险
+        return False, "无法确认 Windows 版本，已禁用 TUI 鼠标输入"
+    if build >= _WIN_MOUSE_MIN_BUILD:
+        return True, ""
+    return (
+        False,
+        f"当前 Windows 10（build {build}）的 ConPTY 不支持 TUI 鼠标"
+        f"（需 Windows 11 22H2 build {_WIN_MOUSE_MIN_BUILD}+ 或 Linux 节点）",
+    )
 
 # 容器 ID / 名称白名单：container 参数最终会拼入 exec 命令串（经 ConPTY
 # 或 shell 启动），必须校验格式，防止携带引号 / 分号等字符注入命令。
@@ -78,6 +122,18 @@ def _run_subprocess(args, timeout=30):
     except Exception:
         return -1, "", ""
     return p.returncode, p.stdout.decode("utf-8", "replace"), p.stderr.decode("utf-8", "replace")
+
+
+@router.get("/mouse-capability")
+async def terminal_mouse_capability(user=Depends(get_current_user)):
+    """查询当前平台是否支持终端 TUI 鼠标点击。
+
+    前端据此决定是否展示/启用「鼠标」开关：Windows 10 及更早版本的
+    ConPTY 无法把鼠标序列投递给 TUI，强行注入无效且有崩溃风险，
+    需在 UI 上禁用并给出原因。
+    """
+    supported, reason = _conpty_mouse_supported()
+    return {"supported": supported, "reason": reason}
 
 
 @router.websocket("/ws/container")
@@ -194,16 +250,32 @@ async def _pump_output(out_queue: "asyncio.Queue[bytes]", websocket: WebSocket, 
         await websocket.send_text(text)
 
 
+def _windows_shell_cmd() -> str:
+    """返回 Windows 交互终端的默认 shell。
+
+    优先使用 PowerShell（先找 pwsh 即 PowerShell 7，再找 powershell 即
+    Windows PowerShell），都没有时回退到 COMSPEC / cmd.exe，保证终端可用。
+    """
+    import shutil
+
+    for candidate in ("pwsh", "powershell"):
+        exe = shutil.which(candidate)
+        if exe:
+            return exe
+    return os.environ.get("COMSPEC", "cmd.exe")
+
+
 async def _windows_terminal(websocket: WebSocket):
     """Windows terminal backed by ConPTY (real pseudoconsole).
 
     Falls back to a plain ``cmd.exe`` subprocess pipe when ConPTY is not
     available (e.g. old Windows builds). The ConPTY path is strongly
-    preferred: with a plain pipe, cmd.exe runs in redirected-input mode and
+    preferred: with a plain pipe, the shell runs in redirected-input mode and
     neither echoes typed characters nor shows a prompt, which makes the
     terminal appear to ignore all input.
     """
-    shell = os.environ.get("COMSPEC", "cmd.exe")
+    # 默认交互 shell 改为 PowerShell（无则回退 cmd），便于运行交互式 TUI
+    shell = _windows_shell_cmd()
 
     if _CONPTY_AVAILABLE:
         try:
@@ -218,6 +290,10 @@ async def _windows_terminal(websocket: WebSocket):
 async def _windows_conpty_terminal(websocket: WebSocket, shell: str):
     pty = ConPTY(rows=24, cols=80)
     pty.start(shell)
+
+    # 平台是否支持 TUI 鼠标注入：Windows 10 及更早的 ConPTY 不支持，
+    # 需要剔除浏览器发来的鼠标序列，避免无效写入与 conhost 崩溃风险。
+    mouse_ok = _conpty_mouse_supported()[0]
 
     loop = asyncio.get_running_loop()
     out_queue: "asyncio.Queue[bytes]" = asyncio.Queue()
@@ -239,6 +315,11 @@ async def _windows_conpty_terminal(websocket: WebSocket, shell: str):
                 except Exception:
                     pass
                 continue
+            if not mouse_ok:
+                # 剔除鼠标相关序列；若整帧都是鼠标字节则直接跳过
+                data = _MOUSE_INPUT_RE.sub("", data)
+                if not data:
+                    continue
             if not pty.is_alive():
                 break
             try:

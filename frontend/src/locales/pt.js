@@ -706,6 +706,12 @@ export default {
     disconnectedShort: 'Desconectado',
     error: 'Erro',
     connectFailed: 'Falha na conexão, atualize e tente novamente',
+    mouse: 'Mouse',
+    on: 'LIG',
+    off: 'DESL',
+    mouseOnHint: 'Clique para desativar o modo mouse',
+    mouseOffHint: 'Ativar o modo mouse para cliques TUI (vim/tmux/ranger...)',
+    mouseUnsupported: 'Este sistema não suporta cliques de mouse TUI (limitação do ConPTY no Windows 10)',
   },
   // Mecanismo de proteção do banco de dados Graw
   protection: {
