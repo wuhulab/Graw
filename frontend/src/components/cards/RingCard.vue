@@ -31,12 +31,23 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { PieChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
+import { uiState } from '../../store/ui'
 
 use([CanvasRenderer, PieChart, TitleComponent, TooltipComponent])
 
 const props = defineProps({
   overview: { type: Object, required: true }
 })
+
+// 告警红线：使用率 >90% 时变身色（可在「界面设置」中修改颜色/开关）
+const ALARM_THRESHOLD = 90
+const ALARM_RED = '#f5222d'
+
+// 计算环形图主色：优先「界面设置」中配置的统一颜色；启用告警且使用率超阈值时变红
+function mainColor(percent) {
+  if (uiState.ring_alarm && (percent || 0) > ALARM_THRESHOLD) return ALARM_RED
+  return uiState.ring_color || '#409eff'
+}
 
 function ringOption(percent, color) {
   const p = Math.max(0, Math.min(100, percent || 0))
@@ -63,10 +74,11 @@ function ringOption(percent, color) {
   }
 }
 
-const loadOption = computed(() => ringOption(props.overview?.load?.percent, '#e6a23c'))
-const cpuOption = computed(() => ringOption(props.overview?.cpu, '#409eff'))
-const memOption = computed(() => ringOption(props.overview?.memory?.percent, '#67c23a'))
-const storageOption = computed(() => ringOption(props.overview?.storage?.percent, '#9b6dd6'))
+const loadPercent = () => props.overview?.load?.percent
+const loadOption = computed(() => ringOption(loadPercent(), mainColor(loadPercent())))
+const cpuOption = computed(() => ringOption(props.overview?.cpu, mainColor(props.overview?.cpu)))
+const memOption = computed(() => ringOption(props.overview?.memory?.percent, mainColor(props.overview?.memory?.percent)))
+const storageOption = computed(() => ringOption(props.overview?.storage?.percent, mainColor(props.overview?.storage?.percent)))
 </script>
 
 <style scoped>

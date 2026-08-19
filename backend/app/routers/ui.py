@@ -39,6 +39,9 @@ DEFAULTS = {
     "welcome": "",
     "logo": "",
     "background": "",
+    # 系统概览环形统计图配色（桌面所有用户共享）
+    "ring_color": "#409eff",   # 环形图统一颜色（蓝色），管理员可在界面设置中修改
+    "ring_alarm": True,        # 是否启用「使用率 >90% 变红」告警提示
 }
 
 # 允许的图片类型（对应常见的 PNG / JPEG / GIF / WebP / SVG）
@@ -64,7 +67,13 @@ def _load() -> dict:
     if not isinstance(data, dict):
         return dict(DEFAULTS)
     merged = dict(DEFAULTS)
-    merged.update({k: data[k] for k in DEFAULTS if isinstance(data.get(k), str)})
+    # 按字段类型合并：字符串字段只接受 str，布尔字段只接受 bool，非法值回退默认
+    for k in DEFAULTS:
+        v = data.get(k)
+        if isinstance(v, bool) and isinstance(DEFAULTS[k], bool):
+            merged[k] = v
+        elif isinstance(v, str) and isinstance(DEFAULTS[k], str):
+            merged[k] = v
     return merged
 
 
@@ -112,6 +121,20 @@ class UIConfigUpdate(BaseModel):
     welcome: str = ""
     logo: str = ""
     background: str = ""
+    ring_color: str = "#409eff"
+    ring_alarm: bool = True
+
+
+# 环形图颜色：仅接受 6 位十六进制（如 #409eff），防止注入任意样式数据
+_RING_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _validate_ring_color(value: str) -> str:
+    """校验环形图颜色为合法的 6 位十六进制色值。"""
+    value = (value or "").strip()
+    if not _RING_COLOR_RE.match(value):
+        raise HTTPException(status_code=400, detail="环形图颜色需为 #RRGGBB 格式")
+    return value.lower()
 
 
 @router.get("/public")
@@ -123,6 +146,8 @@ async def get_public_config():
         "welcome": d.get("welcome") or "",
         "logo": d.get("logo") or "",
         "background": d.get("background") or "",
+        "ring_color": d.get("ring_color") or "#409eff",
+        "ring_alarm": bool(d.get("ring_alarm", True)),
     }
 
 
@@ -134,11 +159,12 @@ async def get_config():
 
 @router.put("/config", dependencies=[Depends(require_admin)])
 async def update_config(req: UIConfigUpdate):
-    """管理员：保存界面配置（网站名 / 欢迎语 / Logo / 背景）。"""
+    """管理员：保存界面配置（网站名 / 欢迎语 / Logo / 背景 / 环形图配色）。"""
     site_name = (req.site_name or "").strip()
     welcome = (req.welcome or "").strip()
     logo = _validate_image(req.logo, _LOGO_MAX_BYTES, "Logo")
     background = _validate_image(req.background, _BACKGROUND_MAX_BYTES, "背景")
+    ring_color = _validate_ring_color(req.ring_color)
     # 网站名/欢迎语限制长度，避免滥用
     if len(site_name) > 60:
         raise HTTPException(status_code=400, detail="网站名过长（最多 60 个字符）")
@@ -149,6 +175,8 @@ async def update_config(req: UIConfigUpdate):
         "welcome": welcome,
         "logo": logo,
         "background": background,
+        "ring_color": ring_color,
+        "ring_alarm": bool(req.ring_alarm),
     }
     _save(data)
     return data

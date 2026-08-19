@@ -1,15 +1,55 @@
-// 界面品牌配置共享 store：网站名 / 欢迎语 / Logo / 背景
+// 界面品牌配置共享 store：网站名 / 欢迎语 / Logo / 背景 / 环形图配色
 // 登录页与桌面共用同一份配置（后台 data/ui.json），保证一致显示。
+//
+// 为避免「先展示默认背景、再启用自定义背景」的闪烁：把上次拉取的配置
+// 缓存到 localStorage，模块加载时同步回填，从而在刷新/二次登录时，
+// 有自定义背景即可直接使用（不先闪默认背景）。随后再以服务器配置校准。
 import { reactive } from 'vue'
 import { uiApi } from '../api'
 
-// 共享的界面配置状态（默认品牌值）
+const STORAGE_KEY = 'graw_ui_config'
+
+/** 读取本地缓存配置（损坏/缺失时回退默认值）。*/
+function readCache() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    const v = JSON.parse(raw)
+    return v && typeof v === 'object' ? v : null
+  } catch {
+    return null
+  }
+}
+
+// 共享的界面配置状态（默认品牌值；优先用缓存中的背景，避免默认背景先闪现）
+const cached = readCache()
 export const uiState = reactive({
   site_name: 'Graw',
   welcome: '',
-  logo: '',
-  background: '',
+  logo: cached?.logo || '',
+  background: cached?.background || '',
+  ring_color: cached?.ring_color || '#409eff',
+  ring_alarm: cached?.ring_alarm !== false, // 默认开启「超 90% 变红」
 })
+
+/** 将最新配置写入 localStorage，供下次同步回填。*/
+function saveCache() {
+  try {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        site_name: uiState.site_name,
+        welcome: uiState.welcome,
+        logo: uiState.logo,
+        background: uiState.background,
+        ring_color: uiState.ring_color,
+        ring_alarm: uiState.ring_alarm,
+      })
+    )
+  } catch (e) {
+    console.warn('[ui] 写入界面配置缓存失败:', e)
+  }
+}
 
 // 防并发：同一时刻只允许一个加载请求
 let loading = null
@@ -27,6 +67,9 @@ export function loadUi() {
       uiState.welcome = res.welcome || ''
       uiState.logo = res.logo || ''
       uiState.background = res.background || ''
+      uiState.ring_color = res.ring_color || '#409eff'
+      uiState.ring_alarm = res.ring_alarm !== false
+      saveCache()
       return uiState
     })
     .catch((e) => {

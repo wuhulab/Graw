@@ -26,7 +26,8 @@ import { systemState } from '../../store/systemMetrics'
 use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent])
 
 const mode = ref('net')
-const MAX_POINTS = 30
+// 时间监控跨度：指标约每 2s 推送一个采样点，15 个点 ≈ 最近 30s
+const MAX_POINTS = 15
 
 const netSeries = ref({ up: [], down: [], times: [] })
 const diskSeries = ref({ read: [], write: [], times: [] })

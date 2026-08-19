@@ -51,6 +51,23 @@
         <div v-if="bgError" class="msg err">{{ bgError }}</div>
       </div>
 
+      <!-- 系统概览环形统计图配色 -->
+      <div class="block">
+        <div class="block-title">{{ $t('ui.ringColor') }}</div>
+        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('ui.ringColorHint') }}</div>
+        <div class="row" style="gap:8px;">
+          <input type="color" :value="validColorValue" @input="onColorPick" style="width:42px;height:34px;padding:2px;border:1px solid rgba(0,0,0,0.12);border-radius:6px;background:#fff;" />
+          <input v-model.trim="ringColorText" maxlength="7" spellcheck="false" style="flex:1;" :placeholder="'#409eff'" />
+        </div>
+        <div class="row">
+          <label class="switch-label">
+            <input type="checkbox" v-model="form.ring_alarm" />
+            <span>{{ $t('ui.ringAlarm') }}</span>
+          </label>
+        </div>
+        <div v-if="ringColorError" class="msg err">{{ ringColorError }}</div>
+      </div>
+
       <div v-if="msg" :class="['msg', msgType]">{{ msg }}</div>
 
       <div style="display:flex; gap:8px;">
@@ -61,14 +78,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { uiApi } from '../../api'
 
 const { t } = useI18n()
 
-// 表单数据：网站名 / 欢迎语 / Logo / 背景（后两项为 Base64 data URL）
-const form = reactive({ site_name: 'Graw', welcome: '', logo: '', background: '' })
+// 表单数据：网站名 / 欢迎语 / Logo / 背景（后两项为 Base64 data URL）+ 环形图配色
+const form = reactive({ site_name: 'Graw', welcome: '', logo: '', background: '', ring_color: '#409eff', ring_alarm: true })
 const logoPreview = ref('')      // Logo 预览用的 data URL（与 form.logo 在保存前保持一致）
 const logoError = ref('')
 const bgPreview = ref('')        // 背景预览用的 data URL（与 form.background 保持一致）
@@ -76,6 +93,34 @@ const bgError = ref('')
 const saving = ref(false)
 const msg = ref('')
 const msgType = ref('')
+
+// ---- 环形图颜色：文本输入 + 取色器联动 ----
+const ringColorText = ref('#409eff') // 文本输入框（支持手动输入 #RRGGBB）
+const ringColorError = ref('')
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/
+// 取色器需要合法 hex，非法时回退默认蓝色
+const validColorValue = computed(() => (HEX_COLOR_RE.test(form.ring_color) ? form.ring_color : '#409eff'))
+
+// 取色器选择后同步到文本输入框与表单
+function onColorPick(e) {
+  const v = e.target.value
+  form.ring_color = v
+  ringColorText.value = v
+  ringColorError.value = ''
+}
+
+// 文本输入变化时实时校验并同步到表单（仅 hex 合法时生效）
+watch(ringColorText, (v) => {
+  const value = (v || '').trim()
+  if (HEX_COLOR_RE.test(value)) {
+    form.ring_color = value
+    ringColorError.value = ''
+  } else if (value) {
+    ringColorError.value = t('ui.ringColorInvalid')
+  } else {
+    ringColorError.value = ''
+  }
+})
 
 // 各图片字段的允许大小（与后端保持一致）
 const FIELD_LIMIT = { logo: 2 * 1024 * 1024, background: 8 * 1024 * 1024 }
@@ -138,8 +183,12 @@ async function load() {
     form.welcome = config.welcome || ''
     form.logo = config.logo || ''
     form.background = config.background || ''
+    form.ring_color = config.ring_color || '#409eff'
+    form.ring_alarm = config.ring_alarm !== false
     logoPreview.value = form.logo || ''
     bgPreview.value = form.background || ''
+    ringColorText.value = form.ring_color
+    ringColorError.value = ''
   } catch (e) {
     console.error('[ui] 加载界面配置失败:', e)
   }
@@ -148,6 +197,11 @@ async function load() {
 /** 保存配置。 */
 async function save() {
   if (saving.value) return
+  const color = (ringColorText.value || '').trim()
+  if (!HEX_COLOR_RE.test(color)) {
+    ringColorError.value = t('ui.ringColorInvalid')
+    return
+  }
   saving.value = true
   msg.value = ''
   msgType.value = ''
@@ -157,13 +211,18 @@ async function save() {
       welcome: form.welcome,
       logo: form.logo,
       background: form.background,
+      ring_color: color,
+      ring_alarm: form.ring_alarm,
     })
     form.site_name = res.site_name || 'Graw'
     form.welcome = res.welcome || ''
     form.logo = res.logo || ''
     form.background = res.background || ''
+    form.ring_color = res.ring_color || '#409eff'
+    form.ring_alarm = res.ring_alarm !== false
     logoPreview.value = form.logo || ''
     bgPreview.value = form.background || ''
+    ringColorText.value = form.ring_color
     msg.value = t('ui.saved')
     msgType.value = 'ok'
   } catch (e) {
@@ -287,5 +346,23 @@ input:focus, textarea:focus {
   color: #c0392b;
   background: rgba(255,59,48,0.08);
   border: 1px solid rgba(255,59,48,0.2);
+}
+.row {
+  display: flex;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 12px;
+}
+.switch-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: #1d1d1f;
+}
+.switch-label input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
 }
 </style>

@@ -92,7 +92,7 @@ _ENABLE_DOCS = os.environ.get("GRAW_ENABLE_DOCS", "").strip() == "1"
 
 # 面板版本号：用于 /api/health（前端「设置-关于」板块展示）。
 # 升级版本时仅需同步修改此处，FastAPI 应用信息与此保持一致。
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 
 app = FastAPI(
     title="Graw Server Panel",
