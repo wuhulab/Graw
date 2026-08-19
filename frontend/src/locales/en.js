@@ -180,6 +180,7 @@ export default {
       cron: 'Cron Jobs',
       firewall: 'Firewall',
       frp: 'Intranet Tunneling',
+      waf: 'Web Application Firewall',
       ssl: 'SSL',
       logs: 'Logs',
       docker: 'Docker',

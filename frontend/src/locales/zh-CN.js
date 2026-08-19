@@ -1379,6 +1379,7 @@ export default {
       cron: '计划任务',
       firewall: '防火墙',
       frp: 'Frp内网穿透',
+      waf: '应用防火墙',
       ssl: 'SSL',
       logs: '日志',
       docker: 'Docker',

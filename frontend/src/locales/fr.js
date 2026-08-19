@@ -1229,6 +1229,7 @@ export default {
       cron: 'Tâches planifiées',
       firewall: 'Pare-feu',
       frp: 'Tunnel intranet',
+      waf: 'Pare-feu applicatif',
       ssl: 'SSL',
       logs: 'Journaux',
       docker: 'Docker',

@@ -1229,6 +1229,7 @@ export default {
       cron: 'スケジュールタスク',
       firewall: 'ファイアウォール',
       frp: 'イントラネットトンネル',
+      waf: 'アプリ防火墙',
       ssl: 'SSL',
       logs: 'ログ',
       docker: 'Docker',

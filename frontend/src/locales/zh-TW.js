@@ -1237,6 +1237,7 @@ export default {
       cron: '排程任務',
       firewall: '防火牆',
       frp: '內網穿透',
+      waf: '應用防火牆',
       ssl: 'SSL',
       logs: '日誌',
       docker: 'Docker',

@@ -31,6 +31,7 @@ from app.routers import (
     frp,
     netstorage,
     update,
+    waf,
 )
 from app.auth import (
     seed_default_users,
@@ -231,6 +232,10 @@ app.include_router(
 
 # 面板自身更新：版本检测（只读）与一键更新（写操作需管理员）
 app.include_router(update.router, prefix="/api/update", tags=["update"], dependencies=ADMIN)
+
+# WAF 应用防火墙：站点级 Web 应用防火墙（全局开关 + 每站点策略 + 拦截日志/拦截地图）。
+# 全部为读取/写入配置与管理 nginx 片段的管理类接口，挂 ADMIN 依赖。
+app.include_router(waf.router, prefix="/api/waf", tags=["waf"], dependencies=ADMIN)
 
 
 @app.get("/api/health")

@@ -185,6 +185,7 @@ export default {
       cron: 'Tarefas agendadas',
       firewall: 'Firewall',
       frp: 'Túnel de intranet',
+      waf: 'Firewall de aplicação',
       ssl: 'SSL',
       logs: 'Registros',
       docker: 'Docker',

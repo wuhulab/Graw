@@ -304,6 +304,22 @@ export const frpApi = {
   restart: () => api.post('/frp/restart').then(r => r.data)
 }
 
+export const wafApi = {
+  // WAF 应用防火墙：全局状态 / 站点策略 / 生成片段 / 拦截日志 / 拦截地图
+  status: () => api.get('/waf/status').then(r => r.data),
+  toggle: (enabled) => api.post('/waf/toggle', { enabled }).then(r => r.data),
+  sites: () => api.get('/waf/sites').then(r => r.data),
+  get: (site) => api.get(`/waf/site/${encodeURIComponent(site)}`).then(r => r.data),
+  save: (site, body) => api.put(`/waf/site/${encodeURIComponent(site)}`, body).then(r => r.data),
+  disable: (site) => api.post(`/waf/site/${encodeURIComponent(site)}/disable`).then(r => r.data),
+  preview: (site) => api.get('/waf/preview', { params: { site_id: site } }).then(r => r.data),
+  apply: () => api.post('/waf/apply').then(r => r.data),
+  logs: (params) => api.get('/waf/logs', { params }).then(r => r.data),
+  recordLog: (body) => api.post('/waf/logs/record', body).then(r => r.data),
+  clearLogs: () => api.post('/waf/logs/clear').then(r => r.data),
+  blockmap: (days = 30) => api.get('/waf/blockmap', { params: { days } }).then(r => r.data)
+}
+
 export const appStoreApi = {
   // 索引地址配置
   config: () => api.get('/appstore/config').then(r => r.data),

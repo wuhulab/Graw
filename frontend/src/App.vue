@@ -112,6 +112,7 @@ import LogsWindow from './components/windows/LogsWindow.vue'
 import SettingsWindow from './components/windows/SettingsWindow.vue'
 import ProtectionWindow from './components/windows/ProtectionWindow.vue'
 import TamperWindow from './components/windows/TamperWindow.vue'
+import WafWindow from './components/windows/WafWindow.vue'
 import ContainerLogsWindow from './components/windows/ContainerLogsWindow.vue'
 import ContainerDetailWindow from './components/windows/ContainerDetailWindow.vue'
 import DockerConfigEditorWindow from './components/windows/DockerConfigEditorWindow.vue'
@@ -140,7 +141,7 @@ import { systemState, startMetrics, stopMetrics } from './store/systemMetrics'
 import { startDocker, stopDocker, refresh as refreshDocker } from './store/docker'
 import { nodes as nodesStore, refreshNodes } from './store/nodes'
 import { tamperState, startTamper, stopTamper } from './store/tamper'
-import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck, ShieldAlert, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud } from 'lucide-vue-next'
+import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck, ShieldAlert, ShieldBan, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud } from 'lucide-vue-next'
 
 const loggedIn = computed(() => !!auth.token)
 
@@ -184,6 +185,7 @@ const shortcuts = ref([
   { key: 'tasks', label: '任务中心', titleKey: 'app.shortcut.tasks', icon: markRaw(ListChecks), component: markRaw(TaskCenterWindow), w: 900, h: 560, adminOnly: true },
   { key: 'protection', label: 'Graw数据库保护机制', titleKey: 'app.shortcut.protection', icon: markRaw(ShieldCheck), component: markRaw(ProtectionWindow), w: 860, h: 560, adminOnly: true },
   { key: 'tamper', label: 'ShunX网页防篡改', titleKey: 'app.shortcut.tamper', icon: markRaw(ShieldAlert), component: markRaw(TamperWindow), w: 920, h: 580, adminOnly: true },
+  { key: 'waf', label: '应用防火墙', titleKey: 'app.shortcut.waf', icon: markRaw(ShieldBan), component: markRaw(WafWindow), w: 980, h: 620, adminOnly: true },
   { key: 'runtime', label: '运行环境', titleKey: 'app.shortcut.runtime', icon: markRaw(Cpu), component: markRaw(RuntimeWindow), w: 900, h: 560, adminOnly: true },
   { key: 'process', label: '进程管理', titleKey: 'app.shortcut.process', icon: markRaw(Settings), component: markRaw(ProcessWindow), w: 780, h: 520, adminOnly: true },
   { key: 'files', label: '文件管理', titleKey: 'app.shortcut.files', icon: markRaw(Folder), component: markRaw(FilesWindow), w: 820, h: 540, adminOnly: true },

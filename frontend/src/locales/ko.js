@@ -1229,6 +1229,7 @@ export default {
       cron: '예약 작업',
       firewall: '방화벽',
       frp: '인트라넷 터널',
+      waf: '애플리케이션 방화벽',
       ssl: 'SSL',
       logs: '로그',
       docker: 'Docker',

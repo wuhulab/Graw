@@ -1229,6 +1229,7 @@ export default {
       cron: 'Планировщик',
       firewall: 'Брандмауэр',
       frp: 'Интранет-туннель',
+      waf: 'Прикладной файрвол',
       ssl: 'SSL',
       logs: 'Журналы',
       docker: 'Docker',

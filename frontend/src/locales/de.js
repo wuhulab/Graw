@@ -1229,6 +1229,7 @@ export default {
       cron: 'Geplante Aufgaben',
       firewall: 'Firewall',
       frp: 'Intranet-Tunnel',
+      waf: 'Application Firewall',
       ssl: 'SSL',
       logs: 'Protokolle',
       docker: 'Docker',

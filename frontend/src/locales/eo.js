@@ -1229,6 +1229,7 @@ export default {
       cron: 'Planitaj taskoj',
       firewall: 'Fajroŝirmilo',
       frp: 'Intrareta tunelo',
+      waf: 'Aplikaĵa fajroŝirmilo',
       ssl: 'SSL',
       logs: 'Protokoloj',
       docker: 'Docker',
