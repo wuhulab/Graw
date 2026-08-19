@@ -27,9 +27,10 @@ import MarkdownIt from 'markdown-it'
 import taskLists from 'markdown-it-task-lists'
 import DOMPurify from 'dompurify'
 import { appStoreApi } from '../../api'
+import { localizedName } from '../../appStoreL10n'
 import { BookOpen, AlertTriangle, Loader2 } from 'lucide-vue-next'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = defineProps({ app: Object })
 const emit = defineEmits(['close'])
@@ -108,7 +109,8 @@ const html = computed(() => {
 onMounted(async () => {
   try {
     const r = await appStoreApi.readme(props.app.id)
-    name.value = r.name || props.app.name || ''
+    // 标题名称：优先索引内嵌翻译（i18n.<locale>.yml），否则回退接口/默认名称
+    name.value = localizedName(props.app, locale.value) || r.name || props.app.name || ''
     repo.value = r.repo || ''
     source.value = r.source || props.app.source || ''
     raw.value = r.readme || ''

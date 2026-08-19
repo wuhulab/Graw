@@ -63,6 +63,57 @@ def _validate_password_strength(password: str, username: str, strict: bool) -> N
             )
 
 # ---------------------------------------------------------------------------
+# ShunX 入口枚举防护（IP 级，独立于用户名）
+#   漏洞背景（第七轮审计）：verify_entry 失败的响应（403「请通过安全入口访问」）
+#   与入口正确时的响应（401「用户名或密码错误」）存在差异，构成入口枚举预言机；
+#   而逐 IP|username 限流在攻击者每次更换随机用户名时永不触发。
+#   修复：对「入口校验失败」按 IP 维度独立滑动窗口计数，超阈值后
+#   锁定期内一律返回与「用户不存在/密码错误」完全一致的 401（抹平差异，
+#   使锁定期本身不再成为新的预言机），切断无限速爆破链路。
+# ---------------------------------------------------------------------------
+_ENTRY_MAX_FAILURES = 10    # 每个 IP 每窗口期内入口校验最大失败次数
+_ENTRY_WINDOW = 10 * 60     # 窗口期（秒）
+_entry_failures: dict = {}  # ip -> [失败时间戳列表]
+
+
+def _check_entry_throttle(request: Request) -> None:
+    """IP 级入口失败限流检查：超限时抛出与「登录失败」完全一致的 401。
+
+    注意：此处不能抛 403/429——否则「错误入口→锁定响应、正确入口→401」
+    依然是可区分的差异响应，预言机并未消除。
+    """
+    ip = get_client_ip(request)
+    now = time.time()
+    with _lock:
+        hits = _entry_failures.setdefault(ip, [])
+        while hits and hits[0] <= now - _ENTRY_WINDOW:
+            hits.pop(0)
+        # 键空间防膨胀：顺带清理长期无活动的 IP
+        if len(_entry_failures) > 10000:
+            stale = [k for k, v in _entry_failures.items() if not v or v[-1] <= now - _ENTRY_WINDOW * 10]
+            for k in stale:
+                _entry_failures.pop(k, None)
+        if len(hits) >= _ENTRY_MAX_FAILURES:
+            exceeded = True
+        else:
+            exceeded = False
+    if exceeded:
+        logger.warning("IP %s 入口校验失败次数过多，锁定期内登录响应已抹平", ip)
+        # 抹平时序：与「用户不存在」分支一致地执行一次哑哈希比对
+        verify_password("graw-entry-throttle", _DUMMY_HASH)
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+
+
+def _record_entry_failure(request: Request) -> None:
+    """记录一次入口校验失败（IP 维度，与用户名无关）。"""
+    ip = get_client_ip(request)
+    now = time.time()
+    with _lock:
+        hits = _entry_failures.setdefault(ip, [])
+        hits.append(now)
+
+
+# ---------------------------------------------------------------------------
 # 登录暴力破解防护（进程内限流）
 #   - 同一 IP + 账号连续失败 MAX_ATTEMPTS 次后，锁定 LOCK_SECONDS 秒。
 #   - 仅内存记录，重启即清零；单进程部署下有效。
@@ -208,9 +259,14 @@ async def login(req: LoginRequest, request: Request):
     # 若先验密码后验入口，「密码正确+入口错误」会返回 403 而密码错误
     # 返回 401，攻击者无需知道入口即可据此确认密码是否正确（预言机）；
     # 入口不符同样计入失败次数，防止配合 /status 高频枚举入口路径。
+    # 入口枚举防护（第七轮审计修复）：入口失败按 IP 独立限流，
+    # 超阈值后锁定期内响应统一抹平为 401，阻断「换随机用户名绕过
+    # IP|username 限流 + 差异响应枚举入口」的爆破链路。
+    _check_entry_throttle(request)
     try:
         verify_entry(request)
     except HTTPException:
+        _record_entry_failure(request)
         _record_failure(request, req.username)
         raise
     user = _get_user(req.username)

@@ -2,7 +2,7 @@
   <div class="log-window">
     <!-- 顶部工具栏 -->
     <div class="toolbar">
-      <span class="title"><Terminal :size="15" /> {{ $t('appinstalllog.title', { name: $t('appstore.appNames.' + app.id, app?.name || '') }) }}</span>
+      <span class="title"><Terminal :size="15" /> {{ $t('appinstalllog.title', { name: appDisplayName }) }}</span>
       <span class="badge" :class="phaseClass">{{ phaseText }}</span>
       <span v-if="taskId" class="task-hint" :title="$t('appinstalllog.taskMountedHint')"><ListChecks :size="12" /> {{ $t('appinstalllog.taskMounted') }}</span>
       <button class="btn" style="margin-left:auto;" @click="copyAll">{{ copied ? $t('appinstalllog.copied') : $t('appinstalllog.copy') }}</button>
@@ -46,15 +46,22 @@
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { appStoreApi } from '../../api'
+import { localizedName } from '../../appStoreL10n'
 import { Terminal, AlertTriangle, ListChecks } from 'lucide-vue-next'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = defineProps({
   app: Object,
   request: Object
 })
 const emit = defineEmits(['close', 'openTaskCenter'])
+
+// 应用显示名称：优先索引内嵌翻译（i18n.<locale>.yml），
+// 其次前端语言包内 appNames 覆盖，最后回退索引默认名称
+const appDisplayName = computed(() =>
+  localizedName(props.app, locale.value) || t('appstore.appNames.' + props.app.id, props.app?.name || '')
+)
 
 const phase = ref('running') // running | done | error
 const lines = ref([])
@@ -108,8 +115,7 @@ function onEvent(evt) {
 }
 
 onMounted(() => {
-  const displayName = props.app?.name ? t('appstore.appNames.' + props.app.id, props.app.name) : ''
-  push('status', t('appinstalllog.installStarted', { name: displayName, id: props.app?.id || '' }))
+  push('status', t('appinstalllog.installStarted', { name: appDisplayName.value, id: props.app?.id || '' }))
   // 启动流式安装
   controller = appStoreApi.installStream(props.request, onEvent)
 })

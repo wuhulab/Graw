@@ -53,7 +53,7 @@
                @error="e => e.target.style.visibility = 'hidden'" />
           <div class="card-titles">
             <div class="app-name">
-              <span class="name-text">{{ $t('appstore.appNames.' + app.id, app.name) }}</span>
+              <span class="name-text">{{ appName(app) }}</span>
               <span v-for="t in (app.tags || [])" :key="t" class="app-tag" :class="tagClass(t)">{{ $t('appstore.tags.' + t, t) }}</span>
             </div>
             <div class="app-id mono">{{ app.id }}</div>
@@ -65,7 +65,7 @@
           </div>
         </div>
 
-        <p class="app-desc">{{ app.description }}</p>
+        <p class="app-desc">{{ appDesc(app) }}</p>
 
         <div class="card-foot">
           <div class="tags">
@@ -129,10 +129,22 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { appStoreApi } from '../../api'
+import { localizedName, localizedDescription } from '../../appStoreL10n'
 import { Store, Settings2, Globe, Github, Container, AlertTriangle, Loader2, BookOpen, Search, ShieldAlert } from 'lucide-vue-next'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const emit = defineEmits(['openAppInstall', 'openReadme', 'close'])
+
+// 应用显示名称：优先索引内嵌翻译（i18n.<locale>.yml），
+// 其次前端语言包内 appNames 覆盖，最后回退索引默认名称
+function appName(app) {
+  return localizedName(app, locale.value) || t('appstore.appNames.' + app.id, app.name)
+}
+
+// 应用显示描述：优先索引内嵌翻译，否则回退索引默认描述
+function appDesc(app) {
+  return localizedDescription(app, locale.value) || app.description || ''
+}
 
 // 外链协议白名单：homepage / source 来自索引数据（index_url 可指向任意
 // 远程源，属不可信输入），Vue 3 的 :href 不会自动过滤 javascript: 协议，
@@ -170,11 +182,11 @@ const filteredApps = computed(() => {
   return apps.value.filter(a => {
     // 分类过滤
     if (selectedCategory.value && a.category !== selectedCategory.value) return false
-    // 搜索过滤：匹配名称 / ID / 描述
+    // 搜索过滤：匹配本地化名称 / ID / 本地化描述
     if (!q) return true
-    return (a.name || '').toLowerCase().includes(q)
+    return (appName(a) || '').toLowerCase().includes(q)
         || (a.id || '').toLowerCase().includes(q)
-        || (a.description || '').toLowerCase().includes(q)
+        || (appDesc(a) || '').toLowerCase().includes(q)
   })
 })
 

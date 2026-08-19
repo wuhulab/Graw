@@ -2,7 +2,7 @@
   <div class="install-window">
     <!-- 顶部工具栏 -->
     <div class="toolbar">
-      <span class="title"><Download :size="15" /> {{ $t('appinstall.title', { name: $t('appstore.appNames.' + app.id, app?.name) }) }}</span>
+      <span class="title"><Download :size="15" /> {{ $t('appinstall.title', { name: appDisplayName }) }}</span>
       <span class="badge mono">{{ fmtVersion(installForm.version) }}</span>
       <button class="btn" style="margin-left:auto;" @click="emit('close')">{{ $t('common.close') }}</button>
     </div>
@@ -136,12 +136,19 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { appStoreApi } from '../../api'
 import { appStoreComposeState } from '../../store/appStoreCompose'
+import { localizedName, localizedPortLabel } from '../../appStoreL10n'
 import { Download, Pencil, CheckCircle2, AlertTriangle } from 'lucide-vue-next'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = defineProps({ app: Object })
 const emit = defineEmits(['close', 'openComposeEditor', 'openInstallLog'])
+
+// 应用显示名称：优先索引内嵌翻译（i18n.<locale>.yml），
+// 其次前端语言包内 appNames 覆盖，最后回退索引默认名称
+const appDisplayName = computed(() =>
+  localizedName(props.app, locale.value) || t('appstore.appNames.' + props.app.id, props.app?.name || '')
+)
 
 const commonTimezones = [
   'Asia/Shanghai', 'Asia/Hong_Kong', 'Asia/Tokyo', 'Asia/Singapore', 'Asia/Seoul',
@@ -187,8 +194,11 @@ const installForm = reactive({
   compose: null
 })
 
-// 端口 label 查找：返回容器端口对应的说明（如 "Web 界面"）
+// 端口 label 查找：返回容器端口对应的说明（如 "Web 界面"）。
+// 优先索引内嵌翻译（i18n.<locale>.yml 的 ports），否则回退 data.yml 默认 label
 function portLabel(container) {
+  const localized = localizedPortLabel(props.app, container, locale.value)
+  if (localized) return localized
   const p = (props.app?.ports || []).find(x => x.container === container)
   return p?.label || ''
 }

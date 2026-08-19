@@ -136,12 +136,25 @@ async def get_status(request: Request, path: str = ""):
 # 受保护接口：配置管理（查询需登录，修改仅管理员）
 # ---------------------------------------------------------------------------
 @router.get("/config")
-async def get_config(_: dict = Depends(get_current_user)):
-    """获取 ShunX 安全入口配置（需登录，管理员用于管理入口）。"""
+async def get_config(user: dict = Depends(get_current_user)):
+    """获取 ShunX 安全入口配置（需登录）。
+
+    角色脱敏（第七轮审计修复）：entry_path 是安全入口的核心秘密，
+    仅管理员（设置窗口需要展示/回填当前入口）可见；普通用户只返回
+    enabled 标记（前端仅用于判断「是否已配置」），防止低权限账号
+    被攻破后直接泄露入口路径，瓦解 ShunX 的核心承诺。
+    """
     config = _load_config()
+    entry = config.get("entry_path")
+    # 与 verify_entry / is_entry_enabled 的实际生效语义保持一致：
+    # 配置了有效 entry_path 即视为启用（enabled 存储字段仅作展示参考）
+    enabled = get_entry_path() is not None
+    if user.get("role") != "admin":
+        # 普通用户：不回传入口路径本身，仅告知是否已启用
+        return {"entry_path": None, "enabled": enabled}
     return {
-        "entry_path": config.get("entry_path"),
-        "enabled": config.get("enabled", False),
+        "entry_path": entry,
+        "enabled": enabled,
     }
 
 

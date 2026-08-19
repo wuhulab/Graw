@@ -195,14 +195,17 @@ const openWindows = ref([])
 const activeWindowId = ref(null)
 const startMenuOpen = ref(false)
 
-// ShunX 安全入口：登录后检查是否已配置，未配置则强制设置
+// ShunX 安全入口：登录后检查是否已配置，未配置则强制设置。
+// 仅管理员触发（保存入口需要管理员权限）；后端对普通用户已脱敏
+// entry_path，普通用户凭 enabled 判断即可。
 const shunxRequired = ref(false)
 
 async function checkShunxRequired() {
   if (!auth.token) return
   try {
     const config = await shunxApi.config()
-    if (!config.entry_path) {
+    const missing = isAdmin() ? !config.entry_path : !config.enabled
+    if (missing) {
       shunxRequired.value = true
     }
   } catch (e) {
