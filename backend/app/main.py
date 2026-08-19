@@ -28,6 +28,9 @@ from app.routers import (
     disks,
     nodes,
     ui,
+    frp,
+    netstorage,
+    update,
 )
 from app.auth import (
     seed_default_users,
@@ -86,9 +89,14 @@ async def lifespan(app: FastAPI):
 # 暴露全部接口结构与参数（包括管理员端点），等于绕过 ShunX 安全入口
 # 直接送上攻击面地图。开发调试时可通过环境变量 GRAW_ENABLE_DOCS=1 打开。
 _ENABLE_DOCS = os.environ.get("GRAW_ENABLE_DOCS", "").strip() == "1"
+
+# 面板版本号：用于 /api/health（前端「设置-关于」板块展示）。
+# 升级版本时仅需同步修改此处，FastAPI 应用信息与此保持一致。
+APP_VERSION = "1.2.0"
+
 app = FastAPI(
     title="Graw Server Panel",
-    version="1.0.0",
+    version=APP_VERSION,
     lifespan=lifespan,
     docs_url="/docs" if _ENABLE_DOCS else None,
     redoc_url="/redoc" if _ENABLE_DOCS else None,
@@ -213,10 +221,22 @@ app.include_router(
 # 故不在此处挂全局 ADMIN 依赖（否则登录页无法公开读取网站名/欢迎语/Logo）。
 app.include_router(ui.router, prefix="/api/ui", tags=["ui"])
 
+# Frp（内网穿透）管理：可视化编辑 frps/frpc 配置 + 代理列表 + 进程启停（管理员）
+app.include_router(frp.router, prefix="/api/frp", tags=["frp"], dependencies=ADMIN)
+
+# 网络储存（FTP/FTPS/SMB/WebDAV/对象存储）：连接管理 + 远程文件操作（管理员）
+app.include_router(
+    netstorage.router, prefix="/api/netstorage", tags=["netstorage"], dependencies=ADMIN
+)
+
+# 面板自身更新：版本检测（只读）与一键更新（写操作需管理员）
+app.include_router(update.router, prefix="/api/update", tags=["update"], dependencies=ADMIN)
+
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok"}
+    """公开健康检查：返回面板状态与版本号（供前端「设置-关于」展示）。"""
+    return {"status": "ok", "name": "Graw", "version": APP_VERSION}
 
 
 # Serve frontend static files if built

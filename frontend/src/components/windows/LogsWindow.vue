@@ -111,7 +111,7 @@ onMounted(refresh)
 .viewer { flex: 1; border: 1px solid #e5e7eb; border-radius: 8px; display: flex; flex-direction: column; background: #fff; overflow: hidden; }
 .viewer-toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #f3f4f6; }
 .meta { font-size: 12px; color: #6b7280; margin-right: auto; }
-.content { flex: 1; padding: 10px; overflow: auto; font-size: 12px; line-height: 1.5; background: #0b0f19; color: #e5e7eb; margin: 0; }
+.content { flex: 1; padding: 10px; overflow: auto; font-size: 12px; line-height: 1.5; background: #fff; color: #111827; margin: 0; }
 .btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
 .btn.small { padding: 4px 8px; font-size: 12px; }
 .btn.primary { background: #111827; color: #fff; border-color: #111827; }

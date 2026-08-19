@@ -65,6 +65,17 @@ dockerHttp.interceptors.response.use(r => r, onDefaultPassword403)
 
 export default api
 
+// 面板基础信息（公开接口，无需登录）：状态 + 版本号，供「设置-关于」展示
+export const panelApi = {
+  health: () => api.get('/health').then(r => r.data)
+}
+
+// 面板自身更新：版本检测与一键更新（写操作需管理员）
+export const updateApi = {
+  status: () => api.get('/update/status').then(r => r.data),
+  apply: () => api.post('/update/apply').then(r => r.data)
+}
+
 export const authApi = {
   // path 为浏览器地址栏路径，用于 ShunX 安全入口校验
   login: (username, password, path = '') => api.post('/auth/login', { username, password }, { headers: { 'X-ShunX-Entry': path } }).then(r => r.data),
@@ -277,6 +288,22 @@ export const uiApi = {
   update: (body) => api.put('/ui/config', body).then(r => r.data)
 }
 
+export const frpApi = {
+  // Frp（内网穿透）管理：配置 / 代理 / 进程
+  status: () => api.get('/frp/status').then(r => r.data),
+  config: () => api.get('/frp/config').then(r => r.data),
+  preview: () => api.get('/frp/preview').then(r => r.data),
+  save: (body) => api.put('/frp/config', body).then(r => r.data),
+  switchMode: (mode) => api.post('/frp/mode', { mode }).then(r => r.data),
+  addProxy: (body) => api.post('/frp/proxies', body).then(r => r.data),
+  updateProxy: (id, body) => api.put(`/frp/proxies/${encodeURIComponent(id)}`, body).then(r => r.data),
+  deleteProxy: (id) => api.delete(`/frp/proxies/${encodeURIComponent(id)}`).then(r => r.data),
+  toggleProxy: (id, enabled) => api.post(`/frp/toggle-proxy/${encodeURIComponent(id)}`, { enabled }).then(r => r.data),
+  start: () => api.post('/frp/start').then(r => r.data),
+  stop: () => api.post('/frp/stop').then(r => r.data),
+  restart: () => api.post('/frp/restart').then(r => r.data)
+}
+
 export const appStoreApi = {
   // 索引地址配置
   config: () => api.get('/appstore/config').then(r => r.data),
@@ -344,6 +371,23 @@ export const appStoreApi = {
     })
     return controller
   }
+}
+
+export const netstorageApi = {
+  // 网络储存：连接管理 + 远程文件操作（FTP/FTPS/SMB/WebDAV/对象存储）
+  connections: () => api.get('/netstorage/connections').then(r => r.data),
+  createConn: (body) => api.post('/netstorage/connections', body).then(r => r.data),
+  updateConn: (id, body) => api.put(`/netstorage/connections/${encodeURIComponent(id)}`, body).then(r => r.data),
+  deleteConn: (id) => api.delete(`/netstorage/connections/${encodeURIComponent(id)}`).then(r => r.data),
+  test: (id) => api.post(`/netstorage/connections/${encodeURIComponent(id)}/test`).then(r => r.data),
+  // 远程文件操作（connId 为连接 id；path 为云端逻辑路径，以 / 开头）
+  list: (id, path) => api.get(`/netstorage/connections/${encodeURIComponent(id)}/list`, { params: path ? { path } : {} }).then(r => r.data),
+  read: (id, path) => api.get(`/netstorage/connections/${encodeURIComponent(id)}/read`, { params: { path } }).then(r => r.data),
+  write: (id, path, content) => api.post(`/netstorage/connections/${encodeURIComponent(id)}/write`, { path, content }).then(r => r.data),
+  mkdir: (id, path) => api.post(`/netstorage/connections/${encodeURIComponent(id)}/mkdir`, { path }).then(r => r.data),
+  remove: (id, path) => api.post(`/netstorage/connections/${encodeURIComponent(id)}/delete`, { path }).then(r => r.data),
+  rename: (id, src, dst) => api.post(`/netstorage/connections/${encodeURIComponent(id)}/rename`, { src, dst }).then(r => r.data),
+  upload: (id, path, formData) => api.post(`/netstorage/connections/${encodeURIComponent(id)}/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data)
 }
 
 export function formatBytes(bytes) {

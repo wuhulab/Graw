@@ -8,6 +8,7 @@ files.py - 文件管理路由
 """
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
+from fastapi import Depends, Request
 from pydantic import BaseModel
 import os
 import logging
@@ -16,6 +17,8 @@ import platform
 from typing import Optional
 
 from app.hostfs import host_path, unhost_path
+from app.auth import get_current_user, get_client_ip
+from app import auditlog
 
 logger = logging.getLogger("graw.files")
 
@@ -151,12 +154,19 @@ class WriteRequest(BaseModel):
 
 
 @router.post("/write")
-async def write_file(req: WriteRequest):
+async def write_file(
+    req: WriteRequest,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
     real = host_path(_safe_path(req.path))
     try:
         os.makedirs(os.path.dirname(real), exist_ok=True)
         with open(real, "w", encoding="utf-8") as f:
             f.write(req.content)
+        auditlog.record(
+            "写文件", user["username"], get_client_ip(request), _safe_path(req.path)
+        )
         return {"ok": True}
     except Exception as e:
         logger.warning("写入文件失败: %s", e)
@@ -168,8 +178,13 @@ class DeleteRequest(BaseModel):
 
 
 @router.post("/delete")
-async def delete_path(req: DeleteRequest):
-    real = host_path(_safe_path(req.path))
+async def delete_path(
+    req: DeleteRequest,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    safe = _safe_path(req.path)
+    real = host_path(safe)
     if not os.path.exists(real):
         raise HTTPException(status_code=404, detail="Not found")
     try:
@@ -177,6 +192,7 @@ async def delete_path(req: DeleteRequest):
             shutil.rmtree(real)
         else:
             os.remove(real)
+        auditlog.record("删除", user["username"], get_client_ip(request), safe)
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -187,10 +203,16 @@ class MkdirRequest(BaseModel):
 
 
 @router.post("/mkdir")
-async def mkdir(req: MkdirRequest):
-    real = host_path(_safe_path(req.path))
+async def mkdir(
+    req: MkdirRequest,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    safe = _safe_path(req.path)
+    real = host_path(safe)
     try:
         os.makedirs(real, exist_ok=True)
+        auditlog.record("新建目录", user["username"], get_client_ip(request), safe)
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -202,13 +224,18 @@ class RenameRequest(BaseModel):
 
 
 @router.post("/rename")
-async def rename(req: RenameRequest):
+async def rename(
+    req: RenameRequest,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
     src = host_path(_safe_path(req.src))
     dst = host_path(_safe_path(req.dst))
     if not os.path.exists(src):
         raise HTTPException(status_code=404, detail="Source not found")
     try:
         os.rename(src, dst)
+        auditlog.record("重命名", user["username"], get_client_ip(request), f"{req.src} -> {req.dst}")
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -223,7 +250,12 @@ async def download(path: str):
 
 
 @router.post("/upload")
-async def upload(path: str = Form(...), file: UploadFile = File(...)):
+async def upload(
+    request: Request,
+    user: dict = Depends(get_current_user),
+    path: str = Form(...),
+    file: UploadFile = File(...),
+):
     target_dir = host_path(_safe_path(path))
     if not os.path.isdir(target_dir):
         raise HTTPException(status_code=400, detail="Target directory not found")
@@ -236,6 +268,7 @@ async def upload(path: str = Form(...), file: UploadFile = File(...)):
     try:
         with open(target, "wb") as f:
             shutil.copyfileobj(file.file, f)
+        auditlog.record("上传文件", user["username"], get_client_ip(request), unhost_path(target))
         return {"ok": True, "path": unhost_path(target)}
     except Exception as e:
         logger.warning("上传失败: %s", e)
@@ -248,12 +281,18 @@ class ChmodRequest(BaseModel):
 
 
 @router.post("/chmod")
-async def chmod(req: ChmodRequest):
-    real = host_path(_safe_path(req.path))
+async def chmod(
+    req: ChmodRequest,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    safe = _safe_path(req.path)
+    real = host_path(safe)
     if not os.path.exists(real):
         raise HTTPException(status_code=404, detail="Not found")
     try:
         os.chmod(real, req.mode)
+        auditlog.record("修改权限", user["username"], get_client_ip(request), f"{safe} -> {oct(req.mode)}")
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -265,7 +304,11 @@ class CopyRequest(BaseModel):
 
 
 @router.post("/copy")
-async def copy_path(req: CopyRequest):
+async def copy_path(
+    req: CopyRequest,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
     src = host_path(_safe_path(req.src))
     dst = host_path(_safe_path(req.dst))
     if not os.path.exists(src):
@@ -275,6 +318,7 @@ async def copy_path(req: CopyRequest):
             shutil.copytree(src, dst)
         else:
             shutil.copy2(src, dst)
+        auditlog.record("复制", user["username"], get_client_ip(request), f"{req.src} -> {req.dst}")
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -287,7 +331,11 @@ class CompressRequest(BaseModel):
 
 
 @router.post("/compress")
-async def compress(req: CompressRequest):
+async def compress(
+    req: CompressRequest,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
     archive = host_path(_safe_path(req.archive))
     paths = [host_path(_safe_path(p)) for p in req.paths]
     missing = [p for p in paths if not os.path.exists(p)]
@@ -313,6 +361,7 @@ async def compress(req: CompressRequest):
             with tarfile.open(archive, mode) as tf:
                 for p in paths:
                     tf.add(p, arcname=os.path.basename(p))
+        auditlog.record("压缩", user["username"], get_client_ip(request), f"{[req.archive]}: {req.paths}")
         return {"ok": True, "archive": _safe_path(req.archive)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -324,7 +373,11 @@ class ExtractRequest(BaseModel):
 
 
 @router.post("/extract")
-async def extract(req: ExtractRequest):
+async def extract(
+    req: ExtractRequest,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
     archive = host_path(_safe_path(req.archive))
     dest = host_path(_safe_path(req.dest))
     if not os.path.isfile(archive):
@@ -367,6 +420,7 @@ async def extract(req: ExtractRequest):
                     tf.extractall(dest, filter="data")
                 except TypeError:
                     tf.extractall(dest)
+        auditlog.record("解压", user["username"], get_client_ip(request), f"{req.archive} -> {req.dest}")
         return {"ok": True}
     except HTTPException:
         raise

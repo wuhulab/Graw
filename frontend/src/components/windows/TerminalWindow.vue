@@ -17,7 +17,8 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { auth } from '../../store/auth'
 
-const props = defineProps({ cwd: String, container: String })
+// autoCommand：连接建立后自动执行/输入到终端的命令字符串（例如 Foxcode 启动命令）
+const props = defineProps({ cwd: String, container: String, autoCommand: String })
 const { t } = useI18n()
 
 const termEl = ref(null)
@@ -29,6 +30,8 @@ let resizeObserver = null
 let alive = false
 let reconnectTimer = null
 let backoff = 500
+let autoSent = false
+let autoTimer = null
 
 function setStatus(s) { statusText.value = s }
 
@@ -52,25 +55,47 @@ function connect() {
   ws.onopen = () => {
     backoff = 500
     setStatus(t('terminal.connected'))
+    autoSent = false
     sendResize()
+    // 若指定了工作目录，连接稳定后先切换目录
     if (props.cwd) {
       setTimeout(() => {
         if (ws && ws.readyState === 1) {
           const isWinPath = props.cwd.includes('\\') || /^[A-Za-z]:/.test(props.cwd)
-          const cmd = isWinPath ? `cd /d "${props.cwd}"\r\n` : `cd "${props.cwd}"\n`
-          ws.send(cmd)
+          ws.send(isWinPath ? `cd /d "${props.cwd}"\r\n` : `cd "${props.cwd}"\n`)
         }
       }, 600)
     }
+    // 自动命令（如 Foxcode）：等待 shell 输出提示符或超时兜底后发送
+    scheduleAutoSend()
   }
   ws.onmessage = (e) => {
     if (term) term.write(e.data)
+    // 收到 shell 首次输出（提示符出现）后再发送自动命令，连接就绪判断更可靠
+    if (props.autoCommand && !autoSent) doAutoSend()
   }
   ws.onclose = () => {
     setStatus(t('terminal.disconnectedShort'))
+    clearAutoTimer()
     if (alive) scheduleReconnect()
   }
   ws.onerror = () => { setStatus(t('terminal.error')) }
+}
+
+// 自动命令相关：等待 shell 输出提示符后发送；若迟迟无输出，则用定时器兜底发送
+function scheduleAutoSend() {
+  if (!props.autoCommand || autoSent) return
+  clearAutoTimer()
+  autoTimer = setTimeout(() => { doAutoSend() }, 1200)
+}
+function doAutoSend() {
+  if (!props.autoCommand || autoSent || !ws || ws.readyState !== 1) return
+  autoSent = true
+  clearAutoTimer()
+  ws.send(props.autoCommand + '\r\n')
+}
+function clearAutoTimer() {
+  if (autoTimer) { clearTimeout(autoTimer); autoTimer = null }
 }
 
 function scheduleReconnect() {
@@ -121,6 +146,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   alive = false
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+  clearAutoTimer()
   resizeObserver && resizeObserver.disconnect()
   if (ws) { try { ws.close() } catch (e) {} }
   if (term) { try { term.dispose() } catch (e) {} }

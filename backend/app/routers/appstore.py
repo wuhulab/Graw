@@ -43,6 +43,8 @@ except ImportError:  # pragma: no cover
 from app.routers.docker_api import get_backend, _find_podman
 from app.routers import firewall
 from app.routers import tasks
+from app.auth import Depends, get_current_user, get_client_ip
+from app import auditlog
 
 logger = logging.getLogger("appstore")
 router = APIRouter()
@@ -614,8 +616,14 @@ def _open_firewall_port(port: int, app_name: str) -> None:
 # 安装（同步接口，保留兼容）
 # ------------------------------------------------------------
 @router.post("/install")
-async def install(req: InstallRequest):
+async def install(req: InstallRequest, request: Request, user: dict = Depends(get_current_user)):
     # compose 拉取 / 执行均为阻塞 IO，放到线程池避免阻塞事件循环
+    auditlog.record(
+        "执行命令",
+        user["username"],
+        get_client_ip(request),
+        f"docker compose 安装应用 {req.app_name}（{req.app_id}）",
+    )
     return await asyncio.to_thread(_install_sync, req)
 
 
@@ -921,12 +929,18 @@ def _install_stream_worker(req: InstallRequest, emit, task_id: str = None):
 
 
 @router.post("/install/stream")
-async def install_stream(req: InstallRequest, request: Request):
+async def install_stream(req: InstallRequest, request: Request, user: dict = Depends(get_current_user)):
     """SSE 流式安装：逐步推送状态与 docker compose 输出日志。
 
     每次安装会在「任务中心」创建一条持久化任务记录，日志写入任务
     日志文件；即使客户端刷新 / 断开，安装也会在后台继续执行。
     """
+    auditlog.record(
+        "执行命令",
+        user["username"],
+        get_client_ip(request),
+        f"docker compose 安装应用 {req.app_name}（{req.app_id}）",
+    )
     task_id = uuid.uuid4().hex[:8]
     queue: asyncio.Queue = asyncio.Queue()
 

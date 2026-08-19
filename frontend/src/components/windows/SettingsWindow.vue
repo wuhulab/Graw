@@ -115,6 +115,37 @@
           </label>
         </div>
       </div>
+
+      <!-- 关于：项目与社区相关链接（外链新窗口打开，rel=noopener 防钓鱼） -->
+      <div class="block">
+        <div class="block-title">{{ $t('settings.about.title') }}</div>
+        <div class="about-version" v-if="panelVersion">
+          {{ $t('settings.about.version') }}: <span class="about-version-val">Graw v{{ panelVersion }}</span>
+          <!-- 版本更新提示：发现新版显示一键更新；已最新则提示已是最新 -->
+          <template v-if="updateAvailable">
+            <span class="update-hint">→ {{ $t('settings.about.updateAvailable', { version: latestVersion }) }}</span>
+            <button class="btn btn-update" :disabled="updating" @click="doUpdate">
+              {{ updating ? $t('settings.about.updating') : $t('settings.about.updateNow') }}
+            </button>
+          </template>
+          <span v-else-if="updateChecked" class="update-latest">{{ $t('settings.about.upToDate') }}</span>
+        </div>
+        <div v-if="updateMsg" :class="['msg', updateMsgType]" style="margin-bottom:8px;">{{ updateMsg }}</div>
+        <div class="about-list">
+          <a
+            v-for="l in aboutLinks"
+            :key="l.key"
+            :href="l.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="about-link"
+            :title="l.url"
+          >
+            <span class="about-name">{{ $t(l.nameKey) }}</span>
+            <span class="about-url">{{ l.url }}</span>
+          </a>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -124,7 +155,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { settings } from '../../store/settings'
 import { isAdmin } from '../../store/auth'
-import { nodesApi, shunxApi } from '../../api'
+import { nodesApi, shunxApi, panelApi, updateApi } from '../../api'
 import { nodes as nodesStore, refreshNodes, setCurrentNode } from '../../store/nodes'
 import { LANGUAGES, setLocale } from '../../locales'
 
@@ -143,6 +174,71 @@ const statusText = computed(() => {
   if (!currentEntry.value) return t('settings.shunxNotSet')
   return t('settings.shunxEnabled', { path: currentEntry.value })
 })
+
+// ---- 关于：项目与社区链接 ----
+// nameKey 为多语言键，url 为固定外链；集中在此便于维护与扩展
+const aboutLinks = [
+  { key: 'github', nameKey: 'settings.about.githubSource', url: 'https://github.com/wuhulab/Graw' },
+  { key: 'docker', nameKey: 'settings.about.docker', url: 'https://hub.docker.com/repository/docker/shunx/graw/general' },
+  { key: 'wuhulab', nameKey: 'settings.about.wuhulab', url: 'https://github.com/wuhulab/' },
+  { key: 'appstore', nameKey: 'settings.about.appStore', url: 'https://github.com/wuhulab/Graw-app-store' },
+  { key: 'sponsor', nameKey: 'settings.about.sponsorFai', url: 'https://fai.shunx.top/' },
+  { key: 'shunx', nameKey: 'settings.about.shunxTeam', url: 'https://www.shunx.top/' },
+  { key: 'bili', nameKey: 'settings.about.bilibili', url: 'https://space.bilibili.com/3546925812943471' },
+  { key: 'bili2', nameKey: 'settings.about.bilibili2', url: 'https://space.bilibili.com/3493133419546943' },
+  { key: 'contributor', nameKey: 'settings.about.contributor', url: 'https://github.com/shunianssy' },
+]
+
+// 面板版本号：来自公开接口 /api/health，加载失败时静默留空（不阻塞页面）
+const panelVersion = ref('')
+async function loadVersion() {
+  try {
+    const res = await panelApi.health()
+    panelVersion.value = res.version || ''
+  } catch (e) {
+    // 版本号获取失败不影响设置窗口其它功能，仅隐藏版本行
+    panelVersion.value = ''
+  }
+}
+
+// ---- 面板版本更新检测与一键更新 ----
+// 仅管理员可更新（后端 /api/update 挂 ADMIN 依赖）；检测失败时静默隐藏更新区
+const updateAvailable = ref(false)
+const latestVersion = ref('')
+const updateChecked = ref(false) // 是否已完成版本检测（区分「未检测」与「已是最新」）
+const updating = ref(false)
+const updateMsg = ref('')
+const updateMsgType = ref('')
+
+async function loadUpdateStatus() {
+  try {
+    const res = await updateApi.status()
+    updateAvailable.value = !!res.update_available
+    latestVersion.value = res.latest_version || ''
+    updateChecked.value = true
+  } catch (e) {
+    // 网络/权限异常（如非管理员）时静默，不显示任何更新提示
+    updateAvailable.value = false
+    updateChecked.value = false
+  }
+}
+
+async function doUpdate() {
+  if (updating.value) return
+  if (!confirm(t('settings.about.updateConfirm', { version: latestVersion.value }))) return
+  updating.value = true
+  updateMsg.value = ''
+  try {
+    const res = await updateApi.apply()
+    updateMsg.value = res.message || t('settings.about.updateStarted')
+    updateMsgType.value = 'ok'
+  } catch (e) {
+    updateMsg.value = e?.response?.data?.detail || t('settings.about.updateFailed')
+    updateMsgType.value = 'err'
+  } finally {
+    updating.value = false
+  }
+}
 
 // ---- 多机（多节点）管理 ----
 const nodesList = ref([])
@@ -278,6 +374,10 @@ async function removeNode(n) {
 }
 
 onMounted(async () => {
+  // 加载面板版本号（公开接口，与登录态无关）
+  loadVersion()
+  // 检测是否有新版本（管理员可触发一键更新）
+  loadUpdateStatus()
   try {
     const config = await shunxApi.config()
     currentEntry.value = config.entry_path || ''
@@ -456,5 +556,69 @@ input:focus {
   background: #fafafa;
   border-radius: 8px;
   border: 1px solid rgba(0,0,0,0.06);
+}
+/* ---- 关于（About）---- */
+.about-version {
+  font-size: 12px;
+  color: #1d1d1f;
+  margin-bottom: 10px;
+}
+.about-version-val {
+  font-weight: 600;
+  color: #0a84ff;
+}
+/* 版本更新提示 */
+.update-hint {
+  margin-left: 6px;
+  font-size: 11px;
+  color: #e5484d;
+}
+.update-latest {
+  margin-left: 6px;
+  font-size: 11px;
+  color: #0a7d3b;
+}
+.btn-update {
+  margin-left: 8px;
+  padding: 3px 12px;
+  font-size: 11px;
+  background: #e5484d;
+}
+.btn-update:hover:not(:disabled) { background: #d63d42; }
+.btn-update:disabled { opacity: 0.6; cursor: not-allowed; }
+.about-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.about-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #fafafa;
+  border: 1px solid rgba(0,0,0,0.05);
+  border-radius: 8px;
+  text-decoration: none;
+  color: #1d1d1f;
+  transition: background 0.15s;
+}
+.about-link:hover {
+  background: rgba(10,132,255,0.06);
+  border-color: rgba(10,132,255,0.25);
+}
+.about-name {
+  font-size: 12px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.about-url {
+  font-size: 11px;
+  color: #0a84ff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
 }
 </style>

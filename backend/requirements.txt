@@ -12,3 +12,6 @@ redis==8.1.0
 psycopg2-binary==2.9.12
 pymongo==4.17.0
 pyyaml==6.0.3
+# 网络储存（SMB / 对象存储 S3 兼容）：FTP/FTPS 用标准库 ftplib，WebDAV 用 requests
+smbprotocol==1.17.0
+minio==7.2.20

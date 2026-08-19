@@ -26,6 +26,7 @@ from ..auth import (
     DEFAULT_PASSWORD,
 )
 from .shunx import verify_entry
+from .. import auditlog
 
 logger = logging.getLogger("graw.auth")
 
@@ -268,15 +269,24 @@ async def login(req: LoginRequest, request: Request):
     except HTTPException:
         _record_entry_failure(request)
         _record_failure(request, req.username)
+        auditlog.record(
+            "登录失败", req.username, get_client_ip(request), "安全入口校验未通过"
+        )
         raise
     user = _get_user(req.username)
     if user is None:
         # 用户不存在：比对哑哈希抹平时序后同样返回 401
         verify_password(req.password, _DUMMY_HASH)
         _record_failure(request, req.username)
+        auditlog.record(
+            "登录失败", req.username, get_client_ip(request), "用户不存在"
+        )
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     if not verify_password(req.password, user["password"]):
         _record_failure(request, req.username)
+        auditlog.record(
+            "登录失败", req.username, get_client_ip(request), "密码错误"
+        )
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     # 登录成功，清零失败记录（入口与密码均已通过校验）
     _clear_failures(request, req.username)
@@ -289,6 +299,7 @@ async def login(req: LoginRequest, request: Request):
     # 签发 JWT 时携带当前 token_version，改密/注销后旧令牌自动失效
     token = create_token(user["username"], token_version=int(user.get("token_version", 0)))
     logger.info("用户 %s 登录成功（IP %s）", req.username, get_client_ip(request))
+    auditlog.record("登录成功", req.username, get_client_ip(request))
     return {"token": token, "user": public}
 
 
@@ -298,6 +309,7 @@ async def logout(request: Request, user: dict = Depends(get_current_user)):
     bump_token_version(user["username"])
     _clear_failures(request, user["username"])
     logger.info("用户 %s 已注销（IP %s）", user["username"], get_client_ip(request))
+    auditlog.record("退出登录", user["username"], get_client_ip(request))
     return {"ok": True}
 
 
@@ -349,6 +361,7 @@ async def change_password(
     new_tv = int(users.get(user["username"], {}).get("token_version", 0))
     new_token = create_token(user["username"], token_version=new_tv)
     logger.info("用户 %s 已修改密码并刷新令牌（IP %s）", user["username"], get_client_ip(request))
+    auditlog.record("修改密码", user["username"], get_client_ip(request))
     return {"ok": True, "token": new_token}
 
 
@@ -365,7 +378,7 @@ async def list_users(_: dict = Depends(require_admin)):
 
 
 @router.post("/users")
-async def create_user(req: CreateUserRequest, _: dict = Depends(require_admin)):
+async def create_user(req: CreateUserRequest, request: Request, admin: dict = Depends(require_admin)):
     if req.role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="角色无效")
     # ShunX 保护：禁止使用默认密码作为账号密码
@@ -386,6 +399,7 @@ async def create_user(req: CreateUserRequest, _: dict = Depends(require_admin)):
     }
     _save_users(users)
     logger.info("管理员创建账号 %s（角色 %s）", req.username, req.role)
+    auditlog.record("创建用户", admin["username"], get_client_ip(request), f"目标:{req.username} 角色:{req.role}")
     return {"ok": True}
 
 
@@ -397,7 +411,7 @@ class UpdateUserRequest(BaseModel):
 
 @router.put("/users/{username}")
 async def update_user(
-    username: str, req: UpdateUserRequest, _: dict = Depends(require_admin)
+    username: str, req: UpdateUserRequest, request: Request, admin: dict = Depends(require_admin)
 ):
     users = _load_users() or {}
     target = users.get(username)
@@ -429,11 +443,15 @@ async def update_user(
     if req.must_change_password is not None:
         target["must_change_password"] = req.must_change_password
     _save_users(users)
+    auditlog.record(
+        "更新用户", admin["username"], get_client_ip(request),
+        f"目标:{username} 改密码:{req.password is not None}",
+    )
     return {"ok": True}
 
 
 @router.delete("/users/{username}")
-async def delete_user(username: str, user: dict = Depends(require_admin)):
+async def delete_user(username: str, request: Request, user: dict = Depends(require_admin)):
     if username == user["username"]:
         raise HTTPException(status_code=400, detail="不能删除当前登录账号")
     users = _load_users() or {}
@@ -445,4 +463,5 @@ async def delete_user(username: str, user: dict = Depends(require_admin)):
         raise HTTPException(status_code=400, detail="至少保留一个管理员账号")
     del users[username]
     _save_users(users)
+    auditlog.record("删除用户", user["username"], get_client_ip(request), f"目标:{username}")
     return {"ok": True}

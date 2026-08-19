@@ -121,6 +121,13 @@ def _run():
     print("\n[1] 安全响应头")
     try:
         r = requests.get(f"{BASE}/api/health")
+        body = r.json()
+        check("health 返回 status=ok", body.get("status") == "ok",
+              f"status={body.get('status')}")
+        check("health 返回面板版本号",
+              isinstance(body.get("version"), str) and bool(body.get("version")),
+              f"version={body.get('version')}")
+        check("health 响应无敏感信息", "detail" not in body and "password" not in body)
         csp = r.headers.get("Content-Security-Policy", "")
         check("CSP header 存在", "Content-Security-Policy" in r.headers)
         check("CSP 包含 default-src 'self'", "default-src 'self'" in csp)

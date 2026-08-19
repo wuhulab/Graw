@@ -10,7 +10,7 @@
           class="shortcut"
           :class="{ selected: selected === sc.key }"
           @click="selected = sc.key"
-          @dblclick="openWindow(sc.key)"
+          @dblclick="openShortcut(sc.key)"
         >
           <div class="icon"><component :is="sc.icon" :size="32" /></div>
           <div class="label" :title="sc.titleKey ? $t(sc.titleKey) : sc.label">{{ sc.titleKey ? $t(sc.titleKey) : sc.label }}</div>
@@ -41,7 +41,7 @@
       @move="(x, y) => moveWindow(w.id, x, y)"
       @resize="(width, height) => resizeWindow(w.id, width, height)"
     >
-      <component :is="w.component" v-bind="w.props || {}" @close="handleCloseWindow(w.id)" @dirty="(v) => { const ww=openWindows.value.find(x=>x.id===w.id); if(ww) ww.dirty=v }" @openTerminal="openTerminalAt" @openEditor="openEditor" @openMedia="openMedia" @openUsers="openUsers" @openLogs="openContainerLogs" @openContainerTerminal="openContainerTerminal" @openContainerDetails="openContainerDetails" @openFiles="openFiles" @openDockerConfigEditor="openDockerConfigEditor" @openAppInstall="openAppStoreInstall" @openComposeEditor="openAppStoreComposeEditor" @openInstallLog="openAppStoreInstallLog" @openReadme="openAppStoreReadme" @openTaskCenter="openTasks" @openRuntimeCreate="openRuntimeCreate" @openConnectionForm="openConnectionForm" />
+      <component :is="w.component" v-bind="w.props || {}" @close="handleCloseWindow(w.id)" @dirty="(v) => { const ww=openWindows.value.find(x=>x.id===w.id); if(ww) ww.dirty=v }" @openTerminal="openTerminalAt" @openEditor="openEditor" @openMedia="openMedia" @openUsers="openUsers" @openLogs="openContainerLogs" @openContainerTerminal="openContainerTerminal" @openContainerDetails="openContainerDetails" @openFiles="openFiles" @openDockerConfigEditor="openDockerConfigEditor" @openAppInstall="openAppStoreInstall" @openComposeEditor="openAppStoreComposeEditor" @openInstallLog="openAppStoreInstallLog" @openReadme="openAppStoreReadme" @openTaskCenter="openTasks" @openRuntimeCreate="openRuntimeCreate" @openConnectionForm="openConnectionForm" @openNetStorageBrowse="openNetStorageBrowse" @openNetStorageForm="openNetStorageForm" />
     </WindowFrame>
 
     <!-- Dock -->
@@ -106,6 +106,7 @@ import UserWindow from './components/windows/UserWindow.vue'
 import ChangePasswordWindow from './components/windows/ChangePasswordWindow.vue'
 import CronWindow from './components/windows/CronWindow.vue'
 import FirewallWindow from './components/windows/FirewallWindow.vue'
+import FrpWindow from './components/windows/FrpWindow.vue'
 import SSLWindow from './components/windows/SSLWindow.vue'
 import LogsWindow from './components/windows/LogsWindow.vue'
 import SettingsWindow from './components/windows/SettingsWindow.vue'
@@ -122,6 +123,9 @@ import AppStoreReadmeWindow from './components/windows/AppStoreReadmeWindow.vue'
 import TaskCenterWindow from './components/windows/TaskCenterWindow.vue'
 import UISettingsWindow from './components/windows/UISettingsWindow.vue'
 import ConnectionFormWindow from './components/windows/ConnectionFormWindow.vue'
+import NetStorageWindow from './components/windows/NetStorageWindow.vue'
+import NetStorageBrowseWindow from './components/windows/NetStorageBrowseWindow.vue'
+import NetStorageFormWindow from './components/windows/NetStorageFormWindow.vue'
 import RuntimeWindow from './components/windows/RuntimeWindow.vue'
 import RuntimeCreateWindow from './components/windows/RuntimeCreateWindow.vue'
 import DisksWindow from './components/windows/DisksWindow.vue'
@@ -136,7 +140,7 @@ import { systemState, startMetrics, stopMetrics } from './store/systemMetrics'
 import { startDocker, stopDocker, refresh as refreshDocker } from './store/docker'
 import { nodes as nodesStore, refreshNodes } from './store/nodes'
 import { tamperState, startTamper, stopTamper } from './store/tamper'
-import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck, ShieldAlert, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette } from 'lucide-vue-next'
+import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck, ShieldAlert, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud } from 'lucide-vue-next'
 
 const loggedIn = computed(() => !!auth.token)
 
@@ -172,6 +176,7 @@ const shortcuts = ref([
   { key: 'database', label: '数据库', titleKey: 'app.shortcut.database', icon: markRaw(Database), component: markRaw(DatabaseWindow), w: 860, h: 540, adminOnly: true },
   { key: 'cron', label: '计划任务', titleKey: 'app.shortcut.cron', icon: markRaw(Clock), component: markRaw(CronWindow), w: 800, h: 520, adminOnly: true },
   { key: 'firewall', label: '防火墙', titleKey: 'app.shortcut.firewall', icon: markRaw(Shield), component: markRaw(FirewallWindow), w: 800, h: 540, adminOnly: true },
+  { key: 'frp', label: 'Frp内网穿透', titleKey: 'app.shortcut.frp', icon: markRaw(Radio), component: markRaw(FrpWindow), w: 900, h: 600, adminOnly: true },
   { key: 'ssl', label: 'SSL', titleKey: 'app.shortcut.ssl', icon: markRaw(Lock), component: markRaw(SSLWindow), w: 820, h: 520, adminOnly: true },
   { key: 'logs', label: '日志', titleKey: 'app.shortcut.logs', icon: markRaw(ScrollText), component: markRaw(LogsWindow), w: 900, h: 560, adminOnly: true },
   { key: 'docker', label: 'Docker', titleKey: 'app.shortcut.docker', icon: markRaw(Container), component: markRaw(DockerWindow), w: 820, h: 520, adminOnly: true },
@@ -182,9 +187,12 @@ const shortcuts = ref([
   { key: 'runtime', label: '运行环境', titleKey: 'app.shortcut.runtime', icon: markRaw(Cpu), component: markRaw(RuntimeWindow), w: 900, h: 560, adminOnly: true },
   { key: 'process', label: '进程管理', titleKey: 'app.shortcut.process', icon: markRaw(Settings), component: markRaw(ProcessWindow), w: 780, h: 520, adminOnly: true },
   { key: 'files', label: '文件管理', titleKey: 'app.shortcut.files', icon: markRaw(Folder), component: markRaw(FilesWindow), w: 820, h: 540, adminOnly: true },
+  { key: 'netstorage', label: '网络储存', titleKey: 'app.shortcut.netstorage', icon: markRaw(Cloud), component: markRaw(NetStorageWindow), w: 860, h: 540, adminOnly: true },
   { key: 'uisettings', label: '界面设置', titleKey: 'app.shortcut.uisettings', icon: markRaw(Palette), component: markRaw(UISettingsWindow), w: 520, h: 540, adminOnly: true },
   { key: 'disks', label: '磁盘管理', titleKey: 'app.shortcut.disks', icon: markRaw(HardDrive), component: markRaw(DisksWindow), w: 900, h: 560, adminOnly: true },
-  { key: 'terminal', label: '终端', titleKey: 'app.shortcut.terminal', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true }
+  { key: 'terminal', label: '终端', titleKey: 'app.shortcut.terminal', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true },
+  // Foxcode：双击打开终端并自动输入 foxcode 命令启动
+  { key: 'foxcode', label: 'Foxcode', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true, props: { autoCommand: 'foxcode' } }
 ])
 
 // 桌面快捷方式：管理员可见全部，普通用户仅可见非管理功能
@@ -262,7 +270,7 @@ function openWindow(key) {
     titleArgs: def.titleArgs,
     icon: def.icon,
     component: def.component,
-    props: {},
+    props: def.props ? { ...def.props } : {},
     x: 140 + (openWindows.value.length * 30),
     y: 60 + (openWindows.value.length * 25),
     width: def.w,
@@ -274,6 +282,26 @@ function openWindow(key) {
   })
   openWindows.value.push(w)
   activeWindowId.value = id
+}
+
+// 桌面快捷方式双击分发：特殊应用（如 Foxcode）走自定义打开逻辑，其余走通用 openWindow
+function openShortcut(key) {
+  if (key === 'foxcode') {
+    openFoxcode()
+  } else {
+    openWindow(key)
+  }
+}
+
+// Foxcode：打开终端并自动输入 foxcode 启动命令
+// 首次启动（浏览器本地从未记录过）弹窗提示需要安装，之后不再重复提醒
+function openFoxcode() {
+  // 每次浏览器会话只弹一次（sessionStorage 关页即清空），首次启动提醒安装 foxcode
+  if (!sessionStorage.getItem('graw_foxcode_warned')) {
+    alert('需要安装 foxcode：pip install foxcode2')
+    sessionStorage.setItem('graw_foxcode_warned', '1')
+  }
+  openWindow('foxcode')
 }
 
 function openTerminalAt(cwd) {
@@ -611,6 +639,56 @@ function openConnectionForm(conn = null) {
     y: 120 + (openWindows.value.length * 25),
     width: 460,
     height: 560,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 网络储存：点击云盘卡片 → 启动「文件管理」，标题为「文件管理：<名称>」
+function openNetStorageBrowse({ id, name }) {
+  const id2 = ++windowSeq
+  const w = reactive({
+    id: id2,
+    key: 'netstorage-browse',
+    title: '文件管理: ' + (name || ''),
+    titleKey: 'app.winTitle.netstorageBrowse',
+    titleArgs: { name: name || '' },
+    icon: markRaw(Folder),
+    component: markRaw(NetStorageBrowseWindow),
+    props: { conn: { id, name } },
+    x: 140 + (openWindows.value.length * 30),
+    y: 60 + (openWindows.value.length * 25),
+    width: 860,
+    height: 560,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id2
+}
+
+// 网络储存：可保存时再次编辑；点击「添加/编辑」则打开独立表单窗口（风格同运行环境）
+function openNetStorageForm(conn = null) {
+  const id = ++windowSeq
+  const w = reactive({
+    id,
+    key: 'netstorage-form',
+    title: conn ? '编辑: ' + (conn.name || '') : '添加网络储存',
+    titleKey: conn ? 'app.winTitle.netstorageEdit' : 'app.winTitle.netstorageAdd',
+    titleArgs: conn ? { name: conn.name || '' } : undefined,
+    icon: markRaw(Cloud),
+    component: markRaw(NetStorageFormWindow),
+    props: { conn },
+    x: 180 + (openWindows.value.length * 30),
+    y: 100 + (openWindows.value.length * 25),
+    width: 560,
+    height: 620,
     z: ++zSeq,
     minimized: false,
     maximized: false,

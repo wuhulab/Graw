@@ -9,6 +9,7 @@ import subprocess
 from app.auth import get_current_user_ws_admin
 from app.hostfs import get_host_root
 from app import node_manager
+from app import auditlog
 from app.routers.docker_api import get_backend, _find_podman
 
 router = APIRouter()
@@ -92,6 +93,12 @@ async def container_terminal_ws(
     if user is None:
         return
     await websocket.accept()
+    auditlog.record(
+        "进入容器终端",
+        (user or {}).get("username", ""),
+        websocket.client.host if websocket.client else "",
+        container,
+    )
     try:
         command = _container_exec_command(container)
     except RuntimeError as e:
@@ -125,6 +132,13 @@ async def terminal_ws(websocket: WebSocket, user=Depends(get_current_user_ws_adm
     if user is None:
         return
     await websocket.accept()
+    # 记录远程终端开启：是否作用于远程节点由 node_manager 运行时决定
+    target = "远程节点终端" if node_manager.is_remote() else "本机终端"
+    auditlog.record(
+        target,
+        (user or {}).get("username", ""),
+        websocket.client.host if websocket.client else "",
+    )
     try:
         if IS_WINDOWS:
             await _windows_terminal(websocket)

@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel
 import asyncio
 import psutil
 
 from app import node_manager
+from app.auth import get_current_user, get_client_ip
+from app import auditlog
 
 router = APIRouter()
 
@@ -110,7 +112,17 @@ def _list_processes_sync(sort_by: str, limit: int):
 
 
 @router.post("/{pid}/kill")
-async def kill_process(pid: int, req: KillRequest):
+async def kill_process(
+    pid: int,
+    req: KillRequest,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    try:
+        p = psutil.Process(pid)
+        pname = p.name()
+    except Exception:
+        pname = ""
     if node_manager.is_remote():
         # 远程：signum 需整数；9 = SIGKILL，15 = SIGTERM
         signum = 9 if req.force else 15
@@ -121,6 +133,9 @@ async def kill_process(pid: int, req: KillRequest):
             raise HTTPException(status_code=404, detail="Process not found")
         if r.returncode != 0:
             raise HTTPException(status_code=500, detail=(r.stderr or "kill failed").strip())
+        auditlog.record(
+            "结束进程", user["username"], get_client_ip(request), f"pid:{pid}"
+        )
         return {"ok": True}
     try:
         p = psutil.Process(pid)
@@ -128,6 +143,12 @@ async def kill_process(pid: int, req: KillRequest):
             p.kill()
         else:
             p.terminate()
+        auditlog.record(
+            "结束进程",
+            user["username"],
+            get_client_ip(request),
+            f"pid:{pid} name:{pname} 强制:{req.force}",
+        )
         return {"ok": True}
     except psutil.NoSuchProcess:
         raise HTTPException(status_code=404, detail="Process not found")
