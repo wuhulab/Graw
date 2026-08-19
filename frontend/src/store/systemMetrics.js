@@ -34,6 +34,44 @@ let retryTimer = null
 let retryCount = 0
 let running = false
 
+// ---- 指标应用节流（合并积压，回到前台不「跳数据」） ----
+// 标签页在后台时，浏览器会节流定时器并积压 WebSocket 帧；回到前台时若逐条
+// 应用这些积压帧，概览/实时监控图表会在瞬间连续重绘（数据跳得很快，体验差）。
+// 因此：后台期间不写系统状态，仅保存「最新一帧」；回前台立即应用一次最新值，
+// 前台运行期间再以 300ms 节流合并应用，避免同一时刻多帧连续触发。
+let applyTimer = null
+let latestFrame = null
+let docVisible = typeof document !== 'undefined' ? document.visibilityState !== 'hidden' : true
+
+// 应用最近一帧（若存在），用于节流与回前台补刷
+function flushLatestFrame() {
+  if (latestFrame) {
+    applyMetrics(latestFrame)
+    latestFrame = null
+  }
+}
+
+// 后台期间只记录最新帧、不应用；前台用 300ms 合并窗口，窗口内多帧取最后一帧
+function scheduleApply(data) {
+  latestFrame = data
+  if (applyTimer) return
+  applyTimer = setTimeout(() => {
+    applyTimer = null
+    flushLatestFrame()
+  }, 300)
+}
+
+// 页面可见性切换：回前台立即把最新帧一次应用到系统状态（只跳一步到真实当前值）
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    docVisible = document.visibilityState !== 'hidden'
+    if (docVisible) {
+      if (applyTimer) { clearTimeout(applyTimer); applyTimer = null }
+      flushLatestFrame()
+    }
+  })
+}
+
 // 将后端推送的合并指标写入响应式状态
 function applyMetrics(data) {
   if (!data) return
@@ -71,7 +109,7 @@ function connect() {
   ws.onmessage = (ev) => {
     try {
       const msg = JSON.parse(ev.data)
-      if (msg.type === 'metrics') applyMetrics(msg.data)
+      if (msg.type === 'metrics') scheduleApply(msg.data)
     } catch (e) { /* 忽略异常帧 */ }
   }
   ws.onclose = () => {

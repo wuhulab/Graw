@@ -14,7 +14,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart } from 'echarts/charts'
@@ -62,13 +62,26 @@ watch(
 )
 
 watch(mode, () => {
+  resetSeries()
+})
+
+// 返回前台时清空采样缓冲，从当前时刻重新开始累积：
+// 避免后台期间遗留的旧采样点与当前数据间形成一条「断裂斜线」或快速补点。
+function resetSeries() {
   netSeries.value.times.length = 0
   netSeries.value.up.length = 0
   netSeries.value.down.length = 0
   diskSeries.value.times.length = 0
   diskSeries.value.read.length = 0
   diskSeries.value.write.length = 0
-})
+}
+
+function onVisibilityChange() {
+  if (document.visibilityState !== 'hidden') resetSeries()
+}
+
+onMounted(() => document.addEventListener('visibilitychange', onVisibilityChange))
+onUnmounted(() => document.removeEventListener('visibilitychange', onVisibilityChange))
 
 const option = computed(() => {
   const isNet = mode.value === 'net'
