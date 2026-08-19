@@ -24,19 +24,23 @@ from app.routers import runtime  # noqa: E402
 
 class TestRuntime(unittest.TestCase):
     def test_runtimes_templates_complete(self):
-        """模板应包含全部 5 种运行时且每类有默认参数。"""
+        """模板应包含全部 8 种运行时且每类有默认参数。"""
         self.assertEqual(
             set(runtime.RUNTIMES.keys()),
-            {"python", "java", "node", "go", "dotnet"},
+            {"python", "java", "node", "go", "dotnet", "php", "html", "other"},
         )
         self.assertEqual(set(runtime.PORT_PROTOCOLS), {"tcp", "udp"})
         self.assertEqual(set(runtime.MOUNT_MODES), {"rw", "ro"})
         for key, rt in runtime.RUNTIMES.items():
             self.assertTrue(rt["default_version"])
             self.assertTrue(rt["workdir"])
-            self.assertTrue(rt["suggest_cmd"])
             # 默认版本应生成非空镜像
             self.assertTrue(rt["image"](rt["default_version"]))
+        # php / other 依赖镜像默认 CMD 或安装命令，建议命令可为空
+        self.assertEqual(runtime.RUNTIMES["php"]["suggest_cmd"], "")
+        self.assertEqual(runtime.RUNTIMES["other"]["suggest_cmd"], "")
+        # html 模板应能生成 http.server 建议命令
+        self.assertTrue(runtime.RUNTIMES["html"]["suggest_cmd"].startswith("python -m http.server"))
 
     def test_build_image(self):
         """按类型+版本生成完整的镜像名。"""
@@ -49,6 +53,30 @@ class TestRuntime(unittest.TestCase):
         # 未填版本时回退默认版本
         go_img = runtime._build_image({"type": "go", "app_version": ""})
         self.assertEqual(go_img, "golang:" + runtime.RUNTIMES["go"]["default_version"])
+        # 新增类型
+        self.assertEqual(runtime._build_image({"type": "php", "app_version": "8.2"}), "php:8.2-apache")
+        self.assertEqual(runtime._build_image({"type": "html", "app_version": "3"}), "python:3-alpine")
+        self.assertEqual(runtime._build_image({"type": "other", "app_version": "12"}), "debian:12")
+
+    def test_html_port_mapping(self):
+        """HTML 静态项目的启动端口应映射到容器内 80 端口。"""
+        cfg = {"type": "html", "project_dir": "/web", "workdir": "/app", "html_port": "8080"}
+        text = " ".join(runtime._build_run_args(cfg))
+        self.assertIn("-p 8080:80/tcp", text)
+        self.assertIn("-v /web:/app", text)
+        # 未填启动端口时不生成映射
+        cfg2 = {"type": "html", "project_dir": "/web", "workdir": "/app", "html_port": ""}
+        self.assertNotIn("-p", " ".join(runtime._build_run_args(cfg2)))
+
+    def test_build_entry_script(self):
+        """其他项目的入口脚本：安装命令 + 启动命令按序串联。"""
+        self.assertEqual(runtime._build_entry_script("", "apt-get update"), "apt-get update && tail -f /dev/null")
+        self.assertEqual(
+            runtime._build_entry_script("node app.js", "apt-get update && apt-get install -y nodejs"),
+            "apt-get update && apt-get install -y nodejs && node app.js",
+        )
+        # 无安装命令时返回空串（不覆盖镜像默认 CMD）
+        self.assertEqual(runtime._build_entry_script("npm start", ""), "")
 
     def test_build_run_args_full(self):
         """run 参数应覆盖项目挂载、端口、环境变量、挂载模式、主机映射、工作目录。"""

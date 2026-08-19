@@ -10,7 +10,7 @@
           <div v-if="createMenuOpen" class="create-menu" :style="{ left: menuX + 'px', top: menuY + 'px' }" @click.stop>
             <div class="menu-title">{{ $t('runtime.chooseRuntime') }}</div>
             <div v-for="rt in templates" :key="rt.type" class="menu-item" @click="pickType(rt.type)">
-              <span class="rt-dot"></span>{{ rt.label }}
+              <span class="rt-dot"></span>{{ typeLabel(rt.type) }}
             </div>
           </div>
         </Teleport>
@@ -78,7 +78,7 @@ const count = computed(() => runtimes.value.length)
 
 let timer = null
 
-const TYPE_LABELS = { python: 'Python', java: 'Java', node: 'Node.js', go: 'Go', dotnet: '.NET' }
+const TYPE_LABELS = { python: 'Python', java: 'Java', node: 'Node.js', go: 'Go', dotnet: '.NET', php: 'PHP', html: 'HTML', other: '其他' }
 function typeLabel(t) { return TYPE_LABELS[t] || t }
 
 function typeImage(type, version) {

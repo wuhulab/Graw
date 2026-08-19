@@ -7,13 +7,18 @@
         | {{ $t('database.redisInstalled', { installed: $t(status.redis_libs ? 'database.installed' : 'database.notInstalled') }) }}
         | {{ $t('database.postgresqlInstalled', { installed: $t(status.postgresql_libs ? 'database.installed' : 'database.notInstalled') }) }}
         | {{ $t('database.mongodbInstalled', { installed: $t(status.mongodb_libs ? 'database.installed' : 'database.notInstalled') }) }}
+        | {{ $t('database.sqliteAvailable', { installed: $t('database.installed') }) }}
       </span>
     </div>
     <div class="connections">
       <div v-for="c in connections" :key="c.id" class="conn-card">
         <div class="conn-head">
           <div class="conn-title">{{ c.name }} <span class="tag">{{ typeLabel(c.db_type) }}</span></div>
-          <div class="conn-addr">{{ c.host }}:{{ c.port }}<template v-if="c.database"> / {{ c.database }}</template></div>
+          <div class="conn-addr">
+            <!-- SQLite 无主机/端口，地址展示本地文件路径 -->
+            <template v-if="c.db_type === 'sqlite'">{{ c.database }}</template>
+            <template v-else>{{ c.host }}:{{ c.port }}<template v-if="c.database"> / {{ c.database }}</template></template>
+          </div>
         </div>
         <div class="conn-actions">
           <button class="btn small" @click="testConn(c)">{{ $t('database.testConnection') }}</button>
@@ -56,14 +61,25 @@
             </table>
           </div>
           <!-- Redis：info 信息 -->
-          <div v-else>
+          <div v-else-if="manageConn?.db_type==='redis'">
             <pre class="pre">{{ redisInfo }}</pre>
+          </div>
+          <!-- SQLite：单文件库，展示库内数据表列表 + 文件信息 -->
+          <div v-else-if="manageConn?.db_type==='sqlite'">
+            <div class="hint" style="margin-bottom:8px">
+              {{ $t('database.sqliteFileInfo', { path: manageConn.database }) }}<template v-if="sqliteFileSize"> · {{ $t('database.sqliteSize', { size: sqliteFileSize }) }}</template>
+            </div>
+            <table v-if="sqliteTables.length" class="mini-table">
+              <thead><tr><th>{{ $t('database.sqliteTableLabel') }}</th></tr></thead>
+              <tbody><tr v-for="tb in sqliteTables" :key="tb"><td>{{ tb }}</td></tr></tbody>
+            </table>
+            <div v-else class="hint">{{ $t('database.sqliteNoTables') }}</div>
           </div>
         </div>
 
         <div v-if="tab==='query'" class="panel">
-          <!-- MySQL / PostgreSQL：SQL 编辑器 -->
-          <div v-if="manageConn?.db_type==='mysql' || manageConn?.db_type==='postgresql'">
+          <!-- MySQL / PostgreSQL / SQLite：SQL 编辑器 -->
+          <div v-if="manageConn?.db_type==='mysql' || manageConn?.db_type==='postgresql' || manageConn?.db_type==='sqlite'">
             <textarea v-model="sqlText" rows="4" :placeholder="$t('database.sqlPlaceholder')" />
             <button class="btn small primary" @click="execSql">{{ $t('database.execute') }}</button>
             <div v-if="queryResult" class="result">
@@ -140,9 +156,12 @@ const mongoFilter = ref('')
 const mongoLimit = ref(100)
 const mongoResult = ref(null)
 const newDbName = ref('')
+// SQLite 库内数据表列表与文件大小（仅 sqlite 连接使用）
+const sqliteTables = ref([])
+const sqliteFileSize = ref(0)
 
 // 类型展示名映射（连接卡片标签 / 管理标题）
-const TYPE_LABELS = { mysql: 'MySQL', redis: 'Redis', postgresql: 'PostgreSQL', mongodb: 'MongoDB' }
+const TYPE_LABELS = { mysql: 'MySQL', redis: 'Redis', postgresql: 'PostgreSQL', mongodb: 'MongoDB', sqlite: 'SQLite' }
 function typeLabel(t) { return TYPE_LABELS[t] || t || '' }
 
 async function load() {
@@ -176,9 +195,15 @@ async function openManage(c) {
   queryResult.value = null
   redisResult.value = null
   mongoResult.value = null
+  sqliteTables.value = []
+  sqliteFileSize.value = 0
   showManage.value = true
   const data = await databasesApi.listDBs(c.id)
-  if (c.db_type === 'mysql' || c.db_type === 'postgresql' || c.db_type === 'mongodb') {
+  if (c.db_type === 'sqlite') {
+    // SQLite：data.tables 为库内数据表列表，data.size 为文件字节数
+    sqliteTables.value = data.tables || []
+    sqliteFileSize.value = data.size || 0
+  } else if (c.db_type === 'mysql' || c.db_type === 'postgresql' || c.db_type === 'mongodb') {
     dbList.value = data.databases || []
   } else {
     redisInfo.value = JSON.stringify(data.info, null, 2)

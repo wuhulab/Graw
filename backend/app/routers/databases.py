@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+import sqlite3
 import uuid
 from datetime import datetime
 from typing import List, Optional
@@ -173,10 +174,14 @@ def _auto_detect_mongodb() -> Optional[dict]:
 
 
 class DBConnection(BaseModel):
-    """数据库连接配置模型（支持 mysql / redis / postgresql / mongodb）。"""
+    """数据库连接配置模型（支持 mysql / redis / postgresql / mongodb / sqlite）。
+
+    - sqlite 类型使用 `database` 字段存本地文件路径（相对路径基于数据目录，或绝对路径），
+      忽略 host / port / username / password。
+    """
 
     name: str = Field(..., min_length=1)
-    db_type: str = Field(..., pattern="^(mysql|redis|postgresql|mongodb)$")
+    db_type: str = Field(..., pattern="^(mysql|redis|postgresql|mongodb|sqlite)$")
     host: str = Field(default="127.0.0.1")
     port: int = Field(default=3306)
     username: Optional[str] = ""
@@ -246,6 +251,23 @@ def _find_connection(conn_id: str) -> dict:
     return conn
 
 
+def _sqlite_file(conn: dict) -> str:
+    """解析 SQLite 数据库文件路径。
+
+    - `database` 字段存文件路径（相对路径基于数据目录 DATA_DIR，绝对路径原样使用）；
+    - 拒绝空字节 / CR / LF 等控制字符，防止字符注入到文件路径与后续元数据写入。
+    """
+    raw = (conn.get("database") or "").strip()
+    if not raw:
+        # SQLite 必须指定一个本地文件，否则无法说清要管理哪个库
+        raise HTTPException(status_code=400, detail="SQLite 文件路径不能为空")
+    if "\x00" in raw or "\r" in raw or "\n" in raw:
+        raise HTTPException(status_code=400, detail="SQLite 文件路径包含非法字符")
+    if os.path.isabs(raw):
+        return os.path.normpath(raw)
+    return os.path.normpath(os.path.join(DATA_DIR, raw))
+
+
 @router.get("/status")
 async def db_status():
     """返回各数据库驱动安装状态与本机服务探测结果。"""
@@ -258,6 +280,8 @@ async def db_status():
         "redis_libs": REDIS_LIBS,
         "postgresql_libs": POSTGRES_LIBS,
         "mongodb_libs": MONGO_LIBS,
+        # SQLite 为 Python 标准库内置驱动，本机始终可用，无需安装 / 探测
+        "sqlite_libs": True,
     }
 
 
@@ -389,6 +413,19 @@ async def test_connection(conn_id: str):
             return {"ok": True}
         except Exception as e:
             raise HTTPException(status_code=502, detail=str(e))
+    elif conn["db_type"] == "sqlite":
+        # SQLite：检查目标文件可打开（不存在时尝试创建新库文件）
+        try:
+            path = _sqlite_file(conn)
+            parent = os.path.dirname(path) or "."
+            if parent and not os.path.isdir(parent):
+                os.makedirs(parent, exist_ok=True)
+            db = sqlite3.connect(path, timeout=5)
+            db.execute("SELECT 1")
+            db.close()
+            return {"ok": True, "file": path}
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=str(e))
     raise HTTPException(status_code=400, detail="Unsupported db_type")
 
 
@@ -461,6 +498,25 @@ async def list_databases(conn_id: str):
             version = client.server_info().get("version", "")
             client.close()
             return {"databases": databases, "version": version}
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=str(e))
+    elif conn["db_type"] == "sqlite":
+        # SQLite：单文件库，列出库内数据表（排除 sqlite_* 系统表）+ 文件信息
+        try:
+            path = _sqlite_file(conn)
+            if not os.path.exists(path):
+                # 文件尚未创建（新连接）时返回空表列表，前端可提示先建库/执行建表 DDL
+                return {"tables": [], "file": path, "exists": False, "size": 0}
+            db = sqlite3.connect(path, timeout=5)
+            cur = db.cursor()
+            cur.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            )
+            tables = [r[0] for r in cur.fetchall()]
+            db.close()
+            size = os.path.getsize(path)
+            return {"tables": tables, "file": path, "exists": True, "size": size}
         except Exception as e:
             raise HTTPException(status_code=502, detail=str(e))
     raise HTTPException(status_code=400, detail="Unsupported db_type")
@@ -594,6 +650,34 @@ async def run_query(conn_id: str, req: DBQuery):
             return {"result": [_mongo_jsonable(d) for d in docs]}
         except Exception as e:
             raise HTTPException(status_code=502, detail=str(e))
+    elif conn["db_type"] == "sqlite":
+        # SQLite：执行 SQL（只读查询或写操作），复用 SQL 类黑名单防危险片段
+        sql = (req.sql or "").strip()
+        if not sql:
+            raise HTTPException(status_code=400, detail="Empty SQL")
+        forbidden = ["drop database", "drop user", "shutdown", "grant all"]
+        lower = sql.lower()
+        if any(f in lower for f in forbidden):
+            raise HTTPException(status_code=403, detail="Forbidden SQL fragment")
+        path = _sqlite_file(conn)
+        try:
+            db = sqlite3.connect(path, timeout=5)
+            cur = db.cursor()
+            cur.execute(sql)
+            if cur.description:
+                # 查询语句：返回列+行
+                columns = [desc[0] for desc in cur.description]
+                rows = cur.fetchall()
+                db.close()
+                return {"columns": columns, "rows": rows}
+            else:
+                # 写语句：提交并返回受影响行数
+                affected = cur.rowcount
+                db.commit()
+                db.close()
+                return {"affected": affected}
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=str(e))
     raise HTTPException(status_code=400, detail="Unsupported db_type")
 
 
@@ -601,6 +685,11 @@ async def run_query(conn_id: str, req: DBQuery):
 async def create_database(conn_id: str, body: dict):
     """创建数据库：MySQL/PG 执行 CREATE DATABASE，MongoDB 按需自动创建。"""
     conn = _find_connection(conn_id)
+    # SQLite 是单文件库，无服务器级建库概念，可在查询页执行 CREATE TABLE 建表
+    if conn["db_type"] == "sqlite":
+        raise HTTPException(
+            status_code=400, detail="SQLite 为单文件库，请在查询页执行 CREATE TABLE 建表"
+        )
     db_name = body.get("name", "").strip()
     if not db_name:
         raise HTTPException(status_code=400, detail="Database name required")
@@ -653,6 +742,11 @@ async def create_database(conn_id: str, body: dict):
 async def delete_database(conn_id: str, body: dict):
     """删除数据库：MySQL/PG 执行 DROP DATABASE，MongoDB 调用 drop_database。"""
     conn = _find_connection(conn_id)
+    # SQLite 是单文件库，删除库应删除文件本身，属文件管理范畴，不在此提供
+    if conn["db_type"] == "sqlite":
+        raise HTTPException(
+            status_code=400, detail="SQLite 为单文件库，请直接管理数据库文件（本接口不删除文件）"
+        )
     db_name = body.get("name", "").strip()
     if not db_name:
         raise HTTPException(status_code=400, detail="Database name required")

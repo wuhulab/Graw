@@ -26,13 +26,33 @@
             <span class="field-hint">{{ $t('runtimeCreate.projectDirHint', { workdir: form.workdir }) }}</span>
           </label>
 
-          <label class="field span-2">
-            <span class="field-label">{{ $t('runtimeCreate.startCommand') }}</span>
-            <input v-model="form.start_command" class="inp mono" :placeholder="template?.suggest_cmd" />
-            <span class="field-hint">{{ $t('runtimeCreate.startCommandHint', { cmd: template?.suggest_cmd }) }}</span>
+          <!-- HTML 静态项目：填写对外访问的启动端口 -->
+          <label v-if="selectedType === 'html'" class="field span-2">
+            <span class="field-label">{{ $t('runtimeCreate.htmlPort') }} <b class="req">*</b></span>
+            <input v-model.trim="form.html_port" class="inp mono" :placeholder="$t('runtimeCreate.htmlPortPlaceholder')"
+                   :class="{ err: err && !form.html_port }" />
+            <span class="field-hint">{{ $t('runtimeCreate.htmlPortHint') }}</span>
           </label>
 
-          <label class="field">
+          <!-- 其他项目：需要手动写入环境安装命令 -->
+          <div v-if="selectedType === 'other'" class="warn-banner span-2">
+            <AlertTriangle :size="14" /> {{ $t('runtimeCreate.otherWarning') }}
+          </div>
+          <label v-if="selectedType === 'other'" class="field span-2">
+            <span class="field-label">{{ $t('runtimeCreate.installCommand') }} <b class="req">*</b></span>
+            <textarea v-model.trim="form.install_command" class="inp mono" rows="3"
+                      :placeholder="$t('runtimeCreate.installCommandPlaceholder')"
+                      :class="{ err: err && !form.install_command }"></textarea>
+            <span class="field-hint">{{ $t('runtimeCreate.installCommandHint') }}</span>
+          </label>
+
+          <label class="field span-2">
+            <span class="field-label">{{ $t('runtimeCreate.startCommand') }}</span>
+            <input v-model="form.start_command" class="inp mono" :placeholder="template?.suggest_cmd || ''" />
+            <span class="field-hint">{{ $t('runtimeCreate.startCommandHint', { cmd: template?.suggest_cmd || $t('runtimeCreate.startCommandEmpty') }) }}</span>
+          </label>
+
+          <label v-if="template?.versions?.length" class="field">
             <span class="field-label">{{ $t('runtimeCreate.appVersion') }} <b class="req">*</b></span>
             <select v-model="form.app_version" class="inp">
               <option v-for="v in template?.versions" :key="v" :value="v">{{ v }}</option>
@@ -155,7 +175,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { runtimeApi } from '../../api'
-import { Box, ChevronDown, X, Loader2 } from 'lucide-vue-next'
+import { Box, ChevronDown, X, Loader2, AlertTriangle } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const props = defineProps({ type: { type: String, default: 'python' } })
@@ -177,6 +197,8 @@ const form = reactive({
   app_version: '',
   container_name: '',
   notes: '',
+  html_port: '',
+  install_command: '',
   ports: [],
   env: [],
   mounts: [],
@@ -194,6 +216,8 @@ function resetForm() {
   form.app_version = (template.value?.default_version || template.value?.versions?.[0] || '')
   form.container_name = ''
   form.notes = ''
+  form.html_port = ''
+  form.install_command = ''
   form.ports = []
   form.env = []
   form.mounts = []
@@ -228,6 +252,17 @@ async function save() {
   if (!form.name) { err.value = t('runtimeCreate.nameRequired'); return }
   if (!form.project_dir.trim()) { err.value = t('runtimeCreate.projectDirRequired'); return }
   if (!isAbs(form.project_dir.trim())) { err.value = t('runtimeCreate.projectDirAbsolute'); return }
+  // HTML 静态项目必须填写启动端口（1-65535）
+  if (selectedType.value === 'html') {
+    if (!form.html_port) { err.value = t('runtimeCreate.htmlPortRequired'); return }
+    if (!/^\d{1,5}$/.test(form.html_port) || !(parseInt(form.html_port, 10) >= 1 && parseInt(form.html_port, 10) <= 65535)) {
+      err.value = t('runtimeCreate.htmlPortInvalid'); return
+    }
+  }
+  // 其他项目必须填写环境安装命令
+  if (selectedType.value === 'other' && !form.install_command.trim()) {
+    err.value = t('runtimeCreate.installCommandRequired'); return
+  }
   if (form.container_name && !containerNameValid.value) { err.value = t('runtimeCreate.containerNameInvalid') ; return }
 
   const body = {
@@ -238,6 +273,8 @@ async function save() {
     app_version: form.app_version,
     container_name: form.container_name,
     notes: form.notes,
+    html_port: selectedType.value === 'html' ? form.html_port : '',
+    install_command: selectedType.value === 'other' ? form.install_command : '',
     ports: form.ports.filter(p => p.external && p.internal).map(p => ({
       external: p.external, internal: p.internal, protocol: p.protocol
     })),
@@ -273,6 +310,7 @@ onMounted(loadTemplates)
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
 .field { display: flex; flex-direction: column; gap: 3px; }
 .field.span-2 { grid-column: span 2; }
+.warn-banner { grid-column: span 2; display: flex; align-items: center; gap: 6px; padding: 8px 10px; background: #fffbeb; color: #92400e; border: 1px solid #fde68a; border-radius: 6px; font-size: 12px; }
 .field-label { font-size: 12px; color: #374151; }
 .field-label .req { color: #dc2626; }
 .inp { padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12.5px; outline: none; background: #fff; font-family: inherit; }

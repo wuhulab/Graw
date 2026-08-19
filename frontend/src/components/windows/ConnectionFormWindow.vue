@@ -11,27 +11,36 @@
         <option value="postgresql">{{ $t('connectionform.postgresql') }}</option>
         <option value="mongodb">{{ $t('connectionform.mongodb') }}</option>
         <option value="redis">{{ $t('connectionform.redis') }}</option>
+        <option value="sqlite">{{ $t('connectionform.sqlite') }}</option>
       </select>
 
-      <label>{{ $t('connectionform.host') }}</label>
-      <input v-model="form.host" placeholder="127.0.0.1" />
+      <template v-if="form.db_type !== 'sqlite'">
+        <label>{{ $t('connectionform.host') }}</label>
+        <input v-model="form.host" placeholder="127.0.0.1" />
 
-      <label>{{ $t('connectionform.port') }}</label>
-      <input v-model.number="form.port" type="number" />
+        <label>{{ $t('connectionform.port') }}</label>
+        <input v-model.number="form.port" type="number" />
 
-      <template v-if="form.db_type !== 'redis'">
-        <label>{{ $t('connectionform.username') }}</label>
-        <input v-model="form.username" :placeholder="usernamePlaceholder" />
+        <template v-if="form.db_type !== 'redis'">
+          <label>{{ $t('connectionform.username') }}</label>
+          <input v-model="form.username" :placeholder="usernamePlaceholder" />
+        </template>
+
+        <label>{{ $t('connectionform.password') }}</label>
+        <input v-model="form.password" type="password" :placeholder="passwordPlaceholder" />
+
+        <template v-if="form.db_type !== 'redis'">
+          <label>{{ dbLabel }}</label>
+          <input v-model="form.database" :placeholder="dbPlaceholder" />
+        </template>
+        <div v-else class="hint">{{ $t('connectionform.redisHint') }}</div>
       </template>
-
-      <label>{{ $t('connectionform.password') }}</label>
-      <input v-model="form.password" type="password" :placeholder="passwordPlaceholder" />
-
-      <template v-if="form.db_type !== 'redis'">
-        <label>{{ dbLabel }}</label>
-        <input v-model="form.database" :placeholder="dbPlaceholder" />
+      <!-- SQLite：嵌入式数据库，只需指定本地文件路径；支持相对（基于数据目录）或绝对路径 -->
+      <template v-else>
+        <label>{{ $t('connectionform.sqliteFile') }}</label>
+        <input v-model="form.database" :placeholder="$t('connectionform.sqliteFilePlaceholder')" />
+        <div class="hint">{{ $t('connectionform.sqliteHint') }}</div>
       </template>
-      <div v-else class="hint">{{ $t('connectionform.redisHint') }}</div>
 
       <div v-if="errorMsg" class="error">{{ errorMsg }}</div>
 
@@ -64,7 +73,8 @@ const DEFAULTS = {
   mysql: { port: 3306, username: 'root', database: '' },
   postgresql: { port: 5432, username: 'postgres', database: 'postgres' },
   mongodb: { port: 27017, username: '', database: 'admin' },
-  redis: { port: 6379, username: '', database: '' }
+  redis: { port: 6379, username: '', database: '' },
+  sqlite: { port: 0, username: '', database: '' }
 }
 
 // 各类型「默认数据库」标签 / 占位符对应的 i18n key
@@ -72,7 +82,8 @@ const DB_LABELS = {
   mysql: { labelKey: 'connectionform.defaultDB', phKey: 'connectionform.dbPlaceholderMysql' },
   postgresql: { labelKey: 'connectionform.defaultDBPg', phKey: 'connectionform.dbPlaceholderPg' },
   mongodb: { labelKey: 'connectionform.defaultAuthDB', phKey: 'connectionform.dbPlaceholderMongo' },
-  redis: { labelKey: '', phKey: '' }
+  redis: { labelKey: '', phKey: '' },
+  sqlite: { labelKey: '', phKey: '' }
 }
 
 const form = reactive({ name: '', db_type: 'mysql', host: '127.0.0.1', port: 3306, username: 'root', password: '', database: '' })
@@ -142,7 +153,8 @@ async function save() {
     const payload = {
       name: form.name.trim(),
       db_type: form.db_type,
-      host: form.host.trim() || '127.0.0.1',
+      // SQLite 无主机/端口概念：host 置空，连接信息以 database(文件路径) 为准
+      host: form.db_type === 'sqlite' ? '' : (form.host.trim() || '127.0.0.1'),
       port: Number(form.port) || (DEFAULTS[form.db_type]?.port || 3306),
       username: form.username,
       password: form.password,

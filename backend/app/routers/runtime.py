@@ -94,6 +94,36 @@ RUNTIMES = {
         "workdir": "/app",
         "suggest_cmd": "dotnet run",
     },
+    # PHP：使用 php:apache 镜像，内置 Apache 随容器默认 CMD 自动启动，
+    # suggest_cmd 留空以让镜像默认启动命令生效
+    "php": {
+        "label": "PHP",
+        "versions": ["8.3", "8.2", "8.1", "8.0"],
+        "default_version": "8.2",
+        "image": lambda v: f"php:{v}-apache",
+        "workdir": "/var/www/html",
+        "suggest_cmd": "",
+    },
+    # HTML 静态项目：用 python 官方镜像自带的 SimpleHTTPServer 提供静态站点，
+    # 启动端口（html_port）映射到容器内 80 端口，默认建议命令即 http.server
+    "html": {
+        "label": "HTML Project",
+        "versions": ["3", "3.12"],
+        "default_version": "3",
+        "image": lambda v: f"python:{v}-alpine",
+        "workdir": "/app",
+        "suggest_cmd": "python -m http.server 80",
+    },
+    # 其他项目：无默认语言环境，镜像固定为基础 Linux（debian），
+    # 环境安装命令（install_command）需用户手动填写，创建时先执行安装再启动
+    "other": {
+        "label": "Other",
+        "versions": ["12", "11", "10"],
+        "default_version": "12",
+        "image": lambda v: f"debian:{v}",
+        "workdir": "/app",
+        "suggest_cmd": "",
+    },
 }
 
 # 端口协议选项
@@ -223,6 +253,9 @@ def _build_run_args(cfg: dict) -> list:
             continue
         proto = proto if proto in PORT_PROTOCOLS else "tcp"
         args += ["-p", f"{ext}:{internal}/{proto}"]
+    # HTML 静态项目：填写的启动端口映射到容器内 80 端口
+    if cfg.get("type") == "html" and cfg.get("html_port"):
+        args += ["-p", f"{cfg['html_port']}:80/tcp"]
     # 环境变量
     for e in cfg.get("env") or []:
         name, value = e.get("name"), e.get("value", "")
@@ -259,8 +292,28 @@ def _build_image(cfg: dict) -> str:
 
 
 def _default_command(cfg: dict) -> str:
-    """容器的默认启动命令：优先使用配置，空则回退到运行时建议命令。"""
-    return (cfg.get("start_command") or "").strip() or RUNTIMES.get(cfg.get("type"), {}).get("suggest_cmd", "tail -f /dev/null")
+    """容器的默认启动命令：优先使用配置，空则回退到运行时建议命令。
+
+    若两者皆空（如 php 依赖镜像默认 CMD、other 仅填了安装命令），返回空串，
+    由调用方决定是否追加命令（镜像默认 CMD 将生效）。
+    """
+    return (cfg.get("start_command") or "").strip() or RUNTIMES.get(cfg.get("type"), {}).get("suggest_cmd", "")
+
+
+def _build_entry_script(command: str, install_cmd: str) -> str:
+    """构造容器入口脚本：先执行安装命令，再执行启动命令。
+
+    - 仅安装命令：追加 tail 保持容器存活，便于 exec 进入
+    - 安装命令 + 启动命令：用 && 串联
+    返回空串表示无需脚本（不覆盖镜像默认 CMD）。
+    """
+    install_cmd = (install_cmd or "").strip()
+    if not install_cmd:
+        return ""
+    command = (command or "").strip()
+    if command:
+        return f"{install_cmd} && {command}"
+    return f"{install_cmd} && tail -f /dev/null"
 
 
 def _create_container(cfg: dict) -> dict:
@@ -281,17 +334,26 @@ def _create_container(cfg: dict) -> dict:
 
     image = _build_image(cfg)
     command = _default_command(cfg)
-    try:
-        command_tokens = shlex.split(command)
-    except ValueError:
-        command_tokens = command.split()
+    # 「其他项目」若填写了环境安装命令，需用 shell 依次执行安装命令与启动命令
+    script = _build_entry_script(command, cfg.get("install_command"))
 
     cmd = _engine_command(final_name) + [
         "run", "-d", "--name", final_name, "--label", "graw.runtime=1",
     ]
     cmd += _build_run_args(cfg)
     cmd += [image]
-    cmd += command_tokens
+
+    if script:
+        # 单 argv 传给 sh，避免命令内含引号导致参数拆分错误
+        cmd += ["sh", "-lc", script]
+    else:
+        # 有启动命令则拆分附加；无则使用镜像默认 CMD（如 php:apache 自动启动）
+        if command:
+            try:
+                command_tokens = shlex.split(command)
+            except ValueError:
+                command_tokens = command.split()
+            cmd += command_tokens
 
     rc, out, err = _run(cmd, timeout=600)
     if rc != 0:
@@ -379,9 +441,21 @@ class _RuntimeValidatorMixin(BaseModel):
     def _hosts_ip(cls, v):
         return _check_host_ips(v)
 
+    @field_validator("html_port", check_fields=False)
+    @classmethod
+    def _html_port_range(cls, v):
+        # HTML 项目启动端口范围校验（1-65535），pattern 只约束数字格式
+        if v is not None:
+            try:
+                if not (1 <= int(v) <= 65535):
+                    raise ValueError(f"启动端口越界: {v}（必须在 1-65535）")
+            except (TypeError, ValueError):
+                raise ValueError(f"启动端口不合法: {v}（必须在 1-65535）")
+        return v
+
 
 class RuntimeCreate(_RuntimeValidatorMixin):
-    type: str = Field(..., pattern="^(python|java|node|go|dotnet)$")
+    type: str = Field(..., pattern="^(python|java|node|go|dotnet|php|html|other)$")
     name: str = Field(..., min_length=1, max_length=64)
     project_dir: str = Field(..., min_length=1)
     start_command: str = ""
@@ -390,6 +464,10 @@ class RuntimeCreate(_RuntimeValidatorMixin):
     app_version: str = Field("", pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$")
     container_name: str = ""
     notes: str = ""
+    # HTML 静态项目的对外访问（启动）端口，映射到容器内 80 端口
+    html_port: Optional[str] = Field(None, pattern=r"^\d{1,5}$")
+    # 其他项目的环境安装命令：容器创建/启动时先执行，再启动 start_command
+    install_command: str = ""
     ports: List[PortMap] = []
     env: List[EnvVar] = []
     mounts: List[MountItem] = []
@@ -457,6 +535,8 @@ async def create_runtime(req: RuntimeCreate):
         "app_version": req.app_version.strip() or RUNTIMES.get(req.type, {}).get("default_version", ""),
         "container_name": req.container_name.strip(),
         "notes": req.notes.strip(),
+        "html_port": req.html_port,
+        "install_command": req.install_command.strip(),
         "ports": [p.dict() for p in req.ports],
         "env": [e.dict() for e in req.env],
         "mounts": [m.dict() for m in req.mounts],
