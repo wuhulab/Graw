@@ -322,6 +322,17 @@ def _nginx_site_config(site: dict) -> str:
                     lines.append(f"        try_files $uri $uri/ =404;")
                     lines.append(f"    }}")
 
+    # 站点增强配置：防盗链 / gzip / 静态资源缓存（见 sitesopts 路由）
+    try:
+        from app.routers.sitesopts import get_nginx_extra
+
+        extra = get_nginx_extra(site)
+        if extra:
+            lines.extend(ln if ln.strip() else ln for ln in extra.split("\n"))
+    except Exception:
+        # 增强配置生成失败不阻断站点配置主体（静态配置仍可用）
+        pass
+
     lines.append("}")
     return "\n".join(lines)
 

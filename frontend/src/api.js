@@ -92,7 +92,11 @@ export const authApi = {
   twoFaEnable: (code) => api.post('/auth/2fa/enable', { code }).then(r => r.data),
   twoFaDisable: (code) => api.post('/auth/2fa/disable', { code }).then(r => r.data),
   // 高风险操作二次确认：校验当前登录用户的面板密码
-  verifyPassword: (password) => api.post('/auth/verify-password', { password }).then(r => r.data)
+  verifyPassword: (password) => api.post('/auth/verify-password', { password }).then(r => r.data),
+  // 会话管理：在线会话列表 / 踢出单设备 / 强制全部下线
+  sessions: () => api.get('/auth/sessions').then(r => r.data),
+  kickSession: (sid) => api.post(`/auth/sessions/${sid}/kick`, {}).then(r => r.data),
+  kickAllSessions: (username) => api.post('/auth/sessions/kick-all', { username }).then(r => r.data)
 }
 
 export const systemApi = {
@@ -120,6 +124,8 @@ export const dockerApi = {
   saveNotes: (id, note) => dockerHttp.post(`/docker/containers/${id}/notes`, { note }).then(r => r.data),
   // 详细信息
   inspect: (id) => dockerHttp.get(`/docker/containers/${id}/inspect`).then(r => r.data),
+  // 单容器实时资源（CPU/内存快照，供曲线绘制）
+  containerStats: (id) => dockerHttp.get(`/docker/containers/${id}/stats`).then(r => r.data),
   // 备份
   backup: (id) => dockerHttp.post(`/docker/containers/${id}/backup`).then(r => r.data),
   // 升级
@@ -141,7 +147,21 @@ export const dockerApi = {
   buildImage: (body) => dockerHttp.post('/docker/images/build', body).then(r => r.data),
   // 网络
   networks: () => dockerHttp.get('/docker/networks').then(r => r.data),
-  removeNetwork: (name) => dockerHttp.post(`/docker/networks/${encodeURIComponent(name)}/remove`).then(r => r.data)
+  removeNetwork: (name) => dockerHttp.post(`/docker/networks/${encodeURIComponent(name)}/remove`).then(r => r.data),
+  // 数据卷（dockervolumes 路由）
+  volumes: () => dockerHttp.get('/dockervolumes').then(r => r.data),
+  removeVolume: (name) => dockerHttp.post(`/dockervolumes/${encodeURIComponent(name)}/remove`).then(r => r.data),
+  volumeInspect: (name) => dockerHttp.get(`/dockervolumes/${encodeURIComponent(name)}/inspect`).then(r => r.data)
+}
+
+// 容器资源与端口编辑（containeredit 路由，仅管理员）
+export const containereditApi = {
+  // 读取容器可编辑配置（CPU/内存/环境变量/端口/重启策略）
+  info: (id) => dockerHttp.get(`/containeredit/${encodeURIComponent(id)}/info`).then(r => r.data),
+  // 更新 CPU / 内存限制
+  updateLimits: (id, body) => dockerHttp.post(`/containeredit/${encodeURIComponent(id)}/update-limits`, body).then(r => r.data),
+  // 重建容器（应用环境变量与端口映射修改，高风险）
+  rebuild: (id, body) => dockerHttp.post(`/containeredit/${encodeURIComponent(id)}/rebuild`, body).then(r => r.data)
 }
 
 export const processApi = {
@@ -433,6 +453,13 @@ export const rewriteApi = {
   clear: (site_id) => api.post('/rewrite/clear', { site_id }).then(r => r.data)
 }
 
+// 站点增强配置：防盗链 / gzip / 静态资源缓存
+export const sitesoptsApi = {
+  sites: () => api.get('/sitesopts/sites').then(r => r.data),
+  apply: (body) => api.post('/sitesopts/apply', body).then(r => r.data),
+  clear: (site_id) => api.post('/sitesopts/clear', { site_id }).then(r => r.data)
+}
+
 // 服务/端口监控：自定义监控项（端口/进程/systemd 服务）状态看板
 export const svcmonitorApi = {
   items: () => api.get('/svcmonitor/items').then(r => r.data),
@@ -456,6 +483,31 @@ export const sshkeysApi = {
 // 一键系统体检：弱密码/异常登录/危险端口/可疑任务/安全配置分级报告
 export const healthcheckApi = {
   run: () => api.get('/healthcheck/run').then(r => r.data)
+}
+
+// 虚拟 FTP 用户管理：纯 Python 维护 data/ftp_users.json，无需系统用户（管理员）
+export const ftpusersApi = {
+  list: () => api.get('/ftpusers').then(r => r.data),
+  create: (body) => api.post('/ftpusers', body).then(r => r.data),
+  update: (id, body) => api.put(`/ftpusers/${encodeURIComponent(id)}`, body).then(r => r.data),
+  delete: (id) => api.delete(`/ftpusers/${encodeURIComponent(id)}`).then(r => r.data)
+}
+
+// 工具箱：Base64 / 哈希 / 时间戳 / 端口扫描 / Whois（仅管理员）
+export const toolboxApi = {
+  exec: (body) => api.post('/toolbox/exec', body).then(r => r.data)
+}
+
+// PHP 多版本管理：探测系统 PHP/FPM 版本 + 站点 PHP 版本关联（仅管理员）
+export const phpversionsApi = {
+  // 探测已安装的系统 PHP 版本
+  list: () => api.get('/phpversions/list').then(r => r.data),
+  // 功能状态摘要（available + 版本列表 + reason）
+  status: () => api.get('/phpversions/status').then(r => r.data),
+  // 列出站点及其当前 PHP 版本
+  sites: () => api.get('/phpversions/sites').then(r => r.data),
+  // 为站点（static/subsite）绑定 PHP 版本
+  setPhp: (site_id, version) => api.post(`/phpversions/site/${site_id}/set-php`, { version }).then(r => r.data)
 }
 
 export const appStoreApi = {

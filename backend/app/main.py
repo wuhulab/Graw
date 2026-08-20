@@ -8,6 +8,8 @@ import os
 from app.routers import (
     system,
     docker_api,
+    dockervolumes,
+    containeredit,
     process,
     files,
     terminal,
@@ -41,9 +43,13 @@ from app.routers import (
     loginlog,
     webstats,
     rewrite,
+    sitesopts,
     svcmonitor,
     sshkeys,
     healthcheck,
+    ftpusers,
+    toolbox,
+    phpversions,
 )
 from app.auth import (
     seed_default_users,
@@ -181,6 +187,20 @@ app.include_router(
 app.include_router(
     docker_api.router, prefix="/api/docker", tags=["docker"], dependencies=ADMIN
 )
+# Docker 数据卷（volumes）管理：复用 docker_api 的后端探测与 CLI/SDK 工具（管理员）
+app.include_router(
+    dockervolumes.router,
+    prefix="/api/dockervolumes",
+    tags=["dockervolumes"],
+    dependencies=ADMIN,
+)
+# 容器资源与端口编辑：读取/更新容器 CPU、内存、环境变量、端口映射（管理员）
+app.include_router(
+    containeredit.router,
+    prefix="/api/containeredit",
+    tags=["containeredit"],
+    dependencies=ADMIN,
+)
 app.include_router(
     process.router, prefix="/api/process", tags=["process"], dependencies=ADMIN
 )
@@ -291,6 +311,9 @@ app.include_router(webstats.router, prefix="/api/webstats", tags=["webstats"], d
 # 伪静态规则库：常用框架一键伪静态（写入 nginx 配置，管理员）
 app.include_router(rewrite.router, prefix="/api/rewrite", tags=["rewrite"], dependencies=ADMIN)
 
+# 站点增强配置：防盗链 / gzip / 静态资源缓存（写入 nginx 配置，管理员）
+app.include_router(sitesopts.router, prefix="/api/sitesopts", tags=["sitesopts"], dependencies=ADMIN)
+
 # 服务/端口监控：自定义监控项（端口/进程/systemd 服务）状态看板（管理员）
 app.include_router(
     svcmonitor.router, prefix="/api/svcmonitor", tags=["svcmonitor"], dependencies=ADMIN
@@ -304,6 +327,24 @@ app.include_router(
 # 一键系统体检：弱密码/异常登录/危险端口/可疑任务扫描（管理员，只读报告）
 app.include_router(
     healthcheck.router, prefix="/api/healthcheck", tags=["healthcheck"], dependencies=ADMIN
+)
+
+# 虚拟 FTP 用户管理：纯 Python 维护 data/ftp_users.json，无需系统用户（管理员）
+app.include_router(
+    ftpusers.router, prefix="/api/ftpusers", tags=["ftpusers"], dependencies=ADMIN
+)
+
+# 工具箱：Base64 / 哈希 / 时间戳 / 端口扫描 / Whois（执行外部命令与网络连接，仅管理员）
+app.include_router(
+    toolbox.router, prefix="/api/toolbox", tags=["toolbox"], dependencies=ADMIN
+)
+
+# PHP 多版本管理：探测系统 PHP/FPM 版本 + 站点 PHP 版本关联（管理员）
+app.include_router(
+    phpversions.router,
+    prefix="/api/phpversions",
+    tags=["phpversions"],
+    dependencies=ADMIN,
 )
 
 

@@ -575,3 +575,145 @@ table.dt tr:hover td { background: #f5f5f7; }
 
 .sysinfo .row .k { color: #6e6e73; font-weight: 500; }
 .sysinfo .row .v { color: #1d1d1f; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
+/* ============================================================
+   移动端轻量响应式适配（手机宽度 <= 768px）
+   桌面布局转为宫格：快捷方式成网格、窗口全屏化、右侧卡片隐藏、
+   底栏简化。不重写任何窗口组件，仅通过媒体查询覆盖布局。
+   ============================================================ */
+@media (max-width: 768px) {
+  /* 桌面内容：单列，去掉右侧卡片 */
+  .desktop-content {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 10px;
+    bottom: 76px;
+    overflow: hidden;
+  }
+
+  /* 快捷方式：从「每列 6 个」改为横向自适应宫格。
+     必须完整覆盖桌面端的三条 grid 规则（grid-auto-flow / grid-template-columns /
+     grid-template-rows），否则残留的 repeat(6, minmax(60px,auto)) 会导致
+     行高错乱、出现「上部拥挤、下部空闲」。 */
+  .shortcuts {
+    display: grid;
+    grid-auto-flow: row;
+    grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+    grid-template-rows: none;
+    grid-auto-rows: 92px;
+    column-gap: 8px;
+    row-gap: 8px;
+    align-content: start;
+    overflow-y: auto;
+  }
+
+  .shortcut {
+    width: auto;
+    height: 86px;
+    min-height: 0;
+    padding: 4px 2px;
+    justify-content: flex-start;
+    box-sizing: border-box;
+  }
+
+  .shortcut .icon {
+    width: 50px;
+    height: 50px;
+    font-size: 26px;
+    border-radius: 12px;
+    flex-shrink: 0;
+  }
+
+  .shortcut .label {
+    width: 100%;
+    font-size: 11px;
+    margin-top: 2px;
+  }
+
+  /* 右侧监控卡片：手机屏幕隐藏（空间有限），桌面端不受影响 */
+  .right-cards {
+    display: none;
+  }
+
+  /* 窗口：全屏化，去掉定位偏移与圆角 */
+  .window {
+    left: 0 !important;
+    top: 0 !important;
+    width: 100vw !important;
+    height: calc(100vh - 66px) !important;
+    border-radius: 0;
+    border: none;
+    z-index: 9000;
+  }
+
+  .window .titlebar {
+    height: 40px;
+    padding: 0 8px;
+  }
+
+  /* 窗口内容区保持 flex 撑满（勿改 height:auto，会被窗口 overflow:hidden
+     裁剪导致内部组件无法滚动，例如容器编辑/端口配置等长内容）。 */
+  .window .content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  /* 底栏：横向铺满，精简高度 */
+  .taskbar {
+    left: 0;
+    right: 0;
+    transform: none;
+    bottom: 0;
+    width: 100%;
+    max-width: 100%;
+    height: 56px;
+    border-radius: 0;
+    padding: 4px 6px;
+    gap: 2px;
+    justify-content: flex-start;
+  }
+
+  .start-button {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+  }
+
+  .task-item {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* 时钟与主机徽标在手机上隐藏（空间有限） */
+  .clock {
+    display: none;
+  }
+
+  .host-badge {
+    display: none;
+  }
+
+  .user-chip .name {
+    max-width: 60px;
+  }
+
+  /* 开始菜单随底栏位置调整 */
+  .start-menu {
+    bottom: 62px;
+    left: 8px;
+    right: 8px;
+    min-width: 0;
+  }
+
+  /* 移动端工具栏换行，避免按钮溢出 */
+  .toolbar {
+    flex-wrap: wrap;
+  }
+
+  /* 移动端表格允许横向滚动（保留表头吸附） */
+  .table-wrap,
+  table.dt {
+    font-size: 11px;
+  }
+}

@@ -28,6 +28,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
 SECRET_FILE = os.path.join(DATA_DIR, "secret.key")
+SESSIONS_FILE = os.path.join(DATA_DIR, "sessions.json")
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -206,13 +207,125 @@ def bump_token_version(username: str) -> None:
         return
     target["token_version"] = int(target.get("token_version", 0)) + 1
     _save_users(users)
+    # 同步吊销该用户全部会话记录（列表页不再显示）
+    _revoke_user_sessions(username)
     logger.info("已吊销用户 %s 的所有登录令牌（token_version -> %d）", username, target["token_version"])
 
 
-def create_token(username: str, token_version: int = 0) -> str:
-    """签发 JWT：携带用户名与 token 版本号（tv）。
+# ---------------------------------------------------------------------------
+# 会话管理（在线会话列表 / 踢出单设备）
+#   基于 JWT 的 sid 字段：登录时生成唯一会话 ID 并持久化到 data/sessions.json，
+#   踢出单设备 = 删除该 sid 记录（get_current_user 校验 sid 仍在列表中）。
+#   旧版本签发的无 sid 令牌视为传统令牌，向后兼容不额外校验。
+# ---------------------------------------------------------------------------
+def _load_sessions() -> dict:
+    """读取会话表；缺失/损坏返回空 dict。"""
+    if not os.path.exists(SESSIONS_FILE):
+        return {}
+    try:
+        with open(SESSIONS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
 
-    改密/注销后 token_version 递增，旧令牌的 tv 与新值不一致而被拒绝。
+
+def _save_sessions(data: dict) -> None:
+    """原子写入会话表。"""
+    tmp = SESSIONS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, SESSIONS_FILE)
+
+
+def create_session(username: str, ip: str, device: str = "") -> str:
+    """创建一条会话记录，返回会话 ID（sid）。异常静默降级，绝不阻断登录。"""
+    try:
+        sid = secrets.token_urlsafe(16)
+        sessions = _load_sessions()
+        sessions[sid] = {
+            "username": username,
+            "ip": ip or "",
+            "device": (device or "")[:120],
+            "created_at": time.time(),
+        }
+        _save_sessions(sessions)
+        return sid
+    except Exception:
+        # 会话记录失败不阻断登录（token 仍可用，只是无法被单独踢出）
+        return ""
+
+
+def revoke_session(sid: str) -> bool:
+    """吊销单个会话（踢出该设备）。返回是否真实删除。"""
+    if not sid:
+        return False
+    sessions = _load_sessions()
+    if sid not in sessions:
+        return False
+    del sessions[sid]
+    _save_sessions(sessions)
+    return True
+
+
+def _revoke_user_sessions(username: str) -> None:
+    """吊销某用户全部会话记录（改密/注销/管理员强制下线时调用）。"""
+    try:
+        sessions = _load_sessions()
+        changed = False
+        for sid, s in list(sessions.items()):
+            if s.get("username") == username:
+                del sessions[sid]
+                changed = True
+        if changed:
+            _save_sessions(sessions)
+    except Exception:
+        pass
+
+
+def list_sessions(username: Optional[str] = None, limit: int = 100) -> list:
+    """列出在线会话（惰性清理过期记录）。username=None 返回全部。"""
+    sessions = _load_sessions()
+    # 惰性清理：token 有效期 7 天，超过视为过期会话
+    now = time.time()
+    expired = [sid for sid, s in sessions.items() if now - (s.get("created_at") or 0) > TOKEN_TTL]
+    if expired:
+        for sid in expired:
+            sessions.pop(sid, None)
+        try:
+            _save_sessions(sessions)
+        except Exception:
+            pass
+    items = []
+    for sid, s in sessions.items():
+        if username and s.get("username") != username:
+            continue
+        items.append({
+            "sid": sid,
+            "username": s.get("username", ""),
+            "ip": s.get("ip", ""),
+            "device": s.get("device", ""),
+            "created_at": s.get("created_at", 0),
+        })
+    # 新会话在前
+    items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+    return items[: max(1, min(limit, 500))]
+
+
+def session_active(sid: str) -> bool:
+    """判断 sid 是否仍是有效会话（未吊销）。"""
+    if not sid:
+        # 空 sid = 旧版本签发的传统令牌，向后兼容视为有效
+        return True
+    return sid in _load_sessions()
+
+
+def create_token(username: str, token_version: int = 0, sid: str = "") -> str:
+    """签发 JWT：携带用户名、token 版本号（tv）与会话 ID（sid）。
+
+    改密/注销后 token_version 递增，旧令牌的 tv 与新值不一致而被拒绝；
+    sid 用于「踢出单个设备」：吊销 sid 后该令牌也会被拒绝（向后兼容：
+    旧令牌无 sid，视为传统令牌，仅按 tv 校验）。
     """
     now = int(time.time())
     payload = {
@@ -221,6 +334,8 @@ def create_token(username: str, token_version: int = 0) -> str:
         "iat": now,
         "exp": now + TOKEN_TTL,
     }
+    if sid:
+        payload["sid"] = sid
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -272,6 +387,9 @@ async def get_current_user(
     # 会话撤销校验：改密/重置/注销后 token_version 递增，旧令牌失效
     if not verify_token_version(payload):
         raise HTTPException(status_code=401, detail="登录状态已失效，请重新登录")
+    # 单设备踢出校验：sid 被吊销的令牌失效（旧令牌无 sid 跳过）
+    if not session_active(payload.get("sid", "")):
+        raise HTTPException(status_code=401, detail="该设备已被强制下线")
     return _public_user(user)
 
 
@@ -292,6 +410,10 @@ async def get_current_user_ws(
         return None
     # 会话撤销校验：改密/注销后旧令牌不得继续建立连接
     if not verify_token_version(payload):
+        await websocket.close(code=4401)
+        return None
+    # 单设备踢出校验：被踢出的设备不得建立连接
+    if not session_active(payload.get("sid", "")):
         await websocket.close(code=4401)
         return None
     return _public_user(user)

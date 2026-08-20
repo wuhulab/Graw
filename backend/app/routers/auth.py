@@ -26,6 +26,9 @@ from ..auth import (
     is_default_password,
     bump_token_version,
     get_client_ip,
+    create_session,
+    revoke_session,
+    list_sessions,
     DEFAULT_PASSWORD,
 )
 from .shunx import verify_entry
@@ -332,9 +335,14 @@ async def login(req: LoginRequest, request: Request):
         public["must_change_password"] = True
         public["default_password"] = True
         logger.warning("用户 %s 使用默认密码登录，已强制要求改密", req.username)
-    # 签发 JWT 时携带当前 token_version，改密/注销后旧令牌自动失效
-    token = create_token(user["username"], token_version=int(user.get("token_version", 0)))
-    logger.info("用户 %s 登录成功（IP %s）", req.username, get_client_ip(request))
+    # 签发 JWT 时携带当前 token_version，改密/注销后旧令牌自动失效；
+    # 同时创建会话记录（sid），支持「在线会话列表 / 踢出单个设备」
+    sid = create_session(
+        user["username"], get_client_ip(request),
+        loginlog.parse_device(request.headers.get("user-agent"))
+    )
+    token = create_token(user["username"], token_version=int(user.get("token_version", 0)), sid=sid)
+    logger.info("用户 %s 登录成功（IP %s, sid=%s）", req.username, get_client_ip(request), sid[:12] if sid else "-")
     auditlog.record("登录成功", req.username, get_client_ip(request))
     # 登录日志：记录成功登录，并做新 IP / 新设备异常检测
     loginlog.record_login(
@@ -351,6 +359,70 @@ async def logout(request: Request, user: dict = Depends(get_current_user)):
     _clear_failures(request, user["username"])
     logger.info("用户 %s 已注销（IP %s）", user["username"], get_client_ip(request))
     auditlog.record("退出登录", user["username"], get_client_ip(request))
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# 会话管理：在线会话列表 / 踢出单设备 / 强制全部下线
+# ---------------------------------------------------------------------------
+@router.get("/sessions")
+async def sessions(
+    limit: int = 100, user: dict = Depends(get_current_user)
+):
+    """列出在线会话：管理员看全部，普通用户只看自己。"""
+    if user.get("role") == "admin":
+        items = list_sessions(None, limit)
+    else:
+        items = list_sessions(user["username"], limit)
+    # 供前端区分「当前设备」
+    return {"sessions": items}
+
+
+@router.post("/sessions/{sid}/kick")
+async def kick_session(
+    sid: str,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    """踢出单个设备（强制下线）。管理员可踢任意会话；普通用户仅能踢自己的。"""
+    # 找到该会话归属账号
+    target_owner = None
+    for s in list_sessions(None, 500):
+        if s.get("sid") == sid:
+            target_owner = s.get("username")
+            break
+    if target_owner is None:
+        raise HTTPException(status_code=404, detail="会话不存在或已过期")
+    if user.get("role") != "admin" and target_owner != user["username"]:
+        raise HTTPException(status_code=403, detail="只能操作自己的会话")
+    if not revoke_session(sid):
+        raise HTTPException(status_code=404, detail="会话不存在或已过期")
+    logger.info("会话 %s（用户 %s）已被踢出（操作者 %s, IP %s）",
+                sid[:12], target_owner, user["username"], get_client_ip(request))
+    auditlog.record("踢出会话", target_owner, get_client_ip(request), f"设备会话被 {user['username']} 强制下线")
+    return {"ok": True}
+
+
+class KickAllRequest(BaseModel):
+    username: str = Field(default="", max_length=64)
+
+
+@router.post("/sessions/kick-all")
+async def kick_all(
+    req: KickAllRequest,
+    request: Request,
+    admin: dict = Depends(require_admin),
+):
+    """强制下线指定用户的全部设备（管理员）。"""
+    target = (req.username or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="请指定要强制下线的用户")
+    if not _get_user(target):
+        raise HTTPException(status_code=404, detail="用户不存在")
+    bump_token_version(target)
+    logger.info("用户 %s 的全部会话已被管理员强制下线（操作者 %s, IP %s）",
+                target, admin["username"], get_client_ip(request))
+    auditlog.record("强制下线", target, get_client_ip(request), f"全部设备被 {admin['username']} 强制下线")
     return {"ok": True}
 
 

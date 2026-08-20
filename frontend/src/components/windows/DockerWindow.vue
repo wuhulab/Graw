@@ -152,6 +152,10 @@
 
       <!-- ================= 镜像视图 ================= -->
       <div v-else-if="view === 'images'">
+        <div class="img-toolbar">
+          <button class="btn" @click="openPull"><Download :size="13" /> 拉取镜像</button>
+          <button class="btn" @click="openBuild"><Hammer :size="13" /> 构建镜像</button>
+        </div>
         <table class="dt">
           <thead>
             <tr>
@@ -159,7 +163,7 @@
               <th>镜像 ID</th>
               <th style="width:100px;">大小</th>
               <th style="width:150px;">创建时间</th>
-              <th style="width:80px;">操作</th>
+              <th style="width:140px;">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -168,7 +172,10 @@
               <td style="font-family:monospace;font-size:11px;">{{ img.id }}</td>
               <td>{{ formatBytes(img.size) }}</td>
               <td>{{ formatTime(img.created) }}</td>
-              <td><button class="btn sm danger" @click="removeImageItem(img)">删除</button></td>
+              <td>
+                <button class="btn sm" @click="openTag(img)">打标签</button>
+                <button class="btn sm danger" @click="removeImageItem(img)">删除</button>
+              </td>
             </tr>
             <tr v-if="!images.length">
               <td colspan="5"><div class="empty">暂无镜像</div></td>
@@ -223,6 +230,7 @@
         <div class="menu-item" @click="menuEditNotes">备注笔记</div>
         <div class="menu-divider"></div>
         <div class="menu-item" @click="menuDetails">详细信息</div>
+        <div class="menu-item" @click="menuStats">资源图表</div>
         <div class="menu-item" @click="menuBackup">备份</div>
         <div class="menu-item" @click="menuUpgrade">升级</div>
         <div class="menu-item" @click="menuCommit">制作镜像</div>
@@ -243,6 +251,48 @@
       </div>
     </div>
 
+    <!-- 拉取镜像弹窗 -->
+    <div v-if="pullDialog.show" class="note-mask" @click.self="pullDialog.show = false">
+      <div class="note-dialog">
+        <div class="note-title">拉取镜像</div>
+        <input v-model="pullDialog.name" class="note-input" placeholder="镜像名，如 nginx:1.25 或 registry.example.com/app:2.0" spellcheck="false" />
+        <div class="note-actions">
+          <button class="btn" :disabled="busy" @click="pullDialog.show = false">取消</button>
+          <button class="btn primary" :disabled="busy || !pullDialog.name.trim()" @click="doPull">{{ busy ? '拉取中…' : '拉取' }}</button>
+        </div>
+        <div v-if="pullDialog.err" class="err-text">{{ pullDialog.err }}</div>
+      </div>
+    </div>
+
+    <!-- 打标签弹窗 -->
+    <div v-if="tagDialog.show" class="note-mask" @click.self="tagDialog.show = false">
+      <div class="note-dialog">
+        <div class="note-title">打标签 · {{ tagDialog.id }}</div>
+        <input v-model="tagDialog.repo" class="note-input" placeholder="目标仓库名，如 myapp / myregistry/myapp" spellcheck="false" />
+        <input v-model="tagDialog.tag" class="note-input" placeholder="标签（默认 latest）" spellcheck="false" style="margin-top:8px;" />
+        <div class="note-actions">
+          <button class="btn" :disabled="busy" @click="tagDialog.show = false">取消</button>
+          <button class="btn primary" :disabled="busy || !tagDialog.repo.trim()" @click="doTag">{{ busy ? '保存中…' : '保存' }}</button>
+        </div>
+        <div v-if="tagDialog.err" class="err-text">{{ tagDialog.err }}</div>
+      </div>
+    </div>
+
+    <!-- 构建镜像弹窗 -->
+    <div v-if="buildDialog.show" class="note-mask" @click.self="buildDialog.show = false">
+      <div class="note-dialog">
+        <div class="note-title">构建镜像</div>
+        <input v-model="buildDialog.name" class="note-input" placeholder="镜像名，如 myapp（不含标签）" spellcheck="false" />
+        <input v-model="buildDialog.tag" class="note-input" placeholder="标签（默认 latest）" spellcheck="false" style="margin-top:8px;" />
+        <input v-model="buildDialog.context_dir" class="note-input" placeholder="构建上下文目录（宿主机绝对路径，需含 Dockerfile）" spellcheck="false" style="margin-top:8px;" />
+        <div class="note-actions">
+          <button class="btn" :disabled="busy" @click="buildDialog.show = false">取消</button>
+          <button class="btn primary" :disabled="busy || !buildDialog.name.trim() || !buildDialog.context_dir.trim()" @click="doBuild">{{ busy ? '构建中…' : '构建' }}</button>
+        </div>
+        <div v-if="buildDialog.err" class="err-text">{{ buildDialog.err }}</div>
+      </div>
+    </div>
+
     <!-- 高风险操作二次确认：删除容器/镜像/网络需输入面板密码 -->
     <ConfirmDialog
       :show="confirm.show"
@@ -260,11 +310,12 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { Download, Hammer } from 'lucide-vue-next'
 import { dockerApi } from '../../api'
 import { docker, startDocker, refresh as refreshDockerStore } from '../../store/docker'
 import ConfirmDialog from '../ConfirmDialog.vue'
 
-const emit = defineEmits(['openLogs', 'openContainerTerminal', 'openContainerDetails', 'openFiles', 'openDockerConfigEditor'])
+const emit = defineEmits(['openLogs', 'openContainerTerminal', 'openContainerDetails', 'openFiles', 'openDockerConfigEditor', 'openContainerStats'])
 
 // 当前视图：containers / config / compose / images / networks
 const view = ref('containers')
@@ -289,6 +340,11 @@ const composeProjects = ref([])
 
 // ---------- 镜像 ----------
 const images = ref([])
+// 镜像管理弹窗（拉取 / 打标签 / 构建）
+const busy = ref(false)
+const pullDialog = ref({ show: false, name: '', err: '' })
+const tagDialog = ref({ show: false, id: '', repo: '', tag: 'latest', err: '' })
+const buildDialog = ref({ show: false, name: '', tag: 'latest', context_dir: '', err: '' })
 
 // ---------- 网络 ----------
 const networks = ref([])
@@ -394,6 +450,71 @@ function removeImageItem(img) {
   }
 }
 
+// ---------- 镜像管理：拉取 / 打标签 / 构建 ----------
+function openPull() {
+  pullDialog.value = { show: true, name: '', err: '' }
+}
+
+async function doPull() {
+  if (busy.value) return
+  busy.value = true
+  pullDialog.value.err = ''
+  try {
+    const r = await dockerApi.pullImage(pullDialog.value.name.trim())
+    alert('拉取成功' + (r.detail ? `：${String(r.detail).slice(0, 200)}` : ''))
+    pullDialog.value.show = false
+    await loadImages()
+  } catch (e) {
+    pullDialog.value.err = e.response?.data?.detail || e.message
+  } finally {
+    busy.value = false
+  }
+}
+
+function openTag(img) {
+  tagDialog.value = { show: true, id: img.id, repo: '', tag: 'latest', err: '' }
+}
+
+async function doTag() {
+  if (busy.value) return
+  busy.value = true
+  tagDialog.value.err = ''
+  try {
+    const r = await dockerApi.tagImage(tagDialog.value.id, tagDialog.value.repo.trim(), tagDialog.value.tag.trim() || 'latest')
+    alert('打标签成功：' + r.image)
+    tagDialog.value.show = false
+    await loadImages()
+  } catch (e) {
+    tagDialog.value.err = e.response?.data?.detail || e.message
+  } finally {
+    busy.value = false
+  }
+}
+
+function openBuild() {
+  buildDialog.value = { show: true, name: '', tag: 'latest', context_dir: '', err: '' }
+}
+
+async function doBuild() {
+  if (busy.value) return
+  busy.value = true
+  buildDialog.value.err = ''
+  try {
+    const r = await dockerApi.buildImage({
+      name: buildDialog.value.name.trim(),
+      tag: buildDialog.value.tag.trim() || 'latest',
+      context_dir: buildDialog.value.context_dir.trim(),
+    })
+    alert('构建成功：' + r.image)
+    buildDialog.value.show = false
+    await loadImages()
+  } catch (e) {
+    buildDialog.value.err = e.response?.data?.detail || e.message
+  } finally {
+    busy.value = false
+  }
+}
+
 // ---------- 网络操作 ----------
 function removeNetworkItem(n) {
   // 高风险操作：删除网络需输入面板密码确认
@@ -470,6 +591,12 @@ function menuLogs() {
   const it = ctxMenu.value.item
   closeMenus()
   if (it) emit('openLogs', { id: it.id, name: it.name })
+}
+
+function menuStats() {
+  const it = ctxMenu.value.item
+  closeMenus()
+  if (it) emit('openContainerStats', { id: it.id, name: it.name })
 }
 
 function menuOpenTerminal() {
@@ -692,5 +819,8 @@ onUnmounted(() => {
 .note-dialog { width: 420px; max-width: 90%; background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 12px 32px rgba(0,0,0,0.2); }
 .note-title { font-weight: 600; margin-bottom: 10px; }
 .note-textarea { width: 100%; height: 140px; resize: vertical; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; box-sizing: border-box; }
+.note-input { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; box-sizing: border-box; font-family: inherit; }
+.err-text { color: #b91c1c; font-size: 12px; margin-top: 8px; }
+.img-toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
 .note-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 </style>

@@ -188,9 +188,39 @@ def _find_podman():
         try:
             if IS_WINDOWS:
                 if shutil.which("wsl"):
-                    rc, out, _ = _run(["wsl", "-u", "root", "--", "podman", "--version"], timeout=_WSL_PROBE_TIMEOUT)
-                    if rc == 0 and "podman" in out.lower():
-                        found = ["wsl", "-u", "root", "--", "podman"]
+                    # Windows 上 podman/docker 跑在 WSL 里。强制用 root 会让部分
+                    # 发行版启动失败（getpwnam(root) failed / systemd user session
+                    # for root 无法启动），因此按「root 优先、默认用户兜底」候选回退，
+                    # 并用真正触发电机的 `info` 命令确认引擎可用，而不只凭 `--version`
+                    # （root 下 --version 也可能返回 0，但随后 ps/images 等引擎命令失败）。
+                    dead_hints = (
+                        "getpwnam", "systemd user session",
+                        "failed to start", "createprocessparsecommon",
+                    )
+                    candidates = (
+                        ["wsl", "-u", "root", "--", "podman"],
+                        ["wsl", "--", "podman"],
+                        ["wsl", "-u", "root", "--", "docker"],
+                        ["wsl", "--", "docker"],
+                    )
+                    for cand in candidates:
+                        rc, out, err = _run(cand + ["--version"], timeout=_WSL_PROBE_TIMEOUT)
+                        if rc != 0:
+                            continue
+                        txt = (out + err).lower()
+                        if not ("podman" in txt or "docker" in txt):
+                            continue
+                        # 启动即报致命错误（用户/会话问题）→ 直接换下一候选
+                        if any(h in err.lower() for h in dead_hints):
+                            continue
+                        # 再跑 info 确认容器引擎真正可用（rootless 常常 --version
+                        # 正常但 info 起不来）
+                        rc2, _o2, e2 = _run(cand + ["info"], timeout=_WSL_PROBE_TIMEOUT)
+                        if rc2 == 0:
+                            found = cand
+                            break
+                        if any(h in e2.lower() for h in dead_hints):
+                            continue
             else:
                 # 容器 /host 挂载模式：容器内通常没有 docker/podman CLI。
                 # 先查容器内，查不到且启用了 HOST_ROOT 挂载时，改为通过
@@ -654,6 +684,46 @@ def _container_logs_sync(container_id: str, tail: int = 200):
         c = client.containers.get(container_id)
         logs = c.logs(tail=tail).decode("utf-8", errors="replace")
         return {"logs": logs}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=_clean_reason(e))
+
+
+# ------------------------------------------------------------
+# 单容器实时资源（CPU / 内存快照，供前端绘制曲线）
+# ------------------------------------------------------------
+@router.get("/containers/{container_id}/stats")
+async def container_stats(container_id: str):
+    """返回单个容器的实时资源快照（CPU / 内存百分比）。
+
+    前端每秒轮询此接口，即可绘制单容器 CPU / 内存随时间变化的曲线。
+    容器未运行或引擎不可用时返回 404。
+    """
+    return await asyncio.to_thread(_container_stats_sync, container_id)
+
+
+def _container_stats_sync(container_id: str):
+    try:
+        kind, client = get_backend()
+    except HTTPException:
+        raise
+    try:
+        # 优先精确匹配容器 id（SDK 模式）；CLI 模式按名称前缀匹配
+        if kind == "cli":
+            cid = container_id[:12]
+            all_stats = _stats_sync()
+            for key, val in all_stats.items():
+                if key == cid or key.startswith(cid) or cid in key:
+                    return val
+            raise HTTPException(status_code=404, detail="容器未运行或无监控数据")
+        # SDK 模式：用容器名称作为 stats 键
+        c = client.containers.get(container_id)
+        name = c.name
+        all_stats = _stats_sync()
+        if name in all_stats:
+            return all_stats[name]
+        raise HTTPException(status_code=404, detail="容器未运行或无监控数据")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=_clean_reason(e))
 

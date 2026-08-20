@@ -9,7 +9,7 @@
           :key="sc.key"
           class="shortcut"
           :class="{ selected: selected === sc.key }"
-          @click="selected = sc.key"
+          @click="onShortcutClick(sc.key)"
           @dblclick="openShortcut(sc.key)"
         >
           <div class="icon"><component :is="sc.icon" :size="32" /></div>
@@ -41,7 +41,7 @@
       @move="(x, y) => moveWindow(w.id, x, y)"
       @resize="(width, height) => resizeWindow(w.id, width, height)"
     >
-      <component :is="w.component" v-bind="w.props || {}" @close="handleCloseWindow(w.id)" @dirty="(v) => { const ww=openWindows.value.find(x=>x.id===w.id); if(ww) ww.dirty=v }" @openTerminal="openTerminalAt" @openEditor="openEditor" @openMedia="openMedia" @openUsers="openUsers" @openLogs="openContainerLogs" @openContainerTerminal="openContainerTerminal" @openContainerDetails="openContainerDetails" @openFiles="openFiles" @openDockerConfigEditor="openDockerConfigEditor" @openAppInstall="openAppStoreInstall" @openComposeEditor="openAppStoreComposeEditor" @openInstallLog="openAppStoreInstallLog" @openReadme="openAppStoreReadme" @openTaskCenter="openTasks" @openRuntimeCreate="openRuntimeCreate" @openConnectionForm="openConnectionForm" @openNetStorageBrowse="openNetStorageBrowse" @openNetStorageForm="openNetStorageForm" />
+      <component :is="w.component" v-bind="w.props || {}" @close="handleCloseWindow(w.id)" @dirty="(v) => { const ww=openWindows.value.find(x=>x.id===w.id); if(ww) ww.dirty=v }" @openTerminal="openTerminalAt" @openEditor="openEditor" @openMedia="openMedia" @openUsers="openUsers" @openLogs="openContainerLogs" @openContainerTerminal="openContainerTerminal" @openContainerDetails="openContainerDetails" @openContainerStats="openContainerStats" @openFiles="openFiles" @openDockerConfigEditor="openDockerConfigEditor" @openAppInstall="openAppStoreInstall" @openComposeEditor="openAppStoreComposeEditor" @openInstallLog="openAppStoreInstallLog" @openReadme="openAppStoreReadme" @openTaskCenter="openTasks" @openRuntimeCreate="openRuntimeCreate" @openConnectionForm="openConnectionForm" @openNetStorageBrowse="openNetStorageBrowse" @openNetStorageForm="openNetStorageForm" />
     </WindowFrame>
 
     <!-- Dock -->
@@ -98,6 +98,7 @@ import MonitorCard from './components/cards/MonitorCard.vue'
 import InfoNotesCard from './components/cards/InfoNotesCard.vue'
 import WindowFrame from './components/WindowFrame.vue'
 import DockerWindow from './components/windows/DockerWindow.vue'
+import DockerVolumesWindow from './components/windows/DockerVolumesWindow.vue'
 import ProcessWindow from './components/windows/ProcessWindow.vue'
 import FilesWindow from './components/windows/FilesWindow.vue'
 import TerminalWindow from './components/windows/TerminalWindow.vue'
@@ -112,12 +113,15 @@ import FirewallWindow from './components/windows/FirewallWindow.vue'
 import FrpWindow from './components/windows/FrpWindow.vue'
 import SSLWindow from './components/windows/SSLWindow.vue'
 import LogsWindow from './components/windows/LogsWindow.vue'
+import AuditLogWindow from './components/windows/AuditLogWindow.vue'
 import SettingsWindow from './components/windows/SettingsWindow.vue'
 import ProtectionWindow from './components/windows/ProtectionWindow.vue'
 import TamperWindow from './components/windows/TamperWindow.vue'
 import WafWindow from './components/windows/WafWindow.vue'
 import ContainerLogsWindow from './components/windows/ContainerLogsWindow.vue'
 import ContainerDetailWindow from './components/windows/ContainerDetailWindow.vue'
+import ContainerStatsWindow from './components/windows/ContainerStatsWindow.vue'
+import ContainerEditWindow from './components/windows/ContainerEditWindow.vue'
 import DockerConfigEditorWindow from './components/windows/DockerConfigEditorWindow.vue'
 import AppStoreWindow from './components/windows/AppStoreWindow.vue'
 import AppStoreInstallWindow from './components/windows/AppStoreInstallWindow.vue'
@@ -141,10 +145,15 @@ import PanelBackupWindow from './components/windows/PanelBackupWindow.vue'
 import LoginLogWindow from './components/windows/LoginLogWindow.vue'
 import WebStatsWindow from './components/windows/WebStatsWindow.vue'
 import RewriteWindow from './components/windows/RewriteWindow.vue'
+import SiteOptsWindow from './components/windows/SiteOptsWindow.vue'
 import MetricsHistoryWindow from './components/windows/MetricsHistoryWindow.vue'
 import ServiceMonitorWindow from './components/windows/ServiceMonitorWindow.vue'
 import SSHKeysWindow from './components/windows/SSHKeysWindow.vue'
 import HealthCheckWindow from './components/windows/HealthCheckWindow.vue'
+import FtpUsersWindow from './components/windows/FtpUsersWindow.vue'
+import PhpVersionsWindow from './components/windows/PhpVersionsWindow.vue'
+import SessionsWindow from './components/windows/SessionsWindow.vue'
+import UpdateWindow from './components/windows/UpdateWindow.vue'
 import ShunXSetup from './components/ShunXSetup.vue'
 import TamperAlert from './components/TamperAlert.vue'
 import InstallCheckAlert from './components/InstallCheckAlert.vue'
@@ -157,7 +166,7 @@ import { systemState, startMetrics, stopMetrics } from './store/systemMetrics'
 import { startDocker, stopDocker, refresh as refreshDocker } from './store/docker'
 import { nodes as nodesStore, refreshNodes } from './store/nodes'
 import { tamperState, startTamper, stopTamper } from './store/tamper'
-import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck, ShieldAlert, ShieldBan, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, DatabaseBackup, BellRing, Activity, Archive, Fingerprint, BarChart3, FileCode2, History, Server, KeyRound, Stethoscope } from 'lucide-vue-next'
+import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck, ShieldAlert, ShieldBan, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, DatabaseBackup, BellRing, Activity, Archive, Fingerprint, BarChart3, FileCode2, History, Server, KeyRound, Stethoscope, MonitorSmartphone, Unlink, UserCheck, RefreshCw, Wrench, Settings2, ServerCog } from 'lucide-vue-next'
 
 const loggedIn = computed(() => !!auth.token)
 
@@ -198,7 +207,13 @@ const shortcuts = ref([
   { key: 'frp', label: 'Frp内网穿透', titleKey: 'app.shortcut.frp', icon: markRaw(Radio), component: markRaw(FrpWindow), w: 900, h: 600, adminOnly: true },
   { key: 'ssl', label: 'SSL', titleKey: 'app.shortcut.ssl', icon: markRaw(Lock), component: markRaw(SSLWindow), w: 820, h: 520, adminOnly: true },
   { key: 'logs', label: '日志', titleKey: 'app.shortcut.logs', icon: markRaw(ScrollText), component: markRaw(LogsWindow), w: 900, h: 560, adminOnly: true },
+  // 审计日志：面板操作审计记录（管理员专属）
+  { key: 'auditlog', label: '审计日志', titleKey: 'app.shortcut.auditlog', icon: markRaw(ScrollText), component: markRaw(AuditLogWindow), w: 900, h: 560, adminOnly: true },
   { key: 'docker', label: 'Docker', titleKey: 'app.shortcut.docker', icon: markRaw(Container), component: markRaw(DockerWindow), w: 820, h: 520, adminOnly: true },
+  // Docker 数据卷与网络（管理员专属）
+  { key: 'dockervolumes', label: 'Docker卷', titleKey: 'app.shortcut.dockervolumes', icon: markRaw(DatabaseBackup), component: markRaw(DockerVolumesWindow), w: 860, h: 540, adminOnly: true },
+  // 容器资源与端口编辑（CPU/内存/环境变量/端口映射，管理员专属）
+  { key: 'containeredit', label: '容器编辑', titleKey: 'app.shortcut.containeredit', icon: markRaw(Settings2), component: markRaw(ContainerEditWindow), w: 760, h: 660, adminOnly: true },
   { key: 'appstore', label: '应用商店', titleKey: 'app.shortcut.appstore', icon: markRaw(Store), component: markRaw(AppStoreWindow), w: 920, h: 580, adminOnly: true },
   { key: 'tasks', label: '任务中心', titleKey: 'app.shortcut.tasks', icon: markRaw(ListChecks), component: markRaw(TaskCenterWindow), w: 900, h: 560, adminOnly: true },
   { key: 'protection', label: 'Graw数据库保护机制', titleKey: 'app.shortcut.protection', icon: markRaw(ShieldCheck), component: markRaw(ProtectionWindow), w: 860, h: 560, adminOnly: true },
@@ -215,14 +230,22 @@ const shortcuts = ref([
   { key: 'uptime', label: '站点监控', titleKey: 'app.shortcut.uptime', icon: markRaw(Activity), component: markRaw(UptimeWindow), w: 860, h: 560, adminOnly: true },
   { key: 'webstats', label: '访问统计', titleKey: 'app.shortcut.webstats', icon: markRaw(BarChart3), component: markRaw(WebStatsWindow), w: 980, h: 640, adminOnly: true },
   { key: 'rewrite', label: '伪静态规则', titleKey: 'app.shortcut.rewrite', icon: markRaw(FileCode2), component: markRaw(RewriteWindow), w: 780, h: 560, adminOnly: true },
+  { key: 'siteopts', label: '防盗链缓存', titleKey: 'app.shortcut.siteopts', icon: markRaw(Unlink), component: markRaw(SiteOptsWindow), w: 860, h: 600, adminOnly: true },
   { key: 'metricshistory', label: '历史监控', titleKey: 'app.shortcut.metricshistory', icon: markRaw(History), component: markRaw(MetricsHistoryWindow), w: 980, h: 640, adminOnly: true },
   { key: 'svcmonitor', label: '服务监控', titleKey: 'app.shortcut.svcmonitor', icon: markRaw(Server), component: markRaw(ServiceMonitorWindow), w: 920, h: 560, adminOnly: true },
   { key: 'sshkeys', label: 'SSH 密钥', titleKey: 'app.shortcut.sshkeys', icon: markRaw(KeyRound), component: markRaw(SSHKeysWindow), w: 880, h: 540, adminOnly: true },
   { key: 'certcheck', label: '证书到期', titleKey: 'app.shortcut.certcheck', icon: markRaw(Lock), component: markRaw(CertWindow), w: 820, h: 540, adminOnly: true },
   { key: 'healthcheck', label: '系统体检', titleKey: 'app.shortcut.healthcheck', icon: markRaw(Stethoscope), component: markRaw(HealthCheckWindow), w: 820, h: 600, adminOnly: true },
+  { key: 'ftpusers', label: 'FTP用户', titleKey: 'app.shortcut.ftpusers', icon: markRaw(UserCheck), component: markRaw(FtpUsersWindow), w: 860, h: 560, adminOnly: true },
+  // PHP 多版本管理：探测系统 PHP/FPM + 站点 PHP 版本关联（仅管理员）
+  { key: 'phpversions', label: 'PHP版本', titleKey: 'app.shortcut.phpversions', icon: markRaw(ServerCog), component: markRaw(PhpVersionsWindow), w: 900, h: 580, adminOnly: true },
   { key: 'panelbackup', label: '面板备份', titleKey: 'app.shortcut.panelbackup', icon: markRaw(Archive), component: markRaw(PanelBackupWindow), w: 860, h: 540, adminOnly: true },
+  // 系统更新：面板自身版本检测与一键更新（仅管理员）
+  { key: 'update', label: '系统更新', titleKey: 'app.shortcut.update', icon: markRaw(RefreshCw), component: markRaw(UpdateWindow), w: 640, h: 420, adminOnly: true },
   // 登录日志/异地提示：记录登录 IP/时间/设备，异常登录提醒（普通用户仅看自己的历史）
   { key: 'loginlog', label: '登录日志', titleKey: 'app.shortcut.loginlog', icon: markRaw(Fingerprint), component: markRaw(LoginLogWindow), w: 900, h: 560, adminOnly: false },
+  // 会话管理：在线会话列表、踢出单设备、强制全部下线（普通用户仅管理自己的会话）
+  { key: 'sessions', label: '会话管理', titleKey: 'app.shortcut.sessions', icon: markRaw(MonitorSmartphone), component: markRaw(SessionsWindow), w: 900, h: 560, adminOnly: false },
   { key: 'terminal', label: '终端', titleKey: 'app.shortcut.terminal', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true },
   // Foxcode：双击打开终端并自动输入 foxcode 命令启动
   { key: 'foxcode', label: 'Foxcode', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true, props: { autoCommand: 'foxcode' } }
@@ -330,6 +353,25 @@ function openWindow(key) {
   })
   openWindows.value.push(w)
   activeWindowId.value = id
+}
+
+// 触屏设备判定（手机/平板/DevTools 触摸模拟）：组合多种探测，避免单靠
+// matchMedia(pointer:coarse) 在某些 WebView/模拟器里误判为 false，导致
+// 单击只选中不打开。移动端没有双击，单击即打开应用；桌面端保持单击选中、双击打开。
+const isTouchDevice =
+  typeof window !== 'undefined' && (
+    ('ontouchstart' in window) ||
+    (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) ||
+    (window.matchMedia && window.matchMedia('(any-pointer: coarse)').matches) ||
+    (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
+    (window.innerWidth <= 820)
+  )
+function onShortcutClick(key) {
+  if (isTouchDevice) {
+    openShortcut(key)
+  } else {
+    selected.value = key
+  }
 }
 
 // 桌面快捷方式双击分发：特殊应用（如 Foxcode）走自定义打开逻辑，其余走通用 openWindow
@@ -440,6 +482,31 @@ function openContainerLogs({ id, name }) {
     y: 60 + (openWindows.value.length * 25),
     width: 760,
     height: 520,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id2
+}
+
+// Docker：打开容器资源图表（CPU / 内存实时曲线）
+function openContainerStats({ id, name }) {
+  const id2 = ++windowSeq
+  const w = reactive({
+    id: id2,
+    key: 'container-stats',
+    title: '资源图表: ' + name,
+    titleKey: 'app.winTitle.containerStats',
+    titleArgs: { name },
+    icon: markRaw(Activity),
+    component: markRaw(ContainerStatsWindow),
+    props: { id, name },
+    x: 150 + (openWindows.value.length * 30),
+    y: 70 + (openWindows.value.length * 25),
+    width: 760,
+    height: 420,
     z: ++zSeq,
     minimized: false,
     maximized: false,
