@@ -129,6 +129,52 @@
         </div>
       </div>
 
+      <!-- 两步验证（2FA）：为当前账号开启 / 关闭 TOTP 动态口令 -->
+      <div class="block">
+        <div class="block-title">两步验证（2FA）</div>
+        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">
+          开启后登录需输入密码 + 手机验证器（Google Authenticator 等）中的 6 位动态验证码
+        </div>
+
+        <template v-if="!otpState.enabled">
+          <div class="row" style="align-items:center;">
+            <span style="font-size:12.5px;">{{ otpState.has_secret ? '已生成密钥，扫描或手动输入后启用' : '尚未开启两步验证' }}</span>
+            <button class="btn" :disabled="otpBusy" @click="otpSetup">{{ otpState.has_secret ? '重新生成密钥' : '开启两步验证' }}</button>
+          </div>
+
+          <!-- 密钥 / 二维码展示（setup 后） -->
+          <div v-if="otpSecret" style="margin-top:10px;border:1px dashed #c7d2e0;border-radius:8px;padding:12px;background:#f6f8fb;">
+            <img
+              v-if="otpUri"
+              :src="qrUrl(otpUri)"
+              alt="2FA QR"
+              style="width:120px;height:120px;border-radius:6px;margin-bottom:8px;"
+              @error="otpUriQrFail = true"
+            />
+            <div v-if="otpUriQrFail" class="hint" style="color:#92400e;">无法加载二维码（离线），请手动添加：</div>
+            <div class="mono" style="font-size:12px;word-break:break-all;">密钥：<code>{{ otpSecret }}</code></div>
+            <div class="mono" style="font-size:11px;color:#6e6e73;word-break:break-all;margin-top:4px;">{{ otpUri }}</div>
+            <div class="row" style="margin-top:10px;">
+              <input v-model.trim="otpCode" placeholder="输入 6 位验证码" maxlength="6" inputmode="numeric" style="width:160px;" />
+              <button class="btn btn-primary" :disabled="otpBusy || otpCode.length !== 6" @click="otpEnable">启用</button>
+            </div>
+          </div>
+          <div v-if="otpMsg" :class="['msg', otpMsgType]" style="margin-top:8px;">{{ otpMsg }}</div>
+        </template>
+
+        <template v-else>
+          <div class="row" style="align-items:center;">
+            <span class="badge ok" style="padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;">已启用</span>
+            <span style="font-size:12.5px;color:#6e6e73;">登录时需要动态验证码</span>
+          </div>
+          <div class="row" style="margin-top:8px;">
+            <input v-model.trim="otpCode" placeholder="输入当前验证码以关闭" maxlength="6" inputmode="numeric" style="width:200px;" />
+            <button class="btn btn-danger" :disabled="otpBusy || otpCode.length !== 6" @click="otpDisable">关闭两步验证</button>
+          </div>
+          <div v-if="otpMsg" :class="['msg', otpMsgType]" style="margin-top:8px;">{{ otpMsg }}</div>
+        </template>
+      </div>
+
       <div class="block">
         <div class="block-title">{{ $t('settings.panelTitle') }}</div>
         <div class="row">
@@ -195,7 +241,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { settings } from '../../store/settings'
 import { isAdmin } from '../../store/auth'
-import { nodesApi, shunxApi, panelApi, updateApi, webmodeApi } from '../../api'
+import { nodesApi, shunxApi, panelApi, updateApi, webmodeApi, authApi } from '../../api'
 import { nodes as nodesStore, refreshNodes, setCurrentNode } from '../../store/nodes'
 import { LANGUAGES, setLocale } from '../../locales'
 
@@ -262,6 +308,89 @@ const statusText = computed(() => {
   if (!currentEntry.value) return t('settings.shunxNotSet')
   return t('settings.shunxEnabled', { path: currentEntry.value })
 })
+
+// ---- 两步验证（2FA）----
+const otpState = reactive({ enabled: false, has_secret: false })
+const otpSecret = ref('')
+const otpUri = ref('')
+const otpUriQrFail = ref(false)
+const otpCode = ref('')
+const otpBusy = ref(false)
+const otpMsg = ref('')
+const otpMsgType = ref('')
+
+// 二维码用外部公共服务生成（失败时回退到手动输入密钥，不影响功能）
+function qrUrl(uri) {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(uri)}`
+}
+
+async function loadOtpStatus() {
+  try {
+    const st = await authApi.me2faStatus()
+    otpState.enabled = !!st.otp_enabled
+    otpState.has_secret = !!st.has_secret
+    otpMsg.value = ''
+  } catch (e) {
+    // 接口异常时静默，不阻塞设置窗口
+  }
+}
+
+async function otpSetup() {
+  otpBusy.value = true
+  otpMsg.value = ''
+  otpUriQrFail.value = false
+  try {
+    const r = await authApi.twoFaSetup()
+    otpSecret.value = r.secret
+    otpUri.value = r.otpauth_uri
+    otpState.has_secret = true
+    otpCode.value = ''
+  } catch (e) {
+    otpMsg.value = e?.response?.data?.detail || '生成失败'
+    otpMsgType.value = 'err'
+  } finally {
+    otpBusy.value = false
+  }
+}
+
+async function otpEnable() {
+  if (otpBusy.value) return
+  otpBusy.value = true
+  otpMsg.value = ''
+  try {
+    await authApi.twoFaEnable(otpCode.value)
+    otpState.enabled = true
+    otpSecret.value = ''
+    otpUri.value = ''
+    otpCode.value = ''
+    otpMsg.value = '两步验证已启用'
+    otpMsgType.value = 'ok'
+  } catch (e) {
+    otpMsg.value = e?.response?.data?.detail || '启用失败'
+    otpMsgType.value = 'err'
+  } finally {
+    otpBusy.value = false
+  }
+}
+
+async function otpDisable() {
+  if (otpBusy.value) return
+  otpBusy.value = true
+  otpMsg.value = ''
+  try {
+    await authApi.twoFaDisable(otpCode.value)
+    otpState.enabled = false
+    otpState.has_secret = false
+    otpCode.value = ''
+    otpMsg.value = '两步验证已关闭'
+    otpMsgType.value = 'ok'
+  } catch (e) {
+    otpMsg.value = e?.response?.data?.detail || '关闭失败'
+    otpMsgType.value = 'err'
+  } finally {
+    otpBusy.value = false
+  }
+}
 
 // ---- 关于：项目与社区链接 ----
 // nameKey 为多语言键，url 为固定外链；集中在此便于维护与扩展
@@ -466,6 +595,8 @@ onMounted(async () => {
   loadVersion()
   // 检测是否有新版本（管理员可触发一键更新）
   loadUpdateStatus()
+  // 加载当前账号的两步验证状态
+  loadOtpStatus()
   try {
     const config = await shunxApi.config()
     currentEntry.value = config.entry_path || ''

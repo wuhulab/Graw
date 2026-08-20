@@ -13,6 +13,9 @@ from ..auth import (
     create_token,
     hash_password,
     verify_password,
+    verify_totp,
+    generate_otp_secret,
+    otpauth_uri,
     get_current_user,
     require_admin,
     require_non_default_password,
@@ -239,11 +242,14 @@ def _clear_global_failures(username: str) -> None:
 class LoginRequest(BaseModel):
     username: str = Field(default="", min_length=1, max_length=64)
     password: str = Field(default="", min_length=1, max_length=128)
+    otp_code: Optional[str] = Field(default=None, max_length=16)
 
 
 class LoginResponse(BaseModel):
-    token: str
-    user: dict
+    token: str = ""
+    user: Optional[dict] = None
+    otp_required: Optional[bool] = False
+    username: Optional[str] = None
 
 
 # 哑 bcrypt 哈希：用户不存在时也执行一次同代价的密码比对，
@@ -291,6 +297,18 @@ async def login(req: LoginRequest, request: Request):
     # 登录成功，清零失败记录（入口与密码均已通过校验）
     _clear_failures(request, req.username)
     public = _public_user(user)
+    # 两步验证（2FA）：开启后必须先通过 TOTP 验证码才能签发令牌
+    if user.get("otp_enabled"):
+        otp_code = (req.otp_code or "").strip()
+        if not otp_code:
+            # 密码已正确，但还差验证码——返回 otp_required 标记让前端继续输入
+            # （不签发 token；响应与常规登录一致，不泄露额外信息）
+            auditlog.record("登录待验证", req.username, get_client_ip(request), "已通过密码，等待 2FA 验证码")
+            return {"otp_required": True, "username": user["username"], "token": "", "user": None}
+        if not verify_totp(user.get("otp_secret", ""), otp_code):
+            _record_failure(request, req.username)
+            auditlog.record("登录失败", req.username, get_client_ip(request), "2FA 验证码错误")
+            raise HTTPException(status_code=401, detail="两步验证码错误")
     # ShunX 保护：检测到使用默认密码 → 强制要求修改后才能使用面板
     if is_default_password(user["password"]):
         public["must_change_password"] = True
@@ -464,4 +482,80 @@ async def delete_user(username: str, request: Request, user: dict = Depends(requ
     del users[username]
     _save_users(users)
     auditlog.record("删除用户", user["username"], get_client_ip(request), f"目标:{username}")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# 两步验证（2FA）管理：为当前登录用户开启 / 关闭 TOTP
+# ---------------------------------------------------------------------------
+@router.get("/2fa/status")
+async def otp_status(user: dict = Depends(get_current_user)):
+    """当前用户 2FA 状态。"""
+    full = _get_user(user["username"])
+    return {
+        "otp_enabled": bool(full and full.get("otp_enabled")),
+        # 已启用后不回显 secret（防泄露）；未启用时可通过 setup 重新生成
+        "has_secret": bool(full and full.get("otp_secret")),
+    }
+
+
+class OtpSetupResponse(BaseModel):
+    secret: str
+    otpauth_uri: str
+
+
+@router.post("/2fa/setup", response_model=OtpSetupResponse)
+async def otp_setup(user: dict = Depends(get_current_user)):
+    """生成新的 TOTP secret（仅未启用时可调用；启用后不可再生）。"""
+    users = _load_users() or {}
+    full = users.get(user["username"])
+    if full and full.get("otp_enabled"):
+        raise HTTPException(status_code=400, detail="两步验证已启用，如需重置请先关闭")
+    secret = generate_otp_secret()
+    # 启用前先落盘 secret，但标记未启用——前端在启用弹窗内展示二维码
+    full["otp_secret"] = secret
+    full["otp_enabled"] = False
+    _save_users(users)
+    return {
+        "secret": secret,
+        "otpauth_uri": otpauth_uri(secret, user["username"]),
+    }
+
+
+class OtpEnableRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=16)
+
+
+@router.post("/2fa/enable")
+async def otp_enable(req: OtpEnableRequest, request: Request, user: dict = Depends(get_current_user)):
+    """用验证码确认后启用 2FA（验证码与当前 secret 匹配才算成功）。"""
+    users = _load_users() or {}
+    full = users.get(user["username"])
+    if full is None or not full.get("otp_secret"):
+        raise HTTPException(status_code=400, detail="请先生成两步验证密钥")
+    if full.get("otp_enabled"):
+        raise HTTPException(status_code=400, detail="两步验证已启用")
+    if not verify_totp(full.get("otp_secret", ""), req.code):
+        raise HTTPException(status_code=400, detail="验证码错误")
+    full["otp_enabled"] = True
+    _save_users(users)
+    logger.info("用户 %s 已启用两步验证（IP %s）", user["username"], get_client_ip(request))
+    auditlog.record("启用两步验证", user["username"], get_client_ip(request))
+    return {"ok": True}
+
+
+@router.post("/2fa/disable")
+async def otp_disable(req: OtpEnableRequest, request: Request, user: dict = Depends(get_current_user)):
+    """用验证码确认后关闭 2FA（防止误操作被他人直接关闭）。"""
+    users = _load_users() or {}
+    full = users.get(user["username"])
+    if full is None or not full.get("otp_enabled"):
+        raise HTTPException(status_code=400, detail="两步验证未启用")
+    if not verify_totp(full.get("otp_secret", ""), req.code):
+        raise HTTPException(status_code=400, detail="验证码错误")
+    full["otp_enabled"] = False
+    full["otp_secret"] = ""
+    _save_users(users)
+    logger.info("用户 %s 已关闭两步验证（IP %s）", user["username"], get_client_ip(request))
+    auditlog.record("关闭两步验证", user["username"], get_client_ip(request))
     return {"ok": True}

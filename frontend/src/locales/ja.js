@@ -1258,6 +1258,8 @@ export default {
       disks: 'ディスク管理',
       uisettings: 'UI設定',
       terminal: 'ターミナル',
+      backup: 'バックアップセンター',
+      notify: '通知センター',
     },
     winTitle: {
       users: 'アカウント管理',

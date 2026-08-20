@@ -1258,6 +1258,8 @@ export default {
       disks: 'Datenträger',
       uisettings: 'Oberfläche',
       terminal: 'Terminal',
+      backup: 'Backup-Center',
+      notify: 'Benachrichtigungen',
     },
     winTitle: {
       users: 'Kontoverwaltung',

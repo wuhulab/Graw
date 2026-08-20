@@ -77,15 +77,20 @@ export const updateApi = {
 }
 
 export const authApi = {
-  // path 为浏览器地址栏路径，用于 ShunX 安全入口校验
-  login: (username, password, path = '') => api.post('/auth/login', { username, password }, { headers: { 'X-ShunX-Entry': path } }).then(r => r.data),
+  // path 为浏览器地址栏路径，用于 ShunX 安全入口校验；otpCode 为两步验证码（可选）
+  login: (username, password, path = '', otpCode) => api.post('/auth/login', { username, password, otp_code: otpCode }, { headers: { 'X-ShunX-Entry': path } }).then(r => r.data),
   me: () => api.get('/auth/me').then(r => r.data),
   // token 可选：强制改密场景下尚未写入登录态，显式携带临时 token
   changePassword: (old_password, new_password, token) => api.post('/auth/password', { old_password, new_password }, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined).then(r => r.data),
   listUsers: () => api.get('/auth/users').then(r => r.data),
   createUser: (username, password, role) => api.post('/auth/users', { username, password, role }).then(r => r.data),
   updateUser: (username, body) => api.put(`/auth/users/${username}`, body).then(r => r.data),
-  deleteUser: (username) => api.delete(`/auth/users/${username}`).then(r => r.data)
+  deleteUser: (username) => api.delete(`/auth/users/${username}`).then(r => r.data),
+  // 两步验证（2FA / TOTP）
+  me2faStatus: () => api.get('/auth/2fa/status').then(r => r.data),
+  twoFaSetup: () => api.post('/auth/2fa/setup').then(r => r.data),
+  twoFaEnable: (code) => api.post('/auth/2fa/enable', { code }).then(r => r.data),
+  twoFaDisable: (code) => api.post('/auth/2fa/disable', { code }).then(r => r.data)
 }
 
 export const systemApi = {
@@ -326,6 +331,43 @@ export const wafApi = {
 export const webmodeApi = {
   status: () => api.get('/webmode/status').then(r => r.data),
   setMode: (mode) => api.post('/webmode/mode', { mode }).then(r => r.data)
+}
+
+// 备份中心：目录/文件通用备份（手动 + cron 计划）、轮转、一键恢复、远程备份（管理员）
+export const backupApi = {
+  status: () => api.get('/backup/status').then(r => r.data),
+  tasks: () => api.get('/backup/tasks').then(r => r.data),
+  createTask: (body) => api.post('/backup/tasks', body).then(r => r.data),
+  updateTask: (id, body) => api.put(`/backup/tasks/${encodeURIComponent(id)}`, body).then(r => r.data),
+  deleteTask: (id) => api.delete(`/backup/tasks/${encodeURIComponent(id)}`).then(r => r.data),
+  run: (id) => api.post(`/backup/tasks/${encodeURIComponent(id)}/run`, {}, { timeout: 1800000 }).then(r => r.data),
+  restore: (id, file, target) => api.post(`/backup/tasks/${encodeURIComponent(id)}/restore`, { file, target }, { timeout: 1800000 }).then(r => r.data),
+  records: () => api.get('/backup/records').then(r => r.data),
+  deleteRecord: (file) => api.delete('/backup/records', { params: { file } }).then(r => r.data),
+  // 远程备份目标（WebDAV）
+  remotes: () => api.get('/backup/remotes').then(r => r.data),
+  createRemote: (body) => api.post('/backup/remotes', body).then(r => r.data),
+  updateRemote: (id, body) => api.put(`/backup/remotes/${encodeURIComponent(id)}`, body).then(r => r.data),
+  deleteRemote: (id) => api.delete(`/backup/remotes/${encodeURIComponent(id)}`).then(r => r.data),
+  testRemote: (id) => api.post(`/backup/remotes/${encodeURIComponent(id)}/test`, {}, { timeout: 60000 }).then(r => r.data)
+}
+
+// 通知中心：通知渠道（Webhook/Telegram/钉钉/企微/Server酱/邮件）+ 资源阈值告警（管理员）
+export const notifyApi = {
+  status: () => api.get('/notify/status').then(r => r.data),
+  channels: () => api.get('/notify/channels').then(r => r.data),
+  createChannel: (body) => api.post('/notify/channels', body).then(r => r.data),
+  updateChannel: (id, body) => api.put(`/notify/channels/${encodeURIComponent(id)}`, body).then(r => r.data),
+  deleteChannel: (id) => api.delete(`/notify/channels/${encodeURIComponent(id)}`).then(r => r.data),
+  testChannel: (id) => api.post(`/notify/channels/${encodeURIComponent(id)}/test`, {}, { timeout: 60000 }).then(r => r.data),
+  rules: () => api.get('/notify/rules').then(r => r.data),
+  createRule: (body) => api.post('/notify/rules', body).then(r => r.data),
+  updateRule: (id, body) => api.put(`/notify/rules/${encodeURIComponent(id)}`, body).then(r => r.data),
+  deleteRule: (id) => api.delete(`/notify/rules/${encodeURIComponent(id)}`).then(r => r.data),
+  updateConfig: (body) => api.put('/notify/config', body).then(r => r.data),
+  testAlert: () => api.post('/notify/test-alert').then(r => r.data),
+  logs: (limit = 100) => api.get('/notify/logs', { params: { limit } }).then(r => r.data),
+  clearLogs: () => api.post('/notify/logs/clear').then(r => r.data)
 }
 
 export const appStoreApi = {

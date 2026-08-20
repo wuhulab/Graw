@@ -213,6 +213,8 @@ export default {
       disks: 'Discos',
       uisettings: 'Interface',
       terminal: 'Terminal',
+      backup: 'Centro de backups',
+      notify: 'Central de notificações',
     },
     winTitle: {
       users: 'Gerenciamento de contas',

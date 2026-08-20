@@ -39,6 +39,20 @@
               required
             />
           </label>
+          <!-- 两步验证（2FA）：密码通过后需输入 6 位动态验证码 -->
+          <div v-if="otpRequired" class="hint">已开启两步验证，请输入手机验证器中的 6 位动态验证码</div>
+          <label v-if="otpRequired" class="field">
+            <span class="label">两步验证码</span>
+            <input
+              v-model="otpCode"
+              type="text"
+              inputmode="numeric"
+              maxlength="6"
+              autocomplete="one-time-code"
+              placeholder="6 位验证码"
+              required
+            />
+          </label>
           <div v-if="error" class="error">{{ error }}</div>
           <button class="btn-primary" type="submit" :disabled="loading">
             {{ loading ? $t('login.loggingIn') : $t('login.login') }}
@@ -103,6 +117,10 @@ const password = ref('')
 const loading = ref(false)
 const error = ref('')
 
+// 两步验证（2FA）：密码校验通过后等待验证码
+const otpRequired = ref(false)
+const otpCode = ref('')
+
 const forceChange = ref(false)
 const forceChangeReason = ref('') // '' | 'default'（默认密码）| 'reset'（重置/首登）
 // 强制改密时暂存登录凭据：改密成功后才写入登录态，避免立即进入桌面
@@ -147,7 +165,14 @@ async function handleLogin() {
   try {
     // 获取当前路径用于 ShunX 安全入口校验
     const currentPath = window.location.pathname.replace(/\/+$/, '') || '/'
-    const data = await authApi.login(username.value, password.value, currentPath)
+    const data = await authApi.login(username.value, password.value, currentPath, otpCode.value || undefined)
+    if (data.otp_required) {
+      // 密码已通过，但该账号开启了 2FA——显示验证码输入框，等待用户输入后再次提交
+      otpRequired.value = true
+      otpCode.value = ''
+      error.value = ''
+      return
+    }
     if (data.user?.must_change_password) {
       // 强制改密：先不写入登录态（否则 App 会立即切换到桌面），改密成功后再进入
       pendingToken.value = data.token

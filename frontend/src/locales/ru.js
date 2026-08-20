@@ -1258,6 +1258,8 @@ export default {
       disks: 'Диски',
       uisettings: 'Интерфейс',
       terminal: 'Терминал',
+      backup: 'Центр резервного копирования',
+      notify: 'Центр уведомлений',
     },
     winTitle: {
       users: 'Управление аккаунтами',

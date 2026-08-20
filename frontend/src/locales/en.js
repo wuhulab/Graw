@@ -210,6 +210,8 @@ export default {
       disks: 'Disks',
       uisettings: 'UI Settings',
       terminal: 'Terminal',
+      backup: 'Backup Center',
+      notify: 'Notification Center',
     },
     winTitle: {
       users: 'Account Management',

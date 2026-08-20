@@ -11,6 +11,10 @@ import time
 import secrets
 import threading
 import logging
+import base64
+import hashlib
+import hmac
+import struct
 from collections import defaultdict
 from typing import Optional
 
@@ -110,6 +114,52 @@ def is_default_password(password_hash: str) -> bool:
         return False
 
 
+# ---------------------------------------------------------------------------
+# 两步验证（TOTP，RFC 6238，无第三方依赖）
+#   用户可开启两步验证：登录时除密码外还需输入 6 位动态验证码（Google
+#   Authenticator / 1Password 等标准 TOTP App 均可）。
+# ---------------------------------------------------------------------------
+def generate_otp_secret() -> str:
+    """生成 Base32 编码的 TOTP 密钥（20 字节随机数，160 位熵）。"""
+    return base64.b32encode(secrets.token_bytes(20)).decode().rstrip("=")
+
+
+def _totp_at(secret: str, counter: int) -> str:
+    """计算指定计数器位置的 6 位 TOTP 码（HMAC-SHA1 动态截断）。"""
+    key = base64.b32decode(secret + "=" * ((8 - len(secret) % 8) % 8))
+    digest = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    code = (struct.unpack(">I", digest[offset:offset + 4])[0] & 0x7FFFFFFF) % 1000000
+    return f"{code:06d}"
+
+
+def verify_totp(secret: str, code: str, window: int = 1) -> bool:
+    """校验 TOTP 验证码；允许 ±window 步（共 2*window+1 个窗口）以容忍时钟偏差。
+
+    使用 hmac.compare_digest 做常量时间比较，避免时序侧信道。
+    """
+    if not secret or not code:
+        return False
+    code = (code or "").strip()
+    if not code.isdigit() or len(code) != 6:
+        return False
+    counter = int(time.time()) // 30
+    for i in range(-window, window + 1):
+        if hmac.compare_digest(_totp_at(secret, counter + i), code):
+            return True
+    return False
+
+
+def otpauth_uri(secret: str, username: str, issuer: str = "Graw") -> str:
+    """构造 otpauth URI（供二维码/手动添加 Authenticator 使用）。"""
+    from urllib.parse import quote
+
+    return (
+        f"otpauth://totp/{quote(issuer)}:{quote(username)}"
+        f"?secret={secret}&issuer={quote(issuer)}"
+    )
+
+
 def seed_default_users() -> None:
     """首次启动时创建默认管理员账号 admin / <DEFAULT_PASSWORD>（需首次登录改密）。
     若 admin 已存在但角色不是 admin，自动修复以至少保留一个管理员。"""
@@ -140,6 +190,7 @@ def _public_user(user: dict) -> dict:
         "must_change_password": user.get("must_change_password", False),
         "created_at": user.get("created_at", 0),
         "token_version": user.get("token_version", 0),
+        "otp_enabled": bool(user.get("otp_enabled")),
     }
 
 

@@ -1424,6 +1424,8 @@ export default {
       disks: '磁盘管理',
       uisettings: '界面设置',
       terminal: '终端',
+      backup: '备份中心',
+      notify: '通知中心',
     },
     // 窗口标题
     winTitle: {

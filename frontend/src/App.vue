@@ -133,6 +133,8 @@ import NetStorageFormWindow from './components/windows/NetStorageFormWindow.vue'
 import RuntimeWindow from './components/windows/RuntimeWindow.vue'
 import RuntimeCreateWindow from './components/windows/RuntimeCreateWindow.vue'
 import DisksWindow from './components/windows/DisksWindow.vue'
+import BackupWindow from './components/windows/BackupWindow.vue'
+import NotifyWindow from './components/windows/NotifyWindow.vue'
 import ShunXSetup from './components/ShunXSetup.vue'
 import TamperAlert from './components/TamperAlert.vue'
 import InstallCheckAlert from './components/InstallCheckAlert.vue'
@@ -145,7 +147,7 @@ import { systemState, startMetrics, stopMetrics } from './store/systemMetrics'
 import { startDocker, stopDocker, refresh as refreshDocker } from './store/docker'
 import { nodes as nodesStore, refreshNodes } from './store/nodes'
 import { tamperState, startTamper, stopTamper } from './store/tamper'
-import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck, ShieldAlert, ShieldBan, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud } from 'lucide-vue-next'
+import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck, ShieldAlert, ShieldBan, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, DatabaseBackup, BellRing } from 'lucide-vue-next'
 
 const loggedIn = computed(() => !!auth.token)
 
@@ -198,6 +200,8 @@ const shortcuts = ref([
   { key: 'netstorage', label: '网络储存', titleKey: 'app.shortcut.netstorage', icon: markRaw(Cloud), component: markRaw(NetStorageWindow), w: 860, h: 540, adminOnly: true },
   { key: 'uisettings', label: '界面设置', titleKey: 'app.shortcut.uisettings', icon: markRaw(Palette), component: markRaw(UISettingsWindow), w: 520, h: 540, adminOnly: true },
   { key: 'disks', label: '磁盘管理', titleKey: 'app.shortcut.disks', icon: markRaw(HardDrive), component: markRaw(DisksWindow), w: 900, h: 560, adminOnly: true },
+  { key: 'backup', label: '备份中心', titleKey: 'app.shortcut.backup', icon: markRaw(DatabaseBackup), component: markRaw(BackupWindow), w: 920, h: 580, adminOnly: true },
+  { key: 'notify', label: '通知中心', titleKey: 'app.shortcut.notify', icon: markRaw(BellRing), component: markRaw(NotifyWindow), w: 860, h: 560, adminOnly: true },
   { key: 'terminal', label: '终端', titleKey: 'app.shortcut.terminal', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true },
   // Foxcode：双击打开终端并自动输入 foxcode 命令启动
   { key: 'foxcode', label: 'Foxcode', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true, props: { autoCommand: 'foxcode' } }

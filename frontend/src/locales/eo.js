@@ -1258,6 +1258,8 @@ export default {
       disks: 'Diskoj',
       uisettings: 'Interfaco',
       terminal: 'Terminalo',
+      backup: 'Rezerva Centro',
+      notify: 'Sciiga Centro',
     },
     winTitle: {
       users: 'Kont-administrado',

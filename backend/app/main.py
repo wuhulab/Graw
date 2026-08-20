@@ -33,6 +33,8 @@ from app.routers import (
     update,
     waf,
     webmode,
+    backup,
+    notify,
 )
 from app.auth import (
     seed_default_users,
@@ -80,10 +82,13 @@ async def lifespan(app: FastAPI):
     await system.start_metrics_producer()
     # 启动 ShunX 网页防篡改后台监控（定时备份 + 篡改检测回滚 + 在线告警推送）
     await tamper.start_tamper_monitor()
+    # 启动通知中心后台监控（资源阈值告警检查 + 渠道推送）
+    await notify.start_monitor()
     yield
     # 关闭后台采集协程
     await system.stop_metrics_producer()
     await tamper.stop_tamper_monitor()
+    await notify.stop_monitor()
 
 
 # 安全：默认关闭交互式 API 文档（/docs、/redoc、/openapi.json）。
@@ -241,6 +246,12 @@ app.include_router(waf.router, prefix="/api/waf", tags=["waf"], dependencies=ADM
 # Web 服务器引擎模式（NGINX / OpenResty）：查询与切换，仅管理员。
 # 切换只更新引擎选择，sites/waf 等路由按当前模式解析路径与 reload 命令。
 app.include_router(webmode.router, prefix="/api/webmode", tags=["webmode"], dependencies=ADMIN)
+
+# 备份中心：目录/文件通用备份（手动 + cron 计划）、轮转、一键恢复（管理员）
+app.include_router(backup.router, prefix="/api/backup", tags=["backup"], dependencies=ADMIN)
+
+# 通知中心：通知渠道（Webhook/Telegram/钉钉/企微/Server酱/邮件）+ 资源阈值告警（管理员）
+app.include_router(notify.router, prefix="/api/notify", tags=["notify"], dependencies=ADMIN)
 
 
 @app.get("/api/health")

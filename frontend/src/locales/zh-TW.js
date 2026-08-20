@@ -1266,6 +1266,8 @@ export default {
       disks: '磁碟管理',
       uisettings: '介面設定',
       terminal: '終端機',
+      backup: '備份中心',
+      notify: '通知中心',
     },
     winTitle: {
       users: '帳號管理',
