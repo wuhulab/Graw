@@ -549,6 +549,7 @@ export default {
     dirType: '資料目錄',
     sqliteType: 'SQLite 檔案',
     backupsTitle: '已納入自動備份（{count}）',
+    openBackupDir: '開啟備份目錄',
     noBackups: '暫無已納入自動備份的資料庫。',
     schedule: '計畫',
     createdAt: '建立時間',
@@ -1120,6 +1121,20 @@ export default {
     showTaskbarText: '底欄顯示詳細文字',
     taskbarTextOnly: '底欄只顯示文字（隱藏圖示）',
     language: '介面語言',
+    webmode: {
+      title: 'Web 伺服器引擎',
+      desc: '選擇 Web 伺服器引擎。OpenResty 是基於 nginx 的發行版（內建 Lua），兩者使用的設定格式完全一致。',
+      nginx: 'NGINX',
+      openresty: 'OpenResty',
+      bin: '目前引擎：{bin}',
+      installed: '已安裝',
+      notInstalled: '未安裝',
+      nginxBin: 'NGINX',
+      openrestyBin: 'OpenResty',
+      confDir: '設定目錄：{dir}',
+      saved: '已儲存。引擎：{bin}，設定目錄：{dir}',
+      saveFailed: '儲存失敗',
+    },
     // 關於（About）區塊
     about: {
       title: '關於',
@@ -1275,5 +1290,19 @@ export default {
       connEdit: '編輯: {name}',
       connAdd: '新增資料庫連線',
     },
+  },
+  installCheck: {
+    title: '偵測到不完整的宿主机環境',
+    desc: '目前面板未依 README 要求的「完整宿主机模式」安裝，缺少宿主机權限，部分功能（檔案管理、Web 終端、Docker、防火牆等）可能無法正常運作。',
+    reinstallHint: '請停止目前容器，依 README 中的 docker run / docker-compose 方式重新安裝：需掛載 /:/host、設定 HOST_ROOT、--privileged、--pid host 並掛載 Docker socket。',
+    gotIt: '知道了',
+    items: {
+      host_root: { label: '未設定 HOST_ROOT 環境變數', detail: '請加上 -e HOST_ROOT=/host，告知面板宿主机根目錄掛載點。' },
+      host_mount: { label: '宿主机根目錄未掛載到 /host', detail: '請加上 -v /:/host:rslave，確保面板能讀寫宿主机檔案系統。' },
+      docker_sock: { label: '未掛載 Docker socket', detail: '請加上 -v /var/run/docker.sock:/var/run/docker.sock，否則無法管理容器與映像。' },
+      pid_host: { label: '未使用 --pid host', detail: '請加上 --pid host，否則行程管理與系統監控看不到宿主机行程。' },
+      privileged: { label: '未使用 --privileged', detail: '請加上 --privileged，否則 chroot /host、防火牆等操作無法生效。' },
+      host_data: { label: '未設定 GRAW_HOST_DATA', detail: '請加上 -e GRAW_HOST_DATA=/opt/graw/data，否則應用商店安裝與備份匯出會受影響。' }
+    }
   },
 }

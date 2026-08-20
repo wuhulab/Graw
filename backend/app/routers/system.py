@@ -4,6 +4,7 @@ import psutil
 import platform
 import socket
 import time
+import os
 import asyncio
 from datetime import datetime
 
@@ -277,6 +278,100 @@ def _diskio_sync():
 @router.get("/info", dependencies=_PROTECTED)
 async def info():
     return await asyncio.to_thread(_info_sync)
+
+
+# ------------------------------------------------------------
+# 安装完整性检测
+# README 要求以「完整宿主机模式」运行容器（挂载 /:/host + HOST_ROOT、
+# --privileged、--pid host、Docker socket、GRAW_HOST_DATA）。若用户未按
+# README 安装（例如只裸跑 -p 8000:8000），容器会缺少宿主机权限，面板的
+# 文件管理/Web 终端/Docker/防火墙等功能无法正常作用于宿主机。
+# 这里在容器模式下逐项检测，缺失时前端弹窗提醒用户重新安装。
+# ------------------------------------------------------------
+def _is_running_in_container() -> bool:
+    """判断是否运行在容器内（Docker / Podman）。
+
+    依据：容器标记文件（/.dockerenv、/run/.containerenv）或 PID 1 的
+    cgroup 路径中包含容器运行时关键字。
+    """
+    if os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv"):
+        return True
+    try:
+        with open("/proc/1/cgroup", "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+        return any(k in content for k in ("docker", "kubepods", "libpod", "podman"))
+    except OSError:
+        return False
+
+
+def _pid1_comm() -> str:
+    """读取 PID 1 的进程名。
+
+    --pid host 生效时 PID 1 是宿主机 init（如 systemd）；未生效时 PID 1
+    是容器自身的启动进程（如 python3/uvicorn），据此可判断是否共享了
+    宿主机的进程命名空间。
+    """
+    try:
+        with open("/proc/1/comm", "r", encoding="utf-8", errors="replace") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def _capeff() -> int:
+    """读取 PID 1 的有效能力集（CapEff，十六进制）。
+
+    用于判断容器是否 --privileged：非特权容器通常被裁剪掉 CAP_SYS_ADMIN，
+    而 chroot /host 等操作依赖该能力。
+    """
+    try:
+        with open("/proc/1/status", "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if line.startswith("CapEff:"):
+                    return int(line.split()[1], 16)
+    except OSError:
+        pass
+    return 0
+
+
+def install_check_sync() -> dict:
+    """检测当前运行环境是否满足 README 要求的「完整宿主机模式」安装。
+
+    仅容器内运行时才深度检测；本机直跑（Windows/Linux 直接启动）天然拥有
+    宿主机权限，视为完整。返回缺失项 key 列表，前端据此弹窗提醒。
+    """
+    if not _is_running_in_container():
+        # 本机直跑：直接操作宿主机，视为完整，无需提醒
+        return {"ok": True, "container": False, "mode": "host", "missing": []}
+
+    missing = []
+    # 1) HOST_ROOT 环境变量（告知后端宿主机根目录挂载点）
+    host_root = os.environ.get("HOST_ROOT", "").strip()
+    if not host_root:
+        missing.append("host_root")
+    elif not os.path.exists(os.path.join(host_root, "etc", "passwd")):
+        # 2) 宿主机根目录挂载完整性：/host 下应存在宿主机必备文件
+        #    （若只挂载了子目录，如 -v /home:/host，则检测不到）
+        missing.append("host_mount")
+    # 3) Docker socket：容器与镜像管理必需
+    if not os.path.exists("/var/run/docker.sock"):
+        missing.append("docker_sock")
+    # 4) --pid host：PID 1 应为宿主机 init（进程管理/系统监控依赖）
+    if _pid1_comm() != "systemd":
+        missing.append("pid_host")
+    # 5) --privileged：缺少 CAP_SYS_ADMIN 时 chroot /host、防火墙等无法生效
+    if not (_capeff() & (1 << 21)):
+        missing.append("privileged")
+    # 6) GRAW_HOST_DATA：宿主机数据目录（应用商店/备份导出依赖）
+    if not os.environ.get("GRAW_HOST_DATA", "").strip():
+        missing.append("host_data")
+    return {"ok": not missing, "container": True, "mode": "docker", "missing": missing}
+
+
+@router.get("/install-check", dependencies=_PROTECTED)
+async def install_check():
+    """检测安装环境是否完整（是否缺少 README 要求的宿主机权限挂载）。"""
+    return await asyncio.to_thread(install_check_sync)
 
 
 def _info_sync():

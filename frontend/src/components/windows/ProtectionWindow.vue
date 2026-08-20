@@ -91,7 +91,12 @@
         </table>
       </div>
 
-      <h4>{{ $t('protection.backupsTitle', { count: backups.length }) }}</h4>
+      <div class="backups-head">
+        <h4>{{ $t('protection.backupsTitle', { count: backups.length }) }}</h4>
+        <button class="btn" :disabled="!backupDir" :title="backupDir" @click="openBackupDir">
+          <FolderOpen :size="14" /> {{ $t('protection.openBackupDir') }}
+        </button>
+      </div>
       <div v-if="backups.length === 0" class="empty small">{{ $t('protection.noBackups') }}</div>
       <div v-else class="table-wrap">
         <table>
@@ -213,10 +218,11 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { protectionApi } from '../../api'
 import {
-  HardDrive, DatabaseBackup, BellRing, ShieldCheck, OctagonAlert
+  HardDrive, DatabaseBackup, BellRing, ShieldCheck, OctagonAlert, FolderOpen
 } from 'lucide-vue-next'
 
 const { t } = useI18n()
+const emit = defineEmits(['openFiles'])
 const ignoreDays = 7
 
 const tab = ref('docker')
@@ -230,6 +236,8 @@ const dockerReason = ref('')
 // 数据库文件扫描结果
 const allDbFiles = ref([])
 const backups = ref([])
+// 自动备份目录（来自 /protection/status，用于「打开备份目录」跳转）
+const backupDir = ref('')
 // 多选
 const selectedDbPaths = ref([])
 
@@ -297,13 +305,29 @@ async function loadIgnored() {
   }
 }
 
+// 拉取保护机制状态摘要（含自动备份目录），供「打开备份目录」按钮使用
+async function loadStatus() {
+  try {
+    const s = await protectionApi.status()
+    backupDir.value = s.backup_dir || ''
+  } catch (e) {
+    backupDir.value = ''
+  }
+}
+
 async function loadAll() {
   loading.value = true
   try {
-    await Promise.all([loadDocker(), loadDb(), loadIgnored()])
+    await Promise.all([loadDocker(), loadDb(), loadIgnored(), loadStatus()])
   } finally {
     loading.value = false
   }
+}
+
+// 打开文件管理器并跳转到自动备份目录
+function openBackupDir() {
+  if (!backupDir.value) return
+  emit('openFiles', { path: backupDir.value })
 }
 
 // ---------- 右键菜单 ----------
@@ -498,6 +522,9 @@ onMounted(loadAll)
 .tab-body { flex: 1; overflow: auto; }
 h4 { margin: 14px 0 6px; font-size: 13px; color: #374151; }
 h4:first-child { margin-top: 0; }
+.backups-head { display: flex; align-items: center; gap: 10px; }
+.backups-head h4 { margin: 14px 0 6px; }
+.backups-head .btn { display: inline-flex; align-items: center; gap: 5px; }
 
 .select-bar {
   display: flex; align-items: center; gap: 12px;

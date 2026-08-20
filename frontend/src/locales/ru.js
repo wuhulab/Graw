@@ -549,6 +549,7 @@ export default {
     dirType: 'Каталог данных',
     sqliteType: 'Файл SQLite',
     backupsTitle: 'Включено в автоматическое резервное копирование ({count})',
+    openBackupDir: 'Открыть папку резервного копирования',
     noBackups: 'Нет баз данных, включённых в автоматическое резервное копирование.',
     schedule: 'Расписание',
     createdAt: 'Создано',
@@ -1112,6 +1113,20 @@ export default {
     showTaskbarText: 'Показывать подробный текст в панели задач',
     taskbarTextOnly: 'В панели задач только текст (скрыть значки)',
     language: 'Язык интерфейса',
+    webmode: {
+      title: 'Движок веб-сервера',
+      desc: 'Выберите движок веб-сервера. OpenResty — это дистрибутив nginx со встроенным Lua; оба используют один формат конфигурации NGINX.',
+      nginx: 'NGINX',
+      openresty: 'OpenResty',
+      bin: 'Текущий движок: {bin}',
+      installed: 'Установлен',
+      notInstalled: 'Не установлен',
+      nginxBin: 'NGINX',
+      openrestyBin: 'OpenResty',
+      confDir: 'Каталог конфигурации: {dir}',
+      saved: 'Сохранено. Движок: {bin}, конфигурация: {dir}',
+      saveFailed: 'Ошибка сохранения',
+    },
     // Раздел «О программе»
     about: {
       title: 'О программе',
@@ -1267,5 +1282,19 @@ export default {
       connEdit: 'Редактирование: {name}',
       connAdd: 'Добавить подключение к БД',
     },
+  },
+  installCheck: {
+    title: 'Обнаружена неполная среда хоста',
+    desc: 'Панель не установлена в требуемом README «полном режиме хоста», поэтому отсутствуют права хоста. Некоторые функции (файловый менеджер, веб-терминал, Docker, брандмауэр и т. д.) могут работать некорректно.',
+    reinstallHint: 'Остановите текущий контейнер и переустановите по методу docker run / docker-compose из README: смонтируйте /:/host, задайте HOST_ROOT, --privileged, --pid host и смонтируйте Docker socket.',
+    gotIt: 'Понятно',
+    items: {
+      host_root: { label: 'Переменная окружения HOST_ROOT не задана', detail: 'Добавьте -e HOST_ROOT=/host, чтобы указать точку монтирования корня хоста.' },
+      host_mount: { label: 'Корень хоста не смонтирован в /host', detail: 'Добавьте -v /:/host:rslave, чтобы панель могла читать/записывать файловую систему хоста.' },
+      docker_sock: { label: 'Docker socket не смонтирован', detail: 'Добавьте -v /var/run/docker.sock:/var/run/docker.sock, иначе управление контейнерами/образами недоступно.' },
+      pid_host: { label: '--pid host не используется', detail: 'Добавьте --pid host, иначе управление процессами не видит процессы хоста.' },
+      privileged: { label: '--privileged не используется', detail: 'Добавьте --privileged, иначе chroot /host, брандмауэр и другие операции не будут работать.' },
+      host_data: { label: 'GRAW_HOST_DATA не задан', detail: 'Добавьте -e GRAW_HOST_DATA=/opt/graw/data, иначе установка приложений и экспорт резервных копий будут затронуты.' }
+    }
   },
 }

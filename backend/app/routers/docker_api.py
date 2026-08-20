@@ -7,6 +7,11 @@ import time
 import asyncio
 import threading
 from fastapi import APIRouter, HTTPException
+
+# 宿主机文件系统 / 命令适配层（HOST_ROOT 容器 /host 挂载模式）。
+# 容器模式下面板的 Docker 操作需经 chroot 宿主机根目录执行宿主机 docker/podman，
+# 或在配置/备份等涉及路径的场景把容器内路径映射为宿主可达路径。
+from app import hostfs
 from pydantic import BaseModel
 from typing import Optional, List
 
@@ -187,12 +192,32 @@ def _find_podman():
                     if rc == 0 and "podman" in out.lower():
                         found = ["wsl", "-u", "root", "--", "podman"]
             else:
+                # 容器 /host 挂载模式：容器内通常没有 docker/podman CLI。
+                # 先查容器内，查不到且启用了 HOST_ROOT 挂载时，改为通过
+                # chroot 宿主机根目录调用宿主机上的 docker/podman CLI，使
+                # 面板的容器/镜像/compose 操作直接作用于宿主机 Docker。
                 for cli in ("podman", "docker"):
                     path = shutil.which(cli)
                     if path:
                         rc, _out, _err = _run([path, "--version"], timeout=10)
                         if rc == 0:
                             found = [path]
+                            break
+                if found is None and hostfs.is_host_mounted():
+                    root = hostfs.get_host_root()
+                    for cli in ("docker", "podman"):
+                        for base in ("/usr/bin", "/usr/local/bin", "/bin", "/usr/sbin", "/sbin"):
+                            host_cli = root + base + "/" + cli
+                            if os.path.isfile(host_cli):
+                                # chroot 前缀 + 引擎名；后接参数即构成宿主命令
+                                rc, _out, _err = _run(
+                                    ["chroot", root, base + "/" + cli, "--version"],
+                                    timeout=10,
+                                )
+                                if rc == 0:
+                                    found = ["chroot", root, base + "/" + cli]
+                                    break
+                        if found is not None:
                             break
         except Exception:
             found = None
@@ -210,7 +235,9 @@ def _cli_engine() -> str:
         return ""
     if IS_WINDOWS:
         return "podman"
-    name = os.path.basename(cmd[0])
+    # cmd 可能是 [docker]、[podman]、[wsl,-u,root,--,podman] 或
+    # [chroot,<root>,<宿主引擎路径>]；以最后一个元素判断引擎名。
+    name = os.path.basename(cmd[-1])
     return "docker" if name.startswith("docker") else "podman"
 
 
@@ -992,8 +1019,13 @@ def _backup_container_sync(container_id: str):
     backup_path = os.path.join(_BACKUP_DIR, f"{container_id[:12]}_{timestamp}.tar")
 
     if kind == "cli":
-        # Windows + WSL podman 时，导出路径需转换为 WSL 内路径（/mnt/...）
-        out_path = _host_to_wsl_path(backup_path) if IS_WINDOWS and _find_podman() and _find_podman()[0] == "wsl" else backup_path
+        if hostfs.is_host_mounted():
+            # 容器 /host 挂载模式：宿主 docker 导出的文件需写到宿主可达路径
+            # （GRAW_HOST_DATA 指向的宿主 data 目录），否则宿主进程写不到容器卷路径。
+            out_path = hostfs.host_visible_path(backup_path, _DATA_DIR)
+        else:
+            # Windows + WSL podman 时，导出路径需转换为 WSL 内路径（/mnt/...）
+            out_path = _host_to_wsl_path(backup_path) if IS_WINDOWS and _find_podman() and _find_podman()[0] == "wsl" else backup_path
         cmd = _find_podman() + ["export", "-o", out_path, container_id]
         rc, out, err = _run(cmd, timeout=600)
         if rc != 0:
@@ -1235,13 +1267,19 @@ def _engine_config_path() -> tuple:
 
 
 def _read_engine_config(path: str) -> str:
-    """读取引擎配置文件内容（WSL 内文件用 wsl 前缀）。"""
+    """读取引擎配置文件内容（WSL 内文件用 wsl 前缀）。
+
+    容器 /host 挂载模式下，配置文件位于宿主机（如 /host/etc/docker/daemon.json），
+    容器内同名路径不存在，需先经 hostfs 映射到挂载点下再读取。
+    """
     prefix = _wsl_prefix()
     if prefix:
         rc, out, _ = _run(prefix + ["cat", path], timeout=15)
         if rc != 0:
             return ""
         return out
+    if hostfs.is_host_mounted():
+        path = hostfs.host_path(path)
     try:
         with open(path, "r", encoding="utf-8") as f:
             return f.read()
@@ -1262,6 +1300,9 @@ def _write_engine_config(path: str, content: str) -> None:
         if p.returncode != 0:
             raise RuntimeError(p.stderr.decode("utf-8", "replace").strip() or "写入配置文件失败")
         return
+    # 容器 /host 挂载模式：写到宿主机（/host/etc/...）同名路径下
+    if hostfs.is_host_mounted():
+        path = hostfs.host_path(path)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
 
@@ -1550,7 +1591,11 @@ def _compose_action_sync(name: str, action: str):
     if not os.path.isfile(compose):
         raise HTTPException(status_code=404, detail=f"未找到项目 {name} 的 docker-compose.yml")
 
-    engine_path = _host_to_wsl_path(compose) if IS_WINDOWS and _find_podman() and _find_podman()[0] == "wsl" else compose
+    # 容器 /host 挂载模式：compose 文件需以宿主可达路径传给宿主 docker
+    if hostfs.is_host_mounted():
+        engine_path = hostfs.host_visible_path(compose, _APPSTORE_DIR)
+    else:
+        engine_path = _host_to_wsl_path(compose) if IS_WINDOWS and _find_podman() and _find_podman()[0] == "wsl" else compose
     if action == "up":
         args = ["up", "-d", "--remove-orphans"]
     elif action == "down":

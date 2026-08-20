@@ -68,6 +68,21 @@ export default {
     showTaskbarText: 'Show detailed text in taskbar',
     taskbarTextOnly: 'Taskbar text only (hide icons)',
     language: 'Language',
+    // Web server engine (NGINX / OpenResty)
+    webmode: {
+      title: 'Web Server Engine',
+      desc: 'Select the web server engine. OpenResty is an nginx distribution with embedded Lua; both share the same NGINX configuration format.',
+      nginx: 'NGINX',
+      openresty: 'OpenResty',
+      bin: 'Current engine: {bin}',
+      installed: 'Installed',
+      notInstalled: 'Not installed',
+      nginxBin: 'NGINX',
+      openrestyBin: 'OpenResty',
+      confDir: 'Config directory: {dir}',
+      saved: 'Saved. Engine: {bin}, config: {dir}',
+      saveFailed: 'Save failed',
+    },
     // About section
     about: {
       title: 'About',
@@ -874,6 +889,7 @@ export default {
     dirType: 'Data directory',
     sqliteType: 'SQLite file',
     backupsTitle: 'Included in auto-backup ({count})',
+    openBackupDir: 'Open backup folder',
     noBackups: 'No databases included in auto-backup yet.',
     schedule: 'Schedule',
     createdAt: 'Created',
@@ -1414,5 +1430,19 @@ export default {
     file: 'File',
     folder: 'Folder',
     type: 'Type',
+  },
+  installCheck: {
+    title: 'Incomplete host environment detected',
+    desc: 'The panel was not installed in the "full host mode" required by the README, so it lacks host permissions. Some features (file manager, web terminal, Docker, firewall, etc.) may not work correctly.',
+    reinstallHint: 'Stop the current container and reinstall using the docker run / docker-compose method from the README: mount /:/host, set HOST_ROOT, add --privileged, --pid host and mount the Docker socket.',
+    gotIt: 'Got it',
+    items: {
+      host_root: { label: 'HOST_ROOT environment variable not set', detail: 'Add -e HOST_ROOT=/host to tell the panel the host root mount point.' },
+      host_mount: { label: 'Host root not mounted to /host', detail: 'Add -v /:/host:rslave so the panel can read and write the host filesystem.' },
+      docker_sock: { label: 'Docker socket not mounted', detail: 'Add -v /var/run/docker.sock:/var/run/docker.sock, otherwise container and image management is unavailable.' },
+      pid_host: { label: '--pid host not used', detail: 'Add --pid host, otherwise process management and monitoring cannot see host processes.' },
+      privileged: { label: '--privileged not used', detail: 'Add --privileged, otherwise chroot /host, firewall and other operations cannot take effect.' },
+      host_data: { label: 'GRAW_HOST_DATA not set', detail: 'Add -e GRAW_HOST_DATA=/opt/graw/data, otherwise app store installs and backup exports are affected.' }
+    }
   },
 }

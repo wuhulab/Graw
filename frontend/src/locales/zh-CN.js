@@ -551,6 +551,7 @@ export default {
     dirType: '数据目录',
     sqliteType: 'SQLite 文件',
     backupsTitle: '已纳入自动备份（{count}）',
+    openBackupDir: '打开备份目录',
     noBackups: '暂无已纳入自动备份的数据库。',
     schedule: '计划',
     createdAt: '创建时间',
@@ -1192,6 +1193,20 @@ export default {
     pwdMismatch: '两次输入的新密码不一致',
     changeFailed: '修改失败',
   },
+  installCheck: {
+    title: '检测到不完整的宿主机环境',
+    desc: '当前面板未按 README 要求的「完整宿主机模式」安装，缺少宿主机权限，部分功能（文件管理、Web 终端、Docker、防火墙等）可能无法正常工作。',
+    reinstallHint: '请停止当前容器，按 README 中的 docker run / docker-compose 方式重新安装：需挂载 /:/host、设置 HOST_ROOT、--privileged、--pid host 并挂载 Docker socket。',
+    gotIt: '知道了',
+    items: {
+      host_root: { label: '未设置 HOST_ROOT 环境变量', detail: '请添加 -e HOST_ROOT=/host，告知面板宿主机根目录挂载点。' },
+      host_mount: { label: '宿主机根目录未挂载到 /host', detail: '请添加 -v /:/host:rslave，确保面板能读写宿主机文件系统。' },
+      docker_sock: { label: '未挂载 Docker socket', detail: '请添加 -v /var/run/docker.sock:/var/run/docker.sock，否则无法管理容器与镜像。' },
+      pid_host: { label: '未使用 --pid host', detail: '请添加 --pid host，否则进程管理与系统监控看不到宿主机进程。' },
+      privileged: { label: '未使用 --privileged', detail: '请添加 --privileged，否则 chroot /host、防火墙等操作无法生效。' },
+      host_data: { label: '未设置 GRAW_HOST_DATA', detail: '请添加 -e GRAW_HOST_DATA=/opt/graw/data，否则应用商店安装与备份导出会受影响。' }
+    }
+  },
   settings: {
     title: '账号',
     openUsers: '打开账号管理',
@@ -1212,6 +1227,21 @@ export default {
     showTaskbarText: '底栏显示详细文字',
     taskbarTextOnly: '底栏只显示文字（隐藏图标）',
     language: '界面语言',
+    // Web 服务器引擎（NGINX / OpenResty）
+    webmode: {
+      title: 'Web 服务器引擎',
+      desc: '选择 Web 服务器引擎。OpenResty 是基于 nginx 的发行版（内置 Lua），两者使用的配置格式完全一致。',
+      nginx: 'NGINX',
+      openresty: 'OpenResty',
+      bin: '当前引擎：{bin}',
+      installed: '已安装',
+      notInstalled: '未安装',
+      nginxBin: 'NGINX',
+      openrestyBin: 'OpenResty',
+      confDir: '配置目录：{dir}',
+      saved: '已保存。引擎：{bin}，配置目录：{dir}',
+      saveFailed: '保存失败',
+    },
     // 关于（About）板块
     about: {
       title: '关于',

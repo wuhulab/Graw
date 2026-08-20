@@ -4,9 +4,45 @@
 
 ## 怎么下载？
 
-docker run -d -p 8041:8000 --name graw-panel shunx/graw:latest
+Graw 是以容器方式运行的服务器管理面板，但它的**所有管理操作（Docker 容器/镜像、Docker 应用商店安装、Web 终端、进程/防火墙等）都要作用于宿主机**。因此**不能**只用 `-p 端口:8000` 那样裸起容器，必须按下述「完整宿主机模式」启动：让容器能访问宿主机 Docker（socket）、宿主机根目录（`/host`）并具备宿主级权限（`privileged` + `pid host`）。
 
-8041 改成你的端口，Graw在Docker使用统一封装，只要一个端口就可以使用，不需要配置多个记录
+**Linux 服务器（推荐，`--network host` 直接监听宿主机 8000 端口）：**
+
+```bash
+docker run -d --name graw-panel \
+  -p 8041:8000 --pid host --privileged \
+  -v /opt/graw/data:/app/backend/data \
+  -v /:/host:rslave \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e HOST_ROOT=/host \
+  -e GRAW_HOST_DATA=/opt/graw/data \
+  -e TZ=Asia/Shanghai \
+  shunx/graw:latest
+```
+
+**Bridge 网络（自定义访问端口，例如 8041）：**
+
+```bash
+docker run -d --name graw-panel \
+  -p 8041:8000 --pid host --privileged \
+  -v /opt/graw/data:/app/backend/data \
+  -v /:/host:rslave \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e HOST_ROOT=/host \
+  -e GRAW_HOST_DATA=/opt/graw/data \
+  -e TZ=Asia/Shanghai \
+  shunx/graw:latest
+```
+
+各参数含义（面板完整管理宿主机所必需）：
+
+- `--privileged`：授予容器全部内核能力，否则 `chroot /host`、iptables/防火墙、挂载等操作无法在容器内生效。
+- `--pid host`：共享宿主机进程命名空间，进程管理/系统监控才能看到宿主机全部进程。
+- `-v /:/host:rslave` + `HOST_ROOT=/host`：把宿主机根目录挂进容器 `/host`，面板经 `chroot /host` 操作宿主机文件与命令（nginx/certbot/crontab 等）。
+- `-v /var/run/docker.sock:/var/run/docker.sock`：对接宿主机 Docker 引擎（容器/镜像/日志管理）。
+- `/opt/graw/data` 为面板数据目录（绑定到宿主）；`GRAW_HOST_DATA=/opt/graw/data` 告知宿主机 docker-compose 文件所在，Docker 应用商店才能完成安装。
+
+> 安全警告：上述容器实质拥有宿主机 root 级操作能力，仅部署于可信环境，请务必修改默认密码。
 
 ## 功能特性
 

@@ -549,6 +549,7 @@ export default {
     dirType: 'データディレクトリ',
     sqliteType: 'SQLite ファイル',
     backupsTitle: '自動バックアップに含まれる（{count}）',
+    openBackupDir: 'バックアップフォルダを開く',
     noBackups: '自動バックアップに含まれるデータベースはありません。',
     schedule: 'スケジュール',
     createdAt: '作成日時',
@@ -1112,6 +1113,20 @@ export default {
     showTaskbarText: 'タスクバーに詳細テキストを表示',
     taskbarTextOnly: 'タスクバーはテキストのみ（アイコン非表示）',
     language: '言語',
+    webmode: {
+      title: 'Web サーバーエンジン',
+      desc: 'Web サーバーエンジンを選択します。OpenResty は nginx ベースのディストリビューション（Lua 内蔵）で、両者は同じ NGINX 設定形式を使用します。',
+      nginx: 'NGINX',
+      openresty: 'OpenResty',
+      bin: '現在のエンジン：{bin}',
+      installed: 'インストール済み',
+      notInstalled: '未インストール',
+      nginxBin: 'NGINX',
+      openrestyBin: 'OpenResty',
+      confDir: '設定ディレクトリ：{dir}',
+      saved: '保存しました。エンジン：{bin}、設定：{dir}',
+      saveFailed: '保存に失敗しました',
+    },
     // 「このアプリについて」セクション
     about: {
       title: 'このアプリについて',
@@ -1267,5 +1282,19 @@ export default {
       connEdit: '編集: {name}',
       connAdd: 'データベース接続を追加',
     },
+  },
+  installCheck: {
+    title: '不完全なホスト環境を検出しました',
+    desc: 'パネルが README で要求される「フルホストモード」でインストールされていないため、ホスト権限が不足しています。一部の機能（ファイルマネージャー、Web ターミナル、Docker、ファイアウォールなど）が正常に動作しない可能性があります。',
+    reinstallHint: '現在のコンテナを停止し、README の docker run / docker-compose 方式で再インストールしてください：/:/host のマウント、HOST_ROOT の設定、--privileged、--pid host、Docker ソケットのマウントが必要です。',
+    gotIt: '了解',
+    items: {
+      host_root: { label: 'HOST_ROOT 環境変数が未設定', detail: '-e HOST_ROOT=/host を追加して、ホストルートのマウントポイントを指定してください。' },
+      host_mount: { label: 'ホストルートが /host にマウントされていません', detail: '-v /:/host:rslave を追加して、パネルがホストファイルシステムを読み書きできるようにしてください。' },
+      docker_sock: { label: 'Docker ソケットがマウントされていません', detail: '-v /var/run/docker.sock:/var/run/docker.sock を追加してください。そうしないとコンテナ/イメージ管理が利用できません。' },
+      pid_host: { label: '--pid host が使用されていません', detail: '--pid host を追加してください。そうしないとプロセス管理がホストプロセスを表示できません。' },
+      privileged: { label: '--privileged が使用されていません', detail: '--privileged を追加してください。そうしないと chroot /host、ファイアウォールなどの操作が有効になりません。' },
+      host_data: { label: 'GRAW_HOST_DATA が未設定', detail: '-e GRAW_HOST_DATA=/opt/graw/data を追加してください。そうしないとアプリストアのインストールとバックアップエクスポートに影響します。' }
+    }
   },
 }

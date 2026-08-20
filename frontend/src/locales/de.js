@@ -549,6 +549,7 @@ export default {
     dirType: 'Datenverzeichnis',
     sqliteType: 'SQLite-Datei',
     backupsTitle: 'In automatischer Sicherung ({count})',
+    openBackupDir: 'Sicherungsordner öffnen',
     noBackups: 'Keine Datenbanken in automatischer Sicherung.',
     schedule: 'Zeitplan',
     createdAt: 'Erstellt',
@@ -1112,6 +1113,20 @@ export default {
     showTaskbarText: 'Detaillierten Text in der Taskleiste anzeigen',
     taskbarTextOnly: 'Nur Text in der Taskleiste (Symbole ausblenden)',
     language: 'Sprache',
+    webmode: {
+      title: 'Web-Server-Engine',
+      desc: 'Wählen Sie die Web-Server-Engine. OpenResty ist eine nginx-Distribution mit eingebettetem Lua; beide verwenden das gleiche NGINX-Konfigurationsformat.',
+      nginx: 'NGINX',
+      openresty: 'OpenResty',
+      bin: 'Aktuelle Engine: {bin}',
+      installed: 'Installiert',
+      notInstalled: 'Nicht installiert',
+      nginxBin: 'NGINX',
+      openrestyBin: 'OpenResty',
+      confDir: 'Konfigurationsverzeichnis: {dir}',
+      saved: 'Gespeichert. Engine: {bin}, Konfiguration: {dir}',
+      saveFailed: 'Speichern fehlgeschlagen',
+    },
     // Abschnitt „Über"
     about: {
       title: 'Über',
@@ -1267,5 +1282,19 @@ export default {
       connEdit: 'Bearbeiten: {name}',
       connAdd: 'Datenbankverbindung hinzufügen',
     },
+  },
+  installCheck: {
+    title: 'Unvollständige Host-Umgebung erkannt',
+    desc: 'Das Panel wurde nicht im laut README erforderlichen "Full Host Mode" installiert, daher fehlen Host-Berechtigungen. Einige Funktionen (Dateimanager, Web-Terminal, Docker, Firewall usw.) funktionieren möglicherweise nicht richtig.',
+    reinstallHint: 'Stoppen Sie den aktuellen Container und installieren Sie gemäß README mit docker run / docker-compose neu: /:/host mounten, HOST_ROOT setzen, --privileged, --pid host und Docker-Socket mounten.',
+    gotIt: 'Verstanden',
+    items: {
+      host_root: { label: 'HOST_ROOT-Umgebungsvariable nicht gesetzt', detail: 'Fügen Sie -e HOST_ROOT=/host hinzu, um den Host-Root-Mountpunkt mitzuteilen.' },
+      host_mount: { label: 'Host-Root nicht auf /host gemountet', detail: 'Fügen Sie -v /:/host:rslave hinzu, damit das Panel das Host-Dateisystem lesen/schreiben kann.' },
+      docker_sock: { label: 'Docker-Socket nicht gemountet', detail: 'Fügen Sie -v /var/run/docker.sock:/var/run/docker.sock hinzu, sonst ist die Container-/Image-Verwaltung nicht verfügbar.' },
+      pid_host: { label: '--pid host nicht verwendet', detail: 'Fügen Sie --pid host hinzu, sonst sieht die Prozessverwaltung keine Host-Prozesse.' },
+      privileged: { label: '--privileged nicht verwendet', detail: 'Fügen Sie --privileged hinzu, sonst funktionieren chroot /host, Firewall usw. nicht.' },
+      host_data: { label: 'GRAW_HOST_DATA nicht gesetzt', detail: 'Fügen Sie -e GRAW_HOST_DATA=/opt/graw/data hinzu, sonst sind App-Store-Installationen und Backup-Exporte betroffen.' }
+    }
   },
 }

@@ -89,6 +89,46 @@
         </div>
       </div>
 
+      <!-- Web 服务器引擎模式（NGINX / OpenResty）（仅管理员） -->
+      <div class="block" v-if="isAdmin()">
+        <div class="block-title">{{ $t('settings.webmode.title') }}</div>
+        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('settings.webmode.desc') }}</div>
+        <div class="row" style="flex-wrap:wrap; gap:16px;">
+          <label class="switch-label">
+            <input type="radio" name="webMode" value="nginx" v-model="wmMode" />
+            <span>{{ $t('settings.webmode.nginx') }}</span>
+          </label>
+          <label class="switch-label">
+            <input type="radio" name="webMode" value="openresty" v-model="wmMode" />
+            <span>{{ $t('settings.webmode.openresty') }}</span>
+          </label>
+        </div>
+        <!-- 可用性提示：两个引擎 + 当前配置目录 -->
+        <div class="row" style="flex-direction:column; align-items:stretch; gap:4px;">
+          <div style="font-size:11px;color:#8e8e93;">
+            {{ $t('settings.webmode.bin', { bin: wmStatus.binary }) }}
+            <span :class="['status-dot', wmStatus.available ? 'on' : 'off']"></span>
+            {{ wmStatus.available ? $t('settings.webmode.installed') : $t('settings.webmode.notInstalled') }}
+          </div>
+          <div style="font-size:11px;color:#8e8e93;">
+            {{ $t('settings.webmode.nginxBin') }}: <span :class="['status-dot', wmStatus.nginx_available ? 'on' : 'off']"></span>
+            <span style="color:#1d1d1f;">{{ wmStatus.nginx_available ? $t('settings.webmode.installed') : $t('settings.webmode.notInstalled') }}</span>
+            &nbsp;·&nbsp;
+            {{ $t('settings.webmode.openrestyBin') }}: <span :class="['status-dot', wmStatus.openresty_available ? 'on' : 'off']"></span>
+            <span style="color:#1d1d1f;">{{ wmStatus.openresty_available ? $t('settings.webmode.installed') : $t('settings.webmode.notInstalled') }}</span>
+          </div>
+          <div style="font-size:11px;color:#8e8e93;">
+            {{ $t('settings.webmode.confDir', { dir: wmStatus.conf_base }) }}
+          </div>
+        </div>
+        <div class="row" style="gap:8px;">
+          <button class="btn" :disabled="wmsaving" @click="saveWebMode">
+            {{ wmsaving ? $t('settings.saveSaving') : $t('settings.save') }}
+          </button>
+          <div v-if="wmmsg" :class="['msg', wmmsgType]" style="flex:1;">{{ wmmsg }}</div>
+        </div>
+      </div>
+
       <div class="block">
         <div class="block-title">{{ $t('settings.panelTitle') }}</div>
         <div class="row">
@@ -155,7 +195,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { settings } from '../../store/settings'
 import { isAdmin } from '../../store/auth'
-import { nodesApi, shunxApi, panelApi, updateApi } from '../../api'
+import { nodesApi, shunxApi, panelApi, updateApi, webmodeApi } from '../../api'
 import { nodes as nodesStore, refreshNodes, setCurrentNode } from '../../store/nodes'
 import { LANGUAGES, setLocale } from '../../locales'
 
@@ -169,6 +209,54 @@ const saving = ref(false)
 const msg = ref('')
 const msgType = ref('')
 const origin = computed(() => window.location.origin)
+
+// ---- Web 服务器引擎模式（NGINX / OpenResty）----
+const wmMode = ref('nginx')
+const wmStatus = reactive({ binary: 'nginx', available: false, nginx_available: false, openresty_available: false, conf_base: '/etc/nginx' })
+const wmsaving = ref(false)
+const wmmsg = ref('')
+const wmmsgType = ref('')
+
+async function loadWebMode() {
+  try {
+    const s = await webmodeApi.status()
+    wmMode.value = s.mode || 'nginx'
+    Object.assign(wmStatus, {
+      binary: s.binary || 'nginx',
+      available: !!s.available,
+      nginx_available: !!s.nginx_available,
+      openresty_available: !!s.openresty_available,
+      conf_base: s.conf_base || '/etc/nginx',
+    })
+    wmmsg.value = ''
+  } catch (e) {
+    // 非管理员/接口异常时静默，不阻塞设置窗口其它功能
+  }
+}
+
+async function saveWebMode() {
+  if (wmsaving.value) return
+  wmsaving.value = true
+  wmmsg.value = ''
+  try {
+    const s = await webmodeApi.setMode(wmMode.value)
+    wmMode.value = s.mode || wmMode.value
+    Object.assign(wmStatus, {
+      binary: s.binary || 'nginx',
+      available: !!s.available,
+      nginx_available: !!s.nginx_available,
+      openresty_available: !!s.openresty_available,
+      conf_base: s.conf_base || '/etc/nginx',
+    })
+    wmmsg.value = t('settings.webmode.saved', { bin: wmStatus.binary, dir: wmStatus.conf_base })
+    wmmsgType.value = 'ok'
+  } catch (e) {
+    wmmsg.value = e?.response?.data?.detail || t('settings.webmode.saveFailed')
+    wmmsgType.value = 'err'
+  } finally {
+    wmsaving.value = false
+  }
+}
 
 const statusText = computed(() => {
   if (!currentEntry.value) return t('settings.shunxNotSet')
@@ -386,6 +474,7 @@ onMounted(async () => {
     currentEntry.value = ''
   }
   if (isAdmin()) loadNodes()
+  if (isAdmin()) loadWebMode()
 })
 
 // 切换界面语言

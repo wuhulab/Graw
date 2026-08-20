@@ -1,6 +1,6 @@
 """WAF 应用防火墙单元测试（无需后端运行）。
 
-通过 monkeypatch 把 DATA_DIR / WAF_FILE / WAF_LOG_FILE / NGINX_WAF_DIR
+通过 monkeypatch 把 DATA_DIR / WAF_FILE / WAF_LOG_FILE / _waf_dir
 指到临时目录，直接对 waf 模块的校验与 nginx 生成函数做断言。
 
 运行：python -m test_waf_unit
@@ -30,7 +30,7 @@ def _store(case: unittest.TestCase):
         mock.patch.object(waf, "DATA_DIR", case.data_dir),
         mock.patch.object(waf, "WAF_FILE", os.path.join(case.data_dir, "waf.json")),
         mock.patch.object(waf, "WAF_LOG_FILE", os.path.join(case.data_dir, "waf_logs.json")),
-        mock.patch.object(waf, "NGINX_WAF_DIR", os.path.join(case.tmpdir, "waf_out")),
+        mock.patch.object(waf, "_waf_dir", lambda: os.path.join(case.tmpdir, "waf_out")),
         mock.patch.object(waf, "_nginx_available", lambda: False),
     ]
     for p in patchers:

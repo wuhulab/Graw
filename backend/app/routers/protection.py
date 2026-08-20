@@ -3,8 +3,10 @@
 protection.py - Graw 保护机制路由
 
 功能：
-  1. 自动扫描 Docker 中的数据库容器，对「没有设置永久数据卷映射」的容器发出警告，
-     并提供「一键映射」（创建命名数据卷并重建容器，保留现有数据）与「暂时忽略」。
+  1. 自动扫描 Docker 中「独立数据库容器」以及「内置数据库（如 SQLite）的应用容器」，
+     对「没有设置永久数据卷映射」的容器发出警告；对未命中已知镜像的关键字但容器内
+     探测到 SQLite 文件的自定义镜像同样告警（docker exec 文件探测），并提供「一键映射」
+     （创建命名数据卷并重建容器，保留现有数据）与「暂时忽略」。
   2. 自动扫描宿主机上的数据库数据目录 / SQLite 数据库文件，对「没有配置自动备份」
      的数据库文件发出警告，并提供「加入备份」（自动创建计划任务）与「暂时忽略」。
   3. 「暂时忽略」是临时行为（默认 7 天后重新提醒），用于防止误操作丢失数据。
@@ -66,6 +68,19 @@ DB_IMAGE_KEYWORDS = [
     "influxdb", "cockroachdb", "timescaledb", "mssql", "oracle", "dynamodb",
 ]
 
+# 内置数据库（嵌入式数据库，如 SQLite）应用的镜像关键字。
+# 这类镜像并非独立数据库服务，但默认在容器内使用内置数据库（SQLite 等）保存数据，
+# 若未做永久数据卷映射，删除/重建容器同样会丢失数据，需要与数据库容器一样告警。
+EMBEDDED_DB_IMAGE_KEYWORDS = [
+    "sqlite",
+    "grafana", "homeassistant", "home-assistant", "jellyfin", "gitea",
+    "vaultwarden", "bitwarden", "nextcloud", "matomo", "wallabag",
+    "frigate", "photoprism", "paperless", "bookstack", "wikijs",
+    "superset", "grocy", "mealie", "firefly", "freshrss", "duplicati",
+    "calibre", "zigbee2mqtt", "z2m", "n8n", "ghost", "etherpad",
+    "redmine", "mattermost", "miniflux", "hedgedoc",
+]
+
 # 数据库镜像 -> 默认数据目录（用于一键映射的挂载点）
 DB_DATA_DIRS = [
     ("mongo", "/data/db"),
@@ -83,6 +98,41 @@ DB_DATA_DIRS = [
     ("influxdb", "/var/lib/influxdb"),
     ("cockroachdb", "/cockroach/cockroach-data"),
     ("mssql", "/var/opt/mssql"),
+]
+
+# 内置数据库镜像 -> 容器内默认数据目录（用于一键映射的挂载点）
+EMBEDDED_DB_DATA_DIRS = [
+    ("grafana", "/var/lib/grafana"),
+    ("homeassistant", "/config"),
+    ("home-assistant", "/config"),
+    ("jellyfin", "/config"),
+    ("gitea", "/data"),
+    ("vaultwarden", "/data"),
+    ("bitwarden", "/data"),
+    ("nextcloud", "/var/www/html/data"),
+    ("matomo", "/var/www/html"),
+    ("wallabag", "/var/www/wallabag/data"),
+    ("frigate", "/media/frigate"),
+    ("photoprism", "/photoprism/originals"),
+    ("paperless", "/usr/src/paperless/data"),
+    ("bookstack", "/var/www/bookstack"),
+    ("wikijs", "/wiki/data"),
+    ("superset", "/app/superset_home"),
+    ("grocy", "/var/www/html/data"),
+    ("mealie", "/app/data"),
+    ("firefly", "/var/www/html/storage"),
+    ("freshrss", "/var/www/FreshRSS/data"),
+    ("duplicati", "/config"),
+    ("calibre", "/calibre-library"),
+    ("zigbee2mqtt", "/app/data"),
+    ("z2m", "/app/data"),
+    ("n8n", "/home/node/.n8n"),
+    ("ghost", "/var/lib/ghost/content"),
+    ("etherpad", "/var/lib/etherpad-lite"),
+    ("redmine", "/usr/src/redmine"),
+    ("mattermost", "/mattermost/data"),
+    ("miniflux", "/var/lib/miniflux"),
+    ("hedgedoc", "/hedgedoc/data"),
 ]
 
 # 常见数据库数据目录（Linux 部署：宿主机视角）
@@ -241,15 +291,28 @@ def _current_ignored() -> list:
 # Docker 扫描与一键映射
 # ---------------------------------------------------------------------------
 def _is_db_image(image: str) -> bool:
-    """通过镜像名关键字判断是否为数据库容器。"""
+    """通过镜像名关键字判断是否为独立数据库容器。"""
     low = (image or "").lower()
     return any(k in low for k in DB_IMAGE_KEYWORDS)
+
+
+def _is_embedded_db_image(image: str) -> bool:
+    """通过镜像名关键字判断是否内置数据库（如 SQLite）的应用容器。
+
+    这类容器不是独立数据库，但默认在容器内使用内置数据库保存数据，
+    未做永久数据卷映射时同样有数据丢失风险，因此也要参与持久化扫描。
+    """
+    low = (image or "").lower()
+    return any(k in low for k in EMBEDDED_DB_IMAGE_KEYWORDS)
 
 
 def _db_data_dir(image: str) -> str:
     """根据镜像名返回建议的数据挂载目录。"""
     low = (image or "").lower()
     for k, d in DB_DATA_DIRS:
+        if k in low:
+            return d
+    for k, d in EMBEDDED_DB_DATA_DIRS:
         if k in low:
             return d
     return "/data"
@@ -264,14 +327,21 @@ def _looks_named(volume_name: str) -> bool:
     return True
 
 
-def _evaluate_mounts(cid: str, name: str, image: str, status: str, mounts: list) -> Optional[dict]:
+def _evaluate_mounts(cid: str, name: str, image: str, status: str, mounts: list,
+                     category: str = "db", sqlite_files: Optional[list] = None) -> Optional[dict]:
     """评估容器的数据持久化情况，返回警告条目；安全时返回 None。
 
     判定规则：
       - 存在 bind 挂载或命名卷 -> 视为已持久化，不警告；
       - 完全没有持久挂载       -> danger（数据在容器可写层，删除即丢）；
       - 仅有匿名卷             -> warning（可持久但脆弱、难管理）。
+
+    category 用于区分「独立数据库容器」「内置数据库（如 SQLite）容器」与
+    「容器内探测到 SQLite 文件」三类，以便给出更准确的告警文案。
+    sqlite_files 为容器内探测到的 SQLite 文件路径列表（category="detected" 时使用）。
     """
+    embedded = category == "embedded"
+    detected = category == "detected"
     persistent = []
     anonymous = []
     for m in mounts or []:
@@ -288,11 +358,30 @@ def _evaluate_mounts(cid: str, name: str, image: str, status: str, mounts: list)
         return None
 
     level = "danger" if not anonymous else "warning"
-    message = (
-        "容器未设置永久数据卷映射，数据仅存于容器可写层，删除/重建容器将导致数据库数据全部丢失！"
-        if level == "danger"
-        else "容器仅有匿名数据卷（容器删除时可能被连带清除），建议改用命名数据卷以便持久化与管理"
-    )
+    if detected:
+        # 容器内探测命中 SQLite 文件：展示前 3 个路径，便于用户定位
+        shown = ", ".join((sqlite_files or [])[:3])
+        message = (
+            f"检测到容器内存在 SQLite 数据库文件（{shown}），但未设置永久数据卷映射，"
+            "删除/重建容器将导致数据全部丢失！"
+            if level == "danger"
+            else f"检测到容器内存在 SQLite 数据库文件（{shown}），但仅有匿名数据卷"
+                 "（容器删除时可能被连带清除），建议改用命名数据卷以便持久化与管理"
+        )
+    elif embedded:
+        message = (
+            "容器内置数据库（如 SQLite）未设置永久数据卷映射，数据仅存于容器可写层，"
+            "删除/重建容器将导致数据全部丢失！"
+            if level == "danger"
+            else "容器内置数据库（如 SQLite）仅有匿名数据卷（容器删除时可能被连带清除），"
+                 "建议改用命名数据卷以便持久化与管理"
+        )
+    else:
+        message = (
+            "容器未设置永久数据卷映射，数据仅存于容器可写层，删除/重建容器将导致数据库数据全部丢失！"
+            if level == "danger"
+            else "容器仅有匿名数据卷（容器删除时可能被连带清除），建议改用命名数据卷以便持久化与管理"
+        )
     return {
         "id": cid,
         "name": name,
@@ -301,6 +390,7 @@ def _evaluate_mounts(cid: str, name: str, image: str, status: str, mounts: list)
         "level": level,
         "message": message,
         "data_dir": _db_data_dir(image),
+        "sqlite_files": (sqlite_files or []) if detected else [],
         "mounts": [
             {
                 "type": m.get("Type") or "",
@@ -311,6 +401,82 @@ def _evaluate_mounts(cid: str, name: str, image: str, status: str, mounts: list)
         ],
         "has_persistent": False,
     }
+
+
+def _has_persistent_mount(mounts: list) -> bool:
+    """判断容器是否已有永久数据卷映射（bind 挂载或命名卷）。"""
+    for m in mounts or []:
+        m_type = m.get("Type") or ""
+        if m_type == "bind" and m.get("Source"):
+            return True
+        if m_type == "volume":
+            vname = m.get("Name") or ""
+            if _looks_named(vname):
+                return True
+    return False
+
+
+# 容器内 SQLite 探测命令：仅在容器自身可写层（-xdev 跳过挂载点/卷）查找常见
+# SQLite 文件，并排除镜像自带的库文件目录（/usr/lib、/usr/share、/etc、
+# /var/cache）与 /proc /sys /dev，避免把镜像内置的 .db 库文件误判为应用数据。
+SQLITE_FIND_CMD = (
+    "find / -xdev \\( -name '*.db' -o -name '*.sqlite' -o -name '*.sqlite3' "
+    "-o -name '*.db3' -o -name '*.sqlitedb' \\) "
+    "-not -path '/proc/*' -not -path '/sys/*' -not -path '/dev/*' "
+    "-not -path '/usr/lib/*' -not -path '/usr/share/*' -not -path '/etc/*' "
+    "-not -path '/var/cache/*' "
+    "2>/dev/null | head -10"
+)
+
+
+def _detect_sqlite_in_container(cid: str, kind: str = "cli",
+                                client=None, timeout: int = 20) -> Optional[list]:
+    """在容器内探测 SQLite 数据库文件（弥补关键字列表无法覆盖的自定义镜像）。
+
+    返回命中的文件路径列表；无法探测（容器无 shell / find / 权限不足）时返回 None，
+    调用方应保守跳过，避免误报。
+    """
+    try:
+        if kind == "cli":
+            rc, out, _err = _run_engine(["exec", cid, "sh", "-c", SQLITE_FIND_CMD], timeout)
+        else:
+            if client is None:
+                return None
+            cont = client.containers.get(cid)
+            rc, raw = cont.exec_run(["sh", "-c", SQLITE_FIND_CMD], timeout=timeout)
+            out = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else (raw or "")
+    except Exception as e:
+        # 容器不可执行 exec（如 distroless 无 shell）或探测失败：无法判断，保守跳过
+        logger.debug("容器 %s SQLite 探测失败: %s", cid, e)
+        return None
+    if rc != 0:
+        return None
+    files = [ln.strip() for ln in (out or "").splitlines() if ln.strip()]
+    return files or None
+
+
+def _evaluate_container(cid: str, name: str, image: str, status: str, mounts: list,
+                        kind: str = "cli", client=None) -> Optional[dict]:
+    """对单个容器做完整持久化评估，返回警告条目或 None。
+
+    分派规则：
+      - 已持久化（bind/命名卷）-> 数据安全，直接跳过（无需探测）；
+      - 未持久化且命中独立数据库镜像 -> 数据库告警；
+      - 未持久化且命中内置数据库（如 SQLite）镜像 -> 内置数据库告警；
+      - 未持久化且未命中任何关键字 -> 容器内探测 SQLite 文件，命中才告警
+        （覆盖任意自定义镜像内部的 SQLite）。
+    """
+    if _has_persistent_mount(mounts):
+        return None
+    if _is_db_image(image):
+        return _evaluate_mounts(cid, name, image, status, mounts, "db")
+    if _is_embedded_db_image(image):
+        return _evaluate_mounts(cid, name, image, status, mounts, "embedded")
+    # 未命中关键字：容器内探测，弥补关键字列表无法覆盖的场景
+    files = _detect_sqlite_in_container(cid, kind, client)
+    if not files:
+        return None
+    return _evaluate_mounts(cid, name, image, status, mounts, "detected", sqlite_files=files)
 
 
 def _engine_cli() -> Optional[list]:
@@ -347,27 +513,23 @@ def _scan_docker_sync() -> dict:
                 name = (c.get("Names") or [""])[0] if c.get("Names") else ""
                 image = c.get("Image", "")
                 status = c.get("Status", "")
-                if not _is_db_image(image):
-                    continue
                 if _is_ignored("docker", name):
                     continue
                 insp = _podman_json(["inspect", cid])
                 info = insp[0] if insp else {}
                 mounts = info.get("Mounts") or []
-                warning = _evaluate_mounts(cid[:12], name, image, status, mounts)
+                warning = _evaluate_container(cid[:12], name, image, status, mounts, kind, client)
                 if warning:
                     warnings.append(warning)
         else:
             for c in client.containers.list(all=True):
                 attrs = c.attrs
                 image = c.image.tags[0] if c.image.tags else c.image.short_id
-                if not _is_db_image(image):
-                    continue
                 name = c.name
                 if _is_ignored("docker", name):
                     continue
                 mounts = attrs.get("Mounts") or []
-                warning = _evaluate_mounts(c.short_id, name, image, c.status, mounts)
+                warning = _evaluate_container(c.short_id, name, image, c.status, mounts, kind, client)
                 if warning:
                     warnings.append(warning)
     except HTTPException:
@@ -640,6 +802,15 @@ def _sanitize_name(path: str) -> str:
     return safe or "db"
 
 
+def _backup_dir() -> str:
+    """返回自动备份目录（与 _build_backup_command 中的落盘位置保持一致）。
+
+    Windows 备份到 C:\\GrawBackups，Linux 备份到 /data/graw-backups。
+    供前端「打开备份目录」跳转到文件管理器使用。
+    """
+    return r"C:\GrawBackups" if IS_WINDOWS else "/data/graw-backups"
+
+
 def _ps_quote(s: str) -> str:
     """PowerShell 单引号字符串转义：内部单引号双写。"""
     return "'" + s.replace("'", "''") + "'"
@@ -733,6 +904,7 @@ async def status():
         "docker_available": docker_available,
         "ignored_count": len(_current_ignored()),
         "backup_count": len(data.get("backup_items", [])),
+        "backup_dir": _backup_dir(),
     }
 
 

@@ -31,14 +31,16 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.hostfs import host_path, host_cmd
+from app import webserver
 
 router = APIRouter()
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 WAF_FILE = os.path.join(DATA_DIR, "waf.json")
 WAF_LOG_FILE = os.path.join(DATA_DIR, "waf_logs.json")
-# WAF 生成的 nginx include 片段目录（宿主机视角，写入时经 host_path 映射）
-NGINX_WAF_DIR = "/etc/nginx/waf"
+# WAF 生成的 nginx include 片段目录（宿主机视角，写入时经 host_path 映射）。
+# 跟随 NGINX/OpenResty 引擎模式：nginx => /etc/nginx/waf，openresty => .../waf
+NGINX_WAF_DIR = webserver.waf_dir()
 IS_WIN = platform.system() == "Windows"
 
 # 同名站点类型/来源：站点 id 与 sites.json 中的 name 一致，直接复用做配置文件防穿越
@@ -66,6 +68,14 @@ def _load_waf() -> dict:
             return json.load(f)
     except Exception:
         return {"enabled": False, "sites": []}
+
+
+def _waf_dir() -> str:
+    """当前引擎的 WAF 片段目录（跟随 NGINX/OpenResty 模式动态解析）。
+
+    供写入/删除/展示使用；测试可通过 patch 本函数重定向到临时目录。
+    """
+    return webserver.waf_dir()
 
 
 def _save_waf(data: dict):
@@ -422,14 +432,14 @@ async def waf_status():
         "enabled": bool(data.get("enabled", False)),
         "platform": "windows" if IS_WIN else "linux",
         "nginx_available": nginx_available,
-        "waf_dir": NGINX_WAF_DIR,
+        "waf_dir": _waf_dir(),
     }
 
 
 def _nginx_available() -> bool:
+    # 按当前引擎（nginx/openresty）探测可用性
     try:
-        import shutil
-        return bool(shutil.which("nginx")) or bool(host_cmd(["nginx", "-v"], capture_output=True, timeout=5))
+        return webserver.available()
     except Exception:
         return False
 
@@ -543,7 +553,7 @@ async def waf_apply(body: dict):
 def _write_nginx_fragment(cfg: dict) -> dict:
     """将某站点 WAF 片段写盘（host_path 映射），有 nginx 则 reload。"""
     site = cfg.get("site")
-    target_dir = host_path(NGINX_WAF_DIR)
+    target_dir = host_path(_waf_dir())
     os.makedirs(target_dir, exist_ok=True)
     conf = os.path.join(target_dir, f"{site}.conf")
     with open(conf, "w", encoding="utf-8") as f:
@@ -558,7 +568,7 @@ def _remove_nginx_fragment(site_id: str):
     """删除某站点 WAF 片段；无文件则忽略。"""
     if not _SITE_ID_RE.match(str(site_id)):
         return
-    conf = os.path.join(host_path(NGINX_WAF_DIR), f"{site_id}.conf")
+    conf = os.path.join(host_path(_waf_dir()), f"{site_id}.conf")
     try:
         if os.path.exists(conf):
             os.remove(conf)
@@ -567,8 +577,9 @@ def _remove_nginx_fragment(site_id: str):
 
 
 def _reload_nginx():
+    # 按当前引擎（nginx/openresty）执行 reload
     try:
-        host_cmd(["nginx", "-s", "reload"], capture_output=True, timeout=10)
+        webserver.reload()
     except Exception:
         pass
 

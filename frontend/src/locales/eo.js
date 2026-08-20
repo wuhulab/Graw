@@ -549,6 +549,7 @@ export default {
     dirType: 'Datuma dosierujo',
     sqliteType: 'SQLite-dosiero',
     backupsTitle: 'Inkluzivita en aŭtomata sekurkopio ({count})',
+    openBackupDir: 'Malfermi sekurkopian dosierujon',
     noBackups: 'Nuntempe neniuj datumbazoj en aŭtomata sekurkopio.',
     schedule: 'Plano',
     createdAt: 'Krea tempo',
@@ -1112,6 +1113,20 @@ export default {
     showTaskbarText: 'Montri detalan tekston en la taska stango',
     taskbarTextOnly: 'Nur teksto en la taska stango (kaŝi ikonojn)',
     language: 'Lingvo',
+    webmode: {
+      title: 'Retservilo-ilo (engine)',
+      desc: 'Elektu la retservilon-ilon. OpenResty estas nginx-distribuaĵo kun enmetita Lua; ambaŭ uzas la saman NGINX-agordan formaton.',
+      nginx: 'NGINX',
+      openresty: 'OpenResty',
+      bin: 'Nuna ilo: {bin}',
+      installed: 'Instalita',
+      notInstalled: 'Ne instalita',
+      nginxBin: 'NGINX',
+      openrestyBin: 'OpenResty',
+      confDir: 'Agorda dosierujo: {dir}',
+      saved: 'Konservita. Ilo: {bin}, agordo: {dir}',
+      saveFailed: 'Konservo malsukcesis',
+    },
     // Sekcio „Pri"
     about: {
       title: 'Pri',
@@ -1267,5 +1282,19 @@ export default {
       connEdit: 'Redaktante: {name}',
       connAdd: 'Aldoni datumbazan konekton',
     },
+  },
+  installCheck: {
+    title: 'Ne kompleta gastiga medio detektita',
+    desc: 'La panelo ne estis instalita laŭ la "plena gastiga reĝimo" postulita de la README, do mankas gastigaj permesoj. Iuj funkcioj (dosieradministrilo, reta terminalo, Docker, fajroŝirmilo ktp.) eble ne funkcias ĝuste.',
+    reinstallHint: 'Haltigu la nunan ujon kaj reinstalu laŭ README per docker run / docker-compose: muntu /:/host, agordu HOST_ROOT, --privileged, --pid host kaj muntu la Docker-soklon.',
+    gotIt: 'Komprenite',
+    items: {
+      host_root: { label: 'HOST_ROOT-media variablo ne agordita', detail: 'Aldonu -e HOST_ROOT=/host por indiki la gastigan radikan muntpunkton.' },
+      host_mount: { label: 'Gastiga radiko ne muntita al /host', detail: 'Aldonu -v /:/host:rslave por ke la panelo povu legi/skribi la gastigan dosiersistemon.' },
+      docker_sock: { label: 'Docker-soklo ne muntita', detail: 'Aldonu -v /var/run/docker.sock:/var/run/docker.sock, alie ujo-/bildadministrado ne haveblas.' },
+      pid_host: { label: '--pid host ne uzata', detail: 'Aldonu --pid host, alie la procezadministrado ne vidas gastigajn procezojn.' },
+      privileged: { label: '--privileged ne uzata', detail: 'Aldonu --privileged, alie chroot /host, fajroŝirmilo ktp. ne efikas.' },
+      host_data: { label: 'GRAW_HOST_DATA ne agordita', detail: 'Aldonu -e GRAW_HOST_DATA=/opt/graw/data, alie aplikaĵvendejo kaj sekurkopiado estas trafitaj.' }
+    }
   },
 }

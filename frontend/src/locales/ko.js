@@ -549,6 +549,7 @@ export default {
     dirType: '데이터 디렉터리',
     sqliteType: 'SQLite 파일',
     backupsTitle: '자동 백업에 포함됨 ({count})',
+    openBackupDir: '백업 폴더 열기',
     noBackups: '자동 백업에 포함된 데이터베이스가 없습니다.',
     schedule: '일정',
     createdAt: '생성 시간',
@@ -1112,6 +1113,20 @@ export default {
     showTaskbarText: '작업 표시줄에 상세 텍스트 표시',
     taskbarTextOnly: '작업 표시줄 텍스트만 표시 (아이콘 숨김)',
     language: '언어',
+    webmode: {
+      title: '웹 서버 엔진',
+      desc: '웹 서버 엔진을 선택합니다. OpenResty는 nginx 기반 배포판(Lua 내장)이며 둘 다 동일한 NGINX 설정 형식을 사용합니다.',
+      nginx: 'NGINX',
+      openresty: 'OpenResty',
+      bin: '현재 엔진: {bin}',
+      installed: '설치됨',
+      notInstalled: '설치 안 됨',
+      nginxBin: 'NGINX',
+      openrestyBin: 'OpenResty',
+      confDir: '설정 디렉터리: {dir}',
+      saved: '저장됨. 엔진: {bin}, 설정: {dir}',
+      saveFailed: '저장 실패',
+    },
     // 정보(About) 섹션
     about: {
       title: '정보',
@@ -1267,5 +1282,19 @@ export default {
       connEdit: '편집 중: {name}',
       connAdd: '데이터베이스 연결 추가',
     },
+  },
+  installCheck: {
+    title: '불완전한 호스트 환경이 감지되었습니다',
+    desc: '패널이 README에서 요구하는 "전체 호스트 모드"로 설치되지 않아 호스트 권한이 부족합니다. 일부 기능(파일 관리자, 웹 터미널, Docker, 방화벽 등)이 제대로 작동하지 않을 수 있습니다.',
+    reinstallHint: '현재 컨테이너를 중지하고 README의 docker run / docker-compose 방식으로 다시 설치하세요: /:/host 마운트, HOST_ROOT 설정, --privileged, --pid host 및 Docker 소켓 마운트가 필요합니다.',
+    gotIt: '알겠습니다',
+    items: {
+      host_root: { label: 'HOST_ROOT 환경 변수가 설정되지 않음', detail: '-e HOST_ROOT=/host를 추가하여 호스트 루트 마운트 지점을 지정하세요.' },
+      host_mount: { label: '호스트 루트가 /host에 마운트되지 않음', detail: '-v /:/host:rslave를 추가하여 패널이 호스트 파일시스템을 읽고 쓸 수 있게 하세요.' },
+      docker_sock: { label: 'Docker 소켓이 마운트되지 않음', detail: '-v /var/run/docker.sock:/var/run/docker.sock를 추가하세요. 그렇지 않으면 컨테이너/이미지 관리가 불가능합니다.' },
+      pid_host: { label: '--pid host가 사용되지 않음', detail: '--pid host를 추가하세요. 그렇지 않으면 프로세스 관리가 호스트 프로세스를 볼 수 없습니다.' },
+      privileged: { label: '--privileged가 사용되지 않음', detail: '--privileged를 추가하세요. 그렇지 않으면 chroot /host, 방화벽 등의 작업이 적용되지 않습니다.' },
+      host_data: { label: 'GRAW_HOST_DATA가 설정되지 않음', detail: '-e GRAW_HOST_DATA=/opt/graw/data를 추가하세요. 그렇지 않으면 앱 스토어 설치와 백업 내보내기에 영향이 있습니다.' }
+    }
   },
 }

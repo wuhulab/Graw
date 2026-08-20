@@ -40,16 +40,20 @@ services:
 
     # ---------- 数据与宿主机资源挂载 ----------
     volumes:
-      # 面板自身数据（用户账号、签名密钥、站点/证书/任务配置等）
-      - graw-data:/app/backend/data
+      # 面板自身数据（用户账号、签名密钥、站点/证书/任务配置等）。
+      # 用 bind mount 绑定到宿主目录，而不是匿名命名卷：这样才能让
+      # 宿主机 docker 直接读到 appstore 的 docker-compose.yml（见 GRAW_HOST_DATA）。
+      - /opt/graw/data:/app/backend/data
       # 宿主机根目录：面板据此完整管理宿主机文件系统与命令
       - /:/host:rslave
-      # Docker 管理功能（容器 / 镜像 / 日志）
+      # Docker 管理功能（容器 / 镜像 / 日志）：复用宿主机 Docker daemon 的 socket
       - /var/run/docker.sock:/var/run/docker.sock
 
     environment:
       # 告知后端宿主机根目录挂载点，启用 /host 模式（关键配置）
       - HOST_ROOT=/host
+      # 宿主上 === 面板 data 目录的路径：宿主 docker 据此读取 compose 文件/导出备份
+      - GRAW_HOST_DATA=/opt/graw/data
       - TZ=Asia/Shanghai
 
     # 使用 host 网络后，端口由宿主机直接占用（8000），无需 ports 映射。
@@ -59,6 +63,8 @@ services:
 
     restart: unless-stopped
 
-# 数据卷声明
-volumes:
-  graw-data:
+# 若希望用命名卷持久化面板数据（非本机化），可注释上方 bind mount 行、
+# 取消开下面声明；但此时宿主 docker 无法直接读到 appstore 的 compose 文件，
+# 需配合把 GRAW_HOST_DATA 指向该卷在宿主上的实际路径。
+# volumes:
+#   graw-data:

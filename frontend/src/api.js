@@ -92,7 +92,9 @@ export const systemApi = {
   overview: () => api.get('/system/overview').then(r => r.data),
   network: () => api.get('/system/network').then(r => r.data),
   diskio: () => api.get('/system/diskio').then(r => r.data),
-  info: () => api.get('/system/info').then(r => r.data)
+  info: () => api.get('/system/info').then(r => r.data),
+  // 安装完整性检测：确认是否按 README 的完整宿主机模式安装
+  installCheck: () => api.get('/system/install-check').then(r => r.data)
 }
 
 export const dockerApi = {
@@ -318,6 +320,12 @@ export const wafApi = {
   recordLog: (body) => api.post('/waf/logs/record', body).then(r => r.data),
   clearLogs: () => api.post('/waf/logs/clear').then(r => r.data),
   blockmap: (days = 30) => api.get('/waf/blockmap', { params: { days } }).then(r => r.data)
+}
+
+// Web 服务器引擎模式（NGINX / OpenResty）：查询与切换（仅管理员）
+export const webmodeApi = {
+  status: () => api.get('/webmode/status').then(r => r.data),
+  setMode: (mode) => api.post('/webmode/mode', { mode }).then(r => r.data)
 }
 
 export const appStoreApi = {

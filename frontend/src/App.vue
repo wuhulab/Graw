@@ -84,6 +84,9 @@
   <!-- ShunX 网页防篡改告警弹窗：篡改发生时对在线面板用户弹窗 -->
   <TamperAlert v-if="loggedIn && tamperState.alerts.length > 0" />
 
+  <!-- 安装环境提醒：未按 README 完整宿主机模式安装、缺少宿主机权限时弹窗 -->
+  <InstallCheckAlert v-if="loggedIn && installCheckMissing.length" :missing="installCheckMissing" @close="installCheckMissing = []" />
+
   <!-- ShunX 安全入口：登录后未配置入口时强制设置，阻止使用面板其他功能 -->
   <ShunXSetup v-if="loggedIn && shunxRequired" @saved="onShunxSaved" />
 </template>
@@ -132,8 +135,9 @@ import RuntimeCreateWindow from './components/windows/RuntimeCreateWindow.vue'
 import DisksWindow from './components/windows/DisksWindow.vue'
 import ShunXSetup from './components/ShunXSetup.vue'
 import TamperAlert from './components/TamperAlert.vue'
+import InstallCheckAlert from './components/InstallCheckAlert.vue'
 import Login from './views/Login.vue'
-import { shunxApi } from './api'
+import { shunxApi, systemApi } from './api'
 import { auth, clearAuth, isAdmin } from './store/auth'
 import { uiState, loadUi } from './store/ui'
 import { settings } from './store/settings'
@@ -170,6 +174,8 @@ const hostBadgeRemote = computed(() => !!(currentHost.value && currentHost.value
 function onLoggedIn() {
   // 触发响应式重渲染，并检查是否需要强制设置安全入口
   checkShunxRequired()
+  // 检测安装环境是否完整（未按 README 安装则弹窗提醒重新安装）
+  checkInstallCheck()
 }
 
 const shortcuts = ref([
@@ -209,6 +215,21 @@ const startMenuOpen = ref(false)
 // 仅管理员触发（保存入口需要管理员权限）；后端对普通用户已脱敏
 // entry_path，普通用户凭 enabled 判断即可。
 const shunxRequired = ref(false)
+
+// 安装环境不完整时的缺失项 key 列表（非空则弹窗提醒重新安装）
+const installCheckMissing = ref([])
+
+async function checkInstallCheck() {
+  if (!auth.token) return
+  try {
+    const res = await systemApi.installCheck()
+    // 仅容器模式下检测到缺失项时才提醒；本机直跑视为完整
+    installCheckMissing.value = res.ok ? [] : (res.missing || [])
+  } catch (e) {
+    // 接口失败时不弹窗（兼容旧版后端）
+    installCheckMissing.value = []
+  }
+}
 
 async function checkShunxRequired() {
   if (!auth.token) return
@@ -813,6 +834,8 @@ onMounted(() => {
   if (loggedIn.value) {
     startRealtime()
     checkShunxRequired()
+    // 已登录态（如页面刷新）也重新检测安装环境，确保缺失时弹窗提醒
+    checkInstallCheck()
   }
   updateClock()
   clockTimer = setInterval(updateClock, 1000)

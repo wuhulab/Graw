@@ -44,6 +44,7 @@ from app.routers.docker_api import get_backend, _find_podman
 from app.routers import firewall
 from app.routers import tasks
 from app.auth import Depends, get_current_user, get_client_ip
+from app import hostfs
 from app import auditlog
 
 logger = logging.getLogger("appstore")
@@ -680,7 +681,12 @@ def _install_prepare(req: InstallRequest):
 
     # 6. 引擎与命令路径
     prefix = _compose_runner()
-    engine_path = _to_wsl_path(compose_path) if IS_WINDOWS else compose_path
+    if hostfs.is_host_mounted():
+        # 容器 /host 挂载模式：compose 文件需以宿主可达路径（GRAW_HOST_DATA）
+        # 传给宿主 docker compose，否则宿主进程找不到容器卷内的文件。
+        engine_path = hostfs.host_visible_path(compose_path, DATA_DIR)
+    else:
+        engine_path = _to_wsl_path(compose_path) if IS_WINDOWS else compose_path
     return container_name, project_dir, compose_path, engine_path, warnings, prefix
 
 

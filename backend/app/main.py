@@ -32,6 +32,7 @@ from app.routers import (
     netstorage,
     update,
     waf,
+    webmode,
 )
 from app.auth import (
     seed_default_users,
@@ -236,6 +237,10 @@ app.include_router(update.router, prefix="/api/update", tags=["update"], depende
 # WAF 应用防火墙：站点级 Web 应用防火墙（全局开关 + 每站点策略 + 拦截日志/拦截地图）。
 # 全部为读取/写入配置与管理 nginx 片段的管理类接口，挂 ADMIN 依赖。
 app.include_router(waf.router, prefix="/api/waf", tags=["waf"], dependencies=ADMIN)
+
+# Web 服务器引擎模式（NGINX / OpenResty）：查询与切换，仅管理员。
+# 切换只更新引擎选择，sites/waf 等路由按当前模式解析路径与 reload 命令。
+app.include_router(webmode.router, prefix="/api/webmode", tags=["webmode"], dependencies=ADMIN)
 
 
 @app.get("/api/health")

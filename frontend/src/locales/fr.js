@@ -549,6 +549,7 @@ export default {
     dirType: 'Répertoire de données',
     sqliteType: 'Fichier SQLite',
     backupsTitle: 'Inclus dans la sauvegarde automatique ({count})',
+    openBackupDir: 'Ouvrir le dossier de sauvegarde',
     noBackups: 'Aucune base de données dans la sauvegarde automatique.',
     schedule: 'Planification',
     createdAt: 'Créé',
@@ -1112,6 +1113,20 @@ export default {
     showTaskbarText: 'Afficher le texte détaillé dans la barre des tâches',
     taskbarTextOnly: 'Texte uniquement dans la barre des tâches (masquer les icônes)',
     language: 'Langue',
+    webmode: {
+      title: 'Moteur du serveur Web',
+      desc: 'Sélectionnez le moteur du serveur Web. OpenResty est une distribution de nginx avec Lua intégré ; les deux utilisent le même format de configuration NGINX.',
+      nginx: 'NGINX',
+      openresty: 'OpenResty',
+      bin: 'Moteur actuel : {bin}',
+      installed: 'Installé',
+      notInstalled: 'Non installé',
+      nginxBin: 'NGINX',
+      openrestyBin: 'OpenResty',
+      confDir: 'Répertoire de configuration : {dir}',
+      saved: 'Enregistré. Moteur : {bin}, configuration : {dir}',
+      saveFailed: 'Échec de l\'enregistrement',
+    },
     // Section « À propos »
     about: {
       title: 'À propos',
@@ -1267,5 +1282,19 @@ export default {
       connEdit: 'Modification : {name}',
       connAdd: 'Ajouter une connexion de base de données',
     },
+  },
+  installCheck: {
+    title: 'Environnement hôte incomplet détecté',
+    desc: 'Le panneau n\'a pas été installé en « mode hôte complet » comme requis par le README, il lui manque donc les permissions hôte. Certaines fonctions (gestionnaire de fichiers, terminal web, Docker, pare-feu, etc.) peuvent ne pas fonctionner correctement.',
+    reinstallHint: 'Arrêtez le conteneur actuel et réinstallez selon la méthode docker run / docker-compose du README : montez /:/host, définissez HOST_ROOT, --privileged, --pid host et montez le socket Docker.',
+    gotIt: 'Compris',
+    items: {
+      host_root: { label: 'Variable d\'environnement HOST_ROOT non définie', detail: 'Ajoutez -e HOST_ROOT=/host pour indiquer le point de montage racine de l\'hôte.' },
+      host_mount: { label: 'Racine de l\'hôte non montée sur /host', detail: 'Ajoutez -v /:/host:rslave pour que le panneau puisse lire/écrire le système de fichiers de l\'hôte.' },
+      docker_sock: { label: 'Socket Docker non monté', detail: 'Ajoutez -v /var/run/docker.sock:/var/run/docker.sock, sinon la gestion des conteneurs/images est indisponible.' },
+      pid_host: { label: '--pid host non utilisé', detail: 'Ajoutez --pid host, sinon la gestion des processus ne voit pas les processus de l\'hôte.' },
+      privileged: { label: '--privileged non utilisé', detail: 'Ajoutez --privileged, sinon chroot /host, pare-feu et autres opérations ne prennent pas effet.' },
+      host_data: { label: 'GRAW_HOST_DATA non défini', detail: 'Ajoutez -e GRAW_HOST_DATA=/opt/graw/data, sinon les installations de l\'app store et les exports de sauvegarde sont affectés.' }
+    }
   },
 }

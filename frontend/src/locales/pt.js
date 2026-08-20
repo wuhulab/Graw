@@ -68,6 +68,20 @@ export default {
     showTaskbarText: 'Mostrar texto detalhado na barra de tarefas',
     taskbarTextOnly: 'Somente texto na barra de tarefas (ocultar ícones)',
     language: 'Idioma',
+    webmode: {
+      title: 'Mecanismo do servidor web',
+      desc: 'Selecione o mecanismo do servidor web. OpenResty é uma distribuição de nginx com Lua integrado; ambos usam o mesmo formato de configuração NGINX.',
+      nginx: 'NGINX',
+      openresty: 'OpenResty',
+      bin: 'Mecanismo atual: {bin}',
+      installed: 'Instalado',
+      notInstalled: 'Não instalado',
+      nginxBin: 'NGINX',
+      openrestyBin: 'OpenResty',
+      confDir: 'Diretório de configuração: {dir}',
+      saved: 'Salvo. Mecanismo: {bin}, configuração: {dir}',
+      saveFailed: 'Falha ao salvar',
+    },
     // Seção «Sobre»
     about: {
       title: 'Sobre',
@@ -745,6 +759,7 @@ export default {
     dirType: 'Diretório de dados',
     sqliteType: 'Arquivo SQLite',
     backupsTitle: 'Incluídos no backup automático ({count})',
+    openBackupDir: 'Abrir pasta de backup',
     noBackups: 'Nenhum banco de dados incluído no backup automático ainda.',
     schedule: 'Agendamento',
     createdAt: 'Criado',
@@ -1267,5 +1282,19 @@ export default {
     file: 'Arquivo',
     folder: 'Pasta',
     type: 'Tipo',
+  },
+  installCheck: {
+    title: 'Ambiente host incompleto detectado',
+    desc: 'O painel não foi instalado no "modo host completo" exigido pelo README, portanto faltam permissões de host. Alguns recursos (gerenciador de arquivos, terminal web, Docker, firewall etc.) podem não funcionar corretamente.',
+    reinstallHint: 'Pare o contêiner atual e reinstale conforme o método docker run / docker-compose do README: monte /:/host, defina HOST_ROOT, --privileged, --pid host e monte o socket do Docker.',
+    gotIt: 'Entendi',
+    items: {
+      host_root: { label: 'Variável de ambiente HOST_ROOT não definida', detail: 'Adicione -e HOST_ROOT=/host para indicar o ponto de montagem raiz do host.' },
+      host_mount: { label: 'Raiz do host não montada em /host', detail: 'Adicione -v /:/host:rslave para que o painel possa ler/gravar o sistema de arquivos do host.' },
+      docker_sock: { label: 'Socket do Docker não montado', detail: 'Adicione -v /var/run/docker.sock:/var/run/docker.sock, caso contrário o gerenciamento de contêineres/imagens fica indisponível.' },
+      pid_host: { label: '--pid host não utilizado', detail: 'Adicione --pid host, caso contrário o gerenciamento de processos não vê os processos do host.' },
+      privileged: { label: '--privileged não utilizado', detail: 'Adicione --privileged, caso contrário chroot /host, firewall e outras operações não têm efeito.' },
+      host_data: { label: 'GRAW_HOST_DATA não definido', detail: 'Adicione -e GRAW_HOST_DATA=/opt/graw/data, caso contrário as instalações da loja de aplicativos e as exportações de backup são afetadas.' }
+    }
   },
 }

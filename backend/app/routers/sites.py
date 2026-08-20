@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.hostfs import host_path, host_cmd, host_which
+from app import webserver
 
 # ---------------------------------------------------------------------------
 # 安全校验：防止 web 服务器配置注入与配置文件路径穿越
@@ -44,14 +45,9 @@ router = APIRouter()
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 SITES_FILE = os.path.join(DATA_DIR, "sites.json")
-# 以下均为宿主机视角路径，实际访问时经 host_path 映射（容器模式下为 /host 前缀）
-NGINX_AVAILABLE = "/etc/nginx/sites-available"
-NGINX_ENABLED = "/etc/nginx/sites-enabled"
-NGINX_CONF = "/etc/nginx/nginx.conf"
-# TCP/UDP 代理使用 nginx stream 模块，单独目录避免与 http server 混放
-NGINX_STREAM_DIR = "/etc/nginx/stream-enabled"
-# nginx.conf 中需要注入的 stream include 行，用于加载 stream 配置
-NGINX_STREAM_INCLUDE = "include /etc/nginx/stream-enabled/*.conf;"
+# nginx 系目录与 reload：OpenResty 模式由 webserver 模块提供 openresty 路径/命令。
+NGINX_AVAILABLE = webserver.available_dir()  # 兼容引用（写盘推荐用 webserver 动态解析）
+NGINX_ENABLED = webserver.enabled_dir()
 APACHE_AVAILABLE = "/etc/apache2/sites-available"
 APACHE_ENABLED = "/etc/apache2/sites-enabled"
 
@@ -181,7 +177,8 @@ def _which(cmd: str) -> Optional[str]:
 
 
 def _web_server_type() -> str:
-    if _which("nginx"):
+    # nginx 与 openresty 生成同一套配置格式：任一生效即视为 nginx 系
+    if webserver.nginx_like_available():
         return "nginx"
     if _which("apache2") or _which("httpd"):
         return "apache"
@@ -338,21 +335,25 @@ def _nginx_stream_config(site: dict) -> str:
 
 
 def _ensure_stream_include():
-    """确保 nginx.conf 中已注入 stream include 行（幂等）。"""
+    """确保 nginx.conf 中已注入 stream include 行（幂等）。
+
+    include 行与 nginx.conf 路径均按当前引擎（nginx/openresty）动态解析。
+    """
+    conf_path = host_path(webserver.conf_path())
+    stream_include = webserver.stream_include()
     try:
-        conf_path = host_path(NGINX_CONF)
         with open(conf_path, "r", encoding="utf-8") as f:
             content = f.read()
-        if NGINX_STREAM_INCLUDE in content:
+        if stream_include in content:
             return
         # 在 events {} 块之后插入 stream include，保证位于 http 块之外
         marker = "events {"
         if marker in content:
             idx = content.find(marker)
             end = content.find("}", idx) + 1
-            content = content[:end] + "\n" + NGINX_STREAM_INCLUDE + "\n" + content[end:]
+            content = content[:end] + "\n" + stream_include + "\n" + content[end:]
         else:
-            content = content.rstrip() + "\n\n" + NGINX_STREAM_INCLUDE + "\n"
+            content = content.rstrip() + "\n\n" + stream_include + "\n"
         with open(conf_path, "w", encoding="utf-8") as f:
             f.write(content)
     except Exception:
@@ -363,8 +364,8 @@ def _apply_nginx_config(site_id: str, site: dict, enabled: bool):
     """按站点类型应用 nginx 配置：static/proxy/subsite 走 http，tcpudp 走 stream。"""
     site_type = site.get("type", SITE_TYPE_STATIC)
     if site_type == SITE_TYPE_TCPUDP:
-        # TCP/UDP 代理：stream 配置写到专用目录
-        stream_dir = host_path(NGINX_STREAM_DIR)
+        # TCP/UDP 代理：stream 配置写到专用目录（按当前引擎解析）
+        stream_dir = host_path(webserver.stream_dir())
         conf_name = f"{site_id}.conf"
         stream_conf = os.path.join(stream_dir, conf_name)
         if enabled:
@@ -378,9 +379,9 @@ def _apply_nginx_config(site_id: str, site: dict, enabled: bool):
         return
 
     conf_name = f"{site_id}.conf"
-    # 容器模式下映射为 /host/etc/nginx/...，从而操作宿主机 nginx 配置
-    avail_dir = host_path(NGINX_AVAILABLE)
-    enab_dir = host_path(NGINX_ENABLED)
+    # 容器模式下映射为 /host/etc/... ，从而操作宿主机配置（按当前引擎解析）
+    avail_dir = host_path(webserver.available_dir())
+    enab_dir = host_path(webserver.enabled_dir())
     avail = os.path.join(avail_dir, conf_name)
     enab = os.path.join(enab_dir, conf_name)
     if enabled:
@@ -399,10 +400,8 @@ def _apply_nginx_config(site_id: str, site: dict, enabled: bool):
 
 
 def _reload_nginx():
-    try:
-        host_cmd(["nginx", "-s", "reload"], capture_output=True, check=False, timeout=10)
-    except Exception:
-        pass
+    # 按当前引擎（nginx/openresty）执行 reload
+    webserver.reload()
 
 
 def _apache_site_config(site: dict) -> str:

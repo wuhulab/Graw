@@ -114,3 +114,37 @@ def host_shell(command: str, **kwargs) -> "subprocess.CompletedProcess":
         return subprocess.run(cmd, **kwargs)
     except FileNotFoundError as e:
         return subprocess.CompletedProcess(cmd, 127, b"", str(e).encode())
+
+
+def host_visible_path(container_path: str, data_dir: str) -> str:
+    """把「面板 data 目录内」的路径转换为宿主机 Docker 可访问的路径。
+
+    背景（容器 /host 挂载模式）：
+      容器内面板把"数据目录"（如 /app/backend/data/appstore/<项目>/docker-compose.yml）
+      写入挂载卷。要在宿主机上执行 `docker compose -f <该文件>`，宿主机必须能读到
+      这个文件——而 data 卷通常以 bind mount 绑到宿主机某目录（如 /opt/graw/data），
+      并非经 /host 复现。因此需要一个环境变量 GRAW_HOST_DATA 告知宿主对应路径：
+
+        GRAW_HOST_DATA=/opt/graw/data   （宿主上 === 面板 data 目录的路径）
+
+      本函数返回：GRAW_HOST_DATA + (容器 data 内相对路径)。
+      rel 越界（不在 data_dir 内）或未启用挂载模式时原样返回；未配置
+      GRAW_HOST_DATA 时退化为 host_path()（即 /host + 容器绝对路径）。
+    """
+    if not HOST_ROOT:
+        return container_path
+    host_data = os.environ.get("GRAW_HOST_DATA", "").strip().rstrip("/")
+    if not host_data:
+        # 未显式配置宿主 data 路径时，退化为 /host 前缀（仅当 data 恰好 bind 在
+        # 同名路径才正确；生产建议显式设置 GRAW_HOST_DATA）
+        return host_path(container_path)
+    data_abs = os.path.abspath(data_dir)
+    p_abs = os.path.abspath(container_path)
+    try:
+        rel = os.path.relpath(p_abs, data_abs)
+    except ValueError:  # 跨盘符 / 不同根，判为越界
+        return container_path
+    if rel.startswith("..") or os.path.isabs(rel):
+        # 路径不在 data 目录内：不属于本函数可安全映射的范围
+        return container_path
+    return host_data + "/" + rel.replace("\\", "/")
