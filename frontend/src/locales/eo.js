@@ -1260,6 +1260,13 @@ export default {
       terminal: 'Terminalo',
       backup: 'Rezerva Centro',
       notify: 'Sciiga Centro',
+      uptime: 'Reteja Monitorado',
+      certcheck: 'Atesto-Eksvalidiĝo',
+      panelbackup: 'Panelo-Rezervo',
+      loginlog: 'Ensalut-Protokolo',
+      svcmonitor: 'Servo-Monitorado',
+      sshkeys: 'SSH-ŝlosiloj',
+      healthcheck: 'Sistem-Kontrolo',
     },
     winTitle: {
       users: 'Kont-administrado',

@@ -294,6 +294,19 @@
         </div>
       </div>
     </div>
+
+    <!-- 高风险操作二次确认：删除备份任务/远程目标/备份文件需输入面板密码 -->
+    <ConfirmDialog
+      :show="confirm.show"
+      mode="password"
+      :title="confirm.title"
+      :message="confirm.message"
+      input-label="输入面板密码确认"
+      placeholder="请输入当前面板密码"
+      confirm-label="删除"
+      @confirm="doDeleteConfirmed"
+      @cancel="confirm.show = false"
+    />
   </div>
 </template>
 
@@ -301,6 +314,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { DatabaseBackup, RefreshCw, Plus, ListChecks, History, Archive, RotateCcw, CloudUpload } from 'lucide-vue-next'
 import { backupApi, formatBytes } from '../../api'
+import ConfirmDialog from '../ConfirmDialog.vue'
 
 const tab = ref('tasks')
 const loading = ref(false)
@@ -309,6 +323,8 @@ const tasks = ref([])
 const records = ref([])
 const remotes = ref([])
 const status = reactive({ backup_dir: '', task_count: 0, file_count: 0, total_size: 0 })
+// 高风险操作二次确认状态
+const confirm = ref({ show: false, title: '', message: '', action: null })
 
 // 新建/编辑任务表单
 const formOpen = ref(false)
@@ -459,11 +475,29 @@ async function doRun(t) {
   }
 }
 
-async function doDelete(t) {
-  if (!confirm(`删除备份任务「${t.name}」？（已有备份文件不会被删除）`)) return
+function doDelete(t) {
+  // 高风险操作：删除备份任务需输入面板密码确认
+  confirm.value = {
+    show: true,
+    title: '删除备份任务确认',
+    message: `删除备份任务「${t.name}」？（已有备份文件不会被删除）\n请输入面板密码以确认。`,
+    action: { type: 'task', id: t.id }
+  }
+}
+
+async function doDeleteConfirmed() {
+  const a = confirm.value.action
+  confirm.value.show = false
+  if (!a) return
   busy.value = true
   try {
-    await backupApi.deleteTask(t.id)
+    if (a.type === 'task') {
+      await backupApi.deleteTask(a.id)
+    } else if (a.type === 'remote') {
+      await backupApi.deleteRemote(a.id)
+    } else if (a.type === 'record') {
+      await backupApi.deleteRecord(a.name)
+    }
     await loadAll()
   } catch (e) {
     alert('删除失败：' + (e.response?.data?.detail || e.message))
@@ -528,18 +562,15 @@ async function doTestRemote(r) {
   }
 }
 
-async function doDeleteRemote(r) {
+function doDeleteRemote(r) {
   const bound = boundCount(r.id)
   const extra = bound > 0 ? `（当前有 ${bound} 个任务绑定，删除后任务将改为仅本地备份）` : ''
-  if (!confirm(`删除远程备份目标「${r.name}」？${extra}`)) return
-  busy.value = true
-  try {
-    await backupApi.deleteRemote(r.id)
-    await loadAll()
-  } catch (e) {
-    alert('删除失败：' + (e.response?.data?.detail || e.message))
-  } finally {
-    busy.value = false
+  // 高风险操作：删除远程备份目标需输入面板密码确认
+  confirm.value = {
+    show: true,
+    title: '删除远程备份目标确认',
+    message: `删除远程备份目标「${r.name}」？${extra}\n请输入面板密码以确认。`,
+    action: { type: 'remote', id: r.id }
   }
 }
 
@@ -570,16 +601,13 @@ async function doRestore() {
   }
 }
 
-async function doDeleteRecord(r) {
-  if (!confirm(`删除备份文件「${r.name}」？此操作不可恢复。`)) return
-  busy.value = true
-  try {
-    await backupApi.deleteRecord(r.name)
-    await loadAll()
-  } catch (e) {
-    alert('删除失败：' + (e.response?.data?.detail || e.message))
-  } finally {
-    busy.value = false
+function doDeleteRecord(r) {
+  // 高风险操作：删除备份文件需输入面板密码确认
+  confirm.value = {
+    show: true,
+    title: '删除备份文件确认',
+    message: `删除备份文件「${r.name}」？此操作不可恢复。\n请输入面板密码以确认。`,
+    action: { type: 'record', name: r.name }
   }
 }
 

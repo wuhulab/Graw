@@ -1260,6 +1260,13 @@ export default {
       terminal: 'Терминал',
       backup: 'Центр резервного копирования',
       notify: 'Центр уведомлений',
+      uptime: 'Мониторинг сайтов',
+      certcheck: 'Срок действия сертификатов',
+      panelbackup: 'Резервная копия панели',
+      loginlog: 'Журнал входа',
+      svcmonitor: 'Мониторинг сервисов',
+      sshkeys: 'SSH-ключи',
+      healthcheck: 'Проверка системы',
     },
     winTitle: {
       users: 'Управление аккаунтами',

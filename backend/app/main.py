@@ -35,6 +35,15 @@ from app.routers import (
     webmode,
     backup,
     notify,
+    uptime,
+    certcheck,
+    panelbackup,
+    loginlog,
+    webstats,
+    rewrite,
+    svcmonitor,
+    sshkeys,
+    healthcheck,
 )
 from app.auth import (
     seed_default_users,
@@ -84,11 +93,20 @@ async def lifespan(app: FastAPI):
     await tamper.start_tamper_monitor()
     # 启动通知中心后台监控（资源阈值告警检查 + 渠道推送）
     await notify.start_monitor()
+    # 启动站点可用性后台监控（定期探测 + 宕机/恢复通知）
+    await uptime.start_monitor()
+    # 启动证书到期后台监控（定期检查剩余天数 + 临期/过期通知）
+    await certcheck.start_monitor()
+    # 启动服务/端口后台监控（自定义监控项：端口/进程/systemd 服务状态检测）
+    await svcmonitor.start_monitor()
     yield
     # 关闭后台采集协程
     await system.stop_metrics_producer()
     await tamper.stop_tamper_monitor()
     await notify.stop_monitor()
+    await uptime.stop_monitor()
+    await certcheck.stop_monitor()
+    await svcmonitor.stop_monitor()
 
 
 # 安全：默认关闭交互式 API 文档（/docs、/redoc、/openapi.json）。
@@ -252,6 +270,41 @@ app.include_router(backup.router, prefix="/api/backup", tags=["backup"], depende
 
 # 通知中心：通知渠道（Webhook/Telegram/钉钉/企微/Server酱/邮件）+ 资源阈值告警（管理员）
 app.include_router(notify.router, prefix="/api/notify", tags=["notify"], dependencies=ADMIN)
+
+# 站点可用性检测：监控网站/服务 HTTP 可用性，宕机/恢复推送通知（管理员）
+app.include_router(uptime.router, prefix="/api/uptime", tags=["uptime"], dependencies=ADMIN)
+
+# 证书到期提醒：检查面板 SSL 证书剩余天数，临期/过期推送通知（管理员）
+app.include_router(certcheck.router, prefix="/api/certcheck", tags=["certcheck"], dependencies=ADMIN)
+
+# 面板自身备份：导出/导入 data/ 全部配置归档（迁移与容灾，管理员）
+app.include_router(panelbackup.router, prefix="/api/panelbackup", tags=["panelbackup"], dependencies=ADMIN)
+
+# 登录日志 / 异地登录提示：记录登录 IP/时间/设备 + 异常登录检测提醒。
+# 普通用户需要查看「我的登录历史」，故挂 PROTECTED 而非 ADMIN；
+# list / clear / config 等管理接口内部已用 require_admin 保护。
+app.include_router(loginlog.router, prefix="/api/loginlog", tags=["loginlog"], dependencies=PROTECTED)
+
+# 网站访问统计：解析 nginx 访问日志，输出 PV/UV/IP/来源/热门页面（管理员）
+app.include_router(webstats.router, prefix="/api/webstats", tags=["webstats"], dependencies=ADMIN)
+
+# 伪静态规则库：常用框架一键伪静态（写入 nginx 配置，管理员）
+app.include_router(rewrite.router, prefix="/api/rewrite", tags=["rewrite"], dependencies=ADMIN)
+
+# 服务/端口监控：自定义监控项（端口/进程/systemd 服务）状态看板（管理员）
+app.include_router(
+    svcmonitor.router, prefix="/api/svcmonitor", tags=["svcmonitor"], dependencies=ADMIN
+)
+
+# SSH 密钥管理：生成/导入密钥并一键部署到节点（配合节点管理，管理员）
+app.include_router(
+    sshkeys.router, prefix="/api/sshkeys", tags=["sshkeys"], dependencies=ADMIN
+)
+
+# 一键系统体检：弱密码/异常登录/危险端口/可疑任务扫描（管理员，只读报告）
+app.include_router(
+    healthcheck.router, prefix="/api/healthcheck", tags=["healthcheck"], dependencies=ADMIN
+)
 
 
 @app.get("/api/health")

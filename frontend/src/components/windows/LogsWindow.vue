@@ -35,6 +35,19 @@
         </div>
       </div>
     </div>
+
+    <!-- 高风险操作二次确认：清空日志需输入面板密码 -->
+    <ConfirmDialog
+      :show="confirm.show"
+      mode="password"
+      :title="t('confirmDanger.clearLogsTitle')"
+      :message="t('confirmDanger.clearLogsMsg')"
+      :input-label="t('confirmDanger.inputPwdLabel')"
+      :placeholder="t('confirmDanger.inputPwdPlaceholder')"
+      :confirm-label="$t('logs.clear')"
+      @confirm="doClearLog"
+      @cancel="confirm.show = false"
+    />
   </div>
 </template>
 
@@ -42,6 +55,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { logsApi } from '../../api'
+import ConfirmDialog from '../ConfirmDialog.vue'
 
 const { t } = useI18n()
 const logs = ref([])
@@ -50,6 +64,8 @@ const current = ref(null)
 const lines = ref([])
 const showAdd = ref(false)
 const addForm = ref({ name: '', path: '' })
+// 高风险操作二次确认状态
+const confirm = ref({ show: false, path: '' })
 
 const contentText = computed(() => lines.value.join(''))
 
@@ -81,8 +97,15 @@ async function loadLog(path) {
   lines.value = data.lines || []
 }
 
-async function clearLog(path) {
-  if (!confirm(t('logs.confirmClear'))) return
+function clearLog(path) {
+  // 高风险操作：清空日志需输入面板密码确认
+  confirm.value = { show: true, path }
+}
+
+async function doClearLog() {
+  const path = confirm.value.path
+  confirm.value.show = false
+  if (!path) return
   await logsApi.clear(path)
   await loadLog(path)
 }

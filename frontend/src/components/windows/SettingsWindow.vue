@@ -234,6 +234,20 @@
       </div>
     </div>
   </div>
+
+  <!-- 高风险操作二次确认：删除远程节点 / 清除安全入口等需输入面板密码 -->
+  <ConfirmDialog
+    :show="dangerConfirm.show"
+    :mode="dangerConfirm.mode"
+    :title="dangerConfirm.title"
+    :message="dangerConfirm.message"
+    :required-text="dangerConfirm.requiredText"
+    :input-label="dangerConfirm.inputLabel"
+    :placeholder="dangerConfirm.placeholder"
+    :confirm-label="dangerConfirm.confirmLabel"
+    @confirm="doConfirm"
+    @cancel="dangerConfirm.show = false"
+  />
 </template>
 
 <script setup>
@@ -244,9 +258,14 @@ import { isAdmin } from '../../store/auth'
 import { nodesApi, shunxApi, panelApi, updateApi, webmodeApi, authApi } from '../../api'
 import { nodes as nodesStore, refreshNodes, setCurrentNode } from '../../store/nodes'
 import { LANGUAGES, setLocale } from '../../locales'
+import ConfirmDialog from '../ConfirmDialog.vue'
 
 const { t } = useI18n()
 const emit = defineEmits(['openUsers'])
+
+// 高风险操作二次确认状态（删除远程节点 / 清除安全入口等需输入面板密码）
+// 注意：不能命名为 confirm，否则会遮蔽全局 window.confirm（doUpdate 仍在用）
+const dangerConfirm = ref({ show: false, mode: 'password', title: '', message: '', requiredText: '', inputLabel: '', placeholder: '', confirmLabel: '', action: null })
 
 // ShunX 安全入口状态
 const entryPath = ref('')
@@ -580,13 +599,18 @@ async function testNode(n) {
   }
 }
 
-async function removeNode(n) {
-  if (!confirm(t('nodes.confirmDelete', { name: n.name }))) return
-  try {
-    await nodesApi.delete(n.id)
-    await loadNodes()
-  } catch (e) {
-    editorError(t('nodes.deleteFailed', { error: e?.response?.data?.detail || e.message }))
+function removeNode(n) {
+  // 高风险操作：删除远程节点需输入面板密码确认后才真正执行
+  dangerConfirm.value = {
+    show: true,
+    mode: 'password',
+    title: t('confirmDanger.deleteNodeTitle'),
+    message: t('confirmDanger.deleteNodeMsg', { name: n.name }),
+    requiredText: '',
+    inputLabel: t('confirmDanger.inputPwdLabel'),
+    placeholder: t('confirmDanger.inputPwdPlaceholder'),
+    confirmLabel: t('common.delete'),
+    action: { type: 'node', node: n }
   }
 }
 
@@ -634,9 +658,41 @@ async function saveEntry() {
   }
 }
 
-async function clearEntry() {
+function clearEntry() {
+  // 高风险配置变更：清除安全入口后任何设备可直接访问登录页，需输入面板密码确认
+  dangerConfirm.value = {
+    show: true,
+    mode: 'password',
+    title: '清除安全入口确认',
+    message: '清除 ShunX 安全入口后，任何设备将可直接访问登录页面。\n请输入面板密码以确认。',
+    requiredText: '',
+    inputLabel: t('confirmDanger.inputPwdLabel'),
+    placeholder: t('confirmDanger.inputPwdPlaceholder'),
+    confirmLabel: '清除',
+    action: { type: 'entry' }
+  }
+}
+
+// ConfirmDialog 密码校验通过后的回调：按 action.type 真正执行高风险操作
+async function doConfirm() {
+  const a = dangerConfirm.value.action
+  dangerConfirm.value.show = false
+  if (!a) return
+  if (a.type === 'node') {
+    try {
+      await nodesApi.delete(a.node.id)
+      await loadNodes()
+    } catch (e) {
+      editorError(t('nodes.deleteFailed', { error: e?.response?.data?.detail || e.message }))
+    }
+  } else if (a.type === 'entry') {
+    await clearEntryNow()
+  }
+}
+
+// 真正执行清除安全入口（密码已通过校验，原 clearEntry 的业务逻辑）
+async function clearEntryNow() {
   if (saving.value) return
-  if (!confirm(t('settings.clearConfirm'))) return
   saving.value = true
   msg.value = ''
   try {

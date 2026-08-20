@@ -30,6 +30,7 @@ from ..auth import (
 )
 from .shunx import verify_entry
 from .. import auditlog
+from . import loginlog
 
 logger = logging.getLogger("graw.auth")
 
@@ -278,6 +279,11 @@ async def login(req: LoginRequest, request: Request):
         auditlog.record(
             "登录失败", req.username, get_client_ip(request), "安全入口校验未通过"
         )
+        # 登录日志：入口校验失败（防止枚举入口的爆破噪音被完整记录）
+        loginlog.record_login(
+            req.username, get_client_ip(request),
+            request.headers.get("user-agent"), "failed", "安全入口校验未通过"
+        )
         raise
     user = _get_user(req.username)
     if user is None:
@@ -287,11 +293,19 @@ async def login(req: LoginRequest, request: Request):
         auditlog.record(
             "登录失败", req.username, get_client_ip(request), "用户不存在"
         )
+        loginlog.record_login(
+            req.username, get_client_ip(request),
+            request.headers.get("user-agent"), "failed", "用户不存在"
+        )
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     if not verify_password(req.password, user["password"]):
         _record_failure(request, req.username)
         auditlog.record(
             "登录失败", req.username, get_client_ip(request), "密码错误"
+        )
+        loginlog.record_login(
+            req.username, get_client_ip(request),
+            request.headers.get("user-agent"), "failed", "密码错误"
         )
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     # 登录成功，清零失败记录（入口与密码均已通过校验）
@@ -308,6 +322,10 @@ async def login(req: LoginRequest, request: Request):
         if not verify_totp(user.get("otp_secret", ""), otp_code):
             _record_failure(request, req.username)
             auditlog.record("登录失败", req.username, get_client_ip(request), "2FA 验证码错误")
+            loginlog.record_login(
+                req.username, get_client_ip(request),
+                request.headers.get("user-agent"), "failed", "2FA 验证码错误"
+            )
             raise HTTPException(status_code=401, detail="两步验证码错误")
     # ShunX 保护：检测到使用默认密码 → 强制要求修改后才能使用面板
     if is_default_password(user["password"]):
@@ -318,6 +336,11 @@ async def login(req: LoginRequest, request: Request):
     token = create_token(user["username"], token_version=int(user.get("token_version", 0)))
     logger.info("用户 %s 登录成功（IP %s）", req.username, get_client_ip(request))
     auditlog.record("登录成功", req.username, get_client_ip(request))
+    # 登录日志：记录成功登录，并做新 IP / 新设备异常检测
+    loginlog.record_login(
+        req.username, get_client_ip(request),
+        request.headers.get("user-agent"), "success"
+    )
     return {"token": token, "user": public}
 
 
@@ -328,6 +351,31 @@ async def logout(request: Request, user: dict = Depends(get_current_user)):
     _clear_failures(request, user["username"])
     logger.info("用户 %s 已注销（IP %s）", user["username"], get_client_ip(request))
     auditlog.record("退出登录", user["username"], get_client_ip(request))
+    return {"ok": True}
+
+
+class VerifyPasswordRequest(BaseModel):
+    password: str = Field(default="", min_length=1, max_length=128)
+
+
+@router.post("/verify-password")
+async def verify_password_endpoint(
+    req: VerifyPasswordRequest,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    """高风险操作二次确认：校验当前登录用户的面板密码。
+
+    仅校验、不改变任何状态；错误时计入登录限流，防止被当作爆破入口。
+    """
+    # 复用登录限流：连续失败锁定，防止密码被高频试探
+    _check_throttle(request, user["username"])
+    full = _get_user(user["username"])
+    if full is None or not verify_password(req.password, full["password"]):
+        _record_failure(request, user["username"])
+        raise HTTPException(status_code=400, detail="密码错误")
+    _clear_failures(request, user["username"])
+    auditlog.record("二次确认通过", user["username"], get_client_ip(request))
     return {"ok": True}
 
 

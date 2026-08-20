@@ -97,6 +97,19 @@
         </div>
       </div>
     </div>
+
+    <!-- 高风险操作二次确认：删除用户需输入面板密码 -->
+    <ConfirmDialog
+      :show="confirm.show"
+      mode="password"
+      :title="t('confirmDanger.deleteUserTitle')"
+      :message="t('confirmDanger.deleteUserMsg', { username: confirm.username })"
+      :input-label="t('confirmDanger.inputPwdLabel')"
+      :placeholder="t('confirmDanger.inputPwdPlaceholder')"
+      :confirm-label="$t('common.delete')"
+      @confirm="doDelete"
+      @cancel="confirm.show = false"
+    />
   </div>
 </template>
 
@@ -105,6 +118,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { authApi } from '../../api'
 import { auth } from '../../store/auth'
+import ConfirmDialog from '../ConfirmDialog.vue'
 
 const { t } = useI18n()
 const users = ref([])
@@ -117,6 +131,8 @@ const form = ref({ username: '', password: '', role: 'user' })
 const saving = ref(false)
 const modalError = ref('')
 const contextMenu = ref({ show: false, x: 0, y: 0, item: null })
+// 高风险操作二次确认：记录待删除用户
+const confirm = ref({ show: false, username: '' })
 let timer = null
 
 const currentUser = auth.user?.username
@@ -198,11 +214,18 @@ async function toggleRole(u) {
   }
 }
 
-async function del(u) {
+function del(u) {
   if (u.username === currentUser) { alert(t('users.cannotDeleteSelf')); return }
-  if (!confirm(t('users.confirmDelete', { username: u.username }))) return
+  // 高风险操作：删除用户需输入面板密码确认
+  confirm.value = { show: true, username: u.username }
+}
+
+async function doDelete() {
+  const username = confirm.value.username
+  confirm.value.show = false
+  if (!username) return
   try {
-    await authApi.deleteUser(u.username)
+    await authApi.deleteUser(username)
     await refresh()
   } catch (e) {
     alert(e?.response?.data?.detail || t('users.deleteFailed'))

@@ -1268,6 +1268,13 @@ export default {
       terminal: '終端機',
       backup: '備份中心',
       notify: '通知中心',
+      uptime: '站點監控',
+      certcheck: '證書到期',
+      panelbackup: '面板備份',
+      loginlog: '登入日誌',
+      svcmonitor: '服務監控',
+      sshkeys: 'SSH 密鑰',
+      healthcheck: '系統體檢',
     },
     winTitle: {
       users: '帳號管理',

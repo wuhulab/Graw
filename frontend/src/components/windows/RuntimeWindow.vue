@@ -58,6 +58,19 @@
       </table>
     </div>
   </div>
+
+  <!-- 高风险操作二次确认：删除运行环境需输入面板密码 -->
+  <ConfirmDialog
+    :show="confirm.show"
+    mode="password"
+    :title="t('confirmDanger.deleteRuntimeTitle')"
+    :message="t('confirmDanger.deleteRuntimeMsg', { name: confirm.target?.name })"
+    :input-label="t('confirmDanger.inputPwdLabel')"
+    :placeholder="t('confirmDanger.inputPwdPlaceholder')"
+    :confirm-label="$t('common.delete')"
+    @confirm="confirmDelete"
+    @cancel="confirm.show = false"
+  />
 </template>
 
 <script setup>
@@ -65,6 +78,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { runtimeApi } from '../../api'
 import { Plus, RefreshCw, Play, Square, RotateCw, Trash2 } from 'lucide-vue-next'
+import ConfirmDialog from '../ConfirmDialog.vue'
 
 const { t } = useI18n()
 const emit = defineEmits(['close', 'openRuntimeCreate'])
@@ -74,6 +88,8 @@ const templates = ref([])
 const createMenuOpen = ref(false)
 const menuX = ref(0)
 const menuY = ref(0)
+// 高风险操作二次确认状态（删除运行环境需输入面板密码）
+const confirm = ref({ show: false, target: null })
 const count = computed(() => runtimes.value.length)
 
 let timer = null
@@ -150,8 +166,16 @@ async function act(r, action) {
   }
 }
 
-async function remove(r) {
-  if (!confirm(t('runtime.confirmDelete', { name: r.name }))) return
+// 点击删除：弹出高风险操作二次确认（输入面板密码），不直接删除
+function remove(r) {
+  confirm.value = { show: true, target: r }
+}
+
+// 面板密码校验通过后执行真正的删除
+async function confirmDelete() {
+  const r = confirm.value.target
+  confirm.value.show = false
+  if (!r) return
   try {
     await runtimeApi.delete(r.id)
     await load()

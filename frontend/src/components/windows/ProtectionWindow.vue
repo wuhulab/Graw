@@ -210,6 +210,19 @@
         </div>
       </div>
     </div>
+
+    <!-- 高风险操作二次确认：删除防护备份需输入面板密码 -->
+    <ConfirmDialog
+      :show="confirm.show"
+      mode="password"
+      :title="confirm.title"
+      :message="confirm.message"
+      :input-label="t('confirmDanger.inputPwdLabel')"
+      :placeholder="t('confirmDanger.inputPwdPlaceholder')"
+      :confirm-label="$t('common.delete')"
+      @confirm="doConfirm"
+      @cancel="confirm.show = false"
+    />
   </div>
 </template>
 
@@ -220,6 +233,7 @@ import { protectionApi } from '../../api'
 import {
   HardDrive, DatabaseBackup, BellRing, ShieldCheck, OctagonAlert, FolderOpen
 } from 'lucide-vue-next'
+import ConfirmDialog from '../ConfirmDialog.vue'
 
 const { t } = useI18n()
 const emit = defineEmits(['openFiles'])
@@ -255,6 +269,8 @@ const ignoreTarget = ref(null)
 const ignoreAck = ref(false)
 const ignoring = ref(false)
 const ignorePermanent = ref(false)
+// 高风险操作二次确认状态（删除防护备份）
+const confirm = ref({ show: false, title: '', message: '', action: null })
 
 // 右键菜单
 const ctxMenu = ref({ show: false, x: 0, y: 0, items: [] })
@@ -395,7 +411,7 @@ async function doMap() {
 
 // ---------- 加入备份 ----------
 async function addBackup(f) {
-  if (!confirm(t('protection.confirmAddBackup', { path: f.path }))) return
+  if (!window.confirm(t('protection.confirmAddBackup', { path: f.path }))) return
   try {
     const r = await protectionApi.addBackup(f.path)
     alert(r.already ? t('protection.alreadyInBackup') : t('protection.addedToBackup'))
@@ -408,7 +424,7 @@ async function addBackup(f) {
 async function batchAddBackup() {
   const paths = selectedDbPaths.value
   if (paths.length === 0) return
-  if (!confirm(t('protection.confirmBatchAdd', { count: paths.length }))) return
+  if (!window.confirm(t('protection.confirmBatchAdd', { count: paths.length }))) return
   try {
     const r = await protectionApi.batchBackup(paths)
     const ok = r.results.filter(x => x.ok).length
@@ -424,7 +440,7 @@ async function batchAddBackup() {
 async function batchAddBackupWith(extraPath) {
   // 右键"批量加入备份"：把右键项 + 已选项合并去重
   const paths = [...new Set([extraPath, ...selectedDbPaths.value])]
-  if (!confirm(t('protection.confirmBatchAdd', { count: paths.length }))) return
+  if (!window.confirm(t('protection.confirmBatchAdd', { count: paths.length }))) return
   try {
     const r = await protectionApi.batchBackup(paths)
     const ok = r.results.filter(x => x.ok).length
@@ -437,10 +453,23 @@ async function batchAddBackupWith(extraPath) {
   }
 }
 
-async function removeBackup(path) {
-  if (!confirm(t('protection.confirmRemoveBackup', { path }))) return
+function removeBackup(path) {
+  // 高风险操作：删除防护备份需输入面板密码确认
+  confirm.value = {
+    show: true,
+    title: t('confirmDanger.deleteProtectionBackupTitle'),
+    message: t('confirmDanger.deleteProtectionBackupMsg', { path }),
+    action: { type: 'backup', path }
+  }
+}
+
+// ConfirmDialog 密码校验通过后执行真正的删除逻辑
+async function doConfirm() {
+  const a = confirm.value.action
+  confirm.value.show = false
+  if (!a) return
   try {
-    await protectionApi.removeBackup(path)
+    await protectionApi.removeBackup(a.path)
     await loadDb()
   } catch (e) {
     alert(t('protection.removeBackupFailed', { error: e.response?.data?.detail || e.message }))
@@ -479,7 +508,7 @@ async function doIgnore() {
 }
 
 async function restoreIgnore(kind, key) {
-  if (!confirm(t('protection.confirmRestore'))) return
+  if (!window.confirm(t('protection.confirmRestore'))) return
   try {
     await protectionApi.unignore(kind, key)
     await loadAll()

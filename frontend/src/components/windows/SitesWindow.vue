@@ -145,6 +145,20 @@
         </div>
       </div>
     </div>
+
+    <!-- 高风险操作二次确认：删除站点需输入站点名 -->
+    <ConfirmDialog
+      :show="confirm.show"
+      mode="text"
+      :title="t('confirmDanger.deleteSiteTitle')"
+      :message="t('confirmDanger.deleteSiteMsg', { name: confirm.site?.name })"
+      :required-text="confirm.site?.name || ''"
+      :input-label="t('confirmDanger.inputNameLabel')"
+      :placeholder="t('confirmDanger.inputNamePlaceholder', { name: confirm.site?.name })"
+      :confirm-label="t('common.delete')"
+      @confirm="doDeleteSite"
+      @cancel="confirm.show = false"
+    />
   </div>
 </template>
 
@@ -152,6 +166,7 @@
 import { ref, onMounted, markRaw, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { sitesApi } from '../../api'
+import ConfirmDialog from '../ConfirmDialog.vue'
 import {
   Plus, Power, Settings, FileText, Trash2,
   Globe, Share2, Network, Layers
@@ -181,6 +196,8 @@ const showConfig = ref(false)
 const editing = ref(false)
 const configText = ref('')
 const configSite = ref(null)
+// 高风险操作二次确认状态：记录待删除的站点
+const confirm = ref({ show: false, site: null })
 
 const emptyForm = (type) => ({
   name: '',
@@ -289,8 +306,15 @@ async function viewConfig(s) {
   showConfig.value = true
 }
 
-async function remove(s) {
-  if (!confirm(t('sites.confirmDelete', { name: s.name }))) return
+function remove(s) {
+  // 高风险操作二次确认：弹出对话框，要求输入站点名后才能删除
+  confirm.value = { show: true, site: s }
+}
+
+async function doDeleteSite() {
+  const s = confirm.value.site
+  confirm.value.show = false
+  if (!s) return
   await sitesApi.delete(s.id)
   await load()
 }

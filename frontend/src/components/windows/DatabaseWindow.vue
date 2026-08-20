@@ -125,6 +125,20 @@
         </div>
       </div>
     </div>
+
+    <!-- 高风险操作二次确认：删除连接需密码；删除数据库需输入库名 -->
+    <ConfirmDialog
+      :show="confirm.show"
+      :mode="confirm.mode"
+      :title="confirm.title"
+      :message="confirm.message"
+      :required-text="confirm.requiredText"
+      :input-label="confirm.inputLabel"
+      :placeholder="confirm.placeholder"
+      :confirm-label="$t('common.delete')"
+      @confirm="doConfirm"
+      @cancel="confirm.show = false"
+    />
   </div>
 </template>
 
@@ -134,6 +148,7 @@ import { useI18n } from 'vue-i18n'
 import { databasesApi } from '../../api'
 import { dbVersion } from '../../store/databases'
 import { Plus } from 'lucide-vue-next'
+import ConfirmDialog from '../ConfirmDialog.vue'
 
 const { t } = useI18n()
 
@@ -159,6 +174,8 @@ const newDbName = ref('')
 // SQLite 库内数据表列表与文件大小（仅 sqlite 连接使用）
 const sqliteTables = ref([])
 const sqliteFileSize = ref(0)
+// 高风险操作二次确认状态
+const confirm = ref({ show: false, mode: 'password', title: '', message: '', requiredText: '', inputLabel: '', placeholder: '', action: null })
 
 // 类型展示名映射（连接卡片标签 / 管理标题）
 const TYPE_LABELS = { mysql: 'MySQL', redis: 'Redis', postgresql: 'PostgreSQL', mongodb: 'MongoDB', sqlite: 'SQLite' }
@@ -174,10 +191,31 @@ async function load() {
   }
 }
 
-async function removeConn(c) {
-  if (!confirm(t('database.confirmDeleteConn'))) return
-  await databasesApi.deleteConn(c.id)
-  await load()
+function removeConn(c) {
+  // 高风险操作：删除连接需输入面板密码确认
+  confirm.value = {
+    show: true,
+    mode: 'password',
+    title: t('confirmDanger.deleteDbTitle'),
+    message: t('confirmDanger.deleteDbMsg', { name: c.name }),
+    requiredText: '',
+    inputLabel: t('confirmDanger.inputPwdLabel'),
+    placeholder: t('confirmDanger.inputPwdPlaceholder'),
+    action: { type: 'conn', conn: c }
+  }
+}
+
+async function doConfirm() {
+  const a = confirm.value.action
+  confirm.value.show = false
+  if (!a) return
+  if (a.type === 'conn') {
+    await databasesApi.deleteConn(a.conn.id)
+    await load()
+  } else if (a.type === 'db') {
+    await databasesApi.deleteDB(manageConn.value.id, a.name)
+    if (manageConn.value) openManage(manageConn.value)
+  }
 }
 
 async function testConn(c) {
@@ -236,10 +274,18 @@ async function doCreateDB() {
   if (manageConn.value) openManage(manageConn.value)
 }
 
-async function dropDB(name) {
-  if (!confirm(t('database.confirmDropDB', { name }))) return
-  await databasesApi.deleteDB(manageConn.value.id, name)
-  if (manageConn.value) openManage(manageConn.value)
+function dropDB(name) {
+  // 高风险操作：删除数据库需输入数据库名称确认
+  confirm.value = {
+    show: true,
+    mode: 'text',
+    title: t('confirmDanger.deleteDbTitle'),
+    message: t('confirmDanger.deleteDbMsg', { name }),
+    requiredText: name,
+    inputLabel: t('confirmDanger.inputNameLabel'),
+    placeholder: t('confirmDanger.inputDbPlaceholder', { name }),
+    action: { type: 'db', name }
+  }
 }
 
 // 添加/编辑连接在独立窗口完成后通过共享信号触发刷新

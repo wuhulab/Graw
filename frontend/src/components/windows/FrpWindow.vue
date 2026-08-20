@@ -294,8 +294,16 @@ async function toggleProxy(p) {
   }
 }
 
-async function delProxy(p) {
-  if (!confirm(t('frp.confirmDeleteProxy'))) return
+// 删除代理：高风险操作，先弹出密码二次确认框
+function delProxy(p) {
+  confirm.value = { show: true, target: p }
+}
+
+// 面板密码校验通过后真正执行删除
+async function doDeleteProxy() {
+  const p = confirm.value.target
+  confirm.value.show = false
+  if (!p) return
   try {
     await frpApi.deleteProxy(p.id)
     const cfg = await frpApi.config()

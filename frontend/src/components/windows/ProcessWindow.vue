@@ -43,6 +43,19 @@
         <div class="menu-item" @click="menuForceKill">{{ $t('process.forceKill') }}</div>
       </div>
     </Teleport>
+
+    <!-- 高风险操作二次确认：结束进程需输入面板密码 -->
+    <ConfirmDialog
+      :show="confirm.show"
+      mode="password"
+      :title="t('confirmDanger.deleteProcessTitle')"
+      :message="t('confirmDanger.deleteProcessMsg', { pid: confirm.pid })"
+      :input-label="t('confirmDanger.inputPwdLabel')"
+      :placeholder="t('confirmDanger.inputPwdPlaceholder')"
+      :confirm-label="confirm.force ? $t('process.forceKill') : $t('process.kill')"
+      @confirm="doKill"
+      @cancel="confirm.show = false"
+    />
   </div>
 </template>
 
@@ -50,12 +63,15 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { processApi, formatBytes } from '../../api'
+import ConfirmDialog from '../ConfirmDialog.vue'
 
 const { t } = useI18n()
 const list = ref([])
 const sortBy = ref('cpu')
 const filter = ref('')
 const loading = ref(false)
+// 高风险操作二次确认状态
+const confirm = ref({ show: false, pid: 0, force: false })
 const contextMenu = ref({ show: false, x: 0, y: 0, item: null })
 let timer = null
 
@@ -96,8 +112,16 @@ function menuForceKill() {
   if (p) kill(p.pid, true)
 }
 
-async function kill(pid, force) {
-  if (!confirm(t('process.confirmKill', { force: force ? t('process.force') : '', pid }))) return
+function kill(pid, force) {
+  // 高风险操作：结束进程需输入面板密码确认
+  confirm.value = { show: true, pid, force }
+}
+
+async function doKill() {
+  const pid = confirm.value.pid
+  const force = confirm.value.force
+  confirm.value.show = false
+  if (!pid) return
   try {
     await processApi.kill(pid, force)
     await refresh()

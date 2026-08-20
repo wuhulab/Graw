@@ -298,6 +298,14 @@ def _nginx_site_config(site: dict) -> str:
             lines.append(f"        proxy_set_header X-Real-IP $remote_addr;")
             lines.append(f"    }}")
         else:
+            # 伪静态规则：用户通过「伪静态规则库」应用的模板 id（白名单）
+            # 若存在，用模板片段替代默认 location /（try_files 直出）
+            rewrite_id = site.get("rewrite", "") or ""
+            rewrite_frag = ""
+            if rewrite_id:
+                # 仅在规则 id 命中白名单模板时注入，绝不允许任意文本进配置
+                from app.routers.rewrite import get_nginx_fragment
+                rewrite_frag = get_nginx_fragment(rewrite_id)
             for loc in locations:
                 path = _conf_token(loc.get("path") or "/", "/")
                 loc_root = _conf_token(loc.get("root") or root_dir, root_dir)
@@ -306,9 +314,13 @@ def _nginx_site_config(site: dict) -> str:
                 lines.append(f"        try_files $uri $uri/ =404;")
                 lines.append(f"    }}")
             if not locations:
-                lines.append(f"    location / {{")
-                lines.append(f"        try_files $uri $uri/ =404;")
-                lines.append(f"    }}")
+                if rewrite_frag:
+                    # 伪静态片段本身是完整的 location 块，注入时统一加缩进
+                    lines.extend("    " + ln if ln.strip() else ln for ln in rewrite_frag.split("\n"))
+                else:
+                    lines.append(f"    location / {{")
+                    lines.append(f"        try_files $uri $uri/ =404;")
+                    lines.append(f"    }}")
 
     lines.append("}")
     return "\n".join(lines)

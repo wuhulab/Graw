@@ -90,7 +90,9 @@ export const authApi = {
   me2faStatus: () => api.get('/auth/2fa/status').then(r => r.data),
   twoFaSetup: () => api.post('/auth/2fa/setup').then(r => r.data),
   twoFaEnable: (code) => api.post('/auth/2fa/enable', { code }).then(r => r.data),
-  twoFaDisable: (code) => api.post('/auth/2fa/disable', { code }).then(r => r.data)
+  twoFaDisable: (code) => api.post('/auth/2fa/disable', { code }).then(r => r.data),
+  // 高风险操作二次确认：校验当前登录用户的面板密码
+  verifyPassword: (password) => api.post('/auth/verify-password', { password }).then(r => r.data)
 }
 
 export const systemApi = {
@@ -99,7 +101,11 @@ export const systemApi = {
   diskio: () => api.get('/system/diskio').then(r => r.data),
   info: () => api.get('/system/info').then(r => r.data),
   // 安装完整性检测：确认是否按 README 的完整宿主机模式安装
-  installCheck: () => api.get('/system/install-check').then(r => r.data)
+  installCheck: () => api.get('/system/install-check').then(r => r.data),
+  // 历史监控回放：状态查询 / 区间查询 / 清空
+  metricsStatus: () => api.get('/system/metrics/status').then(r => r.data),
+  metricsHistory: (params) => api.get('/system/metrics/history', { params }).then(r => r.data),
+  metricsClear: () => api.delete('/system/metrics/clear').then(r => r.data)
 }
 
 export const dockerApi = {
@@ -129,6 +135,10 @@ export const dockerApi = {
   composeAction: (name, action) => dockerHttp.post(`/docker/compose/${encodeURIComponent(name)}/action`, { action }).then(r => r.data),
   // 镜像删除
   removeImage: (id) => dockerHttp.post(`/docker/images/${id}/remove`).then(r => r.data),
+  // 镜像管理：拉取 / 打标签 / 构建
+  pullImage: (name) => dockerHttp.post('/docker/images/pull', { name }).then(r => r.data),
+  tagImage: (id, repo, tag = 'latest') => dockerHttp.post(`/docker/images/${id}/tag`, { repo, tag }).then(r => r.data),
+  buildImage: (body) => dockerHttp.post('/docker/images/build', body).then(r => r.data),
   // 网络
   networks: () => dockerHttp.get('/docker/networks').then(r => r.data),
   removeNetwork: (name) => dockerHttp.post(`/docker/networks/${encodeURIComponent(name)}/remove`).then(r => r.data)
@@ -196,7 +206,8 @@ export const firewallApi = {
   delPort: (id) => api.delete(`/firewall/port/${id}`).then(r => r.data),
   addIp: (body) => api.post('/firewall/ip', body).then(r => r.data),
   delIp: (id) => api.delete(`/firewall/ip/${id}`).then(r => r.data),
-  toggle: (enabled) => api.post('/firewall/toggle', { enabled }).then(r => r.data)
+  toggle: (enabled) => api.post('/firewall/toggle', { enabled }).then(r => r.data),
+  clear: () => api.post('/firewall/clear').then(r => r.data)
 }
 
 export const sslApi = {
@@ -368,6 +379,83 @@ export const notifyApi = {
   testAlert: () => api.post('/notify/test-alert').then(r => r.data),
   logs: (limit = 100) => api.get('/notify/logs', { params: { limit } }).then(r => r.data),
   clearLogs: () => api.post('/notify/logs/clear').then(r => r.data)
+}
+
+// 站点可用性检测：监控网站/服务 HTTP 可用性，宕机/恢复推送通知（管理员）
+export const uptimeApi = {
+  status: () => api.get('/uptime/status').then(r => r.data),
+  items: () => api.get('/uptime/items').then(r => r.data),
+  createItem: (body) => api.post('/uptime/items', body).then(r => r.data),
+  updateItem: (id, body) => api.put(`/uptime/items/${encodeURIComponent(id)}`, body).then(r => r.data),
+  deleteItem: (id) => api.delete(`/uptime/items/${encodeURIComponent(id)}`).then(r => r.data),
+  test: (id) => api.post(`/uptime/items/${encodeURIComponent(id)}/test`, {}, { timeout: 60000 }).then(r => r.data)
+}
+
+// 证书到期提醒：检查面板 SSL 证书剩余天数，临期/过期推送通知（管理员）
+export const certcheckApi = {
+  status: () => api.get('/certcheck/status').then(r => r.data),
+  certs: () => api.get('/certcheck/certs').then(r => r.data),
+  test: () => api.post('/certcheck/test').then(r => r.data),
+  updateConfig: (body) => api.put('/certcheck/config', body).then(r => r.data)
+}
+
+// 面板自身备份：导出/导入 data/ 全部配置归档（迁移与容灾，管理员）
+export const panelbackupApi = {
+  list: () => api.get('/panelbackup/list').then(r => r.data),
+  export: () => api.post('/panelbackup/export', {}, { timeout: 120000 }).then(r => r.data),
+  download: (name) => api.get(`/panelbackup/download/${encodeURIComponent(name)}`, { responseType: 'blob' }),
+  delete: (name) => api.delete(`/panelbackup/${encodeURIComponent(name)}`).then(r => r.data),
+  import: (formData) => api.post('/panelbackup/import', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000 }).then(r => r.data)
+}
+
+export const loginlogApi = {
+  status: () => api.get('/loginlog/status').then(r => r.data),
+  list: (params) => api.get('/loginlog/list', { params }).then(r => r.data),
+  mine: (limit = 100) => api.get('/loginlog/mine', { params: { limit } }).then(r => r.data),
+  clear: () => api.post('/loginlog/clear').then(r => r.data),
+  updateConfig: (alert_enabled) => api.put('/loginlog/config', { alert_enabled }).then(r => r.data),
+  testAlert: () => api.post('/loginlog/test-alert').then(r => r.data)
+}
+
+// 网站访问统计：解析 nginx 访问日志，输出 PV/UV/IP/来源/热门页面
+export const webstatsApi = {
+  // 可用访问日志路径
+  logs: () => api.get('/webstats/logs').then(r => r.data),
+  // 分析日志（log_path 为空则自动探测；days 统计天数；domain 按域名过滤）
+  analyze: (params) => api.get('/webstats/analyze', { params }).then(r => r.data)
+}
+
+// 伪静态规则库：常用框架一键伪静态
+export const rewriteApi = {
+  templates: () => api.get('/rewrite/templates').then(r => r.data),
+  sites: () => api.get('/rewrite/sites').then(r => r.data),
+  apply: (site_id, template_id) => api.post('/rewrite/apply', { site_id, template_id }).then(r => r.data),
+  clear: (site_id) => api.post('/rewrite/clear', { site_id }).then(r => r.data)
+}
+
+// 服务/端口监控：自定义监控项（端口/进程/systemd 服务）状态看板
+export const svcmonitorApi = {
+  items: () => api.get('/svcmonitor/items').then(r => r.data),
+  createItem: (body) => api.post('/svcmonitor/items', body).then(r => r.data),
+  updateItem: (id, body) => api.put(`/svcmonitor/items/${id}`, body).then(r => r.data),
+  deleteItem: (id) => api.delete(`/svcmonitor/items/${id}`).then(r => r.data),
+  test: (id) => api.post(`/svcmonitor/items/${id}/test`).then(r => r.data)
+}
+
+// SSH 密钥管理：生成/导入密钥并一键部署到节点
+export const sshkeysApi = {
+  list: () => api.get('/sshkeys').then(r => r.data),
+  nodes: () => api.get('/sshkeys/nodes').then(r => r.data),
+  create: (body) => api.post('/sshkeys', body).then(r => r.data),
+  importKey: (body) => api.post('/sshkeys/import', body).then(r => r.data),
+  publicKey: (id) => api.get(`/sshkeys/${id}/public`).then(r => r.data),
+  deploy: (id, nodeId) => api.post(`/sshkeys/${id}/deploy`, { node_id: nodeId }).then(r => r.data),
+  delete: (id) => api.delete(`/sshkeys/${id}`).then(r => r.data)
+}
+
+// 一键系统体检：弱密码/异常登录/危险端口/可疑任务/安全配置分级报告
+export const healthcheckApi = {
+  run: () => api.get('/healthcheck/run').then(r => r.data)
 }
 
 export const appStoreApi = {

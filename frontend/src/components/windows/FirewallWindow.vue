@@ -5,6 +5,7 @@
       <button class="btn" @click="toggle">{{ $t(enabled ? 'firewall.disable' : 'firewall.enable') }}</button>
       <button class="btn primary" @click="showPortModal=true">{{ $t('firewall.addPortRule') }}</button>
       <button class="btn primary" @click="showIpModal=true">{{ $t('firewall.addIpRule') }}</button>
+      <button class="btn danger-text" :disabled="portRules.length + ipRules.length === 0" @click="doClear">{{ $t('firewall.clearAll') }}</button>
       <span class="hint">{{ $t('firewall.platform', { platform }) }}</span>
     </div>
 
@@ -71,6 +72,19 @@
         </div>
       </div>
     </div>
+
+    <!-- 高风险操作二次确认：删除防火墙规则需输入面板密码 -->
+    <ConfirmDialog
+      :show="confirm.show"
+      mode="password"
+      :title="confirm.title"
+      :message="confirm.message"
+      :input-label="t('confirmDanger.inputPwdLabel')"
+      :placeholder="t('confirmDanger.inputPwdPlaceholder')"
+      :confirm-label="$t('common.delete')"
+      @confirm="doConfirm"
+      @cancel="confirm.show = false"
+    />
   </div>
 </template>
 
@@ -79,6 +93,7 @@ import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { firewallApi } from '../../api'
 import { Trash2 } from 'lucide-vue-next'
+import ConfirmDialog from '../ConfirmDialog.vue'
 
 const { t } = useI18n()
 
@@ -90,6 +105,8 @@ const showPortModal = ref(false)
 const showIpModal = ref(false)
 const portForm = ref({ port: 80, protocol: 'tcp', action: 'allow', comment: '' })
 const ipForm = ref({ ip: '', action: 'allow', comment: '' })
+// 高风险操作二次确认状态
+const confirm = ref({ show: false, title: '', message: '', action: null })
 
 async function load() {
   const s = await firewallApi.status()
@@ -111,10 +128,39 @@ async function addPort() {
   await load()
 }
 
-async function delPort(id) {
-  if (!confirm(t('firewall.confirmDeletePort'))) return
-  await firewallApi.delPort(id)
+function delPort(id) {
+  const rule = portRules.value.find(r => r.id === id)
+  // 高风险操作：删除端口规则需输入面板密码确认
+  confirm.value = {
+    show: true,
+    title: t('confirmDanger.deleteFirewallPortTitle'),
+    message: t('confirmDanger.deleteFirewallPortMsg', { port: rule?.port ?? id }),
+    action: { type: 'port', id }
+  }
+}
+
+async function doConfirm() {
+  const a = confirm.value.action
+  confirm.value.show = false
+  if (!a) return
+  if (a.type === 'port') {
+    await firewallApi.delPort(a.id)
+  } else if (a.type === 'ip') {
+    await firewallApi.delIp(a.id)
+  } else if (a.type === 'clear') {
+    await firewallApi.clear()
+  }
   await load()
+}
+
+function doClear() {
+  // 高风险操作：清空全部防火墙规则需输入面板密码确认
+  confirm.value = {
+    show: true,
+    title: t('confirmDanger.clearFirewallTitle'),
+    message: t('confirmDanger.clearFirewallMsg'),
+    action: { type: 'clear' }
+  }
 }
 
 async function addIp() {
@@ -123,10 +169,15 @@ async function addIp() {
   await load()
 }
 
-async function delIp(id) {
-  if (!confirm(t('firewall.confirmDeleteIp'))) return
-  await firewallApi.delIp(id)
-  await load()
+function delIp(id) {
+  const rule = ipRules.value.find(r => r.id === id)
+  // 高风险操作：删除 IP 规则需输入面板密码确认
+  confirm.value = {
+    show: true,
+    title: t('confirmDanger.deleteFirewallIpTitle'),
+    message: t('confirmDanger.deleteFirewallIpMsg', { ip: rule?.ip ?? id }),
+    action: { type: 'ip', id }
+  }
 }
 
 onMounted(load)

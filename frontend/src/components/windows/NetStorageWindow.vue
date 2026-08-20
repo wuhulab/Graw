@@ -39,6 +39,20 @@
       </div>
     </div>
   </div>
+
+  <!-- 高风险操作二次确认：删除网络存储需输入面板密码 -->
+  <ConfirmDialog
+    :show="confirm.show"
+    :mode="confirm.mode"
+    :title="confirm.title"
+    :message="confirm.message"
+    :required-text="confirm.requiredText"
+    :input-label="confirm.inputLabel"
+    :placeholder="confirm.placeholder"
+    :confirm-label="$t('common.delete')"
+    @confirm="doConfirm"
+    @cancel="confirm.show = false"
+  />
 </template>
 
 <script setup>
@@ -47,6 +61,7 @@ import { useI18n } from 'vue-i18n'
 import { netstorageApi } from '../../api'
 import { nsVersion } from '../../store/netstorage'
 import { Server, Database, Folder, Cloud } from 'lucide-vue-next'
+import ConfirmDialog from '../ConfirmDialog.vue'
 
 const { t } = useI18n()
 
@@ -54,6 +69,8 @@ const conns = ref([])
 const loading = ref(false)
 const testResult = ref(null) // { id, ok, message }
 const testingId = ref(null)
+// 高风险操作二次确认状态（删除网络存储需输入面板密码）
+const confirm = ref({ show: false, mode: 'password', title: '', message: '', requiredText: '', inputLabel: '', placeholder: '', action: null })
 
 // 发射给 App.vue：打开「添加/编辑储存」独立窗口（conn 为空则新增）
 const emit = defineEmits(['openNetStorageForm', 'openNetStorageBrowse'])
@@ -100,10 +117,27 @@ async function testConn(c) {
   }
 }
 
-async function removeConn(c) {
-  if (!confirm(t('netstorage.deleteConfirm', { name: c.name }))) return
+function removeConn(c) {
+  // 高风险操作：删除网络存储需输入面板密码确认后才真正执行
+  confirm.value = {
+    show: true,
+    mode: 'password',
+    title: t('confirmDanger.deleteNetStorageTitle'),
+    message: t('confirmDanger.deleteNetStorageMsg', { name: c.name }),
+    requiredText: '',
+    inputLabel: t('confirmDanger.inputPwdLabel'),
+    placeholder: t('confirmDanger.inputPwdPlaceholder'),
+    action: { type: 'conn', conn: c }
+  }
+}
+
+// ConfirmDialog 密码校验通过后的回调：真正执行删除
+async function doConfirm() {
+  const a = confirm.value.action
+  confirm.value.show = false
+  if (!a) return
   try {
-    await netstorageApi.deleteConn(c.id)
+    await netstorageApi.deleteConn(a.conn.id)
     await load()
   } catch (e) {
     alert(t('netstorage.deleteFailed', { error: e.response?.data?.detail || e.message }))

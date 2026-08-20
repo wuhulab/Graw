@@ -1260,6 +1260,13 @@ export default {
       terminal: 'ターミナル',
       backup: 'バックアップセンター',
       notify: '通知センター',
+      uptime: 'サイト監視',
+      certcheck: '証明書の期限',
+      panelbackup: 'パネルバックアップ',
+      loginlog: 'ログインログ',
+      svcmonitor: 'サービス監視',
+      sshkeys: 'SSH 鍵',
+      healthcheck: 'システム診断',
     },
     winTitle: {
       users: 'アカウント管理',

@@ -285,12 +285,29 @@
         </div>
       </div>
     </div>
+
+    <!-- 高风险操作二次确认：清空拦截日志需输入面板密码 -->
+    <ConfirmDialog
+      :show="confirm.show"
+      mode="password"
+      title="清空拦截日志确认"
+      message="清空后所有 WAF 拦截日志将不可恢复。请输入面板密码以确认。"
+      input-label="输入面板密码确认"
+      placeholder="请输入当前面板密码"
+      confirm-label="清空"
+      @confirm="doClearLogs"
+      @cancel="confirm.show = false"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { wafApi } from '../../api'
+import ConfirmDialog from '../ConfirmDialog.vue'
+
+// 高风险操作二次确认状态（清空拦截日志需输入面板密码）
+const confirm = ref({ show: false, action: null })
 
 // ---- 页签定义 ----
 const tabs = [
@@ -485,7 +502,14 @@ async function loadLogs() {
   } catch (e) { /* 忽略 */ }
 }
 
-async function clearLogs() {
+// 清空拦截日志：高风险操作，先弹密码二次确认框
+function clearLogs() {
+  confirm.value = { show: true, action: 'clearLogs' }
+}
+
+// 面板密码校验通过后真正清空日志
+async function doClearLogs() {
+  confirm.value.show = false
   try {
     await wafApi.clearLogs()
     logs.value = []

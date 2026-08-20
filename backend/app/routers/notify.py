@@ -282,6 +282,26 @@ def _send_to_channel(channel: dict, message: str) -> None:
     sender(cfg, message)
 
 
+def push_all(message: str) -> tuple:
+    """推送到所有已启用渠道，返回 (成功数, 失败数)。
+
+    供其它模块（站点可用性检测、证书到期提醒等）复用：这些模块不管理渠道，
+    只需把告警文本交给通知中心广播即可。
+    """
+    data = _load()
+    sent = failed = 0
+    for ch in data.get("channels", []):
+        if not ch.get("enabled"):
+            continue
+        try:
+            _send_to_channel(ch, message)
+            sent += 1
+        except Exception as e:
+            failed += 1
+            logger.warning("通知渠道 %s 推送失败: %s", ch.get("name"), e)
+    return sent, failed
+
+
 # ---------------------------------------------------------------------------
 # 指标读取与监控
 # ---------------------------------------------------------------------------

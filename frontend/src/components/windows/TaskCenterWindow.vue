@@ -57,6 +57,20 @@
       </div>
     </div>
   </div>
+
+  <!-- 高风险操作二次确认：删除任务需输入面板密码 -->
+  <ConfirmDialog
+    :show="confirm.show"
+    :mode="confirm.mode"
+    :title="confirm.title"
+    :message="confirm.message"
+    :required-text="confirm.requiredText"
+    :input-label="confirm.inputLabel"
+    :placeholder="confirm.placeholder"
+    :confirm-label="$t('common.delete')"
+    @confirm="doConfirm"
+    @cancel="confirm.show = false"
+  />
 </template>
 
 <script setup>
@@ -64,6 +78,7 @@ import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { tasksApi } from '../../api'
 import { ListChecks, Trash2, RefreshCw } from 'lucide-vue-next'
+import ConfirmDialog from '../ConfirmDialog.vue'
 
 const { t } = useI18n()
 
@@ -72,6 +87,8 @@ const selected = ref(null)
 const logLines = ref([])
 const logBox = ref(null)
 const loading = ref(false)
+// 高风险操作二次确认状态（删除任务需输入面板密码）
+const confirm = ref({ show: false, mode: 'password', title: '', message: '', requiredText: '', inputLabel: '', placeholder: '', action: null })
 
 let timer = null
 
@@ -160,11 +177,28 @@ function select(t) {
   refreshLog()
 }
 
-async function removeSelected() {
+function removeSelected() {
   if (!selected.value) return
-  if (!confirm(t('taskcenter.confirmDelete', { title: selected.value.title }))) return
+  // 高风险操作：删除任务需输入面板密码确认后才真正执行（title 硬编码中文，缺失 i18n 键的回退先例）
+  confirm.value = {
+    show: true,
+    mode: 'password',
+    title: '删除任务确认',
+    message: `删除任务「${selected.value.title}」后不可恢复。\n请输入面板密码以确认。`,
+    requiredText: '',
+    inputLabel: t('confirmDanger.inputPwdLabel'),
+    placeholder: t('confirmDanger.inputPwdPlaceholder'),
+    action: { type: 'remove', id: selected.value.id }
+  }
+}
+
+// ConfirmDialog 密码校验通过后的回调：真正执行删除
+async function doConfirm() {
+  const a = confirm.value.action
+  confirm.value.show = false
+  if (!a) return
   try {
-    await tasksApi.remove(selected.value.id)
+    await tasksApi.remove(a.id)
     selected.value = null
     await refreshList()
   } catch (e) {

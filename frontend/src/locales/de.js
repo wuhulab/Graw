@@ -1260,6 +1260,13 @@ export default {
       terminal: 'Terminal',
       backup: 'Backup-Center',
       notify: 'Benachrichtigungen',
+      uptime: 'Uptime-Überwachung',
+      certcheck: 'Zertifikat-Ablauf',
+      panelbackup: 'Panel-Backup',
+      loginlog: 'Anmeldeprotokoll',
+      svcmonitor: 'Dienstüberwachung',
+      sshkeys: 'SSH-Schlüssel',
+      healthcheck: 'System-Check',
     },
     winTitle: {
       users: 'Kontoverwaltung',

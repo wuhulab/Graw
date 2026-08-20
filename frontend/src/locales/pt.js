@@ -215,6 +215,13 @@ export default {
       terminal: 'Terminal',
       backup: 'Centro de backups',
       notify: 'Central de notificações',
+      uptime: 'Monitor de sites',
+      certcheck: 'Validade do certificado',
+      panelbackup: 'Backup do painel',
+      loginlog: 'Registro de login',
+      svcmonitor: 'Monitoramento de serviços',
+      sshkeys: 'Chaves SSH',
+      healthcheck: 'Verificação do sistema',
     },
     winTitle: {
       users: 'Gerenciamento de contas',

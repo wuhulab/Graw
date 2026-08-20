@@ -214,6 +214,19 @@
         </template>
       </div>
     </Teleport>
+
+    <!-- 高风险操作二次确认：删除防篡改任务需输入面板密码 -->
+    <ConfirmDialog
+      :show="confirm.show"
+      mode="password"
+      :title="confirm.title"
+      :message="confirm.message"
+      :input-label="t('confirmDanger.inputPwdLabel')"
+      :placeholder="t('confirmDanger.inputPwdPlaceholder')"
+      :confirm-label="$t('common.delete')"
+      @confirm="doConfirm"
+      @cancel="confirm.show = false"
+    />
   </div>
 </template>
 
@@ -223,6 +236,7 @@ import { useI18n } from 'vue-i18n'
 import { ShieldAlert, ShieldCheck, History, Power, OctagonAlert } from 'lucide-vue-next'
 import { tamperApi } from '../../api'
 import { tamperState, refreshTamperStatus, enableProtection, disableForMinutes, disableManual } from '../../store/tamper'
+import ConfirmDialog from '../ConfirmDialog.vue'
 
 const { t } = useI18n()
 
@@ -275,6 +289,8 @@ const form = reactive({
 
 const showDisableConfirm = ref(false)
 const ctxMenu = ref({ show: false, x: 0, y: 0, items: [] })
+// 高风险操作二次确认状态（删除防篡改任务）
+const confirm = ref({ show: false, title: '', message: '', action: null })
 
 // 添加时可选的站点：候选且尚未配置防护
 const availableCandidates = computed(() => {
@@ -333,7 +349,7 @@ async function doEnable() {
 }
 
 async function doDisable10m() {
-  if (!confirm(t('tamper.confirmDisable10m'))) return
+  if (!window.confirm(t('tamper.confirmDisable10m'))) return
   busy.value = true
   try {
     await disableForMinutes(10)
@@ -399,11 +415,24 @@ async function doScanNow(p) {
   }
 }
 
-async function doDelete(p) {
-  if (!confirm(t('tamper.confirmDelete', { name: p.site_name || p.site_id }))) return
+function doDelete(p) {
+  // 高风险操作：删除防篡改任务需输入面板密码确认
+  confirm.value = {
+    show: true,
+    title: t('confirmDanger.deleteTamperTaskTitle'),
+    message: t('confirmDanger.deleteTamperTaskMsg', { name: p.site_name || p.site_id }),
+    action: { type: 'tamper', site_id: p.site_id }
+  }
+}
+
+// ConfirmDialog 密码校验通过后执行真正的删除逻辑
+async function doConfirm() {
+  const a = confirm.value.action
+  confirm.value.show = false
+  if (!a) return
   busy.value = true
   try {
-    await tamperApi.remove(p.site_id)
+    await tamperApi.remove(a.site_id)
     await loadAll()
   } catch (e) {
     alert(t('tamper.opFailed', { error: e.response?.data?.detail || e.message }))

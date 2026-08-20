@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query, HTTPException
 import psutil
 import platform
 import socket
@@ -10,7 +10,13 @@ from datetime import datetime
 
 from app.hostfs import host_path
 from app import node_manager
-from app.auth import get_current_user, require_non_default_password, get_current_user_ws
+from app import metrics_store
+from app.auth import (
+    get_current_user,
+    require_non_default_password,
+    require_admin,
+    get_current_user_ws,
+)
 
 router = APIRouter()
 
@@ -423,6 +429,7 @@ async def _metrics_producer():
 
     采用单生产者模式，即便同时存在多个 WS 客户端，也只做一次采集，
     避免每个客户端各自触发 psutil 采样（连接池优化）。
+    同时把采样点交给 metrics_store 持久化，供历史监控回放使用。
     """
     global _metrics_cache
     while True:
@@ -432,6 +439,8 @@ async def _metrics_producer():
         except Exception:
             # 采集失败时保留上一次缓存，避免频繁报错
             pass
+        # 落盘历史采样（记录失败不影响实时推送，见 metrics_store.record_sample）
+        metrics_store.record_sample(_metrics_cache)
         if _metrics_cache is not None:
             dead = []
             payload = {"type": "metrics", "data": _metrics_cache}
@@ -446,29 +455,50 @@ async def _metrics_producer():
 
 
 _producer_task: Optional[asyncio.Task] = None
+_flush_task: Optional[asyncio.Task] = None
+
+
+async def _metrics_flusher():
+    """后台落盘协程：定期把内存缓冲的历史采样写入磁盘。"""
+    while True:
+        await asyncio.sleep(metrics_store.SAMPLE_INTERVAL)
+        try:
+            await asyncio.to_thread(metrics_store.flush)
+        except Exception:
+            # 落盘异常不影响实时采集主循环
+            pass
 
 
 async def start_metrics_producer():
     """在应用启动时预热一次并启动后台采集协程。重复调用是安全的。"""
-    global _producer_task, _metrics_cache
+    global _producer_task, _flush_task, _metrics_cache
     try:
         _metrics_cache = await asyncio.to_thread(_collect_sync)
     except Exception:
         pass
     if _producer_task is None or _producer_task.done():
         _producer_task = asyncio.create_task(_metrics_producer())
+    if _flush_task is None or _flush_task.done():
+        _flush_task = asyncio.create_task(_metrics_flusher())
 
 
 async def stop_metrics_producer():
-    """停止后台采集协程（关闭连接）。"""
-    global _producer_task
-    if _producer_task is not None:
-        _producer_task.cancel()
-        try:
-            await _producer_task
-        except asyncio.CancelledError:
-            pass
-        _producer_task = None
+    """停止后台采集/落盘协程（关闭连接），并清空剩余缓冲。"""
+    global _producer_task, _flush_task
+    for task in (_producer_task, _flush_task):
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+    _producer_task = None
+    _flush_task = None
+    # 进程退出前把残留采样落盘，避免丢失最近一个周期
+    try:
+        await asyncio.to_thread(metrics_store.flush)
+    except Exception:
+        pass
 
 
 @router.websocket("/ws")
@@ -506,3 +536,40 @@ async def system_ws(websocket: WebSocket, user: Optional[dict] = Depends(get_cur
             await websocket.close()
         except Exception:
             pass
+
+
+# ---------------------------------------------------------------------------
+# 历史监控回放：查询持久化的指标采样（登录即可查看）
+# ---------------------------------------------------------------------------
+@router.get("/metrics/status", dependencies=_PROTECTED)
+async def metrics_status():
+    """返回历史数据概况（保留天数、可用文件、最早/最新采样时间）。"""
+    return metrics_store.status()
+
+
+@router.get("/metrics/history", dependencies=_PROTECTED)
+async def metrics_history(
+    start: float = Query(default=0, description="起始 Unix 时间戳（秒）"),
+    end: float = Query(default=0, description="结束 Unix 时间戳（秒）"),
+    bucket: int = Query(default=0, ge=0, le=86400, description="聚合桶大小（秒），0 表示原始采样"),
+):
+    """查询指定时间范围的指标历史。
+
+    不传 start/end 时默认取最近 1 小时；end 缺省取当前时间。
+    """
+    now = time.time()
+    if not start:
+        start = now - 3600
+    if not end:
+        end = now
+    # 数值校验：防止异常大/负值造成恶意查询开销
+    if start < 0 or end < 0 or end - start > 365 * 86400:
+        raise HTTPException(status_code=400, detail="时间范围非法")
+    return metrics_store.history(start, end, bucket or None)
+
+
+@router.delete("/metrics/clear", dependencies=[Depends(require_admin)])
+async def metrics_clear():
+    """清空全部历史监控采样（管理员操作）。"""
+    metrics_store.clear()
+    return {"ok": True}

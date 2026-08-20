@@ -253,3 +253,23 @@ async def toggle_firewall(body: dict):
         # Best effort: flush INPUT chain to disable (not safe); rely on JSON state for display
         pass
     return {"enabled": enabled}
+
+
+@router.post("/clear")
+async def clear_firewall():
+    """清空全部防火墙规则（高风险操作，前端需二次确认）。
+
+    逐条移除已登记规则对应的系统级规则后清空配置，避免残留孤儿规则。
+    """
+    data = _load_fw()
+    removed = 0
+    for rule in data.get("port_rules", []):
+        _del_port_rule(rule)
+        removed += 1
+    for rule in data.get("ip_rules", []):
+        _del_ip_rule(rule)
+        removed += 1
+    data["port_rules"] = []
+    data["ip_rules"] = []
+    _save_fw(data)
+    return {"ok": True, "removed": removed}

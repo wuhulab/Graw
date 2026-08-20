@@ -123,6 +123,19 @@
         </div>
       </div>
     </div>
+
+    <!-- 高风险操作二次确认：删除计划任务需输入面板密码 -->
+    <ConfirmDialog
+      :show="confirm.show"
+      mode="password"
+      title="删除计划任务确认"
+      :message="`删除计划任务「${confirm.target?.name || ''}」后无法恢复。\n请输入面板密码以确认。`"
+      input-label="输入面板密码确认"
+      placeholder="请输入当前面板密码"
+      confirm-label="删除"
+      @confirm="doRemove"
+      @cancel="confirm.show = false"
+    />
   </div>
 </template>
 
@@ -131,11 +144,14 @@ import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { cronApi } from '../../api'
 import { Plus, Play, Power, Trash2, ChevronDown } from 'lucide-vue-next'
+import ConfirmDialog from '../ConfirmDialog.vue'
 
 const { t } = useI18n()
 
 const tasks = ref([])
 const platform = ref('')
+// 高风险操作二次确认状态（删除计划任务需输入面板密码）
+const confirm = ref({ show: false, target: null })
 const showMenu = ref(false)
 const showRegular = ref(false)
 const showStandard = ref(false)
@@ -280,8 +296,16 @@ async function toggleEnable(task) {
   }
 }
 
-async function remove(task) {
-  if (!confirm(t('cron.confirmDelete'))) return
+// 删除计划任务：高风险操作，先弹出密码二次确认框
+function remove(task) {
+  confirm.value = { show: true, target: task }
+}
+
+// 面板密码校验通过后真正执行删除
+async function doRemove() {
+  const task = confirm.value.target
+  confirm.value.show = false
+  if (!task) return
   try {
     await cronApi.delete(task.id)
     await load()

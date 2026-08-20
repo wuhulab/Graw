@@ -92,10 +92,22 @@ async function doLE() {
   await load()
 }
 
-async function remove(id) {
-  if (!confirm(t('ssl.confirmDelete'))) return
-  await sslApi.delete(id)
-  await load()
+// 删除证书：高风险操作，先弹出密码二次确认框
+function remove(c) {
+  confirm.value = { show: true, target: c }
+}
+
+// 面板密码校验通过后真正执行删除
+async function doRemove() {
+  const c = confirm.value.target
+  confirm.value.show = false
+  if (!c) return
+  try {
+    await sslApi.delete(c.id)
+    await load()
+  } catch (e) {
+    alert(e?.response?.data?.detail || e.message || t('common.error'))
+  }
 }
 
 onMounted(load)

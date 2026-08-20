@@ -1260,6 +1260,13 @@ export default {
       terminal: '터미널',
       backup: '백업 센터',
       notify: '알림 센터',
+      uptime: '사이트 모니터링',
+      certcheck: '인증서 만료',
+      panelbackup: '패널 백업',
+      loginlog: '로그인 기록',
+      svcmonitor: '서비스 모니터링',
+      sshkeys: 'SSH 키',
+      healthcheck: '시스템 진단',
     },
     winTitle: {
       users: '계정 관리',

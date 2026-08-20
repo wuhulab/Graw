@@ -219,13 +219,30 @@
         </div>
       </div>
     </div>
+
+    <!-- 高风险操作二次确认：删除渠道/规则、清空记录需输入面板密码 -->
+    <ConfirmDialog
+      :show="confirm.show"
+      mode="password"
+      :title="confirm.title"
+      :message="confirm.message"
+      :input-label="t('confirmDanger.inputPwdLabel')"
+      :placeholder="t('confirmDanger.inputPwdPlaceholder')"
+      :confirm-label="confirm.confirmLabel"
+      @confirm="doConfirm"
+      @cancel="confirm.show = false"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { BellRing, Gauge, History, RefreshCw, Plus } from 'lucide-vue-next'
 import { notifyApi } from '../../api'
+import ConfirmDialog from '../ConfirmDialog.vue'
+
+const { t } = useI18n()
 
 const CHANNEL_TYPES = ['webhook', 'telegram', 'dingtalk', 'wecom', 'serverchan', 'smtp']
 const METRICS = ['cpu', 'mem', 'disk', 'load']
@@ -237,6 +254,9 @@ const channels = ref([])
 const rules = ref([])
 const logs = ref([])
 const cfg = reactive({ enabled: false, interval_seconds: 60, cooldown_seconds: 300 })
+
+// 高风险操作二次确认状态（删除渠道/规则、清空记录共用；action.type 区分操作）
+const confirm = ref({ show: false, title: '', message: '', confirmLabel: '', action: null })
 
 // 渠道表单
 const channelFormOpen = ref(false)
@@ -319,7 +339,7 @@ async function toggleEnabled() {
 }
 
 async function doTestAlert() {
-  if (!confirm('手动触发一次测试告警（当前所有启用规则将按当前指标评估）？')) return
+  if (!window.confirm('手动触发一次测试告警（当前所有启用规则将按当前指标评估）？')) return
   busy.value = true
   try {
     await notifyApi.testAlert()
@@ -408,15 +428,13 @@ async function doTestChannel(c) {
 }
 
 async function doDeleteChannel(c) {
-  if (!confirm(`删除通知渠道「${c.name}」？`)) return
-  busy.value = true
-  try {
-    await notifyApi.deleteChannel(c.id)
-    await loadAll()
-  } catch (e) {
-    alert('删除失败：' + (e.response?.data?.detail || e.message))
-  } finally {
-    busy.value = false
+  // 高风险操作：删除通知渠道需输入面板密码确认
+  confirm.value = {
+    show: true,
+    title: t('confirmDanger.deleteNotifyChannelTitle'),
+    message: t('confirmDanger.deleteNotifyChannelMsg', { name: c.name }),
+    confirmLabel: t('common.delete'),
+    action: { type: 'channel', id: c.id }
   }
 }
 
@@ -466,26 +484,46 @@ async function toggleRule(r) {
 }
 
 async function doDeleteRule(r) {
-  if (!confirm(`删除告警规则（${metricLabel(r.metric)} ≥ ${r.threshold}%）？`)) return
-  busy.value = true
-  try {
-    await notifyApi.deleteRule(r.id)
-    await loadAll()
-  } catch (e) {
-    alert('删除失败：' + (e.response?.data?.detail || e.message))
-  } finally {
-    busy.value = false
+  // 高风险操作：删除告警规则需输入面板密码确认
+  confirm.value = {
+    show: true,
+    title: t('confirmDanger.deleteAlertRuleTitle'),
+    message: t('confirmDanger.deleteAlertRuleMsg'),
+    confirmLabel: t('common.delete'),
+    action: { type: 'rule', id: r.id }
   }
 }
 
 async function doClearLogs() {
-  if (!confirm('清空全部告警记录？')) return
+  // 高风险操作：清空全部告警记录需输入面板密码确认
+  confirm.value = {
+    show: true,
+    title: '清空告警记录确认',
+    message: '清空全部告警记录？此操作不可恢复。\n请输入面板密码以确认。',
+    confirmLabel: '清空',
+    action: { type: 'clearLogs' }
+  }
+}
+
+// ConfirmDialog 密码校验通过后按 action.type 分发执行真正的删除/清空逻辑
+async function doConfirm() {
+  const a = confirm.value.action
+  confirm.value.show = false
+  if (!a) return
   busy.value = true
   try {
-    await notifyApi.clearLogs()
-    logs.value = []
+    if (a.type === 'channel') {
+      await notifyApi.deleteChannel(a.id)
+      await loadAll()
+    } else if (a.type === 'rule') {
+      await notifyApi.deleteRule(a.id)
+      await loadAll()
+    } else if (a.type === 'clearLogs') {
+      await notifyApi.clearLogs()
+      logs.value = []
+    }
   } catch (e) {
-    alert('清空失败：' + (e.response?.data?.detail || e.message))
+    alert('操作失败：' + (e.response?.data?.detail || e.message))
   } finally {
     busy.value = false
   }

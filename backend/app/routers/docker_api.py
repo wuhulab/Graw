@@ -1642,6 +1642,135 @@ def _remove_image_sync(image_id: str):
 
 
 # ------------------------------------------------------------
+# 镜像：拉取 / 打标签 / 构建
+# ------------------------------------------------------------
+class PullRequest(BaseModel):
+    name: str = ""          # 镜像引用，如 nginx / nginx:1.25 / registry.example.com/nginx:1.25
+
+
+class TagRequest(BaseModel):
+    repo: str = ""          # 目标仓库名，如 myapp / myregistry/myapp
+    tag: str = "latest"     # 标签
+
+
+class BuildRequest(BaseModel):
+    name: str = ""          # 目标镜像名（不含 tag），如 myapp
+    tag: str = "latest"     # 标签
+    context_dir: str = ""   # 构建上下文目录（宿主机绝对路径，需含 Dockerfile）
+
+
+@router.post("/images/pull")
+async def pull_image(req: PullRequest):
+    """拉取镜像：podman/docker pull <name>。"""
+    return await asyncio.to_thread(_pull_image_sync, req)
+
+
+def _pull_image_sync(req: PullRequest):
+    name = (req.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="请填写要拉取的镜像名")
+    # 镜像引用允许字母/数字/./_/-/:@（仓库:标签），拦截选项注入
+    name = _safe_docker_ref(name, "镜像名")
+    try:
+        kind, client = get_backend()
+    except HTTPException:
+        raise
+    if kind == "cli":
+        rc, out, err = _run(_find_podman() + ["pull", name], timeout=600)
+        if rc != 0:
+            raise HTTPException(status_code=500, detail=err.strip() or "拉取镜像失败")
+        return {"ok": True, "detail": out.strip()}
+    try:
+        # Docker SDK 拉取（返回 generator，逐层输出；取最后一条即可）
+        last = None
+        for line in client.api.pull(name, stream=True, decode=True):
+            last = line
+        return {"ok": True, "detail": (last or {}).get("status", "")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=_clean_reason(e))
+
+
+@router.post("/images/{image_id}/tag")
+async def tag_image(image_id: str, req: TagRequest):
+    """为镜像打标签：podman/docker tag <id> <repo>:<tag>。"""
+    return await asyncio.to_thread(_tag_image_sync, image_id, req)
+
+
+def _tag_image_sync(image_id: str, req: TagRequest):
+    repo = (req.repo or "").strip()
+    if not repo:
+        raise HTTPException(status_code=400, detail="请填写目标仓库名")
+    tag = (req.tag or "latest").strip()
+    image_id = _safe_docker_ref(image_id, "镜像标识")
+    full_name = f"{repo}:{tag}" if tag else repo
+    full_name = _safe_docker_ref(full_name, "镜像名")
+    try:
+        kind, client = get_backend()
+    except HTTPException:
+        raise
+    if kind == "cli":
+        rc, out, err = _run(_find_podman() + ["tag", image_id, full_name], timeout=60)
+        if rc != 0:
+            raise HTTPException(status_code=500, detail=err.strip() or "打标签失败")
+        return {"ok": True, "image": full_name}
+    try:
+        img = client.images.get(image_id)
+        img.tag(repo, tag)
+        return {"ok": True, "image": full_name}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=_clean_reason(e))
+
+
+@router.post("/images/build")
+async def build_image(req: BuildRequest):
+    """从宿主机目录构建镜像：podman/docker build -t <name>:<tag> <context_dir>。"""
+    return await asyncio.to_thread(_build_image_sync, req)
+
+
+def _build_image_sync(req: BuildRequest):
+    name = (req.name or "").strip()
+    context_dir = (req.context_dir or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="请填写镜像名")
+    if not context_dir:
+        raise HTTPException(status_code=400, detail="请填写构建上下文目录（含 Dockerfile 的目录）")
+    # 上下文字段属于路径（含 / 与空格），不能走 _safe_docker_ref（会拦截 /）；
+    # 改为校验：必须是绝对路径、且目录真实存在、含 Dockerfile，避免命令注入
+    if not os.path.isabs(context_dir):
+        raise HTTPException(status_code=400, detail="构建目录必须是绝对路径")
+    # 路径直接作为 argv 参数传给 CLI，Windows 下需去掉引号（列表传参天然防注入）
+    if not os.path.isdir(context_dir):
+        raise HTTPException(status_code=400, detail=f"构建目录不存在: {context_dir}")
+    if not os.path.isfile(os.path.join(context_dir, "Dockerfile")):
+        raise HTTPException(status_code=400, detail="构建目录中未找到 Dockerfile")
+    name = _safe_docker_ref(name, "镜像名")
+    tag = (req.tag or "latest").strip()
+    tag = _safe_docker_ref(tag, "标签")
+    full_name = f"{name}:{tag}"
+    try:
+        kind, client = get_backend()
+    except HTTPException:
+        raise
+    if kind == "cli":
+        # 路径含特殊字符时用 Windows 列表参数原生传递，不做 shell 拼接
+        cmd = _find_podman() + ["build", "-t", full_name, context_dir]
+        rc, out, err = _run(cmd, timeout=600)
+        if rc != 0:
+            raise HTTPException(status_code=500, detail=err.strip() or "构建镜像失败")
+        return {"ok": True, "image": full_name, "detail": out.strip()}
+    try:
+        # 构建上下文：支持 dockerfile 路径 / context 目录两种
+        if os.path.isdir(context_dir):
+            image, logs = client.images.build(path=context_dir, tag=full_name)
+            return {"ok": True, "image": full_name, "id": image.short_id}
+        image, logs = client.images.build(fileobj=open(context_dir, "rb"), tag=full_name)
+        return {"ok": True, "image": full_name, "id": image.short_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=_clean_reason(e))
+
+
+
+# ------------------------------------------------------------
 # 网络
 # ------------------------------------------------------------
 @router.get("/networks")

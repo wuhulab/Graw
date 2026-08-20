@@ -242,6 +242,19 @@
         </div>
       </div>
     </div>
+
+    <!-- 高风险操作二次确认：删除容器/镜像/网络需输入面板密码 -->
+    <ConfirmDialog
+      :show="confirm.show"
+      mode="password"
+      :title="confirm.title"
+      :message="confirm.message"
+      input-label="输入面板密码确认"
+      placeholder="请输入当前面板密码"
+      confirm-label="删除"
+      @confirm="doConfirmDanger"
+      @cancel="confirm.show = false"
+    />
   </div>
 </template>
 
@@ -249,6 +262,7 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { dockerApi } from '../../api'
 import { docker, startDocker, refresh as refreshDockerStore } from '../../store/docker'
+import ConfirmDialog from '../ConfirmDialog.vue'
 
 const emit = defineEmits(['openLogs', 'openContainerTerminal', 'openContainerDetails', 'openFiles', 'openDockerConfigEditor'])
 
@@ -261,6 +275,8 @@ const status = ref(null)
 const containers = ref([])
 const ctxMenu = ref({ show: false, x: 0, y: 0, item: null })
 const noteDialog = ref({ show: false, text: '', item: null })
+// 高风险操作二次确认状态（删除容器/镜像/网络）
+const confirm = ref({ show: false, title: '', message: '', action: null })
 
 // ---------- 配置 ----------
 const config = ref({})
@@ -367,32 +383,65 @@ async function composeOp(p, action) {
   }
 }
 
-// ---------- 镜像操作 ----------
-async function removeImageItem(img) {
+function removeImageItem(img) {
   const tag = img.tags.length ? img.tags.join(', ') : img.id
-  if (!confirm(`确认删除镜像「${tag}」？`)) return
-  try {
-    await dockerApi.removeImage(img.id)
-    await loadImages()
-  } catch (e) {
-    alert('删除失败：' + (e.response?.data?.detail || e.message))
+  // 高风险操作：删除镜像需输入面板密码确认
+  confirm.value = {
+    show: true,
+    title: '删除镜像确认',
+    message: `删除镜像「${tag}」？此操作不可恢复。\n请输入面板密码以确认。`,
+    action: { type: 'image', id: img.id }
   }
 }
 
 // ---------- 网络操作 ----------
-async function removeNetworkItem(n) {
-  if (!confirm(`确认删除网络「${n.name}」？\n使用中的网络无法删除。`)) return
+function removeNetworkItem(n) {
+  // 高风险操作：删除网络需输入面板密码确认
+  confirm.value = {
+    show: true,
+    title: '删除网络确认',
+    message: `确认删除网络「${n.name}」？\n使用中的网络无法删除。\n请输入面板密码以确认。`,
+    action: { type: 'network', name: n.name }
+  }
+}
+
+async function doConfirmDanger() {
+  const a = confirm.value.action
+  confirm.value.show = false
+  if (!a) return
   try {
-    await dockerApi.removeNetwork(n.name)
-    await loadNetworks()
+    if (a.type === 'image') {
+      await dockerApi.removeImage(a.id)
+      await loadImages()
+    } else if (a.type === 'network') {
+      await dockerApi.removeNetwork(a.name)
+      await loadNetworks()
+    } else if (a.type === 'container') {
+      await dockerApi.action(a.id, 'remove')
+      await refreshContainers()
+    }
   } catch (e) {
-    alert('删除失败：' + (e.response?.data?.detail || e.message))
+    alert('操作失败：' + (e.response?.data?.detail || e.message))
   }
 }
 
 // ---------- 容器操作（右键菜单） ----------
-async function act(id, action) {
-  if (action === 'remove' && !confirm('确认删除该容器？')) return
+function act(id, action) {
+  if (action === 'remove') {
+    // 高风险操作：删除容器需输入面板密码确认
+    const c = containers.value.find(x => x.id === id)
+    confirm.value = {
+      show: true,
+      title: '删除容器确认',
+      message: `删除容器「${c?.name || id}」后数据可能丢失。\n请输入面板密码以确认。`,
+      action: { type: 'container', id }
+    }
+    return
+  }
+  doAct(id, action)
+}
+
+async function doAct(id, action) {
   try {
     await dockerApi.action(id, action)
     await refreshContainers()
