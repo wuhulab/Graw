@@ -64,9 +64,12 @@ _lock = threading.RLock()
 # 内存缓存，避免每次调用都读文件
 _store_cache: Optional[dict] = None
 
-# 控制器主机本地是否安装了 sshpass（密码认证需要），惰性探测
+# 控制器主机本地是否安装了 sshpass（密码认证首选方式），惰性探测
 _sshpass_checked = False
 _sshpass_available = False
+# paramiko 是否可用（sshpass 缺位时的密码认证兜底，纯 Python 跨平台）
+_paramiko_checked = False
+_paramiko_available = False
 
 
 # ------------------------------------------------------------
@@ -255,8 +258,86 @@ def _sshpass_ok() -> bool:
         _sshpass_checked = True
         _sshpass_available = shutil.which("sshpass") is not None
         if not _sshpass_available:
-            logger.warning("控制器主机未安装 sshpass，密码认证的远程节点将无法连接")
+            logger.warning("控制器主机未安装 sshpass，将回退到 paramiko 做密码认证")
     return _sshpass_available
+
+
+def _paramiko_ok() -> bool:
+    """paramiko 是否可用（sshpass 缺位时密码认证的兜底），结果缓存。"""
+    global _paramiko_checked, _paramiko_available
+    if not _paramiko_checked:
+        _paramiko_checked = True
+        try:
+            import paramiko  # noqa: F401
+
+            _paramiko_available = True
+        except Exception:
+            _paramiko_available = False
+    return _paramiko_available
+
+
+def _paramiko_run(node: dict, remote_cmd: str, **kwargs) -> subprocess.CompletedProcess:
+    """用 paramiko 在远程节点执行一条命令，返回与 subprocess.CompletedProcess 兼容结果。
+
+    仅当控制器缺少 sshpass 时作为密码认证的兜底（paramiko 为纯 Python、跨平台，
+    解决 Windows 控制器无法安装 sshpass 导致的「密码认证节点无法连接」问题）。
+    密钥认证仍优先走系统 ssh（保留退出码/信号语义与交互终端）。
+
+    兼容参数：timeout（秒）、text（输出按 UTF-8 解码为 str）、input（写往远端 stdin）。
+    """
+    import paramiko
+
+    timeout = kwargs.get("timeout") or (_SSH_CONNECT_TIMEOUT + 15)
+    text = bool(kwargs.get("text", False))
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    connect_kw = {
+        "hostname": str(node.get("host") or ""),
+        "port": int(node.get("port") or _DEFAULT_PORT),
+        "username": str(node.get("user") or ""),
+        "timeout": timeout,
+        # 只使用显式凭据，避免扫描本机 ~/.ssh 或调用 agent
+        "look_for_keys": False,
+        "allow_agent": False,
+    }
+    if node.get("auth") == "key" and node.get("key_path"):
+        connect_kw["key_filename"] = node.get("key_path")
+        connect_kw["password"] = None
+    else:
+        connect_kw["password"] = node.get("password") or ""
+    try:
+        client.connect(**connect_kw)
+        stdin, stdout, stderr = client.exec_command(remote_cmd, timeout=timeout)
+        # 命令执行读超时保护，避免远端卡死导致面板请求挂起
+        stdout.channel.settimeout(timeout)
+        input_data = kwargs.get("input")
+        if input_data is not None:
+            stdin.write(input_data.encode("utf-8") if isinstance(input_data, str) else input_data)
+            try:
+                stdin.channel.shutdown_write()
+            except Exception:
+                pass
+        out = stdout.read()
+        errb = stderr.read()
+        code = stdout.channel.recv_exit_status()
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+    if text:
+        out = out.decode("utf-8", "replace")
+        errb = errb.decode("utf-8", "replace")
+    return subprocess.CompletedProcess([], code, out, errb)
+
+
+def _paramiko_connect_test(node: dict) -> dict:
+    """用 paramiko 测试节点 SSH 连通性，返回 {"ok": bool, "message": str}。"""
+    try:
+        _paramiko_run(node, "echo ok", timeout=_SSH_CONNECT_TIMEOUT + 5, text=True)
+        return {"ok": True, "message": "ok"}
+    except Exception as e:  # noqa: BLE001 - 连接失败要向上抛可读信息
+        return {"ok": False, "message": str(e).strip() or "连接失败"}
 
 
 def _ssh_argv(node: dict, remote_cmd: str) -> tuple:
@@ -298,9 +379,18 @@ def _ssh_argv(node: dict, remote_cmd: str) -> tuple:
 
 
 def _run_ssh(node: dict, remote_cmd: str, **kwargs) -> subprocess.CompletedProcess:
-    """在当前远程节点上执行一条远程命令（保持与 subprocess.run 一致语义）。"""
-    if node.get("auth") != "key" and not _sshpass_ok():
-        return subprocess.CompletedProcess([], 127, b"", b"Controller sshpass not installed".decode("utf-8").encode())
+    """在当前远程节点上执行一条远程命令（保持与 subprocess.run 一致语义）。
+
+    密码认证优先用 sshpass（若控制器已安装）；否则回退 paramiko（跨平台）。
+    两者皆不可用时返回 exit=127 的可读错误，绝不抛异常。
+    """
+    if node.get("auth") != "key":
+        if not _sshpass_ok():
+            if _paramiko_ok():
+                return _paramiko_run(node, remote_cmd, **kwargs)
+            return subprocess.CompletedProcess(
+                [], 127, b"", b"Controller has neither sshpass nor paramiko for password auth"
+            )
     argv, env_extra = _ssh_argv(node, remote_cmd)
     env = None
     if env_extra:
@@ -490,8 +580,12 @@ def connect_test(node: dict) -> dict:
     probe = node if node.get("type") == "ssh" else None
     if probe is None:
         return {"ok": True, "message": "local"}
-    if probe.get("auth") != "key" and not _sshpass_ok():
-        return {"ok": False, "message": "控制器主机未安装 sshpass，无法使用密码认证"}
+    if probe.get("auth") != "key":
+        if not _sshpass_ok():
+            # sshpass 缺失：回退 paramiko 做密码认证（跨平台，Windows 控制器可直用）
+            if _paramiko_ok():
+                return _paramiko_connect_test(probe)
+            return {"ok": False, "message": "控制器主机既未安装 sshpass，也未安装 paramiko，无法进行密码认证"}
     argv, env_extra = _ssh_argv(probe, "echo ok")
     env = None
     if env_extra:

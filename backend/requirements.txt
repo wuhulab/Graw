@@ -15,3 +15,6 @@ pyyaml==6.0.3
 # 网络储存（SMB / 对象存储 S3 兼容）：FTP/FTPS 用标准库 ftplib，WebDAV 用 requests
 smbprotocol==1.17.0
 minio==7.2.20
+# SSH 远程节点（多机管理）：用 paramiko 做密码认证，避免依赖控制器主机
+# 安装 sshpass（Linux 工具，Windows 上无法直接可用）
+paramiko==3.4.0
