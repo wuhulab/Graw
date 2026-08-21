@@ -503,6 +503,36 @@ def getsize(path: str) -> int:
         return 0
 
 
+def isdir(path: str) -> bool:
+    """判断当前管理主机上 path 是否为目录。"""
+    if not is_remote():
+        return os.path.isdir(hostfs.host_path(path))
+    r = host_shell(
+        f"test -d {shlex.quote(path)} && echo 1 || echo 0",
+        capture_output=True,
+        text=True,
+        timeout=_SSH_CONNECT_TIMEOUT + 5,
+    )
+    return r.stdout.strip() == "1"
+
+
+def listdir(path: str, include_hidden: bool = True) -> list:
+    """列出当前管理主机上目录下的条目名列表（不含 . 和 ..）。
+
+    远程：经 `ls -1A` 输出按行拆分，与本地 os.listdir 的返回值语义一致。
+    """
+    if not is_remote():
+        return os.listdir(hostfs.host_path(path))
+    flags = "-1A" if include_hidden else "-1"
+    r = host_shell(
+        f"ls {flags} {shlex.quote(path)} 2>/dev/null || true",
+        capture_output=True,
+        text=True,
+        timeout=_SSH_CONNECT_TIMEOUT + 15,
+    )
+    return [line for line in (r.stdout or "").splitlines() if line and line != "." and line != ".."]
+
+
 def read_text(path: str, errors="replace") -> str:
     """读取当前管理主机上文本文件内容。"""
     if not is_remote():

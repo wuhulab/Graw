@@ -16,13 +16,18 @@ import shutil
 import platform
 from typing import Optional
 
-from app.hostfs import host_path, unhost_path
+from app import node_manager
 from app.auth import get_current_user, get_client_ip
 from app import auditlog
 
 logger = logging.getLogger("graw.files")
 
 router = APIRouter()
+
+# 路径映射统一走当前主机感知的适配层：本地节点与 hostfs 行为一致，
+# 远程节点返回远程绝对路径（远程文件 I/O 由上层 node_manager 原语执行）。
+host_path = node_manager.host_path
+unhost_path = node_manager.unhost_path
 
 # 面板数据目录：包含 secret.key / users.json 等敏感文件，禁止通过文件管理访问
 DATA_DIR = os.path.normpath(
@@ -76,31 +81,38 @@ async def list_dir(path: Optional[str] = None):
     # sp: 宿主机视角路径；real: 容器内实际访问路径
     sp = _safe_path(path or "/")
     real = host_path(sp)
-    if not os.path.exists(real):
+    if not node_manager.exists(real):
         raise HTTPException(status_code=404, detail="Path not found")
-    if not os.path.isdir(real):
+    if not node_manager.isdir(real):
         raise HTTPException(status_code=400, detail="Not a directory")
     items = []
     try:
-        for name in os.listdir(real):
-            full = os.path.join(real, name)
+        for name in node_manager.listdir(real):
+            full = real if real.endswith("/") else real
+            full = full + "/" + name
             try:
-                st = os.stat(full)
-                items.append(
-                    {
-                        "name": name,
-                        "path": unhost_path(full),  # 对外展示宿主机视角路径
-                        "is_dir": os.path.isdir(full),
-                        "size": st.st_size,
-                        "modified": st.st_mtime,
-                    }
-                )
-            except (PermissionError, OSError):
+                # 本地节点额外取修改时间；远程节点仅返回字节数（远程无便捷 mtime）
+                mtime = 0
+                if not node_manager.is_remote():
+                    try:
+                        mtime = os.stat(os.path.join(real, name)).st_mtime
+                    except (PermissionError, OSError):
+                        mtime = 0
                 items.append(
                     {
                         "name": name,
                         "path": unhost_path(full),
-                        "is_dir": os.path.isdir(full),
+                        "is_dir": node_manager.isdir(full),
+                        "size": node_manager.getsize(full),
+                        "modified": mtime,
+                    }
+                )
+            except Exception:
+                items.append(
+                    {
+                        "name": name,
+                        "path": unhost_path(full),
+                        "is_dir": node_manager.isdir(full),
                         "size": 0,
                         "modified": 0,
                     }
@@ -108,10 +120,12 @@ async def list_dir(path: Optional[str] = None):
     except PermissionError:
         raise HTTPException(status_code=403, detail="Permission denied")
     items.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
-    parent = os.path.dirname(real)
-    if parent == real:
+    # 父目录：返回宿主机视角路径（前端据此回退导航）；根目录返回 None
+    rp = real.rstrip("/")
+    if not rp:
         parent = None
     else:
+        parent = os.path.dirname(rp) or "/"
         parent = unhost_path(parent)
     return {"path": sp, "parent": parent, "items": items}
 
@@ -136,13 +150,12 @@ async def roots():
 @router.get("/read")
 async def read_file(path: str):
     real = host_path(_safe_path(path))
-    if not os.path.isfile(real):
+    if not node_manager.isfile(real):
         raise HTTPException(status_code=404, detail="File not found")
-    if os.path.getsize(real) > 2 * 1024 * 1024:
+    if node_manager.getsize(real) > 2 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="File too large (>2MB)")
     try:
-        with open(real, "r", encoding="utf-8", errors="replace") as f:
-            return {"path": _safe_path(path), "content": f.read()}
+        return {"path": _safe_path(path), "content": node_manager.read_text(real)}
     except Exception as e:
         logger.warning("读取文件失败: %s", e)
         raise HTTPException(status_code=500, detail="读取文件失败")
@@ -161,9 +174,7 @@ async def write_file(
 ):
     real = host_path(_safe_path(req.path))
     try:
-        os.makedirs(os.path.dirname(real), exist_ok=True)
-        with open(real, "w", encoding="utf-8") as f:
-            f.write(req.content)
+        node_manager.write_text(real, req.content)
         auditlog.record(
             "写文件", user["username"], get_client_ip(request), _safe_path(req.path)
         )
@@ -185,13 +196,10 @@ async def delete_path(
 ):
     safe = _safe_path(req.path)
     real = host_path(safe)
-    if not os.path.exists(real):
+    if not node_manager.exists(real):
         raise HTTPException(status_code=404, detail="Not found")
     try:
-        if os.path.isdir(real):
-            shutil.rmtree(real)
-        else:
-            os.remove(real)
+        node_manager.remove(real)
         auditlog.record("删除", user["username"], get_client_ip(request), safe)
         return {"ok": True}
     except Exception as e:
@@ -211,7 +219,10 @@ async def mkdir(
     safe = _safe_path(req.path)
     real = host_path(safe)
     try:
-        os.makedirs(real, exist_ok=True)
+        if node_manager.is_remote():
+            node_manager.host_shell(f"mkdir -p {real}", timeout=30)
+        else:
+            os.makedirs(real, exist_ok=True)
         auditlog.record("新建目录", user["username"], get_client_ip(request), safe)
         return {"ok": True}
     except Exception as e:
@@ -231,10 +242,13 @@ async def rename(
 ):
     src = host_path(_safe_path(req.src))
     dst = host_path(_safe_path(req.dst))
-    if not os.path.exists(src):
+    if not node_manager.exists(src):
         raise HTTPException(status_code=404, detail="Source not found")
     try:
-        os.rename(src, dst)
+        if node_manager.is_remote():
+            node_manager.host_shell(f"mv {src} {dst}", timeout=30)
+        else:
+            os.rename(src, dst)
         auditlog.record("重命名", user["username"], get_client_ip(request), f"{req.src} -> {req.dst}")
         return {"ok": True}
     except Exception as e:

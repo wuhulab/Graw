@@ -202,6 +202,9 @@ async def overview():
 
 
 def _overview_sync():
+    # 远端节点：读取远端主机指标（复用 _remote_overview）
+    if node_manager.is_remote():
+        return _remote_overview()
     cpu_percent = psutil.cpu_percent(interval=None)
     mem = psutil.virtual_memory()
     # 容器模式下监控宿主机根目录磁盘（映射为 /host），否则为 / 或 C:\
@@ -244,6 +247,8 @@ async def network():
 
 def _network_sync():
     global _last_net
+    if node_manager.is_remote():
+        return _remote_network()
     now = time.time()
     counters = psutil.net_io_counters()
     elapsed = max(0.001, now - _last_net["time"])
@@ -266,6 +271,8 @@ async def diskio():
 
 def _diskio_sync():
     global _last_disk
+    if node_manager.is_remote():
+        return _remote_diskio()
     now = time.time()
     counters = psutil.disk_io_counters()
     if not counters:

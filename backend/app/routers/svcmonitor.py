@@ -38,7 +38,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.hostfs import host_cmd
+from app import node_manager
 
 logger = logging.getLogger("graw.svcmonitor")
 
@@ -148,7 +148,7 @@ def _probe_service(target: str) -> dict:
     """systemd 服务探测：systemctl is-active。仅 Linux 有意义。"""
     if os.name != "posix":
         return {"status": "unknown", "detail": "systemd 服务检测仅支持 Linux"}
-    r = host_cmd(
+    r = node_manager.host_cmd(
         ["systemctl", "is-active", target],
         capture_output=True,
         text=True,

@@ -43,12 +43,33 @@ while ((m = markRawRe.exec(content)) !== null) {
 // 3. 比对
 const missing = [...used].filter((name) => !imported.has(name))
 console.log(`App.vue 已导入标识符：${imported.size} 个；markRaw 引用：${used.size} 个`)
+let ok = true
 if (missing.length === 0) {
   console.log('✔ 所有 markRaw 引用的标识符均已 import，无白屏风险')
-  process.exit(0)
+} else {
+  ok = false
+  console.log('\n✘ 以下标识符被 markRaw 引用但未 import（会导致运行时白屏）：')
+  for (const name of missing) {
+    console.log(`  - ${name}`)
+  }
 }
-console.log('\n✘ 以下标识符被 markRaw 引用但未 import（会导致运行时白屏）：')
-for (const name of missing) {
-  console.log(`  - ${name}`)
+
+// 4. remoteCap 引用完整性：shortcuts 中每个窗口要么不写（host，可远端），
+//    要么为合法值 'local'。非法值会破坏远端门控逻辑，导致快捷方式行为异常。
+const remoteCapRe = /remoteCap\s*:\s*['"]([^'"]+)['"]/g
+const badCap = []
+while ((m = remoteCapRe.exec(content)) !== null) {
+  if (m[1] !== 'local') badCap.push(m[1])
 }
+if (badCap.length === 0) {
+  console.log('✔ 所有 remoteCap 引用均为合法值（local 或缺省 host）')
+} else {
+  ok = false
+  console.log('\n✘ 检测到非法的 remoteCap 取值（仅允许 local）：')
+  for (const v of badCap) {
+    console.log(`  - ${v}`)
+  }
+}
+
+if (ok) process.exit(0)
 process.exit(1)

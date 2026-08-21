@@ -34,6 +34,14 @@
         <div class="block-title">{{ $t('nodes.title') }}</div>
         <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('nodes.subtitle') }}</div>
 
+        <!-- 列表加载 / 重新加载 -->
+        <div class="row" style="gap:8px;">
+          <button class="btn btn-mini" :disabled="loadingNodes" @click="loadNodes">
+            {{ loadingNodes ? $t('nodes.loadingNodes') : $t('nodes.reload') }}
+          </button>
+          <span v-if="loadingNodes" style="font-size:11px;color:#8e8e93;">{{ $t('nodes.loadingNodes') }}…</span>
+        </div>
+
         <!-- 当前管理主机 -->
         <div class="row" style="gap:8px;">
           <span class="status-dot" style="background:#0a7d3b;"></span>
@@ -41,6 +49,9 @@
           <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ current.name || currentId }}</span>
           <span :class="['tag', current.type === 'ssh' ? 'tag-remote' : 'tag-local']">{{ current.type === 'ssh' ? $t('nodes.remoteBadge') : $t('nodes.localBadge') }}</span>
         </div>
+
+        <!-- 测试连接独立反馈区 -->
+        <div v-if="connMsg" :class="['msg', connMsgType]" style="margin-top:6px;">{{ connMsg }}</div>
 
         <!-- 节点列表 -->
         <div v-if="nodesList.length" style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
@@ -58,7 +69,8 @@
             <button class="btn btn-mini btn-danger" v-if="n.type === 'ssh'" @click="removeNode(n)">{{ $t('nodes.delete') }}</button>
           </div>
         </div>
-        <div v-else style="font-size:12px;color:#8e8e93;padding:6px 0;">{{ $t('nodes.noNodes') }}</div>
+        <div v-else-if="!loadingNodes" style="font-size:12px;color:#8e8e93;padding:6px 0;">{{ $t('nodes.noNodes') }}</div>
+        <div v-if="nodeLoadError" :class="['msg', 'err']" style="margin-top:6px;">{{ nodeLoadError }}</div>
 
         <div v-if="!showEditor" style="margin-top:8px;">
           <button class="btn" @click="startAdd">{{ $t('nodes.addNode') }}</button>
@@ -479,6 +491,10 @@ async function doUpdate() {
 // ---- 多机（多节点）管理 ----
 const nodesList = ref([])
 const currentId = ref('local')
+const loadingNodes = ref(false)
+const nodeLoadError = ref('')
+const connMsg = ref('')
+const connMsgType = ref('')
 const current = computed(() => {
   const cur = nodesList.value.find((n) => n.id === currentId.value)
   return cur || { id: 'local', name: 'local', type: 'local' }
@@ -492,13 +508,17 @@ const editorMsg = ref('')
 const editorMsgType = ref('')
 
 async function loadNodes() {
+  if (loadingNodes.value) return
+  loadingNodes.value = true
+  nodeLoadError.value = ''
   try {
     await refreshNodes()
     nodesList.value = nodesStore.list
     currentId.value = nodesStore.currentId
   } catch (e) {
-    editorMsg.value = t('nodes.loadFailed', { error: e?.response?.data?.detail || e.message })
-    editorMsgType.value = 'err'
+    nodeLoadError.value = t('nodes.loadFailed', { error: e?.response?.data?.detail || e.message })
+  } finally {
+    loadingNodes.value = false
   }
 }
 
@@ -587,13 +607,17 @@ async function switchNode(n) {
 }
 
 async function testNode(n) {
+  if (testingId.value) return
   testingId.value = n.id
+  connMsg.value = ''
+  connMsgType.value = ''
   try {
     const res = await nodesApi.test(n.id)
-    editorMsg.value = res.ok ? t('nodes.testOk') : t('nodes.testFail', { error: res.message || '' })
-    editorMsgType.value = res.ok ? 'ok' : 'err'
+    connMsg.value = res.ok ? t('nodes.testOk') : t('nodes.testFail', { error: res.message || '' })
+    connMsgType.value = res.ok ? 'ok' : 'err'
   } catch (e) {
-    editorError(t('nodes.testFail', { error: e?.response?.data?.detail || e.message }))
+    connMsg.value = t('nodes.testFail', { error: e?.response?.data?.detail || e.message })
+    connMsgType.value = 'err'
   } finally {
     testingId.value = ''
   }
@@ -614,20 +638,20 @@ function removeNode(n) {
   }
 }
 
-onMounted(async () => {
-  // 加载面板版本号（公开接口，与登录态无关）
+onMounted(() => {
+  // 并行加载各区块数据：多机管理、Web 模式等不再被前置串行请求阻塞
   loadVersion()
-  // 检测是否有新版本（管理员可触发一键更新）
   loadUpdateStatus()
-  // 加载当前账号的两步验证状态
   loadOtpStatus()
-  try {
-    const config = await shunxApi.config()
-    currentEntry.value = config.entry_path || ''
-    entryPath.value = currentEntry.value
-  } catch (e) {
-    currentEntry.value = ''
-  }
+  // ShunX 安全入口配置（自身独立加载，失败不阻塞其它区块）
+  shunxApi.config()
+    .then((config) => {
+      currentEntry.value = config.entry_path || ''
+      entryPath.value = currentEntry.value
+    })
+    .catch(() => {
+      currentEntry.value = ''
+    })
   if (isAdmin()) loadNodes()
   if (isAdmin()) loadWebMode()
 })

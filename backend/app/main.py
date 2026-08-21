@@ -57,6 +57,7 @@ from app.auth import (
     require_admin,
     require_non_default_password,
 )
+from app import remote_cap
 
 # 权限分级：
 #   PROTECTED - 仅需登录（只读信息类接口，如系统概览/备忘录，供桌面展示）
@@ -169,6 +170,22 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "same-origin")
     return response
+
+
+@app.middleware("http")
+async def remote_capability_guard(request: Request, call_next):
+    """远端子节点能力门控（纵深防御）。
+
+    当前管理主机为 SSH 远端节点时，local 类（面板自身管理项）接口一律返回
+    403「该功能仅本机节点可用」，防止经由 API 误操作本机。本机节点下不拦截，
+    行为与改造前一致。前端已隐藏/禁用对应快捷方式，此处为后端兜底。
+    """
+    if remote_cap.reject_if_local_remote(request.url.path):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": remote_cap.local_only_reject_reason()},
+        )
+    return await call_next(request)
 
 
 # 公开路由：登录、当前用户、改密、健康检查
