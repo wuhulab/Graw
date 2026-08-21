@@ -1,8 +1,9 @@
 <template>
-  <div class="sites-window">
+  <div class="sites-window" @click="closeCtx">
     <div class="toolbar">
       <button class="btn primary" @click="openTypePicker"><Plus :size="14" /> {{ $t('sites.add') }}</button>
       <span class="hint">{{ $t('sites.webServer', { server: webServer || $t('sites.none') }) }}</span>
+      <span class="hint right">{{ $t('sites.rightClickHint') }}</span>
     </div>
     <div class="table-wrap">
       <table>
@@ -14,11 +15,10 @@
             <th>{{ $t('sites.targetRoot') }}</th>
             <th>{{ $t('sites.port') }}</th>
             <th>{{ $t('sites.status') }}</th>
-            <th>{{ $t('sites.action') }}</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="s in sites" :key="s.id">
+          <tr v-for="s in sites" :key="s.id" @contextmenu.prevent="openCtx($event, s)" class="site-row">
             <td>{{ s.name }}</td>
             <td><span class="type-badge">{{ typeLabel(s.type) }}</span></td>
             <td>{{ displayServerName(s) }}</td>
@@ -28,27 +28,32 @@
               <span class="badge" :class="s.enabled ? 'ok' : 'off'">{{ s.enabled ? $t('sites.enabled') : $t('sites.disabled') }}</span>
               <span class="badge" :class="s.online ? 'ok' : 'warn'">{{ s.online ? $t('sites.online') : $t('sites.offline') }}</span>
             </td>
-            <td class="actions">
-              <button class="iconbtn" :title="$t('sites.toggleEnable')" @click="toggleEnable(s)">
-                <Power :size="14" />
-              </button>
-              <button class="iconbtn" :title="$t('sites.config')" @click="openEdit(s)">
-                <Settings :size="14" />
-              </button>
-              <button class="iconbtn" :title="$t('sites.viewConfigHint')" @click="viewConfig(s)">
-                <FileText :size="14" />
-              </button>
-              <button class="iconbtn danger" :title="$t('common.delete')" @click="remove(s)">
-                <Trash2 :size="14" />
-              </button>
-            </td>
           </tr>
           <tr v-if="sites.length === 0">
-            <td colspan="7" class="empty">{{ $t('sites.noSites') }}</td>
+            <td colspan="6" class="empty">{{ $t('sites.noSites') }}</td>
           </tr>
         </tbody>
       </table>
     </div>
+
+    <!-- 右键菜单 -->
+    <Teleport to="body">
+      <div v-if="ctxMenu.show" class="context-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
+        <template v-if="ctxMenu.site?.external">
+          <div class="menu-header">{{ ctxMenu.site?.name }}</div>
+          <div class="menu-item readonly" disabled>{{ $t('sites.externalReadonly') }}</div>
+        </template>
+        <template v-else>
+          <div class="menu-header">{{ ctxMenu.site?.name }}</div>
+          <div class="menu-divider"></div>
+          <div class="menu-item" @click="menuToggleEnable">{{ ctxMenu.site?.enabled ? $t('sites.disableAction') : $t('sites.enableAction') }}</div>
+          <div class="menu-item" @click="menuEdit">{{ $t('sites.config') }}</div>
+          <div class="menu-item" @click="menuViewConfig">{{ $t('sites.viewConfigHint') }}</div>
+          <div class="menu-divider"></div>
+          <div class="menu-item danger" @click="menuRemove">{{ $t('common.delete') }}</div>
+        </template>
+      </div>
+    </Teleport>
 
     <!-- 类型选择弹窗 -->
     <div v-if="showTypePicker" class="modal-overlay" @click.self="showTypePicker = false">
@@ -168,8 +173,7 @@ import { useI18n } from 'vue-i18n'
 import { sitesApi } from '../../api'
 import ConfirmDialog from '../ConfirmDialog.vue'
 import {
-  Plus, Power, Settings, FileText, Trash2,
-  Globe, Share2, Network, Layers
+  Plus, Globe, Share2, Network, Layers
 } from 'lucide-vue-next'
 
 const { t } = useI18n()
@@ -196,8 +200,44 @@ const showConfig = ref(false)
 const editing = ref(false)
 const configText = ref('')
 const configSite = ref(null)
+// 右键菜单状态
+const ctxMenu = ref({ show: false, x: 0, y: 0, site: null })
 // 高风险操作二次确认状态：记录待删除的站点
 const confirm = ref({ show: false, site: null })
+
+function openCtx(e, s) {
+  const x = Math.min(e.clientX, window.innerWidth - 180)
+  const y = Math.min(e.clientY, window.innerHeight - 200)
+  ctxMenu.value = { show: true, x, y, site: s }
+}
+
+function closeCtx() {
+  ctxMenu.value.show = false
+}
+
+function menuToggleEnable() {
+  const s = ctxMenu.value.site
+  closeCtx()
+  if (s) toggleEnable(s)
+}
+
+function menuEdit() {
+  const s = ctxMenu.value.site
+  closeCtx()
+  if (s) openEdit(s)
+}
+
+function menuViewConfig() {
+  const s = ctxMenu.value.site
+  closeCtx()
+  if (s) viewConfig(s)
+}
+
+function menuRemove() {
+  const s = ctxMenu.value.site
+  closeCtx()
+  if (s) remove(s)
+}
 
 const emptyForm = (type) => ({
   name: '',
@@ -330,20 +370,33 @@ onMounted(load)
 .sites-window { padding: 10px; }
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .hint { color: #6e6e73; font-size: 12px; }
+.hint.right { margin-left: auto; }
 .table-wrap { overflow: auto; max-height: 420px; border: 1px solid #e5e7eb; border-radius: 8px; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; text-align: left; }
 th { background: #f9fafb; position: sticky; top: 0; }
+.site-row { cursor: context-menu; }
+.site-row:hover { background: #f9fafb; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; margin-right: 4px; }
 .badge.ok { background: #d1fae5; color: #065f46; }
 .badge.warn { background: #fef3c7; color: #92400e; }
 .badge.off { background: #f3f4f6; color: #6b7280; }
 .type-badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; background: #eef2ff; color: #4338ca; }
-.actions { display: flex; gap: 4px; }
-.iconbtn { padding: 4px; border: 1px solid #e5e7eb; background: #fff; border-radius: 6px; cursor: pointer; }
-.iconbtn:hover { background: #f9fafb; }
-.iconbtn.danger:hover { background: #fee2e2; border-color: #fca5a5; }
+
+/* 右键菜单 */
+.context-menu {
+  position: fixed; background: #fff; border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  z-index: 3000; min-width: 160px; padding: 4px 0;
+}
+.menu-header { padding: 8px 14px; font-size: 12px; font-weight: 600; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.menu-item { padding: 8px 14px; font-size: 12.5px; cursor: pointer; color: #374151; }
+.menu-item:hover { background: #f5f5f7; }
+.menu-item.readonly { color: #9ca3af; cursor: default; }
+.menu-item.danger { color: #b91c1c; }
+.menu-item.danger:hover { background: #fef2f2; }
+.menu-divider { height: 1px; background: #e5e7eb; margin: 4px 0; }
 .empty { text-align: center; color: #9ca3af; padding: 24px; }
 .btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
 .btn.primary { background: #111827; color: #fff; border-color: #111827; }

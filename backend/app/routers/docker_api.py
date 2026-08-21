@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException
 # 容器模式下面板的 Docker 操作需经 chroot 宿主机根目录执行宿主机 docker/podman，
 # 或在配置/备份等涉及路径的场景把容器内路径映射为宿主可达路径。
 from app import hostfs
+from app import node_manager
 from pydantic import BaseModel
 from typing import Optional, List
 
@@ -62,6 +63,9 @@ _last_reason = None
 _podman_cmd = None
 _podman_fail_until = 0.0
 _podman_fail_backoff = 5.0  # seconds between failed probes
+# 引擎缓存所属的当前主机节点 ID：切换 SSH 节点后缓存归零重新探测，
+# 避免「A 节点探测到的引擎」被误用于 B 节点（引擎命令会经当前节点执行）。
+_podman_cmd_node = "local"
 _docker_fail_until = 0.0
 _WSL_PROBE_TIMEOUT = 30  # WSL cold-start can take 20+ seconds
 _DOCKER_SDK_TIMEOUT = 10  # per-request timeout for docker SDK client
@@ -117,7 +121,16 @@ def _run(cmd, timeout=30):
     output (e.g. container names or logs containing non-ASCII). Reading raw
     bytes and decoding as UTF-8 with ``errors=replace`` avoids the threaded
     reader crash entirely.
+
+    多机：当当前管理主机为 SSH 节点时，命令经 node_manager 在远端执行，
+    使 Docker 操作真正作用于远端节点的容器引擎（本机分支行为不变）。
     """
+    if node_manager.is_remote():
+        # 远端节点：走当前节点的 SSH 命令（本地无 docker SDK 依赖，纯 CLI）
+        r = node_manager.host_cmd(list(cmd), capture_output=True, timeout=timeout)
+        out = r.stdout if isinstance(r.stdout, bytes) else (r.stdout or "").encode()
+        err = r.stderr if isinstance(r.stderr, bytes) else (r.stderr or "").encode()
+        return r.returncode, out.decode("utf-8", "replace"), err.decode("utf-8", "replace")
     p = subprocess.run(cmd, capture_output=True, timeout=timeout)
     return p.returncode, p.stdout.decode("utf-8", "replace"), p.stderr.decode("utf-8", "replace")
 
@@ -170,13 +183,48 @@ def _find_podman():
     Returns a command list (prefix) whose first element identifies the engine.
     Success is cached permanently; failure is cached for only a few seconds so
     the panel can recover once the engine finishes starting up.
+
+    多机：当当前管理主机为 SSH 节点时，改为探测远端节点的 docker/podman CLI，
+    返回的引擎前缀会在远端经 node_manager 执行（见 _run 的远端分支）。
+    缓存按「当前节点 ID」隔离，切换节点自动重新探测。
     """
-    global _podman_cmd, _podman_fail_until
+    global _podman_cmd, _podman_fail_until, _podman_cmd_node
+    # 节点变化 → 缓存归零，避免跨节点串场
+    cur_node = node_manager.current_node_id()
+    if _podman_cmd_node != cur_node:
+        _podman_cmd = None
+        _podman_fail_until = 0.0
+        _podman_cmd_node = cur_node
+
     if _podman_cmd is not None:
         return _podman_cmd
     now = time.time()
     if now < _podman_fail_until:
         return None
+    # 远端节点：探测远端 docker/podman CLI（本地 SDK 对远端无意义）
+    if node_manager.is_remote():
+        with _probe_lock:
+            if _podman_cmd is not None:
+                return _podman_cmd
+            now = time.time()
+            if now < _podman_fail_until:
+                return None
+            node_id = _podman_cmd_node
+            if node_id != cur_node:
+                _podman_cmd = None
+                _podman_fail_until = 0.0
+                _podman_cmd_node = cur_node
+            for cli in ("podman", "docker"):
+                rc, out, err = _run([cli, "--version"], timeout=20)
+                text = (out + err).lower()
+                # --version 输出须含引擎名（防误判外部同名命令），再跑 info 确认可用
+                if rc == 0 and cli in text:
+                    rc2, _o2, e2 = _run([cli, "info"], timeout=20)
+                    if rc2 == 0:
+                        _podman_cmd = [cli]
+                        return _podman_cmd
+            _podman_fail_until = time.time() + _podman_fail_backoff
+            return None
     # Serialise probes so concurrent requests don't all spawn WSL at once.
     with _probe_lock:
         if _podman_cmd is not None:
@@ -272,6 +320,15 @@ def _cli_engine() -> str:
 
 
 def _podman_json(args: List[str]) -> list:
+    """执行引擎 JSON 命令并把输出解析为 list。
+
+    兼容两种输出形态：
+      - podman：`ps --format json` 输出单个 JSON 数组；
+      - docker：`ps --format json` 每行输出一个 JSON 对象（单容器时仅一行，
+        整体 json.loads 会得到一个 dict 而非 list，若直接按 list 迭代会拿到
+        字符串键名导致 `'str' object has no attribute 'get'`）。
+    统一归一化为 list；解析失败返回空列表（不抛错）。
+    """
     cmd = _find_podman()
     if cmd is None:
         raise RuntimeError("podman 不可用")
@@ -282,10 +339,29 @@ def _podman_json(args: List[str]) -> list:
     out = out.strip()
     if not out:
         return []
+    # 1) 整个输出是一个 JSON 数组 → 直接使用
     try:
-        return json.loads(out)
+        data = json.loads(out)
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            # 单对象：docker 单容器时整体即一个对象 → 包成单元素列表
+            return [data]
     except json.JSONDecodeError:
-        return []
+        pass
+    # 2) 逐行解析（docker: 每行一个 JSON 对象）；任一行失败则跳过
+    result = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict):
+            result.append(item)
+    return result
 
 
 def _podman_version() -> str:
@@ -361,6 +437,10 @@ def get_backend():
     global _last_reason
     if _find_podman() is not None:
         return "cli", None
+    # 远端节点：本地 docker SDK 连接的是本机 socket，对远端无意义，不尝试 SDK。
+    if node_manager.is_remote():
+        _last_reason = _last_reason or "远端节点未检测到 docker/podman CLI"
+        raise HTTPException(status_code=503, detail=_last_reason)
     c = _try_docker_sdk()
     if c is not None:
         return "docker", c
@@ -391,7 +471,8 @@ def _status_sync():
             running = sum(1 for c in ps if c.get("Status", "").startswith("Up"))
             ver = _podman_version()
             engine = _cli_engine()
-            os_label = f"linux ({engine} via WSL)" if IS_WINDOWS else f"linux ({engine})"
+            # 远端节点经 SSH 在远端执行 CLI：engine 即远端实际引擎，不套用本机 WSL 标签
+            os_label = f"linux ({engine})"
             return {
                 "available": True,
                 "containers": len(ps),
@@ -436,6 +517,31 @@ def _parse_ports(ports_field):
             if tok:
                 result.append(tok)
     return result
+
+
+def _item_name(item: dict) -> str:
+    """从容器 JSON 项提取名称（兼容 podman 的 Names 数组 与 docker 的 Names 字符串）。"""
+    names = item.get("Names")
+    if isinstance(names, list):
+        return names[0] if names else ""
+    if isinstance(names, str):
+        return names
+    return ""
+
+
+def _item_id(item: dict) -> str:
+    """提取容器 ID（docker 用大写 ID，podman 用 Id）。"""
+    return (item.get("Id") or item.get("ID") or "")[:12]
+
+
+def _item_created(item: dict) -> str:
+    """提取创建时间（docker 用 CreatedAt，podman 用 Created）。"""
+    return item.get("Created") or item.get("CreatedAt") or ""
+
+
+def _item_ports(item: dict) -> list:
+    """提取端口映射（podman 的 Ports 为 list，docker 的 Ports 为字符串）。"""
+    return _parse_ports(item.get("Ports"))
 
 
 @router.get("/containers")
@@ -561,18 +667,18 @@ def _containers_sync(all: bool = True):
             stats = _stats_sync() if any(c.get("Status", "").startswith("Up") for c in arr) else {}
             result = []
             for c in arr:
-                state = "running" if c.get("Status", "").startswith("Up") else c.get("Status", "exited")
-                name = (c.get("Names") or [""])[0] if c.get("Names") else ""
+                state = "running" if c.get("Status", "").startswith("Up") else c.get("State", "exited") or "exited"
+                name = _item_name(c)
                 st = stats.get(name, {})
-                cid = c.get("Id", "")[:12]
+                cid = _item_id(c)
                 result.append({
                     "id": cid,
                     "name": name,
                     "image": c.get("Image", ""),
                     "status": c.get("Status", ""),
                     "state": state,
-                    "created": c.get("Created", ""),
-                    "ports": _parse_ports(c.get("Ports")),
+                    "created": _item_created(c),
+                    "ports": _item_ports(c),
                     "cpu_percent": st.get("cpu_percent", 0),
                     "mem_percent": st.get("mem_percent", 0),
                     "mem_usage": st.get("mem_usage", ""),

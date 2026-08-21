@@ -50,6 +50,15 @@
           <span :class="['tag', current.type === 'ssh' ? 'tag-remote' : 'tag-local']">{{ current.type === 'ssh' ? $t('nodes.remoteBadge') : $t('nodes.localBadge') }}</span>
         </div>
 
+        <!-- 统一面板兼容开关：开启后每个窗口绑定打开时对应的节点，聚焦窗口即操作该节点 -->
+        <div class="row" style="justify-content:space-between; padding:2px 0;">
+          <label class="switch-label">
+            <input type="checkbox" v-model="settings.unifiedPanel" />
+            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('nodes.unifiedPanel') }}</span>
+          </label>
+        </div>
+        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:6px;">{{ $t('nodes.unifiedPanelHint') }}</div>
+
         <!-- 测试连接独立反馈区 -->
         <div v-if="connMsg" :class="['msg', connMsgType]" style="margin-top:6px;">{{ connMsg }}</div>
 
@@ -64,6 +73,7 @@
               </span>
             </label>
             <span v-if="n.id === currentId" class="tag tag-current">{{ $t('nodes.current') }}</span>
+            <span v-if="n.agent_enabled" class="tag tag-agenty">{{ $t('nodes.agentBadge') }}</span>
             <button class="btn btn-mini" @click="testNode(n)">{{ testingId === n.id ? $t('nodes.testing') : $t('nodes.test') }}</button>
             <button class="btn btn-mini" v-if="n.type === 'ssh'" @click="startEdit(n)">{{ $t('nodes.edit') }}</button>
             <button class="btn btn-mini btn-danger" v-if="n.type === 'ssh'" @click="removeNode(n)">{{ $t('nodes.delete') }}</button>
@@ -92,12 +102,90 @@
             <input v-if="form.auth === 'password'" v-model="form.password" type="password" :placeholder="$t('nodes.passwordPlaceholder')" spellcheck="false" />
             <input v-else v-model="form.key_path" :placeholder="$t('nodes.keyPathPlaceholder')" spellcheck="false" />
             <div style="font-size:11px;color:#8e8e93;">{{ form.auth === 'password' ? $t('nodes.passwordHint') : $t('nodes.keyHint') }}</div>
+
+            <!-- Agent 配置（子节点 API）：让主面板能经 SSH 隧道回调子节点 Graw -->
+            <div style="border-top:1px dashed rgba(0,0,0,0.12); margin:6px 0 8px; padding-top:10px;">
+              <div class="row" style="justify-content:space-between; padding:0 0 2px;">
+                <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('nodes.agentTitle') }}</span>
+                <label class="switch-label">
+                  <input type="checkbox" v-model="form.agent_enabled" />
+                  <span style="font-size:11px;color:#8e8e93;">{{ $t('nodes.agentEnable') }}</span>
+                </label>
+              </div>
+              <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:6px;">{{ $t('nodes.agentHint') }}</div>
+              <template v-if="form.agent_enabled">
+                <input v-model.number="form.agent_port" type="number" :placeholder="$t('nodes.agentPortPlaceholder')" spellcheck="false" />
+                <input v-model="form.agent_key" :placeholder="$t('nodes.agentKeyPlaceholder')" spellcheck="false" style="margin-top:6px;" />
+                <input v-model="form.agent_secret" :placeholder="$t('nodes.agentSecretPlaceholder')" spellcheck="false" style="margin-top:6px;" />
+                <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-top:4px;">{{ $t('nodes.agentSecretHint') }}</div>
+              </template>
+            </div>
+
             <div style="display:flex;gap:8px;">
               <button class="btn" :disabled="saving" @click="saveNode">{{ saving ? $t('settings.saveSaving') : $t('nodes.save') }}</button>
               <button class="btn btn-mini" @click="cancelEdit">{{ $t('nodes.cancel') }}</button>
             </div>
             <div v-if="editorMsg" :class="['msg', msgType]">{{ editorMsg }}</div>
           </div>
+        </div>
+      </div>
+
+      <!-- 「作为子节点」Agent 收取模式（仅管理员）：让本面板自身可被其它主面板接入 -->
+      <div class="block" v-if="isAdmin()">
+        <div class="block-title">{{ $t('agent.title') }}</div>
+        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('agent.desc') }}</div>
+
+        <!-- 当前状态开关 -->
+        <div class="row" style="justify-content:space-between; padding:4px 0 6px;">
+          <label class="switch-label">
+            <input type="checkbox" v-model="agentForm.enabled" />
+            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('agent.enable') }}</span>
+          </label>
+          <span :class="['tag', agentStatus.enabled ? 'tag-remote' : 'tag-local']">{{ agentStatus.enabled ? $t('agent.enabled') : $t('agent.disabled') }}</span>
+        </div>
+
+        <template v-if="agentForm.enabled">
+          <!-- 成对密钥配置 -->
+          <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">
+            {{ $t('agent.endpointHint') }}
+          </div>
+          <div class="row" style="flex-direction:column;align-items:stretch;gap:6px;">
+            <input v-model="agentForm.key" :placeholder="$t('agent.keyLabel') + ' · ' + $t('agent.keyPlaceholder')" spellcheck="false" />
+            <div class="row" style="gap:6px; padding:0;">
+              <input v-model="agentForm.secret"
+                     :type="agentSecretVisible ? 'text' : 'password'"
+                     :placeholder="$t('agent.secretLabel') + ' · ' + $t('agent.secretPlaceholder')"
+                     spellcheck="false" style="flex:1;" />
+              <button class="btn btn-mini" type="button" :disabled="agentSaving"
+                      :title="$t('agent.copySecret')" @click="copyAgentSecret">
+                {{ agentSecretVisible ? $t('common.copy') : $t('agent.copySecret') }}
+              </button>
+            </div>
+            <div style="font-size:11px;color:#8e8e93;">{{ $t('agent.secretHint') }}</div>
+            <div v-if="agentSecretMsg" :class="['msg', agentSecretMsgType]" style="font-size:11px;">{{ agentSecretMsg }}</div>
+
+            <!-- 角色选择 -->
+            <div class="row" style="gap:16px;">
+              <span style="font-size:12px;color:#1d1d1f;">{{ $t('agent.roleLabel') }}：</span>
+              <label class="switch-label">
+                <input type="radio" name="agentRole" value="admin" v-model="agentForm.role" />
+                <span>{{ $t('agent.roleAdmin') }}</span>
+              </label>
+              <label class="switch-label">
+                <input type="radio" name="agentRole" value="user" v-model="agentForm.role" />
+                <span>{{ $t('agent.roleUser') }}</span>
+              </label>
+            </div>
+            <div style="font-size:11px;color:#8e8e93;">{{ $t('agent.roleHint') }}</div>
+          </div>
+        </template>
+
+        <div class="row" style="gap:8px; margin-top:8px;">
+          <button class="btn" :disabled="agentSaving" @click="saveAgentCfg">
+            {{ agentSaving ? $t('settings.saveSaving') : $t('settings.save') }}
+          </button>
+          <button class="btn btn-mini" @click="genAgentKey" :disabled="agentSaving">{{ $t('agent.genKey') }}</button>
+          <div v-if="agentMsg" :class="['msg', agentMsgType]" style="flex:1;">{{ agentMsg }}</div>
         </div>
       </div>
 
@@ -267,7 +355,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { settings } from '../../store/settings'
 import { isAdmin } from '../../store/auth'
-import { nodesApi, shunxApi, panelApi, updateApi, webmodeApi, authApi } from '../../api'
+import { nodesApi, shunxApi, panelApi, updateApi, webmodeApi, authApi, agentApi } from '../../api'
 import { nodes as nodesStore, refreshNodes, setCurrentNode } from '../../store/nodes'
 import { LANGUAGES, setLocale } from '../../locales'
 import ConfirmDialog from '../ConfirmDialog.vue'
@@ -332,6 +420,138 @@ async function saveWebMode() {
     wmmsgType.value = 'err'
   } finally {
     wmsaving.value = false
+  }
+}
+
+// ---- 「作为子节点」Agent 收取模式 ----
+const agentForm = reactive({ enabled: false, key: '', secret: '', role: 'user' })
+const agentStatus = reactive({ enabled: false })
+const agentSaving = ref(false)
+const agentMsg = ref('')
+const agentMsgType = ref('')
+// secret 明文展示（一次性）：仅在「初次/重置后」允许拉取明文复制，展示后即隐藏
+const agentSecretVisible = ref(false)
+const agentSecretMsg = ref('')
+const agentSecretMsgType = ref('')
+
+// 一次性拉取子节点校验 secret 明文（供复制）。后端返回即标记已展示，第二次为空。
+async function fetchAgentSecret() {
+  try {
+    const r = await agentApi.revealSecret()
+    if (r.secret) {
+      agentForm.secret = r.secret
+      agentSecretVisible.value = true
+      agentSecretMsg.value = t('agent.secretShownOnce')
+      agentSecretMsgType.value = 'ok'
+      return r.secret
+    }
+    agentSecretVisible.value = false
+    agentSecretMsg.value = t('agent.secretAlreadyShown')
+    agentSecretMsgType.value = 'err'
+    return ''
+  } catch (e) {
+    agentSecretMsg.value = e?.response?.data?.detail || t('agent.saveFailed')
+    agentSecretMsgType.value = 'err'
+    return ''
+  }
+}
+
+// 复制 secret 到剪贴板；尚未拉取明文则先拉取再复制（初次/重置后触发）
+async function copyAgentSecret() {
+  let secret = agentForm.secret
+  if (!agentSecretVisible.value || !secret) {
+    secret = await fetchAgentSecret()
+  }
+  if (!secret) return
+  try {
+    await navigator.clipboard.writeText(secret)
+    agentSecretMsg.value = t('agent.copySuccess')
+    agentSecretMsgType.value = 'ok'
+  } catch (e) {
+    agentSecretMsg.value = t('agent.copyFailed')
+    agentSecretMsgType.value = 'err'
+  }
+}
+
+async function loadAgentCfg() {
+  try {
+    const s = await agentApi.status()
+    agentStatus.enabled = !!s.enabled
+    agentStatus.has_secret = !!s.has_secret
+    Object.assign(agentForm, {
+      enabled: !!s.enabled,
+      key: s.key || '',
+      secret: '', // 明文不回显，留空表示保持原值
+      role: s.role === 'admin' ? 'admin' : 'user',
+    })
+    agentMsg.value = ''
+  } catch (e) {
+    // 非管理员 / 接口异常时静默，不阻塞设置窗口
+  }
+}
+
+// 生成随机成对密钥并将「启用」打开，方便快速接入
+function genAgentKey() {
+  const rand = (chars) => {
+    const bytes = new Uint8Array(chars)
+    if (window.crypto && window.crypto.getRandomValues) {
+      window.crypto.getRandomValues(bytes)
+      // 转 URL-safe 字符：每字节扩成 base64url 片段，保证无特殊符号
+      return Array.from(bytes, (b) =>
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'[b % 64]
+      ).join('')
+    }
+    // 旧浏览器兜底：用 Math.random 拼串
+    const pool = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+    return Array.from({ length: chars }, () => pool[Math.floor(Math.random() * pool.length)]).join('')
+  }
+  agentForm.key = rand(16)
+  agentForm.secret = rand(32)
+  agentForm.enabled = true
+  agentMsg.value = ''
+}
+
+async function saveAgentCfg() {
+  if (agentSaving.value) return
+  if (agentForm.enabled) {
+    if (!agentForm.key.trim()) {
+      agentMsg.value = t('agent.keyRequired')
+      agentMsgType.value = 'err'
+      return
+    }
+    // 首次启用 / 需更换 secret 时必须非空；「已配置过再编辑」可留空保持原值
+    if (!agentForm.secret.trim() && !agentStatus.has_secret) {
+      agentMsg.value = t('agent.secretRequired')
+      agentMsgType.value = 'err'
+      return
+    }
+  }
+  agentSaving.value = true
+  agentMsg.value = ''
+  try {
+    const res = await agentApi.save({
+      enabled: !!agentForm.enabled,
+      key: agentForm.key.trim(),
+      secret: agentForm.secret.trim(), // 后端留空保持原值
+      role: agentForm.role === 'admin' ? 'admin' : 'user',
+    })
+    agentStatus.enabled = !!res.enabled
+    agentStatus.has_secret = !!res.has_secret
+    agentForm.secret = '' // 保存后清空，避免编辑区残留明文
+    // 初次/重置后 can_reveal 为 true → 自动拉取明文展示一次，便于复制到其它面板
+    agentSecretVisible.value = false
+    if (res.can_reveal) {
+      await fetchAgentSecret()
+    } else {
+      agentSecretMsg.value = ''
+    }
+    agentMsg.value = t('agent.saved')
+    agentMsgType.value = 'ok'
+  } catch (e) {
+    agentMsg.value = e?.response?.data?.detail || t('agent.saveFailed')
+    agentMsgType.value = 'err'
+  } finally {
+    agentSaving.value = false
   }
 }
 
@@ -501,7 +721,7 @@ const current = computed(() => {
 })
 const showEditor = ref(false)
 const editingId = ref(null)
-const form = reactive({ id: '', name: '', host: '', port: 22, user: '', auth: 'password', password: '', key_path: '' })
+const form = reactive({ id: '', name: '', host: '', port: 22, user: '', auth: 'password', password: '', key_path: '', agent_enabled: false, agent_port: 8000, agent_key: '', agent_secret: '' })
 const savingNode = ref(false)
 const testingId = ref('')
 const editorMsg = ref('')
@@ -524,13 +744,14 @@ async function loadNodes() {
 
 function startAdd() {
   editingId.value = null
-  Object.assign(form, { id: '', name: '', host: '', port: 22, user: '', auth: 'password', password: '', key_path: '' })
+  Object.assign(form, { id: '', name: '', host: '', port: 22, user: '', auth: 'password', password: '', key_path: '', agent_enabled: false, agent_port: 8000, agent_key: '', agent_secret: '' })
   editorMsg.value = ''
   showEditor.value = true
 }
 
 function startEdit(n) {
   editingId.value = n.id
+  // 密钥/校验 secret 出于安全不回传列表，编辑时留空表示「保持原值」
   Object.assign(form, {
     id: n.id,
     name: n.name,
@@ -540,6 +761,10 @@ function startEdit(n) {
     auth: n.auth,
     password: '',
     key_path: n.key_path || '',
+    agent_enabled: !!n.agent_enabled,
+    agent_port: n.agent_port || 8000,
+    agent_key: '',
+    agent_secret: '',
   })
   editorMsg.value = ''
   showEditor.value = true
@@ -559,6 +784,11 @@ async function saveNode() {
   if (!host) return editorError(t('nodes.hostRequired'))
   if (!user) return editorError(t('nodes.userRequired'))
   if (form.auth === 'key' && !(form.key_path || '').trim()) return editorError(t('nodes.keyRequired'))
+  if (form.agent_enabled) {
+    if (!(form.agent_key || '').trim()) return editorError(t('nodes.agentKeyRequired'))
+    // agent_secret：新增必须填；编辑可留空表示保持原值
+    if (!editingId.value && !(form.agent_secret || '').trim()) return editorError(t('nodes.agentSecretRequired'))
+  }
   editorMsg.value = ''
   editorMsgType.value = ''
   savingNode.value = true
@@ -571,6 +801,10 @@ async function saveNode() {
       auth: form.auth,
       password: form.password || '',
       key_path: (form.key_path || '').trim(),
+      agent_port: form.agent_port || 8000,
+      agent_key: form.agent_enabled ? (form.agent_key || '').trim() : '',
+      agent_secret: form.agent_enabled ? (form.agent_secret || '').trim() : '',
+      agent_enabled: !!form.agent_enabled,
     }
     if (editingId.value) {
       await nodesApi.update(editingId.value, body)
@@ -654,6 +888,7 @@ onMounted(() => {
     })
   if (isAdmin()) loadNodes()
   if (isAdmin()) loadWebMode()
+  if (isAdmin()) loadAgentCfg()
 })
 
 // 切换界面语言
@@ -845,6 +1080,10 @@ input:focus {
 .tag-current {
   color: #fff;
   background: #0a84ff;
+}
+.tag-agenty {
+  color: #7a3ce8;
+  background: rgba(122,60,232,0.12);
 }
 .btn-mini {
   padding: 3px 10px;

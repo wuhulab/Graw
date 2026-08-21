@@ -43,6 +43,8 @@ from app.routers.docker_api import (
     _podman_json,
     _run,
     _clean_reason,
+    _item_name,
+    _item_id,
 )
 
 logger = logging.getLogger("graw.protection")
@@ -509,10 +511,12 @@ def _scan_docker_sync() -> dict:
         if kind == "cli":
             containers = _podman_json(["ps", "-a", "--format", "json"])
             for c in containers:
-                cid = c.get("Id", "")
-                name = (c.get("Names") or [""])[0] if c.get("Names") else ""
+                cid = _item_id(c)
+                name = _item_name(c)
                 image = c.get("Image", "")
                 status = c.get("Status", "")
+                if not cid:
+                    continue
                 if _is_ignored("docker", name):
                     continue
                 insp = _podman_json(["inspect", cid])

@@ -1,6 +1,21 @@
 <template>
   <Login v-if="!loggedIn" @login="onLoggedIn" />
   <div v-else class="desktop" :style="desktopBgStyle">
+    <!-- 动态壁纸层：视频壁纸或图片轮播（置于桌面内容之下） -->
+    <div v-if="wallpaperVideo" class="wallpaper-video">
+      <video :src="wallpaperVideo" autoplay muted loop playsinline></video>
+      <div class="wallpaper-video-mask"></div>
+    </div>
+    <div v-else-if="carouselImages.length > 1" class="wallpaper-carousel">
+      <div
+        v-for="(_, i) in carouselImages"
+        :key="i"
+        class="wallpaper-carousel-slide"
+        :class="{ active: i === carouselIndex }"
+        :style="{ backgroundImage: `url('${carouselImages[i]}')` }"
+      ></div>
+      <div class="wallpaper-carousel-mask"></div>
+    </div>
     <div class="desktop-content">
       <!-- Shortcuts -->
       <div class="shortcuts">
@@ -72,7 +87,7 @@
         </div>
       </div>
       <div class="clock">
-        <div v-if="hostBadgeText && isAdmin()" class="host-badge" :class="{ remote: hostBadgeRemote }" :title="hostBadgeRemote ? hostBadgeText : ''">
+        <div v-if="hostBadgeText && isAdmin()" class="host-badge" :class="{ remote: hostBadgeRemote }" :title="hostBadgeTitle">
           <span class="dot"></span>{{ hostBadgeText }}
         </div>
         <div>{{ clockTime }}</div>
@@ -166,6 +181,7 @@ import { settings } from './store/settings'
 import { systemState, startMetrics, stopMetrics } from './store/systemMetrics'
 import { startDocker, stopDocker, refresh as refreshDocker } from './store/docker'
 import { nodes as nodesStore, refreshNodes } from './store/nodes'
+import { setRequestNode } from './store/requestNode'
 import { tamperState, startTamper, stopTamper } from './store/tamper'
 import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck, ShieldAlert, ShieldBan, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, DatabaseBackup, BellRing, Activity, Archive, Fingerprint, BarChart3, FileCode2, History, Server, KeyRound, Stethoscope, MonitorSmartphone, Unlink, UserCheck, RefreshCw, Wrench, Settings2, ServerCog } from 'lucide-vue-next'
 
@@ -173,6 +189,8 @@ const loggedIn = computed(() => !!auth.token)
 
 // 桌面背景样式：与登录页共用同一份界面配置（自定义背景或回退默认 hero.png）
 const desktopBgStyle = computed(() => {
+  // 有动态壁纸（视频/轮播）时，底层由独立壁纸层渲染，这里给桌面容器一个兜底背景
+  if (wallpaperVideo.value || carouselImages.value.length > 1) return {}
   if (uiState.background) {
     return {
       backgroundImage: `url('${uiState.background}')`,
@@ -183,6 +201,37 @@ const desktopBgStyle = computed(() => {
   return {}
 })
 
+// ---- 动态壁纸：视频壁纸 / 多背景图片轮播 ----
+// video 模式：全屏 muted 循环视频；image 模式：多张背景按间隔轮播
+const wallpaperVideo = computed(() =>
+  uiState.background_mode === 'video' && uiState.wallpaper_video ? uiState.wallpaper_video : ''
+)
+const carouselImages = computed(() =>
+  uiState.background_mode === 'image' && Array.isArray(uiState.backgrounds) ? uiState.backgrounds : []
+)
+const carouselIndex = ref(0)
+let carouselTimer = null
+function startCarousel() {
+  stopCarousel()
+  if (carouselImages.value.length <= 1) return
+  const interval = Math.max(3, Number(uiState.background_interval) || 8) * 1000
+  carouselTimer = setInterval(() => {
+    if (carouselImages.value.length <= 1) return
+    carouselIndex.value = (carouselIndex.value + 1) % carouselImages.value.length
+  }, interval)
+}
+function stopCarousel() {
+  if (carouselTimer) {
+    clearInterval(carouselTimer)
+    carouselTimer = null
+  }
+}
+watch(carouselImages, (v) => {
+  carouselIndex.value = 0
+  if (v.length > 1) startCarousel()
+  else stopCarousel()
+})
+
 // 当前管理主机：用于底栏指示（多机管理），切换后自动响应式更新
 const { t } = useI18n()
 const currentHost = computed(() => {
@@ -191,11 +240,26 @@ const currentHost = computed(() => {
 })
 const hostBadgeText = computed(() => {
   if (!currentHost.value) return ''
-  return currentHost.value.type === 'ssh' ? `${currentHost.value.name} · ${currentHost.value.user}@${currentHost.value.host}` : currentHost.value.name
+  // 底栏只显示节点名称；完整信息（名称 · 用户@主机 · 管理员）放悬浮提示
+  return currentHost.value.name || currentHost.value.id
+})
+// 底栏主机完整悬浮提示：名称 · user@host · 管理员（本机仅显示名称 · 管理员）
+const hostBadgeTitle = computed(() => {
+  if (!currentHost.value) return ''
+  const name = currentHost.value.name || currentHost.value.id
+  if (currentHost.value.type === 'ssh') {
+    return `${name} ${currentHost.value.user}@${currentHost.value.host} 管理员`
+  }
+  return `${name} 管理员`
 })
 const hostBadgeRemote = computed(() => !!(currentHost.value && currentHost.value.type === 'ssh'))
 // 当前管理主机是否为远程（SSH）节点：remoteCap 门控依赖此响应式状态
 const isCurrentHostRemote = computed(() => hostBadgeRemote.value)
+// 当前远端节点是否已配置 Agent（local 类应用可经 Agent 代理在子节点使用）。
+// 未配置 Agent 的裸远端节点，local 类（面板自身管理项）仍应隐藏。
+const currentHostAgentReady = computed(() =>
+  !!(currentHost.value && currentHost.value.type === 'ssh' && currentHost.value.agent_enabled)
+)
 function onLoggedIn() {
   // 触发响应式重渲染，并检查是否需要强制设置安全入口
   checkShunxRequired()
@@ -257,10 +321,11 @@ const shortcuts = ref([
 ])
 
 // 桌面快捷方式：管理员可见全部，普通用户仅可见非管理功能。
-// 远端节点下隐藏 local 类（面板自身管理项）应用，避免误操作本机。
+// 远端节点下：未配置 Agent 时隐藏 local 类（面板自身管理项）应用，避免误操作本机；
+// 已配置 Agent 时 local 类经 Agent 代理在子节点可用，正常显示。
 const visibleShortcuts = computed(() => shortcuts.value.filter(s =>
   (!s.adminOnly || isAdmin()) &&
-  !(isCurrentHostRemote.value && s.remoteCap === 'local')
+  !(isCurrentHostRemote.value && !currentHostAgentReady.value && s.remoteCap === 'local')
 ))
 
 const selected = ref(null)
@@ -341,16 +406,20 @@ function openWindow(key) {
   // 统一守卫：无论主快捷方式还是 extras，adminOnly 窗口都要求管理员
   // （后端 API 已有鉴权，此处为前端纵深防御，避免普通用户残留窗口 UI）
   if (def.adminOnly && !isAdmin()) return
-  // 远程能力守卫：远端节点下 local 类（面板自身管理项）应用禁止打开
-  // （后端同一守护返回 403，此处前端提前拦截并提示，避免空白窗口）
-  if (def.remoteCap === 'local' && isCurrentHostRemote.value) {
+  // 远程能力守卫：未配置 Agent 的远端节点下，local 类（面板自身管理项）应用
+  // 禁止打开（后端同一守护返回 403，此处前端提前拦截并提示，避免空白窗口）。
+  // 已配置 Agent 时 local 类经 Agent 代理在子节点可用，正常打开。
+  if (def.remoteCap === 'local' && isCurrentHostRemote.value && !currentHostAgentReady.value) {
     alert(t('nodes.localOnlyOnRemote'))
     return
   }
   const id = ++windowSeq
+  // 「统一面板兼容」：窗口绑定打开时对应的节点（聚焦该窗口即操作该节点）
+  const boundNode = settings.unifiedPanel ? nodesStore.currentId : ''
   const w = reactive({
     id,
     key,
+    nodeId: boundNode, // 绑定的目标节点（开启统一面板兼容时有值，否则空=跟随全局）
     title: def.label,
     titleKey: def.titleKey,
     titleArgs: def.titleArgs,
@@ -949,6 +1018,18 @@ onMounted(() => {
   document.addEventListener('mousedown', onDocClick)
 })
 
+// 统一面板兼容：切换聚焦窗口时，把「当前请求目标节点」设为该窗口绑定的节点。
+// 桌面无窗口时跟随全局 currentId。关闭窗口后如 activeWindowId 变为 None 则复位。
+watch(activeWindowId, (id) => {
+  let node = ''
+  if (settings.unifiedPanel) {
+    const w = openWindows.value.find(x => x.id === id)
+    node = (w && w.nodeId) || ''
+  }
+  nodesStore.activeWindowNode = node
+  setRequestNode(node)
+})
+
 // 登录态变化时启停共享实时数据，避免未登录时持续请求
 watch(loggedIn, (v) => {
   if (v) startRealtime()
@@ -957,6 +1038,7 @@ watch(loggedIn, (v) => {
 
 onUnmounted(() => {
   stopRealtime()
+  stopCarousel()
   clearInterval(clockTimer)
   document.removeEventListener('mousedown', onDocClick)
 })

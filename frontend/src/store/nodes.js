@@ -7,6 +7,9 @@ export const nodes = reactive({
   list: [],
   currentId: 'local',
   loaded: false,
+  // 「统一面板兼容」：当前聚焦窗口绑定的目标节点（全局请求的默认目标节点）。
+  // 为空时所有请求走全局 currentId；聚焦某窗口时更新为该窗口打开时对应的节点。
+  activeWindowNode: '',
 })
 
 // 当前管理主机是否远程节点（供 UI 标记"远程/本机"）

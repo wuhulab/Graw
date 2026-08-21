@@ -71,6 +71,33 @@ _sshpass_available = False
 _paramiko_checked = False
 _paramiko_available = False
 
+# ------------------------------------------------------------------
+# SSH 连接池：为「当前 SSH 节点」持有一个可复用的 paramiko client，
+# 避免每次命令都重新建连（Windows 控制器无 sshpass 时单次建连约 3s）。
+# paramiko 的 exec_command 每次创建独立 channel，线程可安全共享同一
+# client，只需在连接/重连时加锁。切换节点后按 node_key 自动重建。
+# 「统一面板兼容」下多个窗口可并行访问不同节点，故连接池按 node_key 存多份，
+# 互不干扰；容量上限防止失控（超过后按最近未用淘汰策略不在此处处理，交给超时回收）。
+# ------------------------------------------------------------------
+_paramiko_pool: dict = {}  # node_key(tuple) -> paramiko.SSHClient
+_paramiko_pool_lock = threading.Lock()
+_paramiko_pool_MAX = 16
+
+# 请求级节点上下文（「统一面板兼容」用）：中间件按请求头 X-Graw-Node 临时覆盖
+# 全局当前节点，使不同窗口可并行访问不同子节点。thread-local 保证每个 HTTP
+# 请求线程隔离，覆盖立即在当前线程生效、请求处理完后由中间件复位。
+_req_ctx = threading.local()
+
+
+def set_request_node(node_id: Optional[str]) -> None:
+    """设置当前线程的请求级节点（None 表示清除覆盖）。"""
+    _req_ctx.node_id = node_id or None
+
+
+def _req_ctx_node() -> Optional[str]:
+    """读取当前线程的请求级节点（无覆盖返回 None）。"""
+    return getattr(_req_ctx, "node_id", None)
+
 
 # ------------------------------------------------------------
 # 存储读写（线程安全 + 内存缓存）
@@ -144,6 +171,9 @@ def list_nodes() -> list:
                     # 只回传是否配置了凭据，不回传真实密钥/密码
                     "has_password": bool(node.get("password")),
                     "key_path": node.get("key_path") or "",
+                    # Agent 配置是否就绪（.agent_enabled 标记，不回传 agent_key/agent_secret）
+                    "agent_enabled": bool(node.get("agent_port") and node.get("agent_key") and node.get("agent_secret")),
+                    "agent_port": int(node.get("agent_port") or 0) or 8000,
                 }
             )
         out.append(pub)
@@ -158,8 +188,16 @@ def get_node(node_id: str) -> Optional[dict]:
 
 
 def get_current_node() -> dict:
-    """返回当前选中的节点（始终存在）。"""
+    """返回当前生效的节点（始终存在）。
+
+    优先级：「统一面板兼容」下请求级节点（由中间件按 X-Graw-Node 设置）
+    > 全局选中的当前节点。请求级上下文用 thread-local，随每个 HTTP 请求线程
+    干净隔离；无覆盖时行为与改造前完全一致。
+    """
+    req_id = _req_ctx_node()
     store = _get_store()
+    if req_id and req_id in store["nodes"]:
+        return store["nodes"][req_id]
     nid = store.get("current") or LOCAL_ID
     node = store["nodes"].get(nid)
     if node is None:
@@ -219,6 +257,24 @@ def upsert_ssh_node(node: dict) -> dict:
     else:
         cleaned["password"] = existing.get("password", "")
 
+    # Agent 配置（子节点 API 访问）：仅当显式提供 key/secret 时才更新，
+    # 留空保留旧值（便于编辑时不重输）；agent_port 独立保存。
+    # agent_enabled=False 时显式清空（前端禁用 Agent 场景）。
+    agent_disabled = node.get("agent_enabled") is False
+    if agent_disabled:
+        cleaned["agent_key"] = ""
+        cleaned["agent_secret"] = ""
+    else:
+        if (node.get("agent_key") or "").strip():
+            cleaned["agent_key"] = (node.get("agent_key") or "").strip()
+        else:
+            cleaned["agent_key"] = existing.get("agent_key", "")
+        if (node.get("agent_secret") or "").strip():
+            cleaned["agent_secret"] = (node.get("agent_secret") or "").strip()
+        else:
+            cleaned["agent_secret"] = existing.get("agent_secret", "")
+    cleaned["agent_port"] = int(node.get("agent_port") or existing.get("agent_port") or 8000)
+
     # 基础字段校验
     if not cleaned["host"] or not cleaned["user"]:
         raise ValueError("host 与 user 不能为空")
@@ -229,6 +285,8 @@ def upsert_ssh_node(node: dict) -> dict:
 
     store["nodes"][node_id] = cleaned
     _save_store(store)
+    # 节点凭据可能变更（密码/密钥/主机），仅丢弃该节点的连接避免复用旧凭据的长连接
+    _paramiko_drop_pool(_paramiko_node_key(cleaned) if cleaned.get("type") == "ssh" else None)
     logger.info("已保存 SSH 节点 %s (%s@%s)", node_id, cleaned["user"], cleaned["host"])
     return next((n for n in list_nodes() if n["id"] == node_id), None)
 
@@ -240,11 +298,15 @@ def delete_node(node_id: str) -> bool:
     store = _get_store()
     if node_id not in store["nodes"]:
         return False
+    node = store["nodes"][node_id]
+    nkey = _paramiko_node_key(node) if node.get("type") == "ssh" else None
     del store["nodes"][node_id]
     if store.get("current") == node_id:
         store["current"] = LOCAL_ID
         logger.info("当前主机节点被删除，回落到本机")
     _save_store(store)
+    # 节点被删，仅丢弃该节点残留的连接池（由 nkey 定位），不影响其它节点在途连接
+    _paramiko_drop_pool(nkey)
     return True
 
 
@@ -276,19 +338,10 @@ def _paramiko_ok() -> bool:
     return _paramiko_available
 
 
-def _paramiko_run(node: dict, remote_cmd: str, **kwargs) -> subprocess.CompletedProcess:
-    """用 paramiko 在远程节点执行一条命令，返回与 subprocess.CompletedProcess 兼容结果。
-
-    仅当控制器缺少 sshpass 时作为密码认证的兜底（paramiko 为纯 Python、跨平台，
-    解决 Windows 控制器无法安装 sshpass 导致的「密码认证节点无法连接」问题）。
-    密钥认证仍优先走系统 ssh（保留退出码/信号语义与交互终端）。
-
-    兼容参数：timeout（秒）、text（输出按 UTF-8 解码为 str）、input（写往远端 stdin）。
-    """
+def _paramiko_new_client(node: dict, timeout: int) -> "paramiko.client.SSHClient":
+    """新建一个到 node 的 paramiko client（仅建立连接，未执行命令）。"""
     import paramiko
 
-    timeout = kwargs.get("timeout") or (_SSH_CONNECT_TIMEOUT + 15)
-    text = bool(kwargs.get("text", False))
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     connect_kw = {
@@ -307,6 +360,104 @@ def _paramiko_run(node: dict, remote_cmd: str, **kwargs) -> subprocess.Completed
         connect_kw["password"] = node.get("password") or ""
     try:
         client.connect(**connect_kw)
+    except Exception:
+        try:
+            client.close()
+        except Exception:
+            pass
+        raise
+    return client
+
+
+def _paramiko_node_key(node: dict) -> tuple:
+    """节点的连接标识（用于连接池 key，避免串节点）。"""
+    return (
+        str(node.get("host") or ""),
+        int(node.get("port") or _DEFAULT_PORT),
+        str(node.get("user") or ""),
+    )
+
+
+def _paramiko_pool_client(node: dict, timeout: int):
+    """返回连接池中的复用 client（按 node_key 命中则复用，否则自动重连）。
+
+    线程安全：连接/重连在 _paramiko_pool_lock 内完成；exec_command 阶段由
+    paramiko channel 保证可并发，不放锁。「统一面板兼容」下按 node_key 存多份，
+    各节点连接相互独立，避免多窗口并行访问不同节点时互相踢掉连接。
+    """
+    key = _paramiko_node_key(node)
+    with _paramiko_pool_lock:
+        cur = _paramiko_pool.get(key)
+        if cur is not None:
+            try:
+                transport = cur.get_transport()
+                if transport is not None and transport.is_active():
+                    return cur
+            except Exception:
+                pass
+            # 连接已失效：关闭旧 client 后重建
+            try:
+                cur.close()
+            except Exception:
+                pass
+            _paramiko_pool.pop(key, None)
+        # 容量控制：超过上限时移除最旧的连接，避免连接数失控（release 侧无感知）
+        if len(_paramiko_pool) >= _paramiko_pool_MAX:
+            oldest_key = next(iter(_paramiko_pool))  # 插入序最旧
+            old = _paramiko_pool.pop(oldest_key, None)
+            if old is not None:
+                try:
+                    old.close()
+                except Exception:
+                    pass
+        client = _paramiko_new_client(node, timeout)
+        _paramiko_pool[key] = client
+        return client
+
+
+def _paramiko_drop_pool(node_key: Optional[tuple] = None):
+    """关闭并清空连接池。
+
+    传入 node_key 只清理该节点的连接（节点删除/凭据变更时）；不传则全部清理
+    （进程退出 / 全量重建）。「统一面板兼容」下多窗口可能各自持有不同节点，
+    删除某个节点时仅失效其对应连接，不影响其它窗口在途访问。
+    """
+    with _paramiko_pool_lock:
+        if node_key is not None:
+            cur = _paramiko_pool.pop(node_key, None)
+            if cur is not None:
+                try:
+                    cur.close()
+                except Exception:
+                    pass
+            return
+        for cur in _paramiko_pool.values():
+            try:
+                cur.close()
+            except Exception:
+                pass
+        _paramiko_pool.clear()
+
+
+def _paramiko_run(node: dict, remote_cmd: str, **kwargs) -> subprocess.CompletedProcess:
+    """用 paramiko 在远程节点执行一条命令，返回与 subprocess.CompletedProcess 兼容结果。
+
+    仅当控制器缺少 sshpass 时作为密码认证的兜底（paramiko 为纯 Python、跨平台，
+    解决 Windows 控制器无法安装 sshpass 导致的「密码认证节点无法连接」问题）。
+    密钥认证仍优先走系统 ssh（保留退出码/信号语义与交互终端）。
+
+    兼容参数：timeout（秒）、text（输出按 UTF-8 解码为 str）、input（写往远端 stdin）。
+    默认复用连接池；use_pool=False 时强制新建独立连接（供连通性测试，测的是
+    传入节点而非连接池当前节点）。
+    """
+    timeout = kwargs.get("timeout") or (_SSH_CONNECT_TIMEOUT + 15)
+    text = bool(kwargs.get("text", False))
+    use_pool = bool(kwargs.get("use_pool", True))
+    if use_pool:
+        client = _paramiko_pool_client(node, timeout)
+    else:
+        client = _paramiko_new_client(node, timeout)
+    try:
         stdin, stdout, stderr = client.exec_command(remote_cmd, timeout=timeout)
         # 命令执行读超时保护，避免远端卡死导致面板请求挂起
         stdout.channel.settimeout(timeout)
@@ -320,11 +471,36 @@ def _paramiko_run(node: dict, remote_cmd: str, **kwargs) -> subprocess.Completed
         out = stdout.read()
         errb = stderr.read()
         code = stdout.channel.recv_exit_status()
-    finally:
-        try:
-            client.close()
-        except Exception:
-            pass
+    except Exception:
+        # 可能是连接已失效：若走的是连接池，丢弃该节点的坏连接让下次重建并重试一次
+        if use_pool:
+            _paramiko_drop_pool(_paramiko_node_key(node))
+            client = _paramiko_new_client(node, timeout)
+            try:
+                stdin, stdout, stderr = client.exec_command(remote_cmd, timeout=timeout)
+                stdout.channel.settimeout(timeout)
+                input_data = kwargs.get("input")
+                if input_data is not None:
+                    stdin.write(input_data.encode("utf-8") if isinstance(input_data, str) else input_data)
+                    try:
+                        stdin.channel.shutdown_write()
+                    except Exception:
+                        pass
+                out = stdout.read()
+                errb = stderr.read()
+                code = stdout.channel.recv_exit_status()
+            except Exception:
+                try:
+                    client.close()
+                except Exception:
+                    pass
+                raise
+        else:
+            try:
+                client.close()
+            except Exception:
+                pass
+            raise
     if text:
         out = out.decode("utf-8", "replace")
         errb = errb.decode("utf-8", "replace")
@@ -332,9 +508,13 @@ def _paramiko_run(node: dict, remote_cmd: str, **kwargs) -> subprocess.Completed
 
 
 def _paramiko_connect_test(node: dict) -> dict:
-    """用 paramiko 测试节点 SSH 连通性，返回 {"ok": bool, "message": str}。"""
+    """用 paramiko 测试节点 SSH 连通性，返回 {"ok": bool, "message": str}。
+
+    必须用独立连接（use_pool=False），因为测试的是「传入节点」，不能复用
+    连接池当前节点的 client，否则会测错对象。
+    """
     try:
-        _paramiko_run(node, "echo ok", timeout=_SSH_CONNECT_TIMEOUT + 5, text=True)
+        _paramiko_run(node, "echo ok", timeout=_SSH_CONNECT_TIMEOUT + 5, text=True, use_pool=False)
         return {"ok": True, "message": "ok"}
     except Exception as e:  # noqa: BLE001 - 连接失败要向上抛可读信息
         return {"ok": False, "message": str(e).strip() or "连接失败"}
@@ -531,6 +711,65 @@ def listdir(path: str, include_hidden: bool = True) -> list:
         timeout=_SSH_CONNECT_TIMEOUT + 15,
     )
     return [line for line in (r.stdout or "").splitlines() if line and line != "." and line != ".."]
+
+
+def listdir_detail(path: str, include_hidden: bool = True) -> list:
+    """列出当前管理主机上目录里的条目，并带 is_dir / size / modified。
+
+    目标是**单次连接**取回全部条目元信息，避免文件管理对一个目录里的每一项
+    分别再发一次 isdir/getsize（每条一次 SSH，大目录会把面板拖垮）。
+
+    返回 [{"name", "is_dir", "size", "modified"}, ...]，语义与本地 os.scandir 对齐。
+
+    远程用 `find` 一次输出所有条目（`%f` 只给真实文件名，不含 `ls -l` 的
+    `-> 目标` 链接尾巴），以 NUL 分隔字段，规避文件名含空格/链接时解析错位；
+    本地直接用 os.scandir（无额外 I/O 开销）。
+    """
+    if not is_remote():
+        base = hostfs.host_path(path)
+        out = []
+        try:
+            for e in os.scandir(base):
+                try:
+                    st = e.stat(follow_symlinks=False)
+                    out.append({
+                        "name": e.name,
+                        "is_dir": e.is_dir(),
+                        "size": st.st_size,
+                        "modified": int(st.st_mtime),
+                    })
+                except OSError:
+                    out.append({"name": e.name, "is_dir": False, "size": 0, "modified": 0})
+        except OSError:
+            out = []
+        if not include_hidden:
+            out = [x for x in out if not x["name"].startswith(".")]
+        return out
+
+    # find 输出：每条 %f\0%y\0%s\0 —— 文件名(NUL)类型(NUL)字节大小(NUL)。
+    # %y: d=目录, l=符号链接, f=普通文件等。绝不追加 "-> 目标"。默认含隐藏文件。
+    # -mindepth 1 -maxdepth 1 只列直接子项，不递归。相对/绝对路径都安全（shlex 转义）。
+    cmd = (
+        "find " + shlex.quote(path) +
+        " -mindepth 1 -maxdepth 1 -printf '%f\\0%y\\0%s\\0' 2>/dev/null || true"
+    )
+    r = host_shell(cmd, capture_output=True, text=True, timeout=_SSH_CONNECT_TIMEOUT + 15)
+    out = []
+    fields = (r.stdout or "").split("\x00")
+    # 每 3 段为一组：name, type, size
+    for i in range(0, len(fields) - 2, 3):
+        name, typ, size_tok = fields[i], fields[i + 1], fields[i + 2]
+        if not name or name in (".", ".."):
+            continue
+        if not include_hidden and name.startswith("."):
+            continue
+        out.append({
+            "name": name,
+            "is_dir": typ.strip() == "d",
+            "size": int(size_tok) if size_tok.strip().isdigit() else 0,
+            "modified": 0,
+        })
+    return out
 
 
 def read_text(path: str, errors="replace") -> str:

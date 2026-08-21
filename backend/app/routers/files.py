@@ -13,6 +13,7 @@ from pydantic import BaseModel
 import os
 import logging
 import shutil
+import posixpath
 import platform
 from typing import Optional
 
@@ -54,7 +55,13 @@ def _is_forbidden(host_view: str) -> bool:
 
 
 def _safe_path(path: str) -> str:
-    """规范化宿主机视角路径（绝对化），并拦截面板数据目录。"""
+    """规范化宿主机视角路径（绝对化），并拦截面板数据目录。
+
+    多机：当控制器是 Windows 而当前管理主机是远端 Linux 时，`os.path.abspath`
+    会把 `/` / `/etc` 规范成 `S:\` / `S:\etc`（用控制器本地盘符规则），
+    这些 Windows 路径经 host_path 原样传给远端 SSH，远端查无此路径 → 404。
+    因此远端节点下改用 POSIX 规范化（保持 `/` 前缀并归一 `.`/`..`）。
+    """
     if not path:
         path = "/"
     # 拒绝 Windows 设备命名空间前缀（\\?\ 与 \\.）：此类路径绕过 Win32
@@ -62,6 +69,18 @@ def _safe_path(path: str) -> str:
     # data 目录拦截 fail-open（第六轮审计实测可借此读取 secret.key）
     if path.startswith("\\\\?\\") or path.startswith("\\\\.\\"):
         raise HTTPException(status_code=400, detail="非法路径（不支持设备命名空间路径）")
+
+    tmp = (path or "").replace("\\", "/")
+    if node_manager.is_remote():
+        # 远端节点：POSIX 绝对路径规范化（/ 开头，归并 . / ..）
+        if tmp.startswith("/"):
+            sp = posixpath.abspath(tmp)
+        else:
+            sp = posixpath.abspath("/" + tmp.lstrip("/"))
+        if _is_forbidden(sp):
+            raise HTTPException(status_code=403, detail="无权访问面板数据目录")
+        return sp
+
     sp = os.path.abspath(path)
     if _is_forbidden(sp):
         raise HTTPException(status_code=403, detail="无权访问面板数据目录")
@@ -85,40 +104,23 @@ async def list_dir(path: Optional[str] = None):
         raise HTTPException(status_code=404, detail="Path not found")
     if not node_manager.isdir(real):
         raise HTTPException(status_code=400, detail="Not a directory")
-    items = []
+    # 单次调用取回全部条目（含 is_dir/size）：本地走 os.scandir，远端走单次 SSH ls -l，
+    # 避免旧实现对每个条目分别发一次 isdir/getsize（大目录会按条目数累加 SSH 连接）。
     try:
-        for name in node_manager.listdir(real):
-            full = real if real.endswith("/") else real
-            full = full + "/" + name
-            try:
-                # 本地节点额外取修改时间；远程节点仅返回字节数（远程无便捷 mtime）
-                mtime = 0
-                if not node_manager.is_remote():
-                    try:
-                        mtime = os.stat(os.path.join(real, name)).st_mtime
-                    except (PermissionError, OSError):
-                        mtime = 0
-                items.append(
-                    {
-                        "name": name,
-                        "path": unhost_path(full),
-                        "is_dir": node_manager.isdir(full),
-                        "size": node_manager.getsize(full),
-                        "modified": mtime,
-                    }
-                )
-            except Exception:
-                items.append(
-                    {
-                        "name": name,
-                        "path": unhost_path(full),
-                        "is_dir": node_manager.isdir(full),
-                        "size": 0,
-                        "modified": 0,
-                    }
-                )
+        entries = node_manager.listdir_detail(real)
     except PermissionError:
         raise HTTPException(status_code=403, detail="Permission denied")
+    base = real if real.endswith("/") else real + "/"
+    items = []
+    for en in entries:
+        full = base + en["name"]
+        items.append({
+            "name": en["name"],
+            "path": unhost_path(full),
+            "is_dir": en["is_dir"],
+            "size": en["size"],
+            "modified": en["modified"],
+        })
     items.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
     # 父目录：返回宿主机视角路径（前端据此回退导航）；根目录返回 None
     rp = real.rstrip("/")

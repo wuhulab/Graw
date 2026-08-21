@@ -35,28 +35,91 @@ def _rrun(cmd: str) -> str:
     return r.stdout or ""
 
 
-def _remote_overview() -> dict:
-    """远程：CPU/内存/磁盘/负载。"""
-    # CPU 利用率：两次采样 /proc/stat 计算非空闲占比
-    def _stat_total_idle(text: str):
-        parts = text.split("\n")[0].split()
-        if len(parts) < 5:
-            return 0, 0
-        idle = int(parts[4])
-        total = sum(int(x) for x in parts[1:] if x.isdigit())
-        return total, idle
+# 远端指标一次性采集：单次 SSH 连接执行一个脚本，把 CPU/内存/磁盘/负载/
+# 网络/磁盘IO/系统信息全部取回，避免旧的每次一命令一连接（太重，2s 周期跑不完）。
+# 解析约定：各段以 ===BLOCK<key>=== 打头，直到下一个块或结束。
+_REMOTE_SCRIPT = r'''
+echo "===BLOCKSTAT0==="; cat /proc/stat 2>/dev/null | head -1
+sleep 0.12
+echo "===BLOCKSTAT1==="; cat /proc/stat 2>/dev/null | head -1
+echo "===BLOCKBTIME==="; cat /proc/stat 2>/dev/null | grep '^btime' | head -1
+echo "===BLOCKMEM==="; cat /proc/meminfo 2>/dev/null
+echo "===BLOCKDF==="; df -kP / 2>/dev/null | tail -1
+echo "===BLOCKLOAD==="; cat /proc/loadavg 2>/dev/null
+echo "===BLOCKNPROC==="; nproc 2>/dev/null
+echo "===BLOCKNET==="; cat /proc/net/dev 2>/dev/null
+echo "===BLOCKDISK==="; cat /proc/diskstats 2>/dev/null | awk '{print $6, $10}'
+echo "===BLOCKNAME==="; hostname 2>/dev/null | head -1
+echo "===BLOCKUNAME==="; uname -s 2>/dev/null | head -1; uname -r 2>/dev/null | head -1; uname -v 2>/dev/null | head -1; uname -m 2>/dev/null | head -1
+echo "===BLOCKCPUINFO==="; grep 'model name' /proc/cpuinfo 2>/dev/null | head -1
+'''
 
-    t_pre, i_pre = _stat_total_idle(_rrun("cat /proc/stat 2>/dev/null | head -1"))
-    import time as _t
-    _t.sleep(0.12)
-    t_post, i_post = _stat_total_idle(_rrun("cat /proc/stat 2>/dev/null | head -1"))
+
+def _remote_fetch_all() -> dict:
+    """单次 SSH 连接采集远端全部指标，按帧标记分段解析为 dict。"""
+    r = node_manager.host_shell(_REMOTE_SCRIPT, capture_output=True, text=True, timeout=20)
+    out = r.stdout or ""
+    blocks: dict = {}
+    cur = None
+    buf = []
+    for line in out.splitlines():
+        if line.startswith("===BLOCK") and line.endswith("==="):
+            if cur is not None:
+                blocks[cur] = "\n".join(buf).strip()
+            cur = line[len("===BLOCK"):-len("===")].strip()
+            buf = []
+        else:
+            buf.append(line)
+    if cur is not None:
+        blocks[cur] = "\n".join(buf).strip()
+    return blocks
+
+
+# 最近一次远端采集结果的解析缓存：_overview/_network/_diskio/_info 各自解析一次，
+# 避免每个指标都对同一份 blocks 做重复 SSH（采集本身已在一次连接内完成）。
+# 带时间戳 TTL：一次采集（一次连接）后 2 秒内复用，超过则重新采集；
+# 既能支撑 WebSocket 单生产者按周期刷新，也能让独立 HTTP 只读接口各自取到新数据。
+_remote_blocks_cache: Optional[dict] = None
+_remote_blocks_at = 0.0
+_REMOTE_BLOCKS_TTL = 2.0
+
+
+def _remote_blocks(force: bool = False) -> dict:
+    """返回（或按需刷新）最近一次远端采集的分段数据。"""
+    global _remote_blocks_cache, _remote_blocks_at
+    now = time.time()
+    if _remote_blocks_cache is None or force or (now - _remote_blocks_at) >= _REMOTE_BLOCKS_TTL:
+        _remote_blocks_cache = _remote_fetch_all()
+        _remote_blocks_at = time.time()
+    return _remote_blocks_cache
+
+
+def _remote_parse_stat0() -> tuple:
+    parts = _remote_blocks().get("STAT0", "").split()
+    if len(parts) < 5:
+        return 0, 0
+    return sum(int(x) for x in parts[1:] if x.isdigit()), int(parts[4])
+
+
+def _remote_parse_stat1() -> tuple:
+    parts = _remote_blocks().get("STAT1", "").split()
+    if len(parts) < 5:
+        return 0, 0
+    return sum(int(x) for x in parts[1:] if x.isdigit()), int(parts[4])
+
+
+def _remote_overview() -> dict:
+    """远程：CPU/内存/磁盘/负载（单次连接已取回全部原始数据）。"""
+    # CPU 利用率：脚本内两次 stat 采样差分
+    t_pre, i_pre = _remote_parse_stat0()
+    t_post, i_post = _remote_parse_stat1()
     cpu_pct = 0.0
     if t_post > t_pre:
         cpu_pct = 100.0 * (1 - (i_post - i_pre) / max(1, (t_post - t_pre)))
 
     # 内存
     meminfo = {}
-    for line in _rrun("cat /proc/meminfo 2>/dev/null").splitlines():
+    for line in _remote_blocks().get("MEM", "").splitlines():
         if ":" in line:
             k, v = line.split(":", 1)
             meminfo[k.strip()] = int("".join(c for c in v if c.isdigit()) or 0)
@@ -67,27 +130,25 @@ def _remote_overview() -> dict:
 
     # 磁盘：/（远程即根）
     disk_res = {"percent": 0.0, "total": 0, "used": 0, "free": 0}
-    for line in _rrun("df -kP / 2>/dev/null | tail -1").splitlines():
-        parts = line.split()
-        if len(parts) >= 5 and parts[1].isdigit():
-            total_kb, used_kb, avail_kb = int(parts[1]), int(parts[2]), int(parts[3])
-            disk_res = {
-                "percent": round(used_kb / total_kb * 100, 1) if total_kb else 0.0,
-                "total": total_kb * 1024,
-                "used": used_kb * 1024,
-                "free": avail_kb * 1024,
-            }
-        break
+    parts = _remote_blocks().get("DF", "").split()
+    if len(parts) >= 5 and parts[1].isdigit():
+        total_kb, used_kb, avail_kb = int(parts[1]), int(parts[2]), int(parts[3])
+        disk_res = {
+            "percent": round(used_kb / total_kb * 100, 1) if total_kb else 0.0,
+            "total": total_kb * 1024,
+            "used": used_kb * 1024,
+            "free": avail_kb * 1024,
+        }
 
     # 负载
+    ld = _remote_blocks().get("LOAD", "").split()
     load1 = load5 = load15 = 0.0
-    lparts = _rrun("cat /proc/loadavg 2>/dev/null").split()
-    if len(lparts) >= 3:
+    if len(ld) >= 3:
         try:
-            load1, load5, load15 = map(float, lparts[:3])
+            load1, load5, load15 = map(float, ld[:3])
         except ValueError:
             pass
-    ncores = int(node_manager.host_shell("nproc 2>/dev/null", capture_output=True, text=True, timeout=10).stdout.strip() or "1")
+    ncores = int(_remote_blocks().get("NPROC", "").strip() or "1")
     return {
         "cpu": round(cpu_pct, 1),
         "memory": {"percent": mem_percent, "total": mem_total, "used": mem_used, "available": mem_avail},
@@ -101,9 +162,9 @@ _rlast_disk = {"time": 0.0, "read": 0, "write": 0}
 
 
 def _remote_net_bytes() -> dict:
-    """远程：累加 /proc/net/dev 的字节计数。"""
+    """远程：累加 /proc/net/dev 的字节计数（取自单次采集缓存）。"""
     sent = recv = 0
-    for line in _rrun("cat /proc/net/dev 2>/dev/null").splitlines():
+    for line in _remote_blocks().get("NET", "").splitlines():
         if ":" not in line:
             continue
         _, rest = line.split(":", 1)
@@ -128,7 +189,7 @@ def _remote_network() -> dict:
 def _remote_diskio() -> dict:
     global _rlast_disk
     read = write = 0
-    for line in _rrun("cat /proc/diskstats 2>/dev/null | awk '{print $6, $10}'").splitlines():
+    for line in _remote_blocks().get("DISK", "").splitlines():
         p = line.split()
         if len(p) >= 2 and p[0].isdigit() and p[1].isdigit():
             read += int(p[0]) * 512
@@ -142,38 +203,36 @@ def _remote_diskio() -> dict:
 
 
 def _remote_info() -> dict:
-    """远程：系统信息。"""
-    def _get(key):
-        return _rrun(f"cat /proc/uptime 2>/dev/null >/dev/null; uname {key} 2>/dev/null | head -1").strip()
-
-    hostname = _rrun("hostname 2>/dev/null | head -1").strip()
-    system = _get("-s") or "Linux"
-    release = _get("-r")
-    version = _get("-v")
-    machine = _get("-m")
+    """远程：系统信息（单次连接已取回）。"""
+    b = _remote_blocks()
+    hostname = b.get("NAME", "").strip()
+    uname_lines = b.get("UNAME", "").splitlines() or ["Linux", "", "", ""]
+    def _u(i):
+        return uname_lines[i].strip() if i < len(uname_lines) else ""
     # processor 从 /proc/cpuinfo 取 model name
     processor = ""
-    for line in _rrun("grep 'model name' /proc/cpuinfo 2>/dev/null | head -1").splitlines():
+    for line in b.get("CPUINFO", "").splitlines():
         if ":" in line:
             processor = line.split(":", 1)[1].strip()
             break
-    ncores = int(node_manager.host_shell("nproc 2>/dev/null", capture_output=True, text=True, timeout=10).stdout.strip() or "1")
+    ncores = int(b.get("NPROC", "").strip() or "1")
     btime = 0
-    for line in _rrun("cat /proc/stat 2>/dev/null").splitlines():
-        if line.startswith("btime"):
+    for line in b.get("BTIME", "").splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] == "btime":
             try:
-                btime = int(line.split()[1])
-            except (IndexError, ValueError):
+                btime = int(parts[1])
+            except ValueError:
                 btime = 0
             break
     now = time.time()
     uptime = int(now - btime) if btime else 0
     return {
         "hostname": hostname,
-        "system": system,
-        "release": release,
-        "version": version,
-        "machine": machine,
+        "system": _u(0) or "Linux",
+        "release": _u(1),
+        "version": _u(2),
+        "machine": _u(3),
         "processor": processor,
         "python_version": "",
         "cpu_count": ncores,
@@ -423,6 +482,9 @@ _metrics_cache: Optional[dict] = None
 
 def _collect_sync() -> dict:
     """同步采集全部指标并合并为一个 payload（overview + network + diskio + info）。"""
+    # 远端节点：每个采集周期强制刷新一次单连接批量采集，再供四项指标共用
+    if node_manager.is_remote():
+        _remote_blocks(force=True)
     return {
         "overview": _overview_sync(),
         "network": _network_sync(),

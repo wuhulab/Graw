@@ -18,6 +18,7 @@ import json
 import os
 
 from app.hostfs import host_cmd, host_which, host_path
+from app import node_manager
 
 # 配置目录与文件（backend/data/webserver.json）
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
@@ -82,18 +83,51 @@ def binary() -> str:
 # ---------------------------------------------------------------------------
 # 可用性 / reload
 # ---------------------------------------------------------------------------
+def _container_has_engine(engine: str) -> bool:
+    """检测是否有运行中的容器承载指定 Web 引擎（openresty/nginx）。
+
+    1Panel 等面板常把 openresty/nginx 跑在 Docker 容器里，宿主机并无对应二进制。
+    此时宿主机 PATH 探测失败，但容器内确实存在引擎。检测方法：经
+    node_manager.host_shell 执行容器引擎进程列表，命中引擎关键字即视为可用。
+    任何异常（无 docker、命令失败）都静默按不可用处理——不抛错，避免拖垮状态展示。
+    """
+    try:
+        r = node_manager.host_shell(
+            "docker ps --format '{{.Image}}' --no-trunc 2>/dev/null || "
+            "podman ps --format '{{.Image}}' --no-trunc 2>/dev/null || true",
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except Exception:
+        return False
+    if getattr(r, "returncode", 1) != 0:
+        return False
+    for line in (r.stdout or "").splitlines():
+        img = (line or "").strip().lower()
+        # 引擎关键字：openresty / nginx 都是 nginx 系 Web 引擎容器，任一命中即视为可用
+        if engine.lower() in img or "nginx" in img:
+            return True
+    return False
+
+
 def available(engine: str = None) -> bool:
     """检测给定（或缺省当前）引擎二进制在宿主机是否可用。
 
     优先 host_which（容器模式在 /host 常见 bin 目录探测），再用 ``-v`` 兜底
-    执行探测。任何异常都按不可用处理（不抛错，供 UI 与 reload 决策）。
+    执行探测。宿主机均未命中时，回退检测 Docker 容器内是否承载该引擎
+    （1Panel 等面板把 openresty/nginx 容器化运行）。任何异常按不可用处理
+    （不抛错，供 UI 与 reload 决策）。
     """
     cmd = (engine or binary())
     try:
         if host_which(cmd):
             return True
         r = host_cmd([cmd, "-v"], capture_output=True, timeout=5)
-        return r.returncode == 0
+        if r.returncode == 0:
+            return True
+        # 宿主机无二进制 → 回退检测容器内是否运行了该 Web 引擎
+        return _container_has_engine(cmd)
     except Exception:
         return False
 

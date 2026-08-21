@@ -26,6 +26,7 @@ def _reset_probe():
     """清空探测缓存，便于多次独立测试。"""
     docker_api._podman_cmd = None
     docker_api._podman_fail_until = 0.0
+    docker_api._podman_cmd_node = "local"
 
 
 # 构造 _run 的按命令分发 mock：cmd[1] 为 '-u' 表示 root；否则默认用户
@@ -63,7 +64,8 @@ class PodmanProbeWindowsTest(unittest.TestCase):
             (False, True, "podman"): (0, "host:\n  security:\n", ""),
         }
         with mock.patch.object(docker_api.shutil, "which", return_value="/usr/bin/wsl"), \
-             mock.patch.object(docker_api, "_run", side_effect=_make_run(plan)):
+             mock.patch.object(docker_api, "_run", side_effect=_make_run(plan)), \
+             mock.patch.object(docker_api.node_manager, "is_remote", return_value=False):
             found = docker_api._find_podman()
         self.assertEqual(found, ["wsl", "--", "podman"])
 
@@ -77,7 +79,8 @@ class PodmanProbeWindowsTest(unittest.TestCase):
             (False, True, "podman"): (0, "host:\n  security:\n", ""),
         }
         with mock.patch.object(docker_api.shutil, "which", return_value="/usr/bin/wsl"), \
-             mock.patch.object(docker_api, "_run", side_effect=_make_run(plan)):
+             mock.patch.object(docker_api, "_run", side_effect=_make_run(plan)), \
+             mock.patch.object(docker_api.node_manager, "is_remote", return_value=False):
             found = docker_api._find_podman()
         self.assertEqual(found, ["wsl", "--", "podman"])
 
@@ -86,7 +89,8 @@ class PodmanProbeWindowsTest(unittest.TestCase):
         _reset_probe()
         # 所有命令都返回失败
         with mock.patch.object(docker_api.shutil, "which", return_value="/usr/bin/wsl"), \
-             mock.patch.object(docker_api, "_run", return_value=(1, "", "cannot connect")):
+             mock.patch.object(docker_api, "_run", return_value=(1, "", "cannot connect")), \
+             mock.patch.object(docker_api.node_manager, "is_remote", return_value=False):
             found = docker_api._find_podman()
         self.assertIsNone(found)
 
@@ -98,7 +102,8 @@ class PodmanProbeWindowsTest(unittest.TestCase):
             (True, True, "podman"): (0, "host:\n  security:\n", ""),
         }
         with mock.patch.object(docker_api.shutil, "which", return_value="/usr/bin/wsl"), \
-             mock.patch.object(docker_api, "_run", side_effect=_make_run(plan)):
+             mock.patch.object(docker_api, "_run", side_effect=_make_run(plan)), \
+             mock.patch.object(docker_api.node_manager, "is_remote", return_value=False):
             found = docker_api._find_podman()
         self.assertEqual(found, ["wsl", "-u", "root", "--", "podman"])
 

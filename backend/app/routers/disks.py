@@ -230,9 +230,16 @@ def _attach_usage(disks) -> None:
 
 @router.get("/list")
 async def disk_list():
-    """返回磁盘与分区信息。"""
+    """返回磁盘与分区信息。
+
+    多机：当当前管理主机为 SSH 节点时，即使控制器是 Windows 也要走
+    `lsblk`（经 node_manager 在远端执行），而不是本机 psutil。
+    """
     try:
-        if platform.system() == "Windows":
+        if node_manager.is_remote():
+            # 远端 Linux 节点：经 SSH 执行远端 lsblk
+            disks = _load_lsblk()
+        elif platform.system() == "Windows":
             disks = _load_windows_disk()
         else:
             disks = _load_lsblk()

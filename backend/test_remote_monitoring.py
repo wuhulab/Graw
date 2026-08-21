@@ -7,6 +7,7 @@ test_remote_monitoring.py - 远端系统监控单元测试
 """
 import os
 import sys
+import time
 import unittest
 from unittest import mock
 
@@ -25,30 +26,24 @@ class FakeResult:
 
 
 class RemoteOverviewTest(unittest.TestCase):
-    def _stub_host_shell(self, output_map):
-        """返回一个 host_shell 桩：按命令行关键字返回对应 stdout。"""
-
-        def _fake(cmd, **kwargs):
-            for key, out in output_map.items():
-                if key in cmd:
-                    return FakeResult(out)
-            return FakeResult("")
-
-        return _fake
+    def _mock_blocks(self, blocks):
+        """把基于分段的 blocks 结果灌进 _remote_blocks（含 TTL 缓存状态清理）。"""
+        system._remote_blocks_cache = blocks
+        system._remote_blocks_at = time.time()
 
     def test_remote_overview_reads_remote_proc(self):
-        """远程概览应解析远端 /proc/stat、/proc/meminfo、df 等输出。"""
-        outputs = {
-            # 两次 cpu 采样相同 -> cpu 记为 0%（避免除零/负值噪音）
-            "cat /proc/stat 2>/dev/null | head -1": "cpu  100 0 0 0 0 0 0 400",
-            "cat /proc/meminfo": "MemTotal: 1000000 kB\nMemAvailable: 400000 kB\n",
-            # 生产代码 `df -kP / ... | tail -1` 只剩数据行（无表头）
-            "df -kP /": "/dev/x 100000 60000 40000 60% /",
-            "cat /proc/loadavg": "1.00 0.80 0.50 1/1 1",
-            "nproc": "4",
+        """远程概览应解析远端 /proc/stat、/proc/meminfo、df 等输出（单次批量采集）。"""
+        # 仿 _REMOTE_SCRIPT 输出分段；两次 cpu 采样相同 -> cpu=0%（避免除零噪音）
+        blocks = {
+            "STAT0": "cpu  100 0 0 0 0 0 0 400",
+            "STAT1": "cpu  100 0 0 0 0 0 0 400",
+            "MEM": "MemTotal: 1000000 kB\nMemAvailable: 400000 kB\n",
+            "DF": "/dev/x 100000 60000 40000 60% /",
+            "LOAD": "1.00 0.80 0.50 1/1 1",
+            "NPROC": "4",
         }
-        with mock.patch.object(system.node_manager, "host_shell", self._stub_host_shell(outputs)), \
-             mock.patch.object(system.node_manager, "is_remote", return_value=True):
+        self._mock_blocks(blocks)
+        with mock.patch.object(system.node_manager, "is_remote", return_value=True):
             result = system._remote_overview()
         # 内存 60%：used=600000KB*1024 / total=1000000KB*1024
         self.assertAlmostEqual(result["memory"]["percent"], 60.0, places=1)
@@ -60,27 +55,21 @@ class RemoteOverviewTest(unittest.TestCase):
 
     def test_remote_net_bytes_accumulates(self):
         """远程网络应累加 /proc/net/dev 各网卡字节（recv=col1, sent=col9）。"""
-        with mock.patch.object(
-            system.node_manager, "host_shell",
-            lambda cmd, **kw: FakeResult(
-                "eth0: 100 2 3 4 5 6 7 8 20 2 3 4 5 6 7 8\n"
-                "eth1: 300 2 3 4 5 6 7 8 40 2 3 4 5 6 7 8\n"
-            ),
-        ):
-            counters = system._remote_net_bytes()
+        self._mock_blocks({
+            "NET": "eth0: 100 2 3 4 5 6 7 8 20 2 3 4 5 6 7 8\n"
+                   "eth1: 300 2 3 4 5 6 7 8 40 2 3 4 5 6 7 8\n",
+        })
+        counters = system._remote_net_bytes()
         self.assertEqual(counters["recv"], 400)
         self.assertEqual(counters["sent"], 60)
 
     def test_remote_diskio_accumulates(self):
         """远程磁盘 IO 应累加 /proc/diskstats 的 read/write（*512 转字节）。"""
-        with mock.patch.object(
-            system.node_manager, "host_shell",
-            lambda cmd, **kw: FakeResult(
-                "8 0 sda 10 0 0 0 20 0 0 0 0 0 0 0\n"  # 第6列=10读扇区，第10列=20写扇区
-            ),
-        ):
-            result = system._remote_diskio()
-        # read=10*512, write=20*512；首采样速率按间隔计算，此处仅断言字段存在与累计量
+        self._mock_blocks({
+            "DISK": "8 0 sda 10 0 0 0 20 0 0 0 0 0 0 0\n",  # 第6列=10读扇区，第10列=20写扇区
+        })
+        result = system._remote_diskio()
+        # read=10*512, write=20*512；首采样速率按间隔计算，此处仅断言字段存在
         self.assertIn("read", result)
         self.assertIn("write", result)
 

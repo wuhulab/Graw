@@ -1,4 +1,4 @@
-// 界面品牌配置共享 store：网站名 / 欢迎语 / Logo / 背景 / 环形图配色
+// 界面品牌配置共享 store：网站名 / 欢迎语 / Logo / 背景 / 环形图配色 / 动态壁纸
 // 登录页与桌面共用同一份配置（后台 data/ui.json），保证一致显示。
 //
 // 为避免「先展示默认背景、再启用自定义背景」的闪烁：把上次拉取的配置
@@ -27,7 +27,11 @@ export const uiState = reactive({
   site_name: 'Graw',
   welcome: '',
   logo: cached?.logo || '',
-  background: cached?.background || '',
+  background: (cached?.backgrounds && cached.backgrounds[0]) || cached?.background || '',
+  backgrounds: cached?.backgrounds || (cached?.background ? [cached.background] : []),
+  wallpaper_video: cached?.wallpaper_video || '',
+  background_mode: cached?.background_mode || 'image',
+  background_interval: cached?.background_interval || 8,
   ring_color: cached?.ring_color || '#409eff',
   ring_alarm: cached?.ring_alarm !== false, // 默认开启「超 90% 变红」
 })
@@ -41,7 +45,11 @@ function saveCache() {
         site_name: uiState.site_name,
         welcome: uiState.welcome,
         logo: uiState.logo,
-        background: uiState.background,
+        background: (uiState.backgrounds && uiState.backgrounds[0]) || uiState.background || '',
+        backgrounds: uiState.backgrounds || [],
+        wallpaper_video: uiState.wallpaper_video || '',
+        background_mode: uiState.background_mode || 'image',
+        background_interval: uiState.background_interval || 8,
         ring_color: uiState.ring_color,
         ring_alarm: uiState.ring_alarm,
       })
@@ -66,7 +74,14 @@ export function loadUi() {
       uiState.site_name = res.site_name || 'Graw'
       uiState.welcome = res.welcome || ''
       uiState.logo = res.logo || ''
-      uiState.background = res.background || ''
+      const list = Array.isArray(res.backgrounds) && res.backgrounds.length
+        ? res.backgrounds
+        : (res.background ? [res.background] : [])
+      uiState.backgrounds = list
+      uiState.background = list[0] || ''
+      uiState.wallpaper_video = res.wallpaper_video || ''
+      uiState.background_mode = res.background_mode === 'video' ? 'video' : 'image'
+      uiState.background_interval = res.background_interval || 8
       uiState.ring_color = res.ring_color || '#409eff'
       uiState.ring_alarm = res.ring_alarm !== false
       saveCache()

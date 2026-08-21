@@ -1,7 +1,21 @@
 <template>
-  <!-- 登录页背景：优先使用自定义背景（data URL），否则回退内置 hero.png -->
+  <!-- 登录页背景：优先动态壁纸（视频/轮播），否则自定义单图，再回退内置 hero.png -->
   <div class="login-page" :style="bgStyle">
-    <div class="login-card">
+    <div v-if="loginWallpaperVideo" class="login-wallpaper-video">
+      <video :src="loginWallpaperVideo" autoplay muted loop playsinline></video>
+      <div class="login-wallpaper-mask"></div>
+    </div>
+    <div v-else-if="loginCarouselImages.length > 1" class="login-wallpaper-carousel">
+      <div
+        v-for="(_, i) in loginCarouselImages"
+        :key="i"
+        class="login-wallpaper-slide"
+        :class="{ active: i === loginCarouselIndex }"
+        :style="{ backgroundImage: `url('${loginCarouselImages[i]}')` }"
+      ></div>
+      <div class="login-wallpaper-mask"></div>
+    </div>
+    <div class="login-card" style="position:relative; z-index:2;">
       <!-- 安全入口门禁（已配置入口且当前路径不匹配） -->
       <template v-if="shunxChecked && shunx.enabled && !shunx.matched">
         <div class="login-title">ShunX</div>
@@ -102,6 +116,8 @@ const ui = uiState
 
 // 登录页背景样式：配置了背景则使用自定义图（覆盖后裁切），否则交给 CSS 回退默认背景
 const bgStyle = computed(() => {
+  // 动态壁纸（视频/轮播）由独立层渲染，这里仅兜底单图背景
+  if (loginWallpaperVideo.value || loginCarouselImages.value.length > 1) return {}
   if (uiState.background) {
     return {
       backgroundImage: `url('${uiState.background}')`,
@@ -111,6 +127,31 @@ const bgStyle = computed(() => {
   }
   return {}
 })
+
+// 登录页动态壁纸：视频 / 多背景轮播（与桌面共用 uiState 配置）
+const loginWallpaperVideo = computed(() =>
+  uiState.background_mode === 'video' && uiState.wallpaper_video ? uiState.wallpaper_video : ''
+)
+const loginCarouselImages = computed(() =>
+  uiState.background_mode === 'image' && Array.isArray(uiState.backgrounds) ? uiState.backgrounds : []
+)
+const loginCarouselIndex = ref(0)
+let loginCarouselTimer = null
+function startLoginCarousel() {
+  stopLoginCarousel()
+  if (loginCarouselImages.value.length <= 1) return
+  const interval = Math.max(3, Number(uiState.background_interval) || 8) * 1000
+  loginCarouselTimer = setInterval(() => {
+    if (loginCarouselImages.value.length <= 1) return
+    loginCarouselIndex.value = (loginCarouselIndex.value + 1) % loginCarouselImages.value.length
+  }, interval)
+}
+function stopLoginCarousel() {
+  if (loginCarouselTimer) {
+    clearInterval(loginCarouselTimer)
+    loginCarouselTimer = null
+  }
+}
 
 const username = ref('admin')
 const password = ref('')
@@ -141,6 +182,7 @@ onMounted(async () => {
     if (document.title !== uiState.site_name && uiState.site_name) {
       document.title = uiState.site_name
     }
+    startLoginCarousel()
   } catch (e) {
     // 接口失败时使用默认品牌（兼容旧版后端）
     console.warn('[login] 加载界面配置失败:', e)
@@ -239,6 +281,36 @@ async function handleChangePassword() {
   background-image: url('../assets/hero.png');
   background-size: cover;
   background-position: center;
+  overflow: hidden;
+}
+.login-wallpaper-video,
+.login-wallpaper-carousel {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: #1f2937;
+}
+.login-wallpaper-video video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.login-wallpaper-carousel > .login-wallpaper-slide {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 1.2s ease-in-out;
+}
+.login-wallpaper-carousel > .login-wallpaper-slide.active {
+  opacity: 1;
+}
+.login-wallpaper-mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.18);
 }
 
 .login-card {

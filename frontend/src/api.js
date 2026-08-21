@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { auth, clearAuth } from './store/auth'
+import { getRequestNode } from './store/requestNode'
 
 const api = axios.create({
   baseURL: '/api',
@@ -11,11 +12,17 @@ const dockerHttp = axios.create({
   timeout: 60000
 })
 
-// 请求拦截：自动附加 Bearer 令牌
+// 请求拦截：自动附加 Bearer 令牌 + 统一面板兼容的请求级目标节点
 function attachToken(config) {
   if (auth.token) {
     config.headers = config.headers || {}
     config.headers.Authorization = `Bearer ${auth.token}`
+  }
+  // 统一面板兼容：聚焦窗口绑定的节点经 X-Graw-Node 下发给后端；为空则走全局当前节点
+  const node = getRequestNode()
+  if (node) {
+    config.headers = config.headers || {}
+    config.headers['X-Graw-Node'] = node
   }
   return config
 }
@@ -316,6 +323,14 @@ export const nodesApi = {
   update: (node_id, body) => api.put(`/nodes/${encodeURIComponent(node_id)}`, body).then(r => r.data),
   delete: (node_id) => api.delete(`/nodes/${encodeURIComponent(node_id)}`).then(r => r.data),
   test: (node_id) => api.post(`/nodes/${encodeURIComponent(node_id)}/test`).then(r => r.data)
+}
+
+export const agentApi = {
+  // 「作为子节点」Agent 收取模式配置（仅管理员；secret 不回传明文）
+  status: () => api.get('/agent/cfg').then(r => r.data),
+  save: (body) => api.put('/agent/cfg', body).then(r => r.data),
+  // 一次性展示子节点校验 secret（仅初次/重置后可用，返回即作废）
+  revealSecret: () => api.post('/agent/reveal-secret').then(r => r.data)
 }
 
 export const uiApi = {

@@ -1,9 +1,10 @@
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from contextlib import asynccontextmanager
 import os
+import asyncio
 
 from app.routers import (
     system,
@@ -58,6 +59,9 @@ from app.auth import (
     require_non_default_password,
 )
 from app import remote_cap
+from app import agent_auth
+from app import node_manager
+from app import agent_client
 
 # 权限分级：
 #   PROTECTED - 仅需登录（只读信息类接口，如系统概览/备忘录，供桌面展示）
@@ -172,14 +176,69 @@ async def security_headers(request: Request, call_next):
     return response
 
 
+# 走 Agent 代理的业务路径判定：/api/* 中排除主面板自身/终端/WS 等
+# （终端用 WebSocket + paramiko 交互，不走 HTTP 代理；auth/nodes/ui/shunx——
+# 登录与节点管理是主面板自身职责；system 的 WS 监控也由主面板承担）。
+_AGENT_PROXY_EXCLUDE_PREFIX = (
+    "/api/auth",
+    "/api/nodes",
+    "/api/terminal",
+    "/api/agent",
+    "/api/ui",
+    "/api/shunx",
+    "/api/health",
+)
+
+
+def _should_agent_proxy(path: str) -> bool:
+    """判断该请求路径是否应经由子节点 Agent 代理。
+
+    除主面板自身职责（登录/节点管理/终端/界面设置/安全入口/健康）外的业务
+    /api/* 请求，在「当前节点是远程且配置了 agent」时一律代理到子节点。
+    WebSocket 升级请求（Upgrade: websocket）由中间件单独拦截，不代理。
+    """
+    p = (path or "").rstrip("/")
+    if not p.startswith("/api/"):
+        return False
+    if any(p == x or p.startswith(x + "/") for x in _AGENT_PROXY_EXCLUDE_PREFIX):
+        return False
+    return True
+
+
+async def _agent_proxy_request(request: Request) -> Response:
+    """把当前请求经子节点 Agent 隧道转发，构造对应 Response。"""
+    node = node_manager.get_current_node()
+    if not agent_client.agent_ready(node):
+        return None
+    # 读取请求体（可能是 JSON / 表单 / 上传）
+    try:
+        raw_body = await request.body()
+    except Exception:
+        raw_body = b""
+    # 保留原路径与查询串
+    full_path = request.url.path
+    if request.url.query:
+        full_path += "?" + request.url.query
+    # 透传关键请求头：Content-Type / Accept；Authorization 由 agent_client 注入子节点 JWT
+    headers = {"Content-Type": request.headers.get("content-type", "")} if raw_body else {}
+    accept = request.headers.get("accept", "")
+    if accept:
+        headers["Accept"] = accept
+    try:
+        result = await asyncio.to_thread(
+            agent_client.agent_proxy, node, request.method, full_path, headers, raw_body
+        )
+    except Exception as e:  # noqa: BLE001 - 代理失败给可读错误
+        return JSONResponse(status_code=502, content={"detail": f"Agent 代理失败: {str(e)[:300]}"})
+    status = result.get("status") or 500
+    body = result.get("body") or b""
+    ctype = (result.get("headers") or {}).get("content-type", "text/plain")
+    return Response(content=body, status_code=status, media_type=ctype)
+
+
 @app.middleware("http")
 async def remote_capability_guard(request: Request, call_next):
-    """远端子节点能力门控（纵深防御）。
-
-    当前管理主机为 SSH 远端节点时，local 类（面板自身管理项）接口一律返回
-    403「该功能仅本机节点可用」，防止经由 API 误操作本机。本机节点下不拦截，
-    行为与改造前一致。前端已隐藏/禁用对应快捷方式，此处为后端兜底。
-    """
+    """远端子节点能力门控（纵深防御，先注册=更内层，被外层 agent 代理优先接管）。"""
     if remote_cap.reject_if_local_remote(request.url.path):
         return JSONResponse(
             status_code=403,
@@ -188,8 +247,45 @@ async def remote_capability_guard(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def agent_proxy_middleware(request: Request, call_next):
+    """子节点 Agent 代理（最后注册=最外层，最先执行）。
+
+    当前节点为远程且已配置 agent 时，业务 HTTP 请求优先经隧道代理到子节点，
+    从而覆盖 local 类接口（否则它们会被内层 remote_cap 拦为 403）。未配置
+    agent 时不代理任何请求，交回 call_next 由 remote_cap 兜底。
+
+    「统一面板兼容」：若请求携带 X-Graw-Node，则用请求级节点覆盖全局节点，
+    Agent 代理与业务路由都据此定位到对应子节点；请求处理完后复位。
+    """
+    if request.scope.get("type") == "http":
+        # WebSocket 升级不代理（metrics/tamper 等由主面板承担，终端走 paramiko）
+        upgrade = (request.headers.get("upgrade") or "").lower()
+        path = request.url.path
+        # 读取请求级目标节点（统一面板兼容：窗口聚焦节点经此头下发），并覆盖当前线程
+        req_node = (request.headers.get("x-graw-node") or "").strip()
+        prev_node = node_manager._req_ctx_node()
+        if req_node:
+            node_manager.set_request_node(req_node)
+        try:
+            if upgrade != "websocket" and _should_agent_proxy(path):
+                proxied = await _agent_proxy_request(request)
+                if proxied is not None:
+                    return proxied
+            return await call_next(request)
+        finally:
+            # 请求线程处理完复位请求级节点，避免串线程污染
+            node_manager.set_request_node(prev_node)
+    return await call_next(request)
+
+
 # 公开路由：登录、当前用户、改密、健康检查
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+
+# 子节点 Agent API（机器间鉴权）：/issue 用成对密钥换取 JWT（不依赖面板登录）；
+# /cfg 配置接口内部自行 require_admin。router 始终挂载，端点按 agent_cfg.enabled()
+# 动态启用（支持设置界面「作为子节点」热开关，无需重启）。未启用时 /issue 返回 404。
+app.include_router(agent_auth.router, prefix="/api/agent", tags=["agent"])
 
 # 只读信息路由：登录即可（桌面系统概览卡片 / 备忘录）。
 # 注意：system 路由鉴权改为在各个 HTTP 端点内声明（_PROTECTED），

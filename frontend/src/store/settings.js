@@ -7,6 +7,8 @@ const defaults = {
   taskbarTextOnly: false,
   // 界面语言（locale code，与 locales/index.js 中 LANGUAGES 对应）
   locale: 'zh-CN',
+  // 统一面板兼容：开启后每个应用窗口绑定打开时对应的节点，聚焦窗口即操作该节点
+  unifiedPanel: false,
 }
 
 function load() {
@@ -26,6 +28,7 @@ watch(
     showTaskbarText: settings.showTaskbarText,
     taskbarTextOnly: settings.taskbarTextOnly,
     locale: settings.locale,
+    unifiedPanel: settings.unifiedPanel,
   }),
   (val) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(val))

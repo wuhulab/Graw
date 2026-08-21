@@ -204,6 +204,47 @@ def test_backup_dir():
         check("Linux 备份目录", d == "/data/graw-backups", d)
 
 
+def test_scan_docker_parses_fields():
+    """[7] _scan_docker_sync 对 docker ps JSON（大写 ID / Names 字符串）的解析。
+
+    回归防护：docker 单容器 ps --format json 用 ID（大写）、Names（字符串），
+    此前按 podman 的 Id 取导致 cid 为空 → inspect "" → "invalid container name or ID"。
+    """
+    print("[7] Docker 扫描字段解析（docker ps JSON 形态）")
+    # mock 出返回 container.spec 的 cli 后端：_podman_json 用于 ps 与 inspect
+    docker_ps = [
+        {
+            "ID": "809ec1ad039a",
+            "Names": "1panel-openresty",  # docker: 字符串而非数组
+            "Image": "1panel/openresty:1.31",
+            "Status": "Up 2 hours",
+            "Ports": "",
+            "CreatedAt": "2026-08-21 19:18:34 +0800 CST",
+        }
+    ]
+    docker_inspect = [{"Id": "809ec1ad039a", "Name": "1panel-openresty", "Mounts": []}]
+
+    orig_call = protection._podman_json
+    calls = {"n": 0}
+
+    def fake_podman_json(args):
+        calls["n"] += 1
+        if args and args[0] == "inspect":
+            # 断言传给 inspect 的 cid 非空（核心回归点）
+            assert args[1], "inspect 收到空容器 ID"
+            return docker_inspect
+        return docker_ps
+
+    with mock.patch.object(protection, "get_backend", return_value=("cli", None)), \
+         mock.patch.object(protection, "_podman_json", side_effect=fake_podman_json), \
+         mock.patch.object(protection, "_detect_sqlite_in_container", return_value=None):
+        result = protection._scan_docker_sync()
+    check("扫描返回 available", result.get("available") is True)
+    # 容器有持久化挂载（bind）> 安全，warnings 为空；关键是不抛 "invalid container name"
+    check("扫描不抛空容器错误", "available" in result)
+    check("inspect 传入非空 cid", calls["n"] >= 2)
+
+
 def main():
     test_image_detection()
     test_data_dir()
@@ -212,6 +253,7 @@ def main():
     test_container_internal_detection()
     test_evaluate_container_dispatch()
     test_backup_dir()
+    test_scan_docker_parses_fields()
     print(f"\n结果：通过 {PASS} 项，失败 {FAIL} 项")
     if FAIL:
         sys.exit(1)

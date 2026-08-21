@@ -39,6 +39,15 @@ DEFAULTS = {
     "welcome": "",
     "logo": "",
     "background": "",
+    # 动态壁纸（桌面/登录页共用）：
+    #   backgrounds      图片轮播列表（每项为 Base64 data URL）
+    #   wallpaper_video  视频动态壁纸（Base64 data URL, mp4/webm）
+    #   background_mode  生效模式：image(单图/轮播) | video
+    #   background_interval 轮播间隔（秒）
+    "backgrounds": [],
+    "wallpaper_video": "",
+    "background_mode": "image",
+    "background_interval": 8,
     # 系统概览环形统计图配色（桌面所有用户共享）
     "ring_color": "#409eff",   # 环形图统一颜色（蓝色），管理员可在界面设置中修改
     "ring_alarm": True,        # 是否启用「使用率 >90% 变红」告警提示
@@ -52,6 +61,15 @@ _IMAGE_DATA_URL_RE = re.compile(
 _LOGO_MAX_BYTES = 2 * 1024 * 1024
 # 背景最大体积（解码后字节数），约 8MB（背景通常较大，放宽上限）
 _BACKGROUND_MAX_BYTES = 8 * 1024 * 1024
+# 背景轮播列表最大张数（防止配置被滥用撑爆 JSON）
+_MAX_BACKGROUNDS = 12
+# 视频壁纸最大体积（解码后字节数），约 50MB（动态壁纸一般远超图片）
+_VIDEO_MAX_BYTES = 50 * 1024 * 1024
+
+# 允许的视频类型：MP4 / WebM（浏览器原生支持的动态壁纸格式）
+_VIDEO_DATA_URL_RE = re.compile(
+    r"^data:video/(?:mp4|webm|ogg);base64,", re.IGNORECASE
+)
 
 
 def _load() -> dict:
@@ -74,6 +92,13 @@ def _load() -> dict:
             merged[k] = v
         elif isinstance(v, str) and isinstance(DEFAULTS[k], str):
             merged[k] = v
+        elif isinstance(v, list) and isinstance(DEFAULTS[k], list):
+            # 背景轮播列表：仅保留字符串元素、量级限量（防止超大/脏数据）
+            merged[k] = [x for x in v if isinstance(x, str)][: _MAX_BACKGROUNDS]
+        elif isinstance(v, int) and isinstance(DEFAULTS[k], int):
+            merged[k] = v
+        elif isinstance(v, float) and isinstance(DEFAULTS[k], int):
+            merged[k] = int(v)
     return merged
 
 
@@ -115,12 +140,51 @@ def _validate_image(data_url: str, max_bytes: int, field: str) -> str:
     return data_url
 
 
+def _validate_video(data_url: str) -> str:
+    """校验并返回视频壁纸（Base64 data URL），空串表示清除。
+
+    仅接受 data:video/(mp4|webm|ogg);base64 前缀，且解码后体积受限，
+    防止注入任意数据或超大 payload。
+    """
+    data_url = (data_url or "").strip()
+    if not data_url:
+        return ""
+    if not _VIDEO_DATA_URL_RE.match(data_url):
+        raise HTTPException(
+            status_code=400, detail="视频壁纸需为 data:video/(mp4|webm|ogg);base64 数据"
+        )
+    # 提取 base64 主体并解码
+    try:
+        body = data_url.split(",", 1)[1].split(";")[0]
+        raw = base64.b64decode(body, validate=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="视频壁纸不是合法的 Base64 数据")
+    if len(raw) > _VIDEO_MAX_BYTES:
+        mb = _VIDEO_MAX_BYTES // (1024 * 1024)
+        raise HTTPException(status_code=400, detail=f"视频壁纸过大（最大 {mb}MB）")
+    return data_url
+
+
+def _clamp_interval(value) -> int:
+    """限制轮播间隔在合理范围（3~120 秒），非法回退默认 8 秒。"""
+    try:
+        v = int(value)
+    except (TypeError, ValueError):
+        return DEFAULTS["background_interval"]
+    return max(3, min(120, v))
+
+
 class UIConfigUpdate(BaseModel):
     """界面配置更新请求。"""
     site_name: str = ""
     welcome: str = ""
     logo: str = ""
     background: str = ""
+    # 动态壁纸：多背景轮播列表 + 视频壁纸 + 模式 + 轮播间隔
+    backgrounds: list = []
+    wallpaper_video: str = ""
+    background_mode: str = "image"
+    background_interval: int = 8
     ring_color: str = "#409eff"
     ring_alarm: bool = True
 
@@ -146,6 +210,10 @@ async def get_public_config():
         "welcome": d.get("welcome") or "",
         "logo": d.get("logo") or "",
         "background": d.get("background") or "",
+        "backgrounds": d.get("backgrounds") or [],
+        "wallpaper_video": d.get("wallpaper_video") or "",
+        "background_mode": d.get("background_mode") or "image",
+        "background_interval": int(d.get("background_interval") or 8),
         "ring_color": d.get("ring_color") or "#409eff",
         "ring_alarm": bool(d.get("ring_alarm", True)),
     }
@@ -159,11 +227,26 @@ async def get_config():
 
 @router.put("/config", dependencies=[Depends(require_admin)])
 async def update_config(req: UIConfigUpdate):
-    """管理员：保存界面配置（网站名 / 欢迎语 / Logo / 背景 / 环形图配色）。"""
+    """管理员：保存界面配置（网站名 / 欢迎语 / Logo / 背景 / 环形图配色 / 动态壁纸）。"""
     site_name = (req.site_name or "").strip()
     welcome = (req.welcome or "").strip()
     logo = _validate_image(req.logo, _LOGO_MAX_BYTES, "Logo")
     background = _validate_image(req.background, _BACKGROUND_MAX_BYTES, "背景")
+    # 背景轮播列表：逐项校验图片、限量张数，兼容保留单 background 字段
+    backgrounds: list = []
+    for bg in (req.backgrounds or []) or []:
+        bg = bg if isinstance(bg, str) else ""
+        if not bg.strip():
+            continue
+        if len(backgrounds) >= _MAX_BACKGROUNDS:
+            break
+        backgrounds.append(_validate_image(bg, _BACKGROUND_MAX_BYTES, "轮播背景"))
+    if not backgrounds and background:
+        # 兼容旧版：未提供列表但提供单背景 → 用单背景兜底
+        backgrounds = [background]
+    wallpaper_video = _validate_video(req.wallpaper_video)
+    background_mode = req.background_mode if req.background_mode in ("image", "video") else "image"
+    background_interval = _clamp_interval(req.background_interval)
     ring_color = _validate_ring_color(req.ring_color)
     # 网站名/欢迎语限制长度，避免滥用
     if len(site_name) > 60:
@@ -175,6 +258,10 @@ async def update_config(req: UIConfigUpdate):
         "welcome": welcome,
         "logo": logo,
         "background": background,
+        "backgrounds": backgrounds,
+        "wallpaper_video": wallpaper_video,
+        "background_mode": background_mode,
+        "background_interval": background_interval,
         "ring_color": ring_color,
         "ring_alarm": bool(req.ring_alarm),
     }

@@ -26,29 +26,68 @@
           </div>
           <div class="btn-group">
             <label class="btn btn-secondary" for="logo-upload">{{ $t('ui.uploadLogo') }}</label>
-            <input id="logo-upload" type="file" accept="image/*" style="display:none;" @change="(e) => onImageChange(e, 'logo')" />
-            <button v-if="logoPreview" class="btn btn-mini btn-danger" @click="removeImage('logo')">{{ $t('ui.removeLogo') }}</button>
+            <input id="logo-upload" type="file" accept="image/*" style="display:none;" @change="(e) => onLogoChange(e)" />
+            <button v-if="logoPreview" class="btn btn-mini btn-danger" @click="removeLogo">{{ $t('ui.removeLogo') }}</button>
           </div>
         </div>
         <div v-if="logoError" class="msg err">{{ logoError }}</div>
       </div>
 
-      <!-- 背景 -->
+      <!-- 动态壁纸：多背景轮播 / 视频 -->
       <div class="block">
-        <div class="block-title">{{ $t('ui.background') }}</div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('ui.backgroundHint') }}</div>
-        <div class="logo-row">
-          <!-- 背景预览（等比缩略） -->
-          <div v-if="bgPreview" class="bg-preview">
-            <img :src="bgPreview" alt="background" />
+        <div class="block-title">{{ $t('ui.wallpaper') }}</div>
+        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('ui.wallpaperHint') }}</div>
+
+        <!-- 模式切换：图片（可轮播） / 视频 -->
+        <div class="row" style="flex-wrap:wrap; gap:16px;">
+          <label class="switch-label">
+            <input type="radio" name="wallpaperMode" value="image" v-model="form.background_mode" />
+            <span>{{ $t('ui.modeImage') }}</span>
+          </label>
+          <label class="switch-label">
+            <input type="radio" name="wallpaperMode" value="video" v-model="form.background_mode" />
+            <span>{{ $t('ui.modeVideo') }}</span>
+          </label>
+        </div>
+
+        <!-- 图片模式：多背景列表 + 轮播间隔 -->
+        <template v-if="form.background_mode === 'image'">
+          <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin:8px 0 6px;">
+            {{ $t('ui.bgListHint', { n: form.backgrounds.length }) }}
+          </div>
+          <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+            <div v-for="(bg, i) in form.backgrounds" :key="i" class="bg-item">
+              <img :src="bg" alt="bg" class="bg-thumb" />
+              <div class="bg-item-ops">
+                <button class="btn btn-mini btn-danger" @click="removeBackgroundAt(i)">{{ $t('ui.removeBackground') }}</button>
+              </div>
+            </div>
           </div>
           <div class="btn-group">
             <label class="btn btn-secondary" for="bg-upload">{{ $t('ui.uploadBackground') }}</label>
-            <input id="bg-upload" type="file" accept="image/*" style="display:none;" @change="(e) => onImageChange(e, 'background')" />
-            <button v-if="bgPreview" class="btn btn-mini btn-danger" @click="removeImage('background')">{{ $t('ui.removeBackground') }}</button>
+            <input id="bg-upload" type="file" accept="image/*" style="display:none;" @change="(e) => onBackgroundImage(e)" />
           </div>
-        </div>
-        <div v-if="bgError" class="msg err">{{ bgError }}</div>
+          <div v-if="bgError" class="msg err">{{ bgError }}</div>
+          <div class="row" style="gap:8px; margin-top:6px;">
+            <span style="font-size:12px;color:#1d1d1f;">{{ $t('ui.bgInterval') }}</span>
+            <input v-model.number="form.background_interval" type="number" min="3" max="120" style="width:80px;" />
+          </div>
+          <div style="font-size:11px;color:#8e8e93;">{{ $t('ui.intervalHint') }}</div>
+        </template>
+
+        <!-- 视频模式：上传视频壁纸 -->
+        <template v-else>
+          <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin:8px 0 6px;">{{ $t('ui.videoHint') }}</div>
+          <div class="btn-group">
+            <label class="btn btn-secondary" for="video-upload">{{ $t('ui.uploadVideo') }}</label>
+            <input id="video-upload" type="file" accept="video/mp4,video/webm,video/ogg" style="display:none;" @change="(e) => onVideoChange(e)" />
+            <button v-if="form.wallpaper_video" class="btn btn-mini btn-danger" @click="removeVideo">{{ $t('ui.removeVideo') }}</button>
+          </div>
+          <div v-if="videoPreview" class="video-preview" style="margin-top:8px;">
+            <video :src="videoPreview" muted loop playsinline controls style="width:100%;max-height:180px;border-radius:8px;"></video>
+          </div>
+          <div v-if="videoError" class="msg err">{{ videoError }}</div>
+        </template>
       </div>
 
       <!-- 系统概览环形统计图配色 -->
@@ -84,12 +123,23 @@ import { uiApi } from '../../api'
 
 const { t } = useI18n()
 
-// 表单数据：网站名 / 欢迎语 / Logo / 背景（后两项为 Base64 data URL）+ 环形图配色
-const form = reactive({ site_name: 'Graw', welcome: '', logo: '', background: '', ring_color: '#409eff', ring_alarm: true })
+// 表单数据：网站名 / 欢迎语 / Logo / 动态壁纸（背景列表 / 视频 / 模式 / 间隔）+ 环形图配色
+const form = reactive({
+  site_name: 'Graw',
+  welcome: '',
+  logo: '',
+  backgrounds: [],
+  wallpaper_video: '',
+  background_mode: 'image',
+  background_interval: 8,
+  ring_color: '#409eff',
+  ring_alarm: true,
+})
 const logoPreview = ref('')      // Logo 预览用的 data URL（与 form.logo 在保存前保持一致）
 const logoError = ref('')
-const bgPreview = ref('')        // 背景预览用的 data URL（与 form.background 保持一致）
 const bgError = ref('')
+const videoPreview = ref('')     // 视频壁纸预览 data URL（与 form.wallpaper_video 一致）
+const videoError = ref('')
 const saving = ref(false)
 const msg = ref('')
 const msgType = ref('')
@@ -122,36 +172,11 @@ watch(ringColorText, (v) => {
   }
 })
 
-// 各图片字段的允许大小（与后端保持一致）
-const FIELD_LIMIT = { logo: 2 * 1024 * 1024, background: 8 * 1024 * 1024 }
-
-/** 将本地图片文件转成 Base64 data URL（按字段限制大小），用于预览与上传。 */
-async function onImageChange(e, field) {
-  const file = e.target.files && e.target.files[0]
-  e.target.value = '' // 清空，允许重复选择同一文件
-  if (!file) return
-  const isLogo = field === 'logo'
-  const setError = (v) => (isLogo ? (logoError.value = v) : (bgError.value = v))
-  if (file.size > FIELD_LIMIT[field]) {
-    setError(isLogo ? t('ui.logoTooLarge') : t('ui.bgTooLarge'))
-    return
-  }
-  if (!/^image\//.test(file.type)) {
-    setError(t('ui.logoTypeErr'))
-    return
-  }
-  setError('')
-  try {
-    // 用 FileReader 读取为 data URL；体积已在前端按字段限制，直接转为 base64
-    const dataUrl = await readAsDataURL(file)
-    form[field] = dataUrl
-    if (isLogo) logoPreview.value = dataUrl
-    else bgPreview.value = dataUrl
-  } catch (err) {
-    setError(isLogo ? t('ui.logoReadErr') : t('ui.bgReadErr'))
-    console.error(`[ui] 读取 ${field} 文件失败:`, err)
-  }
-}
+// 各媒体字段的允许大小（与后端保持一致）
+const LOGO_LIMIT = 2 * 1024 * 1024
+const BG_LIMIT = 8 * 1024 * 1024
+const VIDEO_LIMIT = 50 * 1024 * 1024
+const MAX_BACKGROUNDS = 12
 
 /** 封装 FileReader 读取为 data URL。 */
 function readAsDataURL(file) {
@@ -163,16 +188,83 @@ function readAsDataURL(file) {
   })
 }
 
-/** 清除指定图片字段（logo / background）。 */
-function removeImage(field) {
-  form[field] = ''
-  if (field === 'logo') {
-    logoPreview.value = ''
-    logoError.value = ''
-  } else {
-    bgPreview.value = ''
-    bgError.value = ''
+/** 上传 Logo：读为 data URL。 */
+async function onLogoChange(e) {
+  const file = e.target.files && e.target.files[0]
+  e.target.value = ''
+  if (!file) return
+  if (file.size > LOGO_LIMIT) { logoError.value = t('ui.logoTooLarge'); return }
+  if (!/^image\//.test(file.type)) { logoError.value = t('ui.logoTypeErr'); return }
+  logoError.value = ''
+  try {
+    const dataUrl = await readAsDataURL(file)
+    form.logo = dataUrl
+    logoPreview.value = dataUrl
+  } catch (err) {
+    logoError.value = t('ui.logoReadErr')
+    console.error('[ui] 读取 Logo 失败:', err)
   }
+}
+
+/** 移除 Logo。 */
+function removeLogo() {
+  form.logo = ''
+  logoPreview.value = ''
+  logoError.value = ''
+}
+
+/** 上传背景图并追加到轮播列表（限量、限大小）。 */
+async function onBackgroundImage(e) {
+  const file = e.target.files && e.target.files[0]
+  e.target.value = ''
+  if (!file) return
+  if (file.size > BG_LIMIT) { bgError.value = t('ui.bgTooLarge'); return }
+  if (!/^image\//.test(file.type)) { bgError.value = t('ui.logoTypeErr'); return }
+  bgError.value = ''
+  try {
+    const dataUrl = await readAsDataURL(file)
+    if (form.backgrounds.length >= MAX_BACKGROUNDS) {
+      bgError.value = t('ui.bgListHint', { n: MAX_BACKGROUNDS })
+      return
+    }
+    form.backgrounds.push(dataUrl)
+  } catch (err) {
+    bgError.value = t('ui.bgReadErr')
+    console.error('[ui] 读取背景失败:', err)
+  }
+}
+
+/** 移除指定下标的背景图。 */
+function removeBackgroundAt(i) {
+  form.backgrounds.splice(i, 1)
+}
+
+/** 上传视频壁纸：读为 data URL（视频原生文件可能较大，data URL 体积约 +37%）。 */
+async function onVideoChange(e) {
+  const file = e.target.files && e.target.files[0]
+  e.target.value = ''
+  if (!file) return
+  if (file.size > VIDEO_LIMIT) { videoError.value = t('ui.videoTooLarge'); return }
+  if (!/^video\/(mp4|webm|ogg)$/.test(file.type)) {
+    videoError.value = t('ui.videoTypeErr')
+    return
+  }
+  videoError.value = ''
+  try {
+    const dataUrl = await readAsDataURL(file)
+    form.wallpaper_video = dataUrl
+    videoPreview.value = dataUrl
+  } catch (err) {
+    videoError.value = t('ui.videoReadErr')
+    console.error('[ui] 读取视频失败:', err)
+  }
+}
+
+/** 移除视频壁纸。 */
+function removeVideo() {
+  form.wallpaper_video = ''
+  videoPreview.value = ''
+  videoError.value = ''
 }
 
 /** 加载现有配置。 */
@@ -182,11 +274,18 @@ async function load() {
     form.site_name = config.site_name || 'Graw'
     form.welcome = config.welcome || ''
     form.logo = config.logo || ''
-    form.background = config.background || ''
+    form.backgrounds = Array.isArray(config.backgrounds) && config.backgrounds.length
+      ? config.backgrounds.slice()
+      : (config.background ? [config.background] : [])
+    form.wallpaper_video = config.wallpaper_video || ''
+    form.background_mode = config.background_mode === 'video' ? 'video' : 'image'
+    form.background_interval = config.background_interval || 8
     form.ring_color = config.ring_color || '#409eff'
     form.ring_alarm = config.ring_alarm !== false
     logoPreview.value = form.logo || ''
-    bgPreview.value = form.background || ''
+    videoPreview.value = form.wallpaper_video || ''
+    bgError.value = ''
+    videoError.value = ''
     ringColorText.value = form.ring_color
     ringColorError.value = ''
   } catch (e) {
@@ -210,18 +309,27 @@ async function save() {
       site_name: form.site_name,
       welcome: form.welcome,
       logo: form.logo,
-      background: form.background,
+      background: (form.backgrounds && form.backgrounds[0]) || '',
+      backgrounds: form.backgrounds || [],
+      wallpaper_video: form.wallpaper_video || '',
+      background_mode: form.background_mode === 'video' ? 'video' : 'image',
+      background_interval: Math.max(3, Math.min(120, Number(form.background_interval) || 8)),
       ring_color: color,
       ring_alarm: form.ring_alarm,
     })
     form.site_name = res.site_name || 'Graw'
     form.welcome = res.welcome || ''
     form.logo = res.logo || ''
-    form.background = res.background || ''
+    form.backgrounds = Array.isArray(res.backgrounds) && res.backgrounds.length
+      ? res.backgrounds.slice()
+      : (res.background ? [res.background] : [])
+    form.wallpaper_video = res.wallpaper_video || ''
+    form.background_mode = res.background_mode === 'video' ? 'video' : 'image'
+    form.background_interval = res.background_interval || 8
     form.ring_color = res.ring_color || '#409eff'
     form.ring_alarm = res.ring_alarm !== false
     logoPreview.value = form.logo || ''
-    bgPreview.value = form.background || ''
+    videoPreview.value = form.wallpaper_video || ''
     ringColorText.value = form.ring_color
     msg.value = t('ui.saved')
     msgType.value = 'ok'
@@ -289,21 +397,32 @@ input:focus, textarea:focus {
   max-height: 100%;
   object-fit: contain;
 }
-.bg-preview {
-  width: 180px;
-  height: 96px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #fafafa;
-  border: 1px dashed rgba(0,0,0,0.15);
+.bg-item {
+  position: relative;
+  width: 120px;
+  height: 72px;
   border-radius: 10px;
   overflow: hidden;
+  border: 1px solid rgba(0,0,0,0.12);
+  background: #fafafa;
 }
-.bg-preview img {
+.bg-item img.bg-thumb {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+.bg-item-ops {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.35);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.bg-item:hover .bg-item-ops {
+  opacity: 1;
 }
 .btn-group {
   display: flex;

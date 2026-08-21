@@ -27,6 +27,12 @@ class SSHNodeIn(BaseModel):
     auth: str = Field("password", pattern="^(password|key)$")
     password: Optional[str] = Field("", max_length=200)
     key_path: Optional[str] = Field("", max_length=1024)
+    # Agent（子节点 API）：可选配置，用于让主面板经由 SSH 隧道回调子节点 Graw
+    agent_port: Optional[int] = Field(8000, ge=1, le=65535)
+    agent_key: Optional[str] = Field("", max_length=256)
+    agent_secret: Optional[str] = Field("", max_length=256)
+    # agent_enabled 显式标记是否启用（False 时清除 key/secret）
+    agent_enabled: Optional[bool] = None
 
 
 class CurrentIn(BaseModel):

@@ -196,6 +196,15 @@ async def terminal_ws(websocket: WebSocket, user=Depends(get_current_user_ws_adm
         websocket.client.host if websocket.client else "",
     )
     try:
+        if node_manager.is_remote():
+            # 多机：当前主机为 SSH 节点 → 进入远端交互终端。
+            # Windows 控制端用 ConPTY 驱动 `ssh -tt`；Unix 用 pty.fork 走
+            # remote_terminal_argv（_unix_terminal 内含远端分支）。
+            if IS_WINDOWS:
+                await _windows_remote_terminal(websocket)
+            else:
+                await _unix_terminal(websocket)
+            return
         if IS_WINDOWS:
             await _windows_terminal(websocket)
         else:
@@ -263,6 +272,208 @@ def _windows_shell_cmd() -> str:
         if exe:
             return exe
     return os.environ.get("COMSPEC", "cmd.exe")
+
+
+def _windows_quote_argv(argv: list) -> str:
+    """把 argv 拼成 CreateProcessW 可接受的 Windows 命令行字符串。
+
+    ConPTY.start 接收一条命令行；这里对含空格/引号的参数用双引号包裹，
+    并对内部双引号做转义，保证 ssh 参数（如密钥路径、host）能正确解析。
+    """
+    parts = []
+    for a in argv:
+        if a and all(c not in ' \t"&|<>()' for c in a):
+            parts.append(a)
+            continue
+        escaped = a.replace('"', '\\"')
+        parts.append(f'"{escaped}"')
+    return " ".join(parts)
+
+
+async def _windows_remote_terminal(websocket: WebSocket):
+    """Windows 控制端进入远程节点的交互终端。
+
+    优先用 paramiko `invoke_shell` 建立交互式 PTY 会话：直接复用节点已存密码
+    （不向用户弹密码输入框），使「密码认证节点」的终端也能一键直连。
+    仅当 paramiko 不可用或认证为密钥时，才退回 ConPTY/管道驱动 `ssh -tt`。
+    """
+    remote_node = node_manager.get_current_node()
+    # 本机节点不应进入远端分支（防御性兜底）
+    if remote_node.get("type") != "ssh":
+        await _windows_terminal(websocket)
+        return
+    pm_reason = await _try_paramiko_interactive(websocket, remote_node)
+    if pm_reason is None:
+        return
+    # paramiko 交互通道不可用（无 paramiko / 连接失败）→ 退回 ssh -tt
+    try:
+        await websocket.send_text(f"\r\n[paramiko 交互失败，回退 ssh -tt] {pm_reason}\r\n")
+    except Exception:
+        pass
+    argv = node_manager.remote_terminal_argv(remote_node)
+    cmdline = _windows_quote_argv(argv)
+    try:
+        if _CONPTY_AVAILABLE:
+            try:
+                await _windows_conpty_terminal(websocket, cmdline)
+                return
+            except ConPTYError:
+                pass
+    except Exception:
+        pass
+    await _windows_pipe_command_terminal(websocket, argv)
+
+
+async def _try_paramiko_interactive(websocket: WebSocket, node: dict) -> str:
+    """尝试用 paramiko 建立远程交互终端（invoke_shell）。
+
+    成功时接管整个会话直到断开并返回 None；任何失败返回可读错误串。
+    """
+    import paramiko
+
+    try:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        connect_kw = {
+            "hostname": str(node.get("host") or ""),
+            "port": int(node.get("port") or 22),
+            "username": str(node.get("user") or ""),
+            "timeout": 10,
+            "look_for_keys": False,
+            "allow_agent": False,
+        }
+        if node.get("auth") == "key" and node.get("key_path"):
+            connect_kw["key_filename"] = node.get("key_path")
+            connect_kw["password"] = None
+        else:
+            connect_kw["password"] = node.get("password") or ""
+        client.connect(**connect_kw)
+    except Exception as e:  # noqa: BLE001 - 连接失败返回可读原因
+        return str(e).strip() or "paramiko 连接失败"
+
+    try:
+        shell = client.invoke_shell(term="xterm", width=80, height=24)
+        shell.settimeout(10)
+        channel = shell
+        loop = asyncio.get_running_loop()
+        out_queue: "asyncio.Queue[bytes]" = asyncio.Queue()
+        stop_flag = threading.Event()
+        # 远端 shell 输出 -> WS
+        def _reader():
+            try:
+                while not stop_flag.is_set():
+                    chunk = channel.recv(4096)
+                    if not chunk:
+                        break
+                    loop.call_soon_threadsafe(out_queue.put_nowait, chunk)
+            except Exception:
+                pass
+            finally:
+                loop.call_soon_threadsafe(out_queue.put_nowait, b"")
+        threading.Thread(target=_reader, daemon=True).start()
+        output_task = asyncio.create_task(_pump_output(out_queue, websocket, encoding="utf-8"))
+        try:
+            while True:
+                data = await websocket.receive_text()
+                if data.startswith("\x1bRESIZE:"):
+                    try:
+                        _, dims = data.split(":", 1)
+                        rows, cols = (int(x) for x in dims.split(","))
+                        try:
+                            channel.resize_pty(width=max(cols, 1), height=max(rows, 1))
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+                    continue
+                try:
+                    channel.send(data.encode("utf-8"))
+                except Exception:
+                    break
+        except WebSocketDisconnect:
+            pass
+        finally:
+            stop_flag.set()
+            try:
+                channel.close()
+            except Exception:
+                pass
+            try:
+                client.close()
+            except Exception:
+                pass
+            output_task.cancel()
+            try:
+                await output_task
+            except (asyncio.CancelledError, Exception):
+                pass
+        return None
+    except Exception as e:  # noqa: BLE001 - 会话异常时主动关闭并返回错误
+        try:
+            client.close()
+        except Exception:
+            pass
+        return str(e).strip() or "paramiko 会话异常"
+
+
+async def _windows_pipe_command_terminal(websocket: WebSocket, argv: list):
+    """ConPTY 不可用时的兜底：以管道方式启动任意命令（用于远端 ssh 终端）。
+
+    与 _windows_pipe_terminal 类似，但直接 exec argv（不做 cmd /K 壳），
+    以保持 ssh -tt 的交互语义。
+    """
+    import subprocess as _sp
+
+    proc = _sp.Popen(
+        argv,
+        stdin=_sp.PIPE,
+        stdout=_sp.PIPE,
+        stderr=_sp.STDOUT,
+        bufsize=0,
+        creationflags=getattr(_sp, "CREATE_NEW_PROCESS_GROUP", 0),
+    )
+
+    loop = asyncio.get_running_loop()
+    out_queue: "asyncio.Queue[bytes]" = asyncio.Queue()
+    stop_flag = threading.Event()
+
+    def _read():
+        if hasattr(proc.stdout, "read1"):
+            return proc.stdout.read1(1024)
+        return proc.stdout.read(1024)
+
+    reader = _make_reader(_read, loop, out_queue, stop_flag)
+    threading.Thread(target=reader, daemon=True).start()
+
+    output_task = asyncio.create_task(_pump_output(out_queue, websocket, encoding="utf-8"))
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data.startswith("\x1bRESIZE:"):
+                continue
+            if proc.poll() is not None:
+                break
+            try:
+                proc.stdin.write(data.encode("utf-8"))
+                proc.stdin.flush()
+            except Exception:
+                break
+    except WebSocketDisconnect:
+        pass
+    finally:
+        stop_flag.set()
+        try:
+            proc.stdin.close()
+        except Exception:
+            pass
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        try:
+            output_task.cancel()
+        except Exception:
+            pass
 
 
 async def _windows_terminal(websocket: WebSocket):

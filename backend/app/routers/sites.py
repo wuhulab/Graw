@@ -177,7 +177,10 @@ def _which(cmd: str) -> Optional[str]:
 
 
 def _web_server_type() -> str:
-    # nginx 与 openresty 生成同一套配置格式：任一生效即视为 nginx 系
+    # 优先按当前引擎模式返回（设置里选了 OpenResty 就显示 openresty，而非笼统 nginx）；
+    # 否则回退 nginx 系探测。配置生成逻辑对 nginx/openresty 共用同一套格式。
+    if webserver.is_openresty() and webserver.available(webserver.MODE_OPENRESTY):
+        return "openresty"
     if webserver.nginx_like_available():
         return "nginx"
     if _which("apache2") or _which("httpd"):
@@ -200,6 +203,203 @@ def _web_server_type() -> str:
         except Exception:
             pass
     return "none"
+
+
+# ---------------------------------------------------------------------------
+# 真实站点发现：把当前节点上「已存在的 nginx/openresty 站点配置」识别出来，
+# 与面板自建站点（sites.json）合并展示，让用户能直接在「网站」里看到管理。
+# 覆盖两类目录：
+#   - 标准引擎可用目录（webserver.available_dir()，如 ……/sites-available）
+#   - 1Panel 等面板把站点放在 /opt/1panel/www/conf.d（容器内由 conf.d 加载）
+# 解析 .conf 提取 server_name / root，仅展示不回写面板数据。
+# ---------------------------------------------------------------------------
+_EXT_SITE_ID_RE = re.compile(r"[^a-z0-9_-]+")
+
+
+def _ext_site_id(server_name: str, index: int) -> str:
+    """为真实站点生成稳定的面板内 id（避免与自建站点 id 冲突）。"""
+    base = _EXT_SITE_ID_RE.sub("-", (server_name or "ext").lower()).strip("-") or "ext"
+    return f"ext-{base}-{index}"
+
+
+def _parse_server_name(conf: str) -> str:
+    """从 nginx 配置提取 server_name（取第一个命中，含 _ 通配）。"""
+    for m in re.finditer(r"server_name\s+([^;]+);", conf):
+        names = m.group(1).split()
+        if names:
+            return names[0].strip()
+    return ""
+
+
+def _iter_location_blocks(conf: str):
+    """迭代 nginx 顶层 location 块，产出 (path, body)。
+
+    用逐个字符匹配花括号的方式保留嵌套块（如 location 内再套 location），
+    避免简单正则误截。识别含修饰符的 location 入口（location = /、~ /、
+    ~* /、^~ /）：正则先吃可选的 = | ~ | ~* | ^~ 修饰符，再捕获真实路径。
+    """
+    for m in re.finditer(
+        r"\blocation\s+(?:(?:=|~{1,2}|\^~)\s*)?(\S+)\s*\{",
+        conf,
+    ):
+        path = m.group(1)
+        if not path or path in ("{"):
+            continue
+        start = m.end() - 1  # 指向入口 '{'
+        depth = 1
+        i = start + 1
+        while i < len(conf) and depth:
+            c = conf[i]
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+            i += 1
+        yield path, conf[start + 1 : i - 1]
+
+
+def _parse_listen(conf: str) -> int:
+    """从 nginx 配置提取 server 块监听端口（handle listen 80、listen 443 ssl 等）。"""
+    for m in re.finditer(r"\blisten\s+(?:[^\s:;]+:)?(\d+)", conf):
+        return int(m.group(1))
+    return 80
+
+
+def _parse_proxy_pass(conf: str) -> str:
+    """从 nginx 配置提取「根路径 location / 的 proxy_pass」（整站反向代理目标）。
+
+    仅当 location 路径为 /（未限定子路径）且块内存在 proxy_pass 时才视为反向代理，
+    避免把静态站点中某个子路径（如 /api）误判为整站反向代理。命中返回如
+    http://127.0.0.1:15874 的后端地址，否则返回空串。
+    """
+    for path, body in _iter_location_blocks(conf):
+        if path != "/" or not body:
+            continue
+        pm = re.search(r"proxy_pass\s+([^;]+);", body)
+        if pm:
+            return pm.group(1).strip()
+    return ""
+
+
+def _parse_root_dir(conf: str) -> str:
+    """从 nginx 配置提取 server 块的 root 目录（site 根目录）。
+
+    排除 location 块内的 root（如 /.well-known 里的 /usr/share/nginx/html），
+    优先取「server 块级别」的 root——取最后一个非 location 内的 root 命中。
+    """
+    # 找到所有 location 块的起止，据此挖掉它们，剩余再看 root
+    try:
+        # 简单策略：把 `location` 开头的块整体剔除后，剩下的非嵌套 root 即 server root
+        # 用正则切掉 location ... { ... } 块，再取最后的 root
+        stripped = re.sub(
+            r"\blocation\b[^{}]*\{[^{}]*\}",
+            "",
+            conf,
+            flags=re.DOTALL,
+        )
+        matches = list(re.finditer(r"(?:^|\s)root\s+(.+?);", stripped))
+        if matches:
+            return matches[-1].group(1).strip()
+    except Exception:
+        pass
+    return ""
+
+
+def _resolve_site_conf(conf_path: str) -> str:
+    """读取站点主配置，并递归拼接其 `include` 的片段（如 1Panel 的反代配置）。
+
+    1Panel 会在主配置里写 `include .../proxy/*.conf;` 装载反向代理等片段，
+    而该 include 路径是「容器内视角」（/www/sites/...）。代理在宿主机运行，
+    实际文件位于 /opt/1panel/www/sites/...，因此这里把 include 路径做一次
+    /www/sites/ → /opt/1panel/www/sites/ 映射后再 glob 取文件内容。
+    """
+    parts = []
+    try:
+        with open(conf_path, "r", encoding="utf-8", errors="replace") as f:
+            parts.append(f.read())
+    except Exception:
+        return "".join(parts)
+    for inc in re.finditer(r"\binclude\s+([^;]+);", parts[0]):
+        pattern = inc.group(1).strip()
+        # 容器内 /www/sites 未直接挂在宿主上 → 映射到 1Panel 宿主站点目录
+        pattern = re.sub(r"^/www/sites/", "/opt/1panel/www/sites/", pattern)
+        try:
+            import glob as _glob
+
+            for p in _glob.glob(pattern) or []:
+                try:
+                    with open(p, "r", encoding="utf-8", errors="replace") as f:
+                        parts.append("\n" + f.read())
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    return "\n".join(parts)
+
+
+def _existing_site_dirs() -> List[str]:
+    """返回要扫描的站点配置目录（去重、仅存在的）。"""
+    dirs = []
+    try:
+        d = webserver.available_dir()
+        if d:
+            dirs.append(d)
+    except Exception:
+        pass
+    # 1Panel：宿主 /opt/1panel/www/conf.d（容器内 conf.d 加载，同一份配置）
+    for extra in ("/opt/1panel/www/conf.d",):
+        if extra not in dirs:
+            dirs.append(extra)
+    return dirs
+
+
+def _discover_existing_sites() -> List[dict]:
+    """扫描当前节点上已存在的站点配置，返回「外部站点」列表（来源外部，不写改）。"""
+    found = []
+    seen_ids = set()
+    idx = 0
+    for d in _existing_site_dirs():
+        try:
+            if not os.path.isdir(d):
+                continue
+            names = sorted(os.listdir(d))
+        except Exception:
+            continue
+        for conf_name in names:
+            if not conf_name.endswith(".conf"):
+                continue
+            conf_path = os.path.join(d, conf_name)
+            conf = _resolve_site_conf(conf_path)
+            server_name = _parse_server_name(conf)
+            site_id = _ext_site_id(server_name or conf_name, idx)
+            idx += 1
+            if site_id in seen_ids:
+                continue
+            seen_ids.add(site_id)
+            # 识别类型：根路径 location / 带 proxy_pass → 反向代理；否则当静态站点
+            proxy = _parse_proxy_pass(conf)
+            site_type = SITE_TYPE_PROXY if proxy else SITE_TYPE_STATIC
+            listen_port = _parse_listen(conf)
+            found.append({
+                "id": site_id,
+                "name": server_name or os.path.splitext(conf_name)[0],
+                "type": site_type,
+                "domains": [server_name] if server_name else [],
+                "root": _parse_root_dir(conf),
+                "port": listen_port,
+                "ssl": {},
+                "reverse_proxy": proxy,
+                "locations": [],
+                "protocol": "tcp",
+                "upstream": "",
+                "subdomain": "",
+                "domain": "",
+                "enabled": True,
+                "external": True,  # 标记：来自服务器真实配置，面板只读展示
+                "config_file": conf_path,
+                "created_at": "",
+            })
+    return found
 
 
 def _site_status_by_port(port: int) -> bool:
@@ -504,10 +704,20 @@ class UpdateSite(BaseModel):
 async def list_sites():
     sites = _load_sites()
     ws = _web_server_type()
-    for s in sites:
+    # 合并「真实存在的站点」（服务器上已配置，面板只读展示），与自建站点去重
+    builtin_domains = {
+        d.lower()
+        for s in sites
+        for d in (s.get("domains") or [])
+    }
+    external = [_ for _ in _discover_existing_sites()
+                if not any(d.lower() in builtin_domains for d in (_["domains"] or []))]
+    merged = sites + external
+    for s in merged:
         s["web_server"] = ws
         s["online"] = _site_status_by_port(s.get("port", 80))
-    return {"sites": sites, "web_server": ws}
+        s.setdefault("external", False)
+    return {"sites": merged, "web_server": ws}
 
 
 @router.post("/create")
