@@ -338,7 +338,9 @@ export const uiApi = {
   public: () => api.get('/ui/public').then(r => r.data),
   // 界面设置：管理员读取 / 更新配置（网站名 / 欢迎语 / Logo）
   config: () => api.get('/ui/config').then(r => r.data),
-  update: (body) => api.put('/ui/config', body).then(r => r.data)
+  update: (body) => api.put('/ui/config', body).then(r => r.data),
+  // 当前账号生效的动态壁纸与环形图（「仅用于这个账号」优先，其次全局，最后默认）
+  effective: () => api.get('/ui/effective').then(r => r.data)
 }
 
 export const frpApi = {

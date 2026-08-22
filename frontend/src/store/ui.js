@@ -96,3 +96,28 @@ export function loadUi() {
     })
   return loading
 }
+
+// 登录后按当前账号加载「动态壁纸 / 环形图」：
+// 优先该账号的个人覆盖，其次全局（loadUi 已应用），最后默认。其它账号互不影响。
+export function loadUiEffective() {
+  return uiApi
+    .effective()
+    .then((res) => {
+      if (!res) return uiState
+      if (Array.isArray(res.backgrounds)) {
+        uiState.backgrounds = res.backgrounds
+        uiState.background = res.backgrounds[0] || ''
+      }
+      uiState.wallpaper_video = res.wallpaper_video || ''
+      uiState.background_mode = res.background_mode === 'video' ? 'video' : 'image'
+      uiState.background_interval = res.background_interval || 8
+      uiState.ring_color = res.ring_color || '#409eff'
+      uiState.ring_alarm = res.ring_alarm !== false
+      saveCache()
+      return uiState
+    })
+    .catch((e) => {
+      console.warn('[ui] 加载账号级界面配置失败:', e)
+      return uiState
+    })
+}

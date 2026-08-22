@@ -22,7 +22,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.auth import require_admin
+from app.auth import require_admin, get_current_user
 
 logger = logging.getLogger("graw.ui")
 
@@ -31,6 +31,10 @@ router = APIRouter()
 # 配置文件路径：backend/data/ui.json
 UI_FILE = os.path.normpath(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "ui.json"))
+)
+# 用户级覆盖（「仅用于这个账号」）：{ username: { wallpaper: {...}, ring: {...} } }
+UI_USER_FILE = os.path.normpath(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "ui_user.json"))
 )
 
 # 默认配置：未配置时沿用品牌默认值
@@ -187,6 +191,10 @@ class UIConfigUpdate(BaseModel):
     background_interval: int = 8
     ring_color: str = "#409eff"
     ring_alarm: bool = True
+    # 「仅用于这个账号」：勾选则下列对应项写入当前账号的独立配置（对该账号生效），
+    # 否则写入全局配置（对该账号也会顺带清除个人覆盖，使全局生效）。
+    wallpaper_personal: bool = False
+    ring_personal: bool = False
 
 
 # 环形图颜色：仅接受 6 位十六进制（如 #409eff），防止注入任意样式数据
@@ -199,6 +207,54 @@ def _validate_ring_color(value: str) -> str:
     if not _RING_COLOR_RE.match(value):
         raise HTTPException(status_code=400, detail="环形图颜色需为 #RRGGBB 格式")
     return value.lower()
+
+
+# ---------------------------------------------------------------------------
+# 用户级覆盖（「仅用于这个账号」）
+# ---------------------------------------------------------------------------
+def _load_user_overrides() -> dict:
+    """读取用户级覆盖（username -> {wallpaper, ring}）；缺失/损坏返回空 dict。"""
+    if not os.path.exists(UI_USER_FILE):
+        return {}
+    try:
+        with open(UI_USER_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_user_overrides(data: dict) -> None:
+    try:
+        os.makedirs(os.path.dirname(UI_USER_FILE), exist_ok=True)
+        with open(UI_USER_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error("保存用户界面覆盖失败: %s", e)
+
+
+def _effective_wallpaper(username: str) -> dict:
+    """当前账号生效的动态壁纸：个人覆盖优先，否则走全局，否则默认。"""
+    acc = _load_user_overrides().get(username, {})
+    w = acc.get("wallpaper") or {}
+    g = _load()
+    return {
+        "backgrounds": w.get("backgrounds") or g.get("backgrounds") or DEFAULTS["backgrounds"],
+        "wallpaper_video": w.get("wallpaper_video") or g.get("wallpaper_video") or "",
+        "background_mode": (w.get("background_mode") if w.get("background_mode") else g.get("background_mode", "image")),
+        "background_interval": int(w.get("background_interval") or g.get("background_interval") or DEFAULTS["background_interval"]),
+    }
+
+
+def _effective_ring(username: str) -> dict:
+    """当前账号生效的环形图配置：个人覆盖优先，否则走全局，否则默认。"""
+    acc = _load_user_overrides().get(username, {})
+    r = acc.get("ring") or {}
+    g = _load()
+    return {
+        "ring_color": (r.get("ring_color") or g.get("ring_color") or DEFAULTS["ring_color"]).lower(),
+        "ring_alarm": bool(r.get("ring_alarm", g.get("ring_alarm", DEFAULTS["ring_alarm"]))),
+    }
 
 
 @router.get("/public")
@@ -220,14 +276,38 @@ async def get_public_config():
 
 
 @router.get("/config", dependencies=[Depends(require_admin)])
-async def get_config():
-    """管理员：读取完整界面配置。"""
-    return _load()
+async def get_config(user: dict = Depends(get_current_user)):
+    """管理员：读取完整界面配置，并附当前账号的个人覆盖（「仅用于这个账号」）。"""
+    cfg = _load()
+    overrides = _load_user_overrides().get(user["username"], {})
+    wallpaper = overrides.get("wallpaper") or {}
+    ring = overrides.get("ring") or {}
+    return {
+        **cfg,
+        "personal": {
+            "wallpaper": wallpaper or None,
+            "ring": ring or None,
+        },
+    }
+
+
+@router.get("/effective", dependencies=[Depends(get_current_user)])
+async def get_effective_config(user: dict = Depends(get_current_user)):
+    """当前账号生效的动态壁纸与环形图（「仅用于这个账号」优先，其次全局，最后默认）。
+
+    供登录后的桌面（App.vue / 环形统计图）按账号取用，别的账号互不影响。
+    """
+    return {**_effective_wallpaper(user["username"]), **_effective_ring(user["username"])}
 
 
 @router.put("/config", dependencies=[Depends(require_admin)])
-async def update_config(req: UIConfigUpdate):
-    """管理员：保存界面配置（网站名 / 欢迎语 / Logo / 背景 / 环形图配色 / 动态壁纸）。"""
+async def update_config(req: UIConfigUpdate, user: dict = Depends(get_current_user)):
+    """管理员：保存界面配置（网站名 / 欢迎语 / Logo / 背景 / 环形图配色 / 动态壁纸）。
+
+    「仅用于这个账号」（wallpaper_personal / ring_personal）：
+      勾选 → 对应项只写入当前账号覆盖（不影响全局）；
+      不勾选 → 写入全局，并清除当前账号对应覆盖（让全局对其生效）。
+    """
     site_name = (req.site_name or "").strip()
     welcome = (req.welcome or "").strip()
     logo = _validate_image(req.logo, _LOGO_MAX_BYTES, "Logo")
@@ -253,17 +333,47 @@ async def update_config(req: UIConfigUpdate):
         raise HTTPException(status_code=400, detail="网站名过长（最多 60 个字符）")
     if len(welcome) > 200:
         raise HTTPException(status_code=400, detail="欢迎语过长（最多 200 个字符）")
+
+    # 当前全局（用于勾选个人时保留全局对应项不变）
+    cur = _load()
+    wallpaper_personal = bool(req.wallpaper_personal)
+    ring_personal = bool(req.ring_personal)
+
     data = {
         "site_name": site_name or "Graw",
         "welcome": welcome,
         "logo": logo,
         "background": background,
-        "backgrounds": backgrounds,
-        "wallpaper_video": wallpaper_video,
-        "background_mode": background_mode,
-        "background_interval": background_interval,
-        "ring_color": ring_color,
-        "ring_alarm": bool(req.ring_alarm),
+        # 动态壁纸：仅当非个人时才写全局；个人模式下保持全局原值
+        "backgrounds": backgrounds if not wallpaper_personal else (cur.get("backgrounds") or []),
+        "wallpaper_video": wallpaper_video if not wallpaper_personal else (cur.get("wallpaper_video") or ""),
+        "background_mode": background_mode if not wallpaper_personal else (cur.get("background_mode") or "image"),
+        "background_interval": background_interval if not wallpaper_personal else int(cur.get("background_interval") or 8),
+        # 环形图：仅当非个人时才写全局；个人模式下保持全局原值
+        "ring_color": ring_color if not ring_personal else (cur.get("ring_color") or "#409eff"),
+        "ring_alarm": bool(req.ring_alarm) if not ring_personal else bool(cur.get("ring_alarm", True)),
     }
     _save(data)
-    return data
+
+    # 等写入当前账号的个人覆盖
+    overrides = _load_user_overrides()
+    acc = overrides.setdefault(user["username"], {})
+    if wallpaper_personal:
+        acc["wallpaper"] = {
+            "backgrounds": backgrounds,
+            "wallpaper_video": wallpaper_video,
+            "background_mode": background_mode,
+            "background_interval": background_interval,
+        }
+    else:
+        acc.pop("wallpaper", None)
+    if ring_personal:
+        acc["ring"] = {
+            "ring_color": ring_color,
+            "ring_alarm": bool(req.ring_alarm),
+        }
+    else:
+        acc.pop("ring", None)
+    _save_user_overrides(overrides)
+
+    return {**data, "personal": {"wallpaper": acc.get("wallpaper") or None, "ring": acc.get("ring") or None}}

@@ -71,6 +71,7 @@
           <button v-if="isAdmin()" class="start-item" @click="openUsers(); startMenuOpen = false"><UserCircle2 :size="16" /> {{ $t('app.accountManage') }}</button>
           <button class="start-item" @click="openChangePwd(); startMenuOpen = false"><UserCircle2 :size="16" /> {{ $t('app.changePassword') }}</button>
           <button class="start-item" @click="openSettings(); startMenuOpen = false"><Settings :size="16" /> {{ $t('app.settings') }}</button>
+          <button class="start-item" @click="reportIssue(); startMenuOpen = false"><Bug :size="16" /> {{ $t('app.reportIssue') }}</button>
           <button class="start-item danger" @click="doLogout"><LogOut :size="16" /> {{ $t('app.logout') }}</button>
         </div>
       </div>
@@ -176,14 +177,14 @@ import InstallCheckAlert from './components/InstallCheckAlert.vue'
 import Login from './views/Login.vue'
 import { shunxApi, systemApi } from './api'
 import { auth, clearAuth, isAdmin } from './store/auth'
-import { uiState, loadUi } from './store/ui'
+import { uiState, loadUi, loadUiEffective } from './store/ui'
 import { settings } from './store/settings'
 import { systemState, startMetrics, stopMetrics } from './store/systemMetrics'
 import { startDocker, stopDocker, refresh as refreshDocker } from './store/docker'
 import { nodes as nodesStore, refreshNodes } from './store/nodes'
 import { setRequestNode } from './store/requestNode'
 import { tamperState, startTamper, stopTamper } from './store/tamper'
-import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck, ShieldAlert, ShieldBan, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, DatabaseBackup, BellRing, Activity, Archive, Fingerprint, BarChart3, FileCode2, History, Server, KeyRound, Stethoscope, MonitorSmartphone, Unlink, UserCheck, RefreshCw, Wrench, Settings2, ServerCog } from 'lucide-vue-next'
+import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck, ShieldAlert, ShieldBan, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, DatabaseBackup, BellRing, Activity, Archive, Fingerprint, BarChart3, FileCode2, History, Server, KeyRound, Stethoscope, MonitorSmartphone, Unlink, UserCheck, RefreshCw, Wrench, Settings2, ServerCog, Bug } from 'lucide-vue-next'
 
 const loggedIn = computed(() => !!auth.token)
 
@@ -378,6 +379,11 @@ function openUsers() { openWindow('users') }
 function openChangePwd() { openWindow('changepwd') }
 function openSettings() { openWindow('settings') }
 function openTasks() { openWindow('tasks') }
+
+// 报告问题：跳转到项目 GitHub Issues 新建页（新窗口，noopener 防钓鱼）
+function reportIssue() {
+  window.open('https://github.com/wuhulab/Graw/issues/new', '_blank', 'noopener')
+}
 
 function doLogout() {
   startMenuOpen.value = false
@@ -1016,6 +1022,8 @@ onMounted(() => {
     checkShunxRequired()
     // 已登录态（如页面刷新）也重新检测安装环境，确保缺失时弹窗提醒
     checkInstallCheck()
+    // 加载当前账号生效的动态壁纸 / 环形图（「仅用于这个账号」优先）
+    loadUiEffective().catch(() => {})
   }
   updateClock()
   clockTimer = setInterval(updateClock, 1000)
@@ -1042,8 +1050,12 @@ watch(activeWindowId, (id) => {
 
 // 登录态变化时启停共享实时数据，避免未登录时持续请求
 watch(loggedIn, (v) => {
-  if (v) startRealtime()
-  else stopRealtime()
+  if (v) {
+    startRealtime()
+    loadUiEffective().catch(() => {})
+  } else {
+    stopRealtime()
+  }
 })
 
 onUnmounted(() => {

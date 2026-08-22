@@ -230,6 +230,86 @@ def _load_sessions() -> dict:
         return {}
 
 
+# 会话「在线」依据：设备 / 前端打开面板时会持续发起鉴权请求，每次有效鉴权
+# 都会刷新会话的 last_seen；超过该阈值仍无任何活跃（如关闭了浏览器/终端）则视为离线。
+# 默认 2 小时，可通过 GRAW_SESSION_ONLINE_SECONDS 覆盖。
+_ONLINE_ACTIVE = int(os.environ.get("GRAW_SESSION_ONLINE_SECONDS", str(2 * 3600)))
+# last_seen 落盘的节流缓存：sid -> 上次实际写盘的时间，避免每个请求都写会话文件
+_touch_cache = {}
+# 无 sid 的传统令牌：username -> 上次为其补建/刷新会话的时间（同样节流）
+_ensure_cache = {}
+
+
+def _touch_session_now(sid: str, username: str = "") -> None:
+    """刷新/重建某会话的 last_seen（节流：同一 sid 至少间隔 60s 写一次盘）。
+
+    若该 sid 记录缺失（例如曾被空闲裁剪，但此刻确有有效鉴权），则重建记录，
+    避免「正在使用的账号」因一条中间态而被在线列表遗漏。
+    """
+    if not sid:
+        return
+    now = time.time()
+    if now - _touch_cache.get(sid, 0) < 60:
+        return
+    try:
+        sessions = _load_sessions()
+        if sid in sessions:
+            sessions[sid]["last_seen"] = now
+            if username:
+                sessions[sid]["username"] = username
+        else:
+            sessions[sid] = {
+                "username": username or "",
+                "ip": "",
+                "device": "",
+                "created_at": now,
+                "last_seen": now,
+            }
+        _save_sessions(sessions)
+        _touch_cache[sid] = now
+    except Exception:
+        pass
+
+
+def _ensure_online_session(username: str, sid: str) -> None:
+    """确保正在使用面板的账号在在线列表中有对应的会话记录。
+
+    - 有 sid：刷新（缺失则重建），让活跃会话稳定在线。
+    - 无 sid（旧版签发的传统令牌）：为该账号补一条稳定会话记录，使在线列表
+      能看到当前正在使用的 admin 等账号（同时后续请求复用同一条并刷新）。
+    """
+    if sid:
+        _touch_session_now(sid, username)
+        return
+    now = time.time()
+    # 节流：同一账号至少间隔 60s 写一次盘，避免传统令牌每次鉴权都落盘
+    if now - _ensure_cache.get(username, 0) < 60:
+        return
+    try:
+        sessions = _load_sessions()
+        # 该用户已有活跃会话 → 只需刷新，不重复创建
+        for v in sessions.values():
+            if v.get("username") == username and now - (v.get("last_seen") or v.get("created_at") or 0) <= _ONLINE_ACTIVE:
+                v["last_seen"] = now
+                _save_sessions(sessions)
+                _ensure_cache[username] = now
+                return
+        # 无活跃会话 → 补建一条
+        nid = secrets.token_urlsafe(16)
+        newly = _pruned_sessions(sessions, now)
+        newly[nid] = {
+            "username": username or "",
+            "ip": "",
+            "device": "",
+            "created_at": now,
+            "last_seen": now,
+        }
+        _save_sessions(newly)
+        _ensure_cache[username] = now
+    except Exception:
+        pass
+
+
 def _save_sessions(data: dict) -> None:
     """原子写入会话表。"""
     tmp = SESSIONS_FILE + ".tmp"
@@ -242,12 +322,16 @@ def create_session(username: str, ip: str, device: str = "") -> str:
     """创建一条会话记录，返回会话 ID（sid）。异常静默降级，绝不阻断登录。"""
     try:
         sid = secrets.token_urlsafe(16)
+        now = time.time()
         sessions = _load_sessions()
+        # 惰性清理过期/离线会话后再写入，避免表无限膨胀
+        sessions = _pruned_sessions(sessions, now)
         sessions[sid] = {
             "username": username,
             "ip": ip or "",
             "device": (device or "")[:120],
-            "created_at": time.time(),
+            "created_at": now,
+            "last_seen": now,
         }
         _save_sessions(sessions)
         return sid
@@ -283,21 +367,38 @@ def _revoke_user_sessions(username: str) -> None:
         pass
 
 
+def _pruned_sessions(sessions: dict, now: float) -> dict:
+    """裁剪已失效会话：token 超有效期（created_at 超 TTL）或长时间无活跃（last_seen 超阈值）。"""
+    if not sessions:
+        return sessions
+    keep = {}
+    for sid, s in sessions.items():
+        last = s.get("last_seen") or s.get("created_at") or 0
+        if now - (s.get("created_at") or 0) > TOKEN_TTL:
+            continue
+        if now - last > _ONLINE_ACTIVE:
+            continue
+        keep[sid] = s
+    return keep
+
+
 def list_sessions(username: Optional[str] = None, limit: int = 100) -> list:
-    """列出在线会话（惰性清理过期记录）。username=None 返回全部。"""
+    """列出在线会话（惰性清理过期与离线记录）。username=None 返回全部。
+
+    「在线」以真实的最近活跃（last_seen）为准，而非仅看登录时间：设备关闭
+    / 长时间无请求的会话会被剔除，避免已不在线却仍显示为在线。
+    """
     sessions = _load_sessions()
-    # 惰性清理：token 有效期 7 天，超过视为过期会话
     now = time.time()
-    expired = [sid for sid, s in sessions.items() if now - (s.get("created_at") or 0) > TOKEN_TTL]
-    if expired:
-        for sid in expired:
-            sessions.pop(sid, None)
+    # 惰性清理：token 超期（created_at+TTL）或超过空闲阈值（last_seen）视为离线
+    expired = _pruned_sessions(sessions, now)
+    if len(expired) != len(sessions):
         try:
-            _save_sessions(sessions)
+            _save_sessions(expired)
         except Exception:
             pass
     items = []
-    for sid, s in sessions.items():
+    for sid, s in expired.items():
         if username and s.get("username") != username:
             continue
         items.append({
@@ -306,9 +407,11 @@ def list_sessions(username: Optional[str] = None, limit: int = 100) -> list:
             "ip": s.get("ip", ""),
             "device": s.get("device", ""),
             "created_at": s.get("created_at", 0),
+            # 最近活跃时间（前端可据此判断会话新鲜度）
+            "last_seen": s.get("last_seen", 0),
         })
     # 新会话在前
-    items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+    items.sort(key=lambda x: x.get("last_seen", 0) or x.get("created_at", 0), reverse=True)
     return items[: max(1, min(limit, 500))]
 
 
@@ -390,6 +493,8 @@ async def get_current_user(
     # 单设备踢出校验：sid 被吊销的令牌失效（旧令牌无 sid 跳过）
     if not session_active(payload.get("sid", "")):
         raise HTTPException(status_code=401, detail="该设备已被强制下线")
+    # 会话在线判定依赖 last_seen：有效鉴权即刷新，并确保正在使用的账号在列表可见
+    _ensure_online_session(user["username"], payload.get("sid", ""))
     return _public_user(user)
 
 
@@ -416,6 +521,8 @@ async def get_current_user_ws(
     if not session_active(payload.get("sid", "")):
         await websocket.close(code=4401)
         return None
+    # 有效连接即刷新会话活跃时间，并确保该账号在在线列表可见
+    _ensure_online_session(user["username"], payload.get("sid", ""))
     return _public_user(user)
 
 

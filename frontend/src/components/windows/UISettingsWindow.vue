@@ -38,6 +38,13 @@
         <div class="block-title">{{ $t('ui.wallpaper') }}</div>
         <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('ui.wallpaperHint') }}</div>
 
+        <!-- 仅用于这个账号：勾选后动态壁纸只对该账号生效，否则走全局 -->
+        <label class="switch-label">
+          <input type="checkbox" v-model="wallpaperPersonal" />
+          <span>{{ $t('ui.personalOnly') }}</span>
+        </label>
+        <div style="font-size:11px;color:#8e8e93;margin:-4px 0 6px 24px;">{{ $t('ui.personalOnlyHint') }}</div>
+
         <!-- 模式切换：图片（可轮播） / 视频 -->
         <div class="row" style="flex-wrap:wrap; gap:16px;">
           <label class="switch-label">
@@ -104,6 +111,11 @@
             <span>{{ $t('ui.ringAlarm') }}</span>
           </label>
         </div>
+        <!-- 仅用于这个账号：勾选后环形图配色只对该账号生效，否则走全局 -->
+        <label class="switch-label">
+          <input type="checkbox" v-model="ringPersonal" />
+          <span>{{ $t('ui.personalOnly') }}</span>
+        </label>
         <div v-if="ringColorError" class="msg err">{{ ringColorError }}</div>
       </div>
 
@@ -143,6 +155,9 @@ const videoError = ref('')
 const saving = ref(false)
 const msg = ref('')
 const msgType = ref('')
+// 「仅用于这个账号」：动态壁纸 / 环形图 各自是否走账号级配置
+const wallpaperPersonal = ref(false)
+const ringPersonal = ref(false)
 
 // ---- 环形图颜色：文本输入 + 取色器联动 ----
 const ringColorText = ref('#409eff') // 文本输入框（支持手动输入 #RRGGBB）
@@ -267,21 +282,29 @@ function removeVideo() {
   videoError.value = ''
 }
 
-/** 加载现有配置。 */
+/** 加载现有配置：优先当前账号的个人覆盖（「仅用于这个账号」），否则全局。 */
 async function load() {
   try {
     const config = await uiApi.config()
+    const p = config && config.personal || {}
+    // 动态壁纸：账号级优先，否则全局，否则默认
+    const wp = p.wallpaper || config
+    wallpaperPersonal.value = !!p.wallpaper
+    const bgList = Array.isArray(wp.backgrounds) && wp.backgrounds.length
+      ? wp.backgrounds.slice()
+      : (wp.background ? [wp.background] : (Array.isArray(config.backgrounds) ? config.backgrounds.slice() : []))
+    form.backgrounds = bgList
+    form.wallpaper_video = wp.wallpaper_video || config.wallpaper_video || ''
+    form.background_mode = wp.background_mode === 'video' ? 'video' : 'image'
+    form.background_interval = wp.background_interval || 8
+    // 环形图：账号级优先，否则全局，否则默认
+    const rp = p.ring || config
+    ringPersonal.value = !!p.ring
+    form.ring_color = rp.ring_color || '#409eff'
+    form.ring_alarm = rp.ring_alarm !== false
     form.site_name = config.site_name || 'Graw'
     form.welcome = config.welcome || ''
     form.logo = config.logo || ''
-    form.backgrounds = Array.isArray(config.backgrounds) && config.backgrounds.length
-      ? config.backgrounds.slice()
-      : (config.background ? [config.background] : [])
-    form.wallpaper_video = config.wallpaper_video || ''
-    form.background_mode = config.background_mode === 'video' ? 'video' : 'image'
-    form.background_interval = config.background_interval || 8
-    form.ring_color = config.ring_color || '#409eff'
-    form.ring_alarm = config.ring_alarm !== false
     logoPreview.value = form.logo || ''
     videoPreview.value = form.wallpaper_video || ''
     bgError.value = ''
@@ -305,7 +328,7 @@ async function save() {
   msg.value = ''
   msgType.value = ''
   try {
-    const res = await uiApi.update({
+    await uiApi.update({
       site_name: form.site_name,
       welcome: form.welcome,
       logo: form.logo,
@@ -316,21 +339,12 @@ async function save() {
       background_interval: Math.max(3, Math.min(120, Number(form.background_interval) || 8)),
       ring_color: color,
       ring_alarm: form.ring_alarm,
+      // 「仅用于这个账号」：勾选则写入当前账号，否则写入全局
+      wallpaper_personal: wallpaperPersonal.value,
+      ring_personal: ringPersonal.value,
     })
-    form.site_name = res.site_name || 'Graw'
-    form.welcome = res.welcome || ''
-    form.logo = res.logo || ''
-    form.backgrounds = Array.isArray(res.backgrounds) && res.backgrounds.length
-      ? res.backgrounds.slice()
-      : (res.background ? [res.background] : [])
-    form.wallpaper_video = res.wallpaper_video || ''
-    form.background_mode = res.background_mode === 'video' ? 'video' : 'image'
-    form.background_interval = res.background_interval || 8
-    form.ring_color = res.ring_color || '#409eff'
-    form.ring_alarm = res.ring_alarm !== false
-    logoPreview.value = form.logo || ''
-    videoPreview.value = form.wallpaper_video || ''
-    ringColorText.value = form.ring_color
+    // 后端已落盘，重新按「账号级>全局>默认」刷新表单与勾选状态，避免读到错误的层
+    await load()
     msg.value = t('ui.saved')
     msgType.value = 'ok'
   } catch (e) {
