@@ -183,19 +183,28 @@ async def container_terminal_ws(
 
 
 @router.websocket("/ws")
-async def terminal_ws(websocket: WebSocket, user=Depends(get_current_user_ws_admin)):
+async def terminal_ws(
+    websocket: WebSocket,
+    node: str = "",
+    user=Depends(get_current_user_ws_admin),
+):
     # get_current_user_ws_admin 在鉴权失败时会关闭连接并返回 None
     if user is None:
         return
     await websocket.accept()
-    # 记录远程终端开启：是否作用于远程节点由 node_manager 运行时决定
-    target = "远程节点终端" if node_manager.is_remote() else "本机终端"
-    auditlog.record(
-        target,
-        (user or {}).get("username", ""),
-        websocket.client.host if websocket.client else "",
-    )
+    # 「统一面板兼容」：浏览器 WebSocket 无法携带自定义请求头，目标节点经查询参数下发。
+    # 用请求级节点覆盖全局当前节点，使该终端会话连接「窗口绑定」的节点（而非全局）。
+    prev_node = node_manager._req_ctx_node()
+    if node and node.strip():
+        node_manager.set_request_node(node.strip())
     try:
+        # 记录远程终端开启：是否作用于远程节点由 node_manager 运行时决定
+        target = "远程节点终端" if node_manager.is_remote() else "本机终端"
+        auditlog.record(
+            target,
+            (user or {}).get("username", ""),
+            websocket.client.host if websocket.client else "",
+        )
         if node_manager.is_remote():
             # 多机：当前主机为 SSH 节点 → 进入远端交互终端。
             # Windows 控制端用 ConPTY 驱动 `ssh -tt`；Unix 用 pty.fork 走
@@ -220,6 +229,8 @@ async def terminal_ws(websocket: WebSocket, user=Depends(get_current_user_ws_adm
             await websocket.close()
         except Exception:
             pass
+    finally:
+        node_manager.set_request_node(prev_node)
 
 
 def _make_reader(read_fn, loop, out_queue: "asyncio.Queue[bytes]", stop_flag):

@@ -1,5 +1,5 @@
 <template>
-  <div style="display:flex; flex-direction:column; height:100%; background:#1e1e1e;">
+  <div style="display:flex; flex-direction:column; height:100%; background:#1e1e1e; overflow:hidden;">
     <div class="toolbar">
       <span style="color:#0a3d7a;">{{ $t('terminal.title') }}{{ container ? ' · ' + $t('terminal.inContainer', { name: container }) : '' }} · {{ statusText }}</span>
       <button class="btn" style="margin-left:auto;" @click="reconnect">{{ $t('terminal.reconnect') }}</button>
@@ -10,7 +10,7 @@
         :title="!mouseSupported ? (mouseReason || $t('terminal.mouseUnsupported')) : (mouseOn ? $t('terminal.mouseOffHint') : $t('terminal.mouseOnHint'))"
         @click="toggleMouse">{{ $t('terminal.mouse') }}:{{ mouseOn ? $t('terminal.on') : $t('terminal.off') }}</button>
     </div>
-    <div ref="termEl" style="flex:1; min-height:0; padding:4px; background:#1e1e1e;"></div>
+    <div ref="termEl" style="flex:1; min-height:0; padding:4px; background:#1e1e1e; overflow:hidden;"></div>
   </div>
 </template>
 
@@ -21,6 +21,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { auth } from '../../store/auth'
+import { getRequestNode } from '../../store/requestNode'
 import api from '../../api'
 
 // autoCommand：连接建立后自动执行/输入到终端的命令字符串（例如 Foxcode 启动命令）
@@ -29,6 +30,9 @@ const { t } = useI18n()
 
 const termEl = ref(null)
 const statusText = ref(t('terminal.notConnected'))
+// 会话绑定的目标节点：由于 App.vue 在打开窗口时已同步设置请求级节点，
+// 此处取到的即为本终端窗口绑定的节点；连接/重连固定使用它，避免切走后串到别的节点。
+const termNode = getRequestNode() || ''
 // 平台是否支持 TUI 鼠标：Windows 10 及更早的 ConPTY 不支持鼠标输入，
 // 需禁用「鼠标」开关并给出原因；Linux / Win11 22H2+ 支持。
 const mouseSupported = ref(true)
@@ -64,14 +68,18 @@ function connect() {
   if (ws) { try { ws.close() } catch (e) {} }
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'
   setStatus(t('terminal.connecting'))
-  // 浏览器 WebSocket 无法设置请求头，token 通过查询参数传递
-  const tokenParam = auth.token ? `?token=${encodeURIComponent(auth.token)}` : ''
+  // 浏览器 WebSocket 无法设置请求头，token 通过查询参数传递；
+  // 目标节点（窗口绑定节点）同样经 node 参数下发，使本会话连接该节点而非全局当前节点。
+  const qs = []
+  if (auth.token) qs.push(`token=${encodeURIComponent(auth.token)}`)
+  if (termNode) qs.push(`node=${encodeURIComponent(termNode)}`)
+  const qstr = qs.length ? '?' + qs.join('&') : ''
   try {
     if (props.container) {
       // 容器内终端：使用 /ws/container 端点，传入容器 ID
-      ws = new WebSocket(`${proto}://${location.host}/api/terminal/ws/container?container=${encodeURIComponent(props.container)}${tokenParam ? '&' + tokenParam.slice(1) : ''}`)
+      ws = new WebSocket(`${proto}://${location.host}/api/terminal/ws/container?container=${encodeURIComponent(props.container)}${qstr ? '&' + qstr.slice(1) : ''}`)
     } else {
-      ws = new WebSocket(`${proto}://${location.host}/api/terminal/ws${tokenParam}`)
+      ws = new WebSocket(`${proto}://${location.host}/api/terminal/ws${qstr}`)
     }
   } catch (e) {
     scheduleReconnect()

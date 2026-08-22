@@ -437,6 +437,8 @@ function openWindow(key) {
   })
   openWindows.value.push(w)
   activeWindowId.value = id
+  // 打开即同步绑定请求节点，让新窗口的首个请求立刻作用于其目标节点
+  applyActiveRequestNode(id)
 }
 
 // 触屏设备判定（手机/平板/DevTools 触摸模拟）：组合多种探测，避免单靠
@@ -903,6 +905,8 @@ function focusWindow(id) {
   w.z = ++zSeq
   w.minimized = false
   activeWindowId.value = id
+  // 聚焦即同步更新请求节点，避免切换后聚焦旧窗口时请求节点滞后
+  applyActiveRequestNode(id)
 }
 
 function closeWindow(id) {
@@ -1018,9 +1022,11 @@ onMounted(() => {
   document.addEventListener('mousedown', onDocClick)
 })
 
-// 统一面板兼容：切换聚焦窗口时，把「当前请求目标节点」设为该窗口绑定的节点。
-// 桌面无窗口时跟随全局 currentId。关闭窗口后如 activeWindowId 变为 None 则复位。
-watch(activeWindowId, (id) => {
+// 统一面板兼容：把「当前请求目标节点」设为当前聚焦/打开窗口绑定的节点。
+// 桌面无窗口时跟随全局 currentId。此函数在窗口打开/聚焦时同步调用（而非仅靠
+// watch 异步触发），避免「切换主机后立刻启动应用」的首个请求仍打到切换前的节点
+// （应用名称已显示新节点、实际连接却还是旧节点）。先定义再供 watch 与 open/focus 复用。
+function applyActiveRequestNode(id) {
   let node = ''
   if (settings.unifiedPanel) {
     const w = openWindows.value.find(x => x.id === id)
@@ -1028,6 +1034,10 @@ watch(activeWindowId, (id) => {
   }
   nodesStore.activeWindowNode = node
   setRequestNode(node)
+}
+
+watch(activeWindowId, (id) => {
+  applyActiveRequestNode(id)
 })
 
 // 登录态变化时启停共享实时数据，避免未登录时持续请求
