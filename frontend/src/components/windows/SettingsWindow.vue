@@ -646,12 +646,12 @@ async function otpDisable() {
 // ---- 关于：项目与社区链接 ----
 // nameKey 为多语言键，url 为固定外链；集中在此便于维护与扩展
 const aboutLinks = [
+  { key: 'donate', nameKey: 'settings.about.donate', url: 'https://ifdian.net/a/shunianssy' },
   { key: 'github', nameKey: 'settings.about.githubSource', url: 'https://github.com/wuhulab/Graw' },
   { key: 'docker', nameKey: 'settings.about.docker', url: 'https://hub.docker.com/repository/docker/shunx/graw/general' },
   { key: 'wuhulab', nameKey: 'settings.about.wuhulab', url: 'https://github.com/wuhulab/' },
   { key: 'appstore', nameKey: 'settings.about.appStore', url: 'https://github.com/wuhulab/Graw-app-store' },
   { key: 'sponsor', nameKey: 'settings.about.sponsorFai', url: 'https://fai.shunx.top/' },
-  { key: 'donate', nameKey: 'settings.about.donate', url: 'https://ifdian.net/a/shunianssy' },
   { key: 'qq1', nameKey: 'settings.about.qqYearnstudio', url: 'https://qm.qq.com/cgi-bin/qm/qr?k=tBGCIw9wWxxvR8Y37HzQYVu6IXA6ewCf&jump_from=webapi&authKey=IyaUqb5UDh/VFbNJ4YGEOMChPr6HUpGBeBzz8zweQeFHV8RsiHFiK4xJ1IXR/Y1x' },
   { key: 'qq2', nameKey: 'settings.about.qqSbox', url: 'https://qm.qq.com/cgi-bin/qm/qr?k=qMHdqob8wFPfeKNjWCgVB2k3EQD90KaL&jump_from=webapi&authKey=k0gFk6S1kjJFYSYzDU9pCFjpNdCmjGvaAAABo2WOuH/lKMGonWwXkqMFNDn0mVov' },
   { key: 'qq3', nameKey: 'settings.about.qqFox', url: 'https://qm.qq.com/cgi-bin/qm/qr?k=0BEct4NXBJ9b628GLej_4_W9W4KBvOXk&jump_from=webapi&authKey=UJWc1dTVUj98iwOadM5fOw7tP2+s/xnN1oG1JiOlMUvjWCYFgwK2ygXIEaYq6uen' },
