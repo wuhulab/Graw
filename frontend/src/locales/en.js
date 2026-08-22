@@ -27,6 +27,7 @@ export default {
     no: 'No',
     error: 'Error',
     success: 'Success',
+    next: 'Next',
   },
   login: {
     shunxGate: 'Secure Entry Protection',
@@ -641,6 +642,7 @@ export default {
     defaultPortTcpUdp: '443',
     reverseProxy: 'Target backend address',
     reverseProxyPlaceholder: 'e.g. http://localhost:3000',
+    listenPort: 'Listen port',
     protocol: 'Protocol',
     tcp: 'TCP',
     udp: 'UDP',
@@ -654,7 +656,6 @@ export default {
     viewConfig: 'Site config: {name}',
     close: 'Close',
     rightClickHint: 'Right-click a row for actions',
-    externalReadonly: 'External site (read-only)',
     enableAction: 'Enable',
     disableAction: 'Disable',
     config: 'Edit config',

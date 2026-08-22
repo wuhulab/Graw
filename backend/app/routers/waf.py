@@ -104,15 +104,23 @@ def _save_logs(logs: list):
 
 
 def _load_sites() -> list:
-    """读取 sites.json，用于站点头部下拉展示（无则空列表）。"""
-    sites_file = os.path.join(DATA_DIR, "sites.json")
-    if not os.path.exists(sites_file):
-        return []
+    """读取站点列表（自建 sites.json + 外部真实站点），用于下拉与存在性校验。
+
+    外部站点（如 1Panel 兼容站点）不在 sites.json，仅在发现结果中动态存在，
+    因此这里合并返回，保证 WAF 能对「网站」里配置过的站点正常选择与保存。
+    """
     try:
-        with open(sites_file, "r", encoding="utf-8") as f:
-            return json.load(f)
+        from app.routers.sites import merged_sites
+        return merged_sites()
     except Exception:
-        return []
+        sites_file = os.path.join(DATA_DIR, "sites.json")
+        if not os.path.exists(sites_file):
+            return []
+        try:
+            with open(sites_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
 
 
 def _site_exists(site_id: str) -> bool:
@@ -456,8 +464,13 @@ async def waf_toggle(body: dict):
 
 @router.get("/sites")
 async def waf_sites():
-    """站点下拉列表 + 各自启停状态（不含完整策略，避免拉取过重）。"""
-    sites = _load_sites()
+    """站点下拉列表 + 各自启停状态（不含完整策略，避免拉取过重）。
+
+    仅暴露可安全作为 <name>.conf 文件名的站点；外部真实配置中的非法
+    名称（如通配 _ / 含非法字符）不参与下拉，避免生成无法落地的问题配置。
+    """
+    all_sites = _load_sites()
+    sites = [s for s in all_sites if _SITE_ID_RE.match(str(s.get("name") or ""))]
     cfgs = {sc.get("site"): sc for sc in _load_waf().get("sites", [])}
     result = []
     for s in sites:

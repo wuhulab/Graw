@@ -171,6 +171,28 @@ def _save_sites(sites: list):
         json.dump(sites, f, ensure_ascii=False, indent=2)
 
 
+# 外部站点「显示名称」覆盖：外部站点由真实配置驱动（每次发现 name 复原），
+# 用户自定义的名称单独存于此，list 时叠加上去保持改名不丢。
+SITES_NAMES_FILE = os.path.join(DATA_DIR, "sites_names.json")
+
+
+def _load_external_names() -> dict:
+    if not os.path.exists(SITES_NAMES_FILE):
+        return {}
+    try:
+        with open(SITES_NAMES_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_external_names(names: dict):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(SITES_NAMES_FILE, "w", encoding="utf-8") as f:
+        json.dump(names, f, ensure_ascii=False, indent=2)
+
+
 def _which(cmd: str) -> Optional[str]:
     # 在宿主机环境中查找命令（容器模式经 hostfs 映射）
     return host_which(cmd)
@@ -337,19 +359,23 @@ def _resolve_site_conf(conf_path: str) -> str:
     return "\n".join(parts)
 
 
-def _existing_site_dirs() -> List[str]:
-    """返回要扫描的站点配置目录（去重、仅存在的）。"""
+def _existing_site_dirs() -> List[dict]:
+    """返回要扫描的站点配置目录（去重、仅存在的），并标注其来源。
+
+    source 用于区分站点来自标准 nginx/openresty 目录（nginx）还是
+    1Panel 专用目录（1panel），前端据此展示「1Panel兼容」标签。
+    """
     dirs = []
     try:
         d = webserver.available_dir()
         if d:
-            dirs.append(d)
+            dirs.append({"path": d, "source": "nginx"})
     except Exception:
         pass
     # 1Panel：宿主 /opt/1panel/www/conf.d（容器内 conf.d 加载，同一份配置）
-    for extra in ("/opt/1panel/www/conf.d",):
-        if extra not in dirs:
-            dirs.append(extra)
+    existing = {x["path"] for x in dirs}
+    if "/opt/1panel/www/conf.d" not in existing:
+        dirs.append({"path": "/opt/1panel/www/conf.d", "source": "1panel"})
     return dirs
 
 
@@ -358,7 +384,9 @@ def _discover_existing_sites() -> List[dict]:
     found = []
     seen_ids = set()
     idx = 0
-    for d in _existing_site_dirs():
+    for dir_entry in _existing_site_dirs():
+        d = dir_entry["path"]
+        source = dir_entry.get("source", "nginx")
         try:
             if not os.path.isdir(d):
                 continue
@@ -396,10 +424,38 @@ def _discover_existing_sites() -> List[dict]:
                 "domain": "",
                 "enabled": True,
                 "external": True,  # 标记：来自服务器真实配置，面板只读展示
+                "source": source,  # 来源目录：nginx / 1panel（供「1Panel兼容」标签）
                 "config_file": conf_path,
                 "created_at": "",
             })
     return found
+
+
+def _find_external_site(site_id: str) -> Optional[dict]:
+    """按 id 在真实站点发现结果里反查外部站点（供外部站点的编辑/查看配置）。"""
+    for s in _discover_existing_sites():
+        if s.get("id") == site_id:
+            return s
+    return None
+
+
+def _apply_external_nginx_config(site: dict, enabled: bool):
+    """把面板生成的 nginx server 配置写回该外部站点的真实 conf 文件。
+
+    外部站点来自服务器真实配置（如 1Panel /opt/1panel/www/conf.d），编辑后
+    直接改写其 config_file，使改动对真实网站生效，保持与 1Panel 站点一致。
+    """
+    conf_path = host_path(site.get("config_file") or "")
+    if not conf_path:
+        return
+    if enabled:
+        os.makedirs(os.path.dirname(conf_path), exist_ok=True)
+        with open(conf_path, "w", encoding="utf-8") as f:
+            f.write(_nginx_site_config(site))
+    else:
+        if os.path.exists(conf_path):
+            os.remove(conf_path)
+    _reload_nginx()
 
 
 def _site_status_by_port(port: int) -> bool:
@@ -687,6 +743,7 @@ class SiteAction(BaseModel):
 
 
 class UpdateSite(BaseModel):
+    name: Optional[str] = Field(None, max_length=64)
     type: Optional[str] = None
     domains: Optional[List[str]] = None
     root: Optional[str] = None
@@ -700,19 +757,33 @@ class UpdateSite(BaseModel):
     domain: Optional[str] = None
 
 
-@router.get("/list")
-async def list_sites():
+def merged_sites() -> List[dict]:
+    """自建站点 + 外部真实站点 的去重合并列表。
+
+    供「网站」列表与 WAF / 站点增强等下拉复用，保证各应用看到同样一组站点。
+    """
     sites = _load_sites()
-    ws = _web_server_type()
-    # 合并「真实存在的站点」（服务器上已配置，面板只读展示），与自建站点去重
     builtin_domains = {
         d.lower()
         for s in sites
         for d in (s.get("domains") or [])
     }
-    external = [_ for _ in _discover_existing_sites()
-                if not any(d.lower() in builtin_domains for d in (_["domains"] or []))]
-    merged = sites + external
+    external = [
+        _ for _ in _discover_existing_sites()
+        if not any(d.lower() in builtin_domains for d in (_["domains"] or []))
+    ]
+    # 叠加自定义显示名称（外部站点改名持久化）
+    names = _load_external_names()
+    for e in external:
+        if e.get("id") in names and names[e["id"]]:
+            e["name"] = names[e["id"]]
+    return sites + external
+
+
+@router.get("/list")
+async def list_sites():
+    ws = _web_server_type()
+    merged = merged_sites()
     for s in merged:
         s["web_server"] = ws
         s["online"] = _site_status_by_port(s.get("port", 80))
@@ -780,30 +851,30 @@ async def site_action(site_id: str, req: SiteAction):
     ws = _web_server_type()
     if req.action == "enable":
         site["enabled"] = True
-        if ws == "nginx":
+        if ws in ("nginx", "openresty"):
             _apply_nginx_config(site_id, site, True)
             _reload_nginx()
         elif ws == "apache":
             _apply_apache_config(site_id, site, True)
     elif req.action == "disable":
         site["enabled"] = False
-        if ws == "nginx":
+        if ws in ("nginx", "openresty"):
             _apply_nginx_config(site_id, site, False)
             _reload_nginx()
         elif ws == "apache":
             _apply_apache_config(site_id, site, False)
     elif req.action == "start":
         site["enabled"] = True
-        if ws == "nginx":
+        if ws in ("nginx", "openresty"):
             _apply_nginx_config(site_id, site, True)
             _reload_nginx()
     elif req.action == "stop":
         site["enabled"] = False
-        if ws == "nginx":
+        if ws in ("nginx", "openresty"):
             _apply_nginx_config(site_id, site, False)
             _reload_nginx()
     elif req.action == "restart":
-        if ws == "nginx":
+        if ws in ("nginx", "openresty"):
             _reload_nginx()
     _save_sites(sites)
     return {"ok": True, "enabled": site["enabled"]}
@@ -814,9 +885,12 @@ async def get_site_config(site_id: str):
     sites = _load_sites()
     site = next((s for s in sites if s["id"] == site_id), None)
     if not site:
-        raise HTTPException(status_code=404, detail="Site not found")
+        # 外部站点：不在面板 sites.json，从真实配置发现结果反查
+        site = _find_external_site(site_id)
+        if not site:
+            raise HTTPException(status_code=404, detail="Site not found")
     ws = _web_server_type()
-    if ws == "nginx":
+    if ws in ("nginx", "openresty"):
         config = _nginx_site_config(site)
     elif ws == "apache":
         config = _apache_site_config(site)
@@ -829,8 +903,13 @@ async def get_site_config(site_id: str):
 async def update_site(site_id: str, req: UpdateSite):
     sites = _load_sites()
     site = next((s for s in sites if s["id"] == site_id), None)
+    external = False
     if not site:
-        raise HTTPException(status_code=404, detail="Site not found")
+        # 外部站点：不在面板 sites.json，编辑后写回其真实 conf 文件
+        site = _find_external_site(site_id)
+        if not site:
+            raise HTTPException(status_code=404, detail="Site not found")
+        external = True
     # 安全校验：与 create 一致，更新值同样禁止配置注入字符
     _validate_site_payload(
         site_type=req.type,
@@ -846,6 +925,8 @@ async def update_site(site_id: str, req: UpdateSite):
     )
     if req.type is not None:
         site["type"] = req.type
+    if req.name is not None:
+        site["name"] = req.name
     if req.domains is not None:
         site["domains"] = req.domains
     if req.root is not None:
@@ -868,9 +949,23 @@ async def update_site(site_id: str, req: UpdateSite):
         site["subdomain"] = req.subdomain
     if req.domain is not None:
         site["domain"] = req.domain
+    # 外部站点：直接改写其真实 conf 文件（不写入面板 sites.json，
+    # 列表会从真实配置重新发现，天然反映改动）
+    if external:
+        # 自定义显示名称单独持久化（外部站点由真实配置驱动，需叠加覆盖）
+        if req.name is not None:
+            names = _load_external_names()
+            if req.name.strip():
+                names[site.get("id")] = req.name.strip()
+            else:
+                names.pop(site.get("id"), None)
+            _save_external_names(names)
+        if site.get("enabled"):
+            _apply_external_nginx_config(site, True)
+        return site
     ws = _web_server_type()
     if site.get("enabled"):
-        if ws == "nginx":
+        if ws in ("nginx", "openresty"):
             _apply_nginx_config(site_id, site, True)
             _reload_nginx()
         elif ws == "apache":
@@ -886,7 +981,7 @@ async def delete_site(site_id: str):
     if not site:
         raise HTTPException(status_code=404, detail="Site not found")
     ws = _web_server_type()
-    if ws == "nginx":
+    if ws in ("nginx", "openresty"):
         _apply_nginx_config(site_id, site, False)
         _reload_nginx()
     elif ws == "apache":

@@ -7,10 +7,10 @@
       </div>
       <div class="toolbar-actions">
         <button class="btn primary" :disabled="busy" @click="doExport">
-          <Download :size="14" /> 导出配置
+          <Upload :size="14" /> 导出配置
         </button>
         <label class="btn upload-btn" :class="{ disabled: busy }">
-          <Upload :size="14" /> 导入配置
+          <Download :size="14" /> 导入配置
           <input type="file" accept=".tar.gz" hidden @change="onImport" :disabled="busy" />
         </label>
         <button class="btn" :disabled="loading" @click="loadAll"><RefreshCw :size="14" /> 刷新</button>

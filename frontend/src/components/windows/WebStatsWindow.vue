@@ -74,7 +74,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { BarChart3, RefreshCw } from 'lucide-vue-next'
 import { webstatsApi } from '../../api'
@@ -125,6 +125,9 @@ async function load() {
       domain: domain.value
     })
     stats.value = r
+    // 等待 DOM 渲染出图表容器（stats 所在 v-if 块）后再初始化 ECharts，
+    // 否则 ref 尚未挂载、图表无从渲染
+    await nextTick()
     renderCharts()
   } catch (e) {
     err.value = e.response?.data?.detail || e.message

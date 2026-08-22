@@ -27,6 +27,7 @@ export default {
     no: '否',
     error: '错误',
     success: '成功',
+    next: '下一步',
   },
   // Docker 窗口
   docker: {
@@ -218,6 +219,7 @@ export default {
     defaultPortTcpUdp: '443',
     reverseProxy: '目标后端地址',
     reverseProxyPlaceholder: '如: http://localhost:3000',
+    listenPort: '监听端口',
     protocol: '协议',
     tcp: 'TCP',
     udp: 'UDP',
@@ -231,7 +233,6 @@ export default {
     viewConfig: '站点配置: {name}',
     close: '关闭',
     rightClickHint: '右键站点行可操作',
-    externalReadonly: '外部站点（只读）',
     enableAction: '启用',
     disableAction: '停用',
     config: '编辑配置',

@@ -18,14 +18,14 @@
             <th style="width:100px;">{{ $t('disks.used') }}</th>
             <th style="width:100px;">{{ $t('disks.available') }}</th>
             <th style="width:130px;">{{ $t('disks.usage') }}</th>
-            <th>{{ $t('disks.mountPoint') }}</th>
+            <th style="width:130px;white-space:nowrap;">{{ $t('disks.mountPoint') }}</th>
             <th style="width:90px;">{{ $t('disks.filesystem') }}</th>
             <th style="width:150px;">{{ $t('disks.action') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="(p, i) in partitions" :key="i">
-            <td>
+            <td style="white-space:nowrap;">
               {{ p.diskName }}
               <span v-if="p.system" class="badge badge-sys">{{ $t('disks.system') }}</span>
             </td>
@@ -42,7 +42,7 @@
               </div>
               <span v-else>-</span>
             </td>
-            <td>{{ p.mountpoint || '-' }}</td>
+            <td style="white-space:nowrap;">{{ p.mountpoint || '-' }}</td>
             <td>{{ p.fstype || '-' }}</td>
             <td>
               <span v-if="p.system" class="op-disabled" :title="$t('disks.cannotOperateTitle')">{{ $t('disks.cannotOperate') }}</span>

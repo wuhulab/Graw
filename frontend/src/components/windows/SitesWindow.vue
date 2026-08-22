@@ -20,7 +20,10 @@
         <tbody>
           <tr v-for="s in sites" :key="s.id" @contextmenu.prevent="openCtx($event, s)" class="site-row">
             <td>{{ s.name }}</td>
-            <td><span class="type-badge">{{ typeLabel(s.type) }}</span></td>
+            <td>
+              <span class="type-badge">{{ typeLabel(s.type) }}</span>
+              <span v-if="s.source === '1panel'" class="tag-1p">1Panel兼容</span>
+            </td>
             <td>{{ displayServerName(s) }}</td>
             <td class="mono">{{ displayTarget(s) }}</td>
             <td>{{ s.port }}</td>
@@ -41,7 +44,9 @@
       <div v-if="ctxMenu.show" class="context-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
         <template v-if="ctxMenu.site?.external">
           <div class="menu-header">{{ ctxMenu.site?.name }}</div>
-          <div class="menu-item readonly" disabled>{{ $t('sites.externalReadonly') }}</div>
+          <div class="menu-divider"></div>
+          <div class="menu-item" @click="menuEdit">{{ $t('sites.config') }}</div>
+          <div class="menu-item" @click="menuViewConfig">{{ $t('sites.viewConfigHint') }}</div>
         </template>
         <template v-else>
           <div class="menu-header">{{ ctxMenu.site?.name }}</div>
@@ -85,7 +90,7 @@
         <h3>{{ $t(editing ? 'sites.editLabel' : 'sites.createLabel', { type: typeLabel(form.type) }) }}</h3>
         <div class="form">
           <label>{{ $t('sites.siteName') }}</label>
-          <input v-model="form.name" :disabled="editing" :placeholder="$t('sites.namePlaceholder')" />
+          <input v-model="form.name" :placeholder="$t('sites.namePlaceholder')" />
 
           <!-- 静态网址 -->
           <template v-if="form.type === 'static'">
@@ -252,6 +257,8 @@ const emptyForm = (type) => ({
   domain: ''
 })
 const form = ref(emptyForm('static'))
+// 当前正在编辑的站点 id（编辑保存按 id 定位，兼容站点改名）
+const editingId = ref('')
 const domainsText = ref('')
 
 async function load() {
@@ -286,6 +293,7 @@ function openTypePicker() {
 function confirmType() {
   if (!pickedType.value) return
   editing.value = false
+  editingId.value = ''
   form.value = emptyForm(pickedType.value)
   domainsText.value = ''
   showTypePicker.value = false
@@ -294,6 +302,7 @@ function confirmType() {
 
 function openEdit(s) {
   editing.value = true
+  editingId.value = s.id
   form.value = {
     name: s.name,
     type: s.type || 'static',
@@ -324,8 +333,7 @@ async function saveSite() {
     domain: form.value.domain || ''
   }
   if (editing.value) {
-    const site = sites.value.find(s => s.name === form.value.name)
-    if (site) await sitesApi.update(site.id, payload)
+    if (editingId.value) await sitesApi.update(editingId.value, payload)
   } else {
     await sitesApi.create(payload)
   }
@@ -383,6 +391,7 @@ th { background: #f9fafb; position: sticky; top: 0; }
 .badge.warn { background: #fef3c7; color: #92400e; }
 .badge.off { background: #f3f4f6; color: #6b7280; }
 .type-badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; background: #eef2ff; color: #4338ca; }
+.tag-1p { display: inline-block; margin-left: 4px; padding: 1px 6px; border-radius: 6px; font-size: 10px; background: #fffbeb; color: #b45309; border: 1px solid #fcd34d; white-space: nowrap; }
 
 /* 右键菜单 */
 .context-menu {

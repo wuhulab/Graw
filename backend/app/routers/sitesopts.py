@@ -25,6 +25,9 @@ router = APIRouter()
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 SITES_FILE = os.path.join(DATA_DIR, "sites.json")
+# 外部站点（1Panel 兼容等，来自真实 nginx 配置，不在 sites.json）的增强配置，
+# 单独持久化于此，避免每次重新发现站点时配置丢失。
+SITESOPTS_EXT_FILE = os.path.join(DATA_DIR, "sitesopts_external.json")
 
 # 域名白名单（支持通配子域 *.example.com）：与 sites 路由保持一致
 _DOMAIN_RE = re.compile(
@@ -143,11 +146,48 @@ def _save_sites(sites: list):
         json.dump(sites, f, ensure_ascii=False, indent=2)
 
 
+def _load_ext_opts() -> dict:
+    """读取外部站点的增强配置（site_id -> opts）。"""
+    if not os.path.exists(SITESOPTS_EXT_FILE):
+        return {}
+    try:
+        with open(SITESOPTS_EXT_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+            return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_ext_opts(data: dict):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(SITESOPTS_EXT_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def _external_site(site_id: str) -> Optional[dict]:
+    """按 id 在外部真实站点发现结果中反查站点（叠加已存增强配置）。
+
+    外部站点不在 sites.json，必须从真实配置动态反查，才能被编辑/保存。
+    """
+    try:
+        from app.routers.sites import _find_external_site
+        ext = _find_external_site(site_id)
+        if ext:
+            opts = _load_ext_opts().get(site_id) or {}
+            ext["hotlink"] = opts.get("hotlink") or {}
+            ext["gzip"] = opts.get("gzip") or {}
+            ext["cache_expire"] = int(opts.get("cache_expire") or 0)
+        return ext
+    except Exception:
+        return None
+
+
 def _find_site(site_id: str) -> Optional[dict]:
     for s in _load_sites():
         if s.get("id") == site_id:
             return s
-    return None
+    # 外部站点不在 sites.json：从真实配置反查（叠加已存增强配置）
+    return _external_site(site_id)
 
 
 # ---------------------------------------------------------------------------
@@ -164,27 +204,46 @@ class ApplyOptsRequest(BaseModel):
 
 @router.get("/sites")
 async def opts_sites():
-    """返回所有站点及其当前增强配置。"""
+    """返回所有站点（自建 + 外部真实站点）及其当前增强配置。
+
+    外部站点（1Panel 兼容等）不在 sites.json，读取单独持久化的增强配置。
+    """
+    from app.routers.sites import merged_sites
+
+    ext_opts = _load_ext_opts()
     sites = []
-    for s in _load_sites():
-        hotlink = s.get("hotlink") or {}
+    for s in merged_sites():
+        if s.get("external"):
+            o = ext_opts.get(s["id"]) or {}
+            hotlink = o.get("hotlink") or {}
+            gzip_enabled = bool((o.get("gzip") or {}).get("enabled"))
+            cache_expire = int(o.get("cache_expire") or 0)
+        else:
+            hotlink = s.get("hotlink") or {}
+            gzip_enabled = bool(s.get("gzip", {}).get("enabled"))
+            cache_expire = int(s.get("cache_expire") or 0)
         sites.append({
             "id": s.get("id"),
             "name": s.get("name"),
             "type": s.get("type"),
+            "external": bool(s.get("external")),
             "enabled": s.get("enabled", False),
             "hotlink_enabled": bool(hotlink.get("enabled")),
             "hotlink_allowed": hotlink.get("allowed") or [],
             "hotlink_allow_empty_referer": bool(hotlink.get("allow_empty_referer", True)),
-            "gzip_enabled": bool(s.get("gzip", {}).get("enabled")),
-            "cache_expire": int(s.get("cache_expire") or 0),
+            "gzip_enabled": gzip_enabled,
+            "cache_expire": cache_expire,
         })
     return {"sites": sites}
 
 
 @router.post("/apply")
 async def apply_opts(req: ApplyOptsRequest):
-    """应用站点增强配置（防盗链 / gzip / 缓存），写入 nginx 配置并 reload。"""
+    """应用站点增强配置（防盗链 / gzip / 缓存），写入 nginx 配置并 reload。
+
+    自建站点写入 sites.json 并重写 nginx 配置；外部真实站点（1Panel 兼容等）
+    单独持久化增强配置，并把配置写回其真实 conf 文件，改动真实生效。
+    """
     if not req.site_id:
         raise HTTPException(status_code=400, detail="请选择站点")
     site = _find_site(req.site_id)
@@ -210,12 +269,33 @@ async def apply_opts(req: ApplyOptsRequest):
     if cache > MAX_CACHE_SECONDS:
         cache = MAX_CACHE_SECONDS
 
-    site["hotlink"] = {
-        "enabled": bool(req.hotlink_enabled),
-        "allowed": allowed,
-        "allow_empty_referer": bool(req.hotlink_allow_empty_referer),
+    opts = {
+        "hotlink": {
+            "enabled": bool(req.hotlink_enabled),
+            "allowed": allowed,
+            "allow_empty_referer": bool(req.hotlink_allow_empty_referer),
+        },
+        "gzip": {"enabled": bool(req.gzip_enabled)},
+        "cache_expire": cache,
     }
-    site["gzip"] = {"enabled": bool(req.gzip_enabled)}
+
+    from app.routers.sites import _apply_nginx_config, _reload_nginx, _web_server_type
+
+    if site.get("external"):
+        # 外部站点：增强配置单独持久化，并写回真实 conf 文件
+        ext = _load_ext_opts()
+        ext[req.site_id] = opts
+        _save_ext_opts(ext)
+        site["hotlink"] = opts["hotlink"]
+        site["gzip"] = opts["gzip"]
+        site["cache_expire"] = cache
+        if site.get("enabled"):
+            from app.routers.sites import _apply_external_nginx_config
+            _apply_external_nginx_config(site, True)
+        return {"ok": True, "site_id": req.site_id, "engine": _web_server_type()}
+
+    site["hotlink"] = opts["hotlink"]
+    site["gzip"] = opts["gzip"]
     site["cache_expire"] = cache
 
     sites = _load_sites()
@@ -227,7 +307,6 @@ async def apply_opts(req: ApplyOptsRequest):
     _save_sites(sites)
 
     # 重新生成 nginx 配置并 reload（仅当站点已启用）
-    from app.routers.sites import _apply_nginx_config, _reload_nginx, _web_server_type
     ws = _web_server_type()
     if site.get("enabled") and ws == "nginx":
         _apply_nginx_config(req.site_id, site, True)
@@ -244,6 +323,22 @@ async def clear_opts(req: dict):
     site = _find_site(site_id)
     if not site:
         raise HTTPException(status_code=404, detail="站点不存在")
+
+    from app.routers.sites import _apply_nginx_config, _reload_nginx, _web_server_type
+
+    if site.get("external"):
+        # 外部站点：清掉单独持久化的增强配置，并把改动写回真实 conf 文件
+        ext = _load_ext_opts()
+        ext.pop(site_id, None)
+        _save_ext_opts(ext)
+        site.pop("hotlink", None)
+        site.pop("gzip", None)
+        site.pop("cache_expire", None)
+        if site.get("enabled"):
+            from app.routers.sites import _apply_external_nginx_config
+            _apply_external_nginx_config(site, True)
+        return {"ok": True, "site_id": site_id}
+
     sites = _load_sites()
     for s in sites:
         if s.get("id") == site_id:
@@ -252,7 +347,6 @@ async def clear_opts(req: dict):
             s.pop("cache_expire", None)
     _save_sites(sites)
 
-    from app.routers.sites import _apply_nginx_config, _reload_nginx, _web_server_type
     ws = _web_server_type()
     if site.get("enabled") and ws == "nginx":
         _apply_nginx_config(site_id, site, True)

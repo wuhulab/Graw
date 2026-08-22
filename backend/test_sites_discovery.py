@@ -134,16 +134,24 @@ class NginxParseTest(unittest.TestCase):
 class ExistingDirsTest(unittest.TestCase):
     def test_includes_1panel(self):
         dirs = sites._existing_site_dirs()
-        self.assertIn("/opt/1panel/www/conf.d", dirs)
+        self.assertIn("/opt/1panel/www/conf.d", [x["path"] for x in dirs])
+        self.assertIn("1panel", [x.get("source") for x in dirs])
+
+    def test_dirs_have_source(self):
+        for d in sites._existing_site_dirs():
+            self.assertIn(d.get("source"), ("nginx", "1panel"))
 
 
 class DiscoverTest(unittest.TestCase):
+    def _d(self, path):
+        return [{"path": path, "source": "nginx"}]
+
     def test_discovers_conf_site(self):
         with tempfile.TemporaryDirectory() as d:
             conf = os.path.join(d, "graw-test.conf")
             with open(conf, "w", encoding="utf-8") as f:
                 f.write(SAMPLE_CONF)
-            with mock.patch.object(sites, "_existing_site_dirs", return_value=[d]):
+            with mock.patch.object(sites, "_existing_site_dirs", return_value=self._d(d)):
                 found = sites._discover_existing_sites()
         self.assertEqual(len(found), 1)
         item = found[0]
@@ -152,11 +160,25 @@ class DiscoverTest(unittest.TestCase):
         self.assertEqual(item["domains"], ["graw-test-1p.shunx.top"])
         self.assertTrue(item["root"].endswith("index"))
         self.assertEqual(item["config_file"], conf)
+        self.assertEqual(item["source"], "nginx")
+
+    def test_discovers_1panel_source(self):
+        # 来自 1Panel 目录的站点应标记 source=1panel
+        with tempfile.TemporaryDirectory() as d:
+            conf = os.path.join(d, "graw-test.conf")
+            with open(conf, "w", encoding="utf-8") as f:
+                f.write(SAMPLE_CONF)
+            with mock.patch.object(
+                sites, "_existing_site_dirs",
+                return_value=[{"path": d, "source": "1panel"}],
+            ):
+                found = sites._discover_existing_sites()
+        self.assertEqual(found[0]["source"], "1panel")
 
     def test_skips_non_conf(self):
         with tempfile.TemporaryDirectory() as d:
             open(os.path.join(d, "readme.txt"), "w").close()
-            with mock.patch.object(sites, "_existing_site_dirs", return_value=[d]):
+            with mock.patch.object(sites, "_existing_site_dirs", return_value=self._d(d)):
                 found = sites._discover_existing_sites()
         self.assertEqual(found, [])
 
@@ -165,7 +187,7 @@ class DiscoverTest(unittest.TestCase):
             conf = os.path.join(d, "proxy.conf")
             with open(conf, "w", encoding="utf-8") as f:
                 f.write(PROXY_CONF)
-            with mock.patch.object(sites, "_existing_site_dirs", return_value=[d]):
+            with mock.patch.object(sites, "_existing_site_dirs", return_value=self._d(d)):
                 found = sites._discover_existing_sites()
         self.assertEqual(len(found), 1)
         item = found[0]
@@ -173,6 +195,42 @@ class DiscoverTest(unittest.TestCase):
         self.assertEqual(item["reverse_proxy"], "http://127.0.0.1:15874")
         self.assertEqual(item["port"], 15874)
         self.assertEqual(item["domains"], ["graw-proxy.shunx.top"])
+
+
+class EditExternalTest(unittest.TestCase):
+    def test_find_external_site_by_id(self):
+        with tempfile.TemporaryDirectory() as d:
+            conf = os.path.join(d, "proxy.conf")
+            with open(conf, "w", encoding="utf-8") as f:
+                f.write(PROXY_CONF)
+            with mock.patch.object(
+                sites, "_existing_site_dirs",
+                return_value=[{"path": d, "source": "nginx"}],
+            ):
+                ext = sites._discover_existing_sites()[0]
+                found = sites._find_external_site(ext["id"])
+        self.assertIsNotNone(found)
+        self.assertEqual(found["id"], ext["id"])
+        self.assertEqual(found["reverse_proxy"], "http://127.0.0.1:15874")
+
+    def test_nginx_config_external_proxy(self):
+        # 外部反代站点经 _nginx_site_config 生成的配置应含 proxy_pass
+        site = {
+            "id": "ext-x", "type": "proxy", "domains": ["graw-proxy.shunx.top"],
+            "port": 80, "reverse_proxy": "http://127.0.0.1:15874",
+            "ssl": {}, "root": "", "locations": [],
+        }
+        cfg = sites._nginx_site_config(site)
+        self.assertIn("proxy_pass http://127.0.0.1:15874", cfg)
+
+    def test_nginx_config_external_static(self):
+        site = {
+            "id": "ext-s", "type": "static", "domains": ["a.example.com"],
+            "port": 80, "reverse_proxy": "", "ssl": {},
+            "root": "/www/sites/a.example.com/index", "locations": [],
+        }
+        cfg = sites._nginx_site_config(site)
+        self.assertIn("root /www/sites/a.example.com/index", cfg)
 
 
 if __name__ == "__main__":

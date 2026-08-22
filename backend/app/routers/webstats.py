@@ -26,14 +26,21 @@ from app.hostfs import host_path, unhost_path
 
 router = APIRouter()
 
-# 常见 nginx 日志目录（宿主机视角），按优先级探测
+# 常见 nginx 日志目录（宿主机视角），按优先级探测（固定路径）
 _LOG_CANDIDATES = [
     "/var/log/nginx/access.log",
     "/var/log/nginx/openresty/access.log",
-    "/var/log/nginx/access.log",
     "/usr/local/openresty/nginx/logs/access.log",
     "/usr/local/nginx/logs/access.log",
+    # 1Panel：openresty（Docker）容器挂载到宿主的全局访问日志
+    "/opt/1panel/apps/openresty/openresty/log/access.log",
     "/var/log/httpd/access_log",
+]
+
+# 目录/通配日志候选：1Panel 站点级访问日志（每个站点一个文件）等需要 glob 展开
+_EXT_LOG_GLOBS = [
+    "/opt/1panel/www/sites/*/log/access.log",
+    "/opt/1panel/wwwlogs/*.log",
 ]
 
 # 单文件最多处理的字节数（约 200MB），防止超大日志拖垮后端
@@ -124,13 +131,33 @@ def _read_tail(path: str, max_bytes: int = _MAX_BYTES) -> List[str]:
 
 
 def _discover_logs() -> List[str]:
-    """探测可用的访问日志路径（宿主机视角）。"""
+    """探测可用的访问日志路径（宿主机视角）。
+
+    固定候选逐项 `isfile` 探测；目录/通配候选（如 1Panel 站点级日志）
+    用 glob 展开后拼接，统一去重保序。
+    """
     found = []
-    for p in _LOG_CANDIDATES:
-        hp = host_path(p)
-        if os.path.isfile(hp):
+    seen = set()
+
+    def _add(hp):
+        if os.path.isfile(hp) and hp not in seen:
+            seen.add(hp)
             found.append(hp)
+
+    for p in _LOG_CANDIDATES:
+        _add(host_path(p))
+
+    import glob as _glob
+    for pat in _EXT_LOG_GLOBS:
+        for hp in _glob.glob(host_path(pat)) or []:
+            _add(hp)
     return found
+
+
+def _sanitize_domain(domain: str) -> str:
+    """将域名规整为可用于拼路径的安全片段（仅字母/数字/./-）。"""
+    d = (domain or "").strip().lower()
+    return re.sub(r"[^a-z0-9.-]", "", d)
 
 
 def _domain_matches(host: Optional[str], domain: str) -> bool:
@@ -254,6 +281,13 @@ async def analyze(
         path = host_path(norm)
     else:
         found = _discover_logs()
+        d = _sanitize_domain(domain)
+        if d:
+            site_log = host_path(f"/opt/1panel/www/sites/{d}/log/access.log")
+            if os.path.isfile(site_log):
+                # 站点级日志已限定该域名（首字段无 vhost host），置空 domain 避免再按 host 过滤把数据排空
+                found = [site_log]
+                domain = ""
         if not found:
             raise HTTPException(
                 status_code=400,
