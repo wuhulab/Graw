@@ -367,6 +367,15 @@ export default {
     portRules: '端口规则',
     ipRules: 'IP规则',
     clearAll: '清空全部规则',
+    platform: '平台：{platform}',
+    ip: 'IP',
+    nolpRules: '未放行端口',
+    noLpRules: '暂无未放行端口',
+    blockUnopened: '默认屏蔽所有未放行端口',
+    blockUnopenedDone: '已屏蔽 {count} 个未放行端口：{ports}',
+    blockUnopenedSkip: '重要端口已保留：{skipped}（无新增）',
+    blockUnopenedNone: '没有需要屏蔽的未放行端口',
+    blockUnopenedFail: '屏蔽失败：{error}',
   },
   // Frp 内网穿透
   frp: {
@@ -611,6 +620,7 @@ export default {
     description: '说明',
     levelDanger: '高危',
     levelWarn: '警告',
+    levelSafe: '已持久',
     suggestMountDir: '建议挂载目录：',
     selectAll: '全选',
     selectedCount: '已选 {count} 项',
@@ -1022,6 +1032,9 @@ export default {
     warnTitle: '版本安全提醒',
     securityWarning: '{warning}',
     iUnderstand: '我已知晓，继续安装',
+    exposeTitle: '未勾选外部放行',
+    exposeConfirm: '你没有勾选「允许外部访问」，安装后应用仅在宿主机内部可访问，外部网络可能无法访问。是否继续安装？',
+    iUnderstandAndInstall: '我已知晓，继续安装',
   },
   // 应用安装日志
   appinstalllog: {
@@ -1610,9 +1623,11 @@ export default {
       runtimeCreate: '创建运行环境',
       connEdit: '编辑: {name}',
       connAdd: '添加数据库连接',
+      site: '站点配置',
     },
-    // 高风险操作二次确认（缺失时回退到中文）
-    confirmDanger: {
+  },
+  // 高风险操作二次确认（缺失时回退到中文）
+  confirmDanger: {
       deleteSiteTitle: '删除站点确认',
       deleteSiteMsg: '删除站点「{name}」后将不可恢复。\n请在下方输入站点名称以确认删除。',
       inputNameLabel: '输入站点名称确认',
@@ -1630,6 +1645,8 @@ export default {
       deleteFirewallIpMsg: '删除 {ip} 的防火墙规则后将立即生效。\n请输入面板密码以确认。',
       clearFirewallTitle: '清空防火墙规则确认',
       clearFirewallMsg: '清空全部防火墙规则后将立即删除所有已配置的端口和IP规则。\n请输入面板密码以确认。',
+      blockUnopenedTitle: '屏蔽未放行端口确认',
+      blockUnopenedMsg: '将默认屏蔽当前正在监听但未放行（且非重要）的端口，重要端口（80/443/22 等）会被保留。\n请输入面板密码以确认。',
       clearLogsTitle: '清空日志确认',
       clearLogsMsg: '清空全部日志后不可恢复。\n请输入面板密码以确认。',
       clearLoginlogTitle: '清空登录日志确认',
@@ -1674,6 +1691,5 @@ export default {
       panelRestoreMsg: '导入配置「{name}」将覆盖当前面板全部配置，导入前会自动备份。\n请输入面板密码以确认。',
       deletePanelBackupTitle: '删除面板备份确认',
       deletePanelBackupMsg: '删除面板备份「{name}」后不可恢复。\n请输入面板密码以确认。',
-    },
   },
 }

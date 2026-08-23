@@ -234,7 +234,9 @@ export const firewallApi = {
   addIp: (body) => api.post('/firewall/ip', body).then(r => r.data),
   delIp: (id) => api.delete(`/firewall/ip/${id}`).then(r => r.data),
   toggle: (enabled) => api.post('/firewall/toggle', { enabled }).then(r => r.data),
-  clear: () => api.post('/firewall/clear').then(r => r.data)
+  clear: () => api.post('/firewall/clear').then(r => r.data),
+  listening: () => api.get('/firewall/listening').then(r => r.data),
+  blockUnopened: () => api.post('/firewall/block-unopened').then(r => r.data)
 }
 
 export const sslApi = {

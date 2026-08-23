@@ -233,5 +233,36 @@ class EditExternalTest(unittest.TestCase):
         self.assertIn("root /www/sites/a.example.com/index", cfg)
 
 
+class ProxySslOptionsTest(unittest.TestCase):
+    """反向代理上游为 https 时的 SSL 指令生成（修复宝塔等面板 502）。"""
+
+    def test_http_upstream_no_extra_ssl_opts(self):
+        # 明文 http 上游：不额外生成 SSL 指令，保持原有行为
+        self.assertEqual(sites._proxy_ssl_options("http://127.0.0.1:8080"), [])
+
+    def test_empty_proxy_no_opts(self):
+        self.assertEqual(sites._proxy_ssl_options(""), [])
+
+    def test_https_upstream_adds_verify_off(self):
+        opts = sites._proxy_ssl_options("https://127.0.0.1:12840")
+        self.assertIn("        proxy_ssl_verify off;", opts)
+        self.assertIn("        proxy_ssl_server_name off;", opts)
+
+    def test_https_uppercase_scheme_handled(self):
+        opts = sites._proxy_ssl_options("HTTPS://pan.local")
+        self.assertIn("        proxy_ssl_verify off;", opts)
+
+    def test_nginx_proxy_config_ends_with_https_opts(self):
+        # https 上游的整站反代配置应包含关闭证书校验指令，避免 502
+        site = {
+            "id": "ext-https", "type": "proxy", "domains": ["pan.example.com"],
+            "port": 80, "reverse_proxy": "https://127.0.0.1:12840",
+            "ssl": {}, "root": "", "locations": [],
+        }
+        cfg = sites._nginx_site_config(site)
+        self.assertIn("proxy_pass https://127.0.0.1:12840;", cfg)
+        self.assertIn("proxy_ssl_verify off;", cfg)
+
+
 if __name__ == "__main__":
     unittest.main()

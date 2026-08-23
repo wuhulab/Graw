@@ -27,6 +27,7 @@ import logging
 import os
 import platform
 import re
+import shlex
 import shutil
 import threading
 import uuid
@@ -329,6 +330,33 @@ def _looks_named(volume_name: str) -> bool:
     return True
 
 
+def _sqlite_persisted(sqlite_files: Optional[list], persistent_mounts: list) -> bool:
+    """判断 SQLite 文件是否真的落在某个持久挂载（bind/命名卷）目录下。
+
+    仅当至少一个文件命中某个 persistent 挂载的 Destination 前缀时，才视为该数据库
+    已持久化（数据安全）。否则即便容器存在其他 bind/命名卷，只要数据库文件实际仍在
+    容器可写层（删除/重建即丢），仍应保持危险/警告，避免把非数据库数据的挂载误判为
+    「数据库已永久映射」。
+    """
+    if not sqlite_files or not persistent_mounts:
+        return False
+    dests = [
+        (m.get("Destination") or "").rstrip("/")
+        for m in persistent_mounts
+        if (m.get("Destination") or "").startswith("/")
+    ]
+    if not dests:
+        return False
+    for p in sqlite_files or []:
+        p = (p or "").rstrip("/")
+        if not p or not p.startswith("/"):
+            continue
+        for d in dests:
+            if p == d or p.startswith(d + "/"):
+                return True
+    return False
+
+
 def _evaluate_mounts(cid: str, name: str, image: str, status: str, mounts: list,
                      category: str = "db", sqlite_files: Optional[list] = None) -> Optional[dict]:
     """评估容器的数据持久化情况，返回警告条目；安全时返回 None。
@@ -356,20 +384,40 @@ def _evaluate_mounts(cid: str, name: str, image: str, status: str, mounts: list,
                 persistent.append(m)
             else:
                 anonymous.append(m)
-    if persistent:
+    # 数据库 / 内置数据库容器若已持久化则数据安全，跳过；但「普通容器探测到 sqlite 且已持久化」
+    # 仍需列入扫描结果（标记已持久），以便统一盘点容器内数据库。
+    if persistent and not detected:
         return None
 
-    level = "danger" if not anonymous else "warning"
+    if detected:
+        # SQLite 已持久必须满足：文件路径确实位于某个持久挂载（bind/命名卷）的
+        # Destination 目录下；反之即使容器存在其他持久挂载（如日志/配置目录），
+        # 只要数据库文件实际仍在容器可写层，仍按未持久程度告警。
+        if _sqlite_persisted(sqlite_files, persistent):
+            level = "safe"
+        else:
+            level = "danger" if not anonymous else "warning"
+    else:
+        level = "danger" if not anonymous else "warning"
+
     if detected:
         # 容器内探测命中 SQLite 文件：展示前 3 个路径，便于用户定位
         shown = ", ".join((sqlite_files or [])[:3])
-        message = (
-            f"检测到容器内存在 SQLite 数据库文件（{shown}），但未设置永久数据卷映射，"
-            "删除/重建容器将导致数据全部丢失！"
-            if level == "danger"
-            else f"检测到容器内存在 SQLite 数据库文件（{shown}），但仅有匿名数据卷"
-                 "（容器删除时可能被连带清除），建议改用命名数据卷以便持久化与管理"
-        )
+        if level == "safe":
+            message = (
+                f"检测到容器内存在 SQLite 数据库文件（{shown}），已设置永久数据卷映射，"
+                "数据安全；建议在「数据库文件」中将其纳入自动备份以统一管理。"
+            )
+        elif level == "danger":
+            message = (
+                f"检测到容器内存在 SQLite 数据库文件（{shown}），但未设置永久数据卷映射，"
+                "删除/重建容器将导致数据全部丢失！"
+            )
+        else:
+            message = (
+                f"检测到容器内存在 SQLite 数据库文件（{shown}），但仅有匿名数据卷"
+                "（容器删除时可能被连带清除），建议改用命名数据卷以便持久化与管理"
+            )
     elif embedded:
         message = (
             "容器内置数据库（如 SQLite）未设置永久数据卷映射，数据仅存于容器可写层，"
@@ -391,7 +439,7 @@ def _evaluate_mounts(cid: str, name: str, image: str, status: str, mounts: list,
         "status": status,
         "level": level,
         "message": message,
-        "data_dir": _db_data_dir(image),
+        "data_dir": "" if (detected and level == "safe") else _db_data_dir(image),
         "sqlite_files": (sqlite_files or []) if detected else [],
         "mounts": [
             {
@@ -401,60 +449,120 @@ def _evaluate_mounts(cid: str, name: str, image: str, status: str, mounts: list,
             }
             for m in mounts or []
         ],
-        "has_persistent": False,
+        "has_persistent": bool(persistent),
     }
 
 
-def _has_persistent_mount(mounts: list) -> bool:
-    """判断容器是否已有永久数据卷映射（bind 挂载或命名卷）。"""
-    for m in mounts or []:
-        m_type = m.get("Type") or ""
-        if m_type == "bind" and m.get("Source"):
-            return True
-        if m_type == "volume":
-            vname = m.get("Name") or ""
-            if _looks_named(vname):
-                return True
-    return False
-
-
-# 容器内 SQLite 探测命令：仅在容器自身可写层（-xdev 跳过挂载点/卷）查找常见
-# SQLite 文件，并排除镜像自带的库文件目录（/usr/lib、/usr/share、/etc、
-# /var/cache）与 /proc /sys /dev，避免把镜像内置的 .db 库文件误判为应用数据。
-SQLITE_FIND_CMD = (
-    "find / -xdev \\( -name '*.db' -o -name '*.sqlite' -o -name '*.sqlite3' "
+# 容器内 SQLite 探测命令后缀：排除 /proc /sys /dev；可写层探测额外用 -xdev
+# 跳过挂载点/卷，避免把镜像自带的库文件目录与大数据卷误当作应用数据扫描。
+SQLITE_FIND_SUFFIX = (
+    "\\( -name '*.db' -o -name '*.sqlite' -o -name '*.sqlite3' "
     "-o -name '*.db3' -o -name '*.sqlitedb' \\) "
     "-not -path '/proc/*' -not -path '/sys/*' -not -path '/dev/*' "
+)
+
+# 容器可写层探测命令：仅在容器可写层（-xdev 跳过挂载点）查找常见 SQLite 文件，
+# 并排除镜像自带库文件目录（/usr/lib、/usr/share、/etc、/var/cache）。
+SQLITE_FIND_CMD = (
+    "find / -xdev " + SQLITE_FIND_SUFFIX +
     "-not -path '/usr/lib/*' -not -path '/usr/share/*' -not -path '/etc/*' "
-    "-not -path '/var/cache/*' "
-    "2>/dev/null | head -10"
+    "-not -path '/var/cache/*' 2>/dev/null | head -10"
 )
 
 
-def _detect_sqlite_in_container(cid: str, kind: str = "cli",
-                                client=None, timeout: int = 20) -> Optional[list]:
-    """在容器内探测 SQLite 数据库文件（弥补关键字列表无法覆盖的自定义镜像）。
+def _run_container_probe(cid: str, cmd: str, kind: str = "cli",
+                         client=None, timeout: int = 20) -> Optional[list]:
+    """在容器内执行一条探测命令，返回命中的路径列表。
 
-    返回命中的文件路径列表；无法探测（容器无 shell / find / 权限不足）时返回 None，
-    调用方应保守跳过，避免误报。
+    无法探测（容器无 shell / find / 权限不足）时返回 None，调用方应保守跳过，避免误报。
     """
     try:
         if kind == "cli":
-            rc, out, _err = _run_engine(["exec", cid, "sh", "-c", SQLITE_FIND_CMD], timeout)
+            rc, out, _err = _run_engine(["exec", cid, "sh", "-c", cmd], timeout)
         else:
             if client is None:
                 return None
             cont = client.containers.get(cid)
-            rc, raw = cont.exec_run(["sh", "-c", SQLITE_FIND_CMD], timeout=timeout)
+            rc, raw = cont.exec_run(["sh", "-c", cmd], timeout=timeout)
             out = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else (raw or "")
     except Exception as e:
         # 容器不可执行 exec（如 distroless 无 shell）或探测失败：无法判断，保守跳过
-        logger.debug("容器 %s SQLite 探测失败: %s", cid, e)
+        logger.debug("容器 %s 探测失败: %s", cid, e)
         return None
     if rc != 0:
         return None
-    files = [ln.strip() for ln in (out or "").splitlines() if ln.strip()]
-    return files or None
+    return [ln.strip() for ln in (out or "").splitlines() if ln.strip()] or None
+
+
+def _detect_sqlite_in_bind_mounts(mounts: list) -> Optional[list]:
+    """在 bind 挂载的宿主目录上直接扫描 SQLite 文件，返回「容器内路径」列表。
+
+    某些精简镜像（Go / scratch / distroless）容器内没有 find，无法 docker exec
+    探测；但 bind 挂载的宿主 Source 目录可直接访问，故改为从宿主侧扫描，
+    并把宿主相对路径映射到容器内路径（Destination/相对路径）便于前端展示。
+    若为命名卷（无 Source）则跳过，交给容器内探测兜底。
+    """
+    found = []
+    for m in mounts or []:
+        if m.get("Type") != "bind" or not m.get("Source") or not m.get("Destination"):
+            continue
+        real = host_path(m.get("Source"))
+        base_dest = (m.get("Destination") or "").rstrip("/")
+        if not os.path.isdir(real):
+            continue
+        stack = [(real, base_dest, 0)]
+        while stack:
+            d, cdest, depth = stack.pop()
+            if depth > SQLITE_MAX_DEPTH:
+                continue
+            try:
+                entries = list(os.scandir(d))
+            except OSError:
+                continue
+            for e in entries:
+                try:
+                    if e.is_dir(follow_symlinks=False):
+                        if e.name.lower() in SQLITE_SKIP_DIRS or e.name.startswith("."):
+                            continue
+                        stack.append((e.path, f"{cdest}/{e.name}", depth + 1))
+                    elif e.is_file(follow_symlinks=False):
+                        if e.name.lower().endswith(SQLITE_EXTS):
+                            try:
+                                size = e.stat().st_size
+                            except OSError:
+                                size = 0
+                            if size > 0:
+                                found.append(f"{cdest}/{e.name}")
+                                if len(found) >= SQLITE_MAX_ITEMS:
+                                    return found or None
+                except OSError:
+                    continue
+    return found or None
+
+
+def _detect_sqlite_in_container(cid: str, kind: str = "cli",
+                                client=None, persistent_dests: Optional[list] = None,
+                                timeout: int = 20) -> Optional[list]:
+    """在容器内探测 SQLite 数据库文件（弥补关键字列表无法覆盖的自定义镜像）。
+
+    既探测可写层（-xdev 跳过挂载点），也对已持久映射的数据目录（如 /data）
+    单独探测，从而把「普通容器且 sqlite 位于已持久 mount 中」的场景一并纳入，
+    返回命中的文件路径列表；无法探测时返回 None。
+    """
+    found = []
+    base = _run_container_probe(cid, SQLITE_FIND_CMD, kind, client, timeout)
+    if base:
+        found.extend(base)
+    for dest in persistent_dests or []:
+        if not dest or not isinstance(dest, str) or not dest.startswith("/"):
+            continue
+        cmd = f"find {shlex.quote(dest)} {SQLITE_FIND_SUFFIX}2>/dev/null | head -10"
+        files = _run_container_probe(cid, cmd, kind, client, timeout)
+        if files:
+            found.extend(files)
+    # 去重后返回（保持顺序）
+    found = list(dict.fromkeys(found))
+    return found or None
 
 
 def _evaluate_container(cid: str, name: str, image: str, status: str, mounts: list,
@@ -462,20 +570,29 @@ def _evaluate_container(cid: str, name: str, image: str, status: str, mounts: li
     """对单个容器做完整持久化评估，返回警告条目或 None。
 
     分派规则：
-      - 已持久化（bind/命名卷）-> 数据安全，直接跳过（无需探测）；
-      - 未持久化且命中独立数据库镜像 -> 数据库告警；
-      - 未持久化且命中内置数据库（如 SQLite）镜像 -> 内置数据库告警；
-      - 未持久化且未命中任何关键字 -> 容器内探测 SQLite 文件，命中才告警
-        （覆盖任意自定义镜像内部的 SQLite）。
+      - 命中独立数据库镜像 / 内置数据库（如 SQLite）镜像 -> 数据库告警（已持久化则跳过）；
+      - 未命中任何关键字 -> 容器内探测 SQLite 文件（含已持久映射的数据目录），命中即纳入，
+        若已持久化则标记为「已持久」（数据安全），否则按缺失持久化程度标记危险/警告。
+        这样普通容器内置的 SQLite 也会出现在「永久映射」扫描告警里，便于统一盘点。
     """
-    if _has_persistent_mount(mounts):
-        return None
     if _is_db_image(image):
         return _evaluate_mounts(cid, name, image, status, mounts, "db")
     if _is_embedded_db_image(image):
         return _evaluate_mounts(cid, name, image, status, mounts, "embedded")
-    # 未命中关键字：容器内探测，弥补关键字列表无法覆盖的场景
-    files = _detect_sqlite_in_container(cid, kind, client)
+    # 未命中关键字：联合探测可写层/持久挂载目标（容器 exec）与 bind 宿主目录
+    dests = [
+        m.get("Destination")
+        for m in (mounts or [])
+        if m.get("Type") in ("bind", "volume") and m.get("Destination")
+    ]
+    host_files = _detect_sqlite_in_bind_mounts(mounts)
+    exec_files = _detect_sqlite_in_container(cid, kind, client, dests)
+    files = []
+    for lst in (host_files, exec_files):
+        if lst:
+            for p in lst:
+                if p not in files:
+                    files.append(p)
     if not files:
         return None
     return _evaluate_mounts(cid, name, image, status, mounts, "detected", sqlite_files=files)

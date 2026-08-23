@@ -810,7 +810,9 @@ def _verify_compose_containers(prefix: list, app_name: str, container_name: str)
                 pass
 
     targets = {container_name} if container_name else set()
-    prefixes = (app_name + "_",)
+    # compose v1 默认用下划线（project_service_N），compose v2 改用短横线（project-service-N），
+    # 两种命名都要匹配，否则会出现容器已启动但验证误判失败（镜像拉取失败）的情况。
+    prefixes = tuple({app_name + "_", app_name + "-"})
     matched = []
     for c in containers:
         # podman 的 Names 可能是字符串或数组，统一转成列表

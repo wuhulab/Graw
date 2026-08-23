@@ -128,6 +128,18 @@
         </div>
       </div>
     </div>
+
+    <!-- 未勾选外部放行确认弹窗（非数据库应用安装时弹出） -->
+    <div v-if="showNoExposeConfirm" class="modal-overlay">
+      <div class="modal" role="dialog" aria-modal="true">
+        <div class="modal-head"><AlertTriangle :size="18" /> {{ $t('appinstall.exposeTitle') }}</div>
+        <p class="modal-msg">{{ $t('appinstall.exposeConfirm') }}</p>
+        <div class="modal-actions">
+          <button class="btn" @click="showNoExposeConfirm = false">{{ $t('common.cancel') }}</button>
+          <button class="btn primary" @click="proceedInstall">{{ $t('appinstall.iUnderstandAndInstall') }}</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -167,6 +179,11 @@ const composeLoading = ref(false)
 const composeEdited = ref(false)
 // 版本安全警告居中弹窗：应用存在 warn 元数据时打开即弹出，确认后才可安装
 const showWarnModal = ref(Boolean(props.app?.warn))
+// 未勾选外部放行确认弹窗：非数据库应用、未勾选外部放行时安装前弹出确认
+const showNoExposeConfirm = ref(false)
+
+// 数据库类应用（分类含「数据库」）不弹外部放行确认：数据库通常仅内网访问
+const isDatabaseApp = computed(() => String(props.app?.category || '').includes('数据库'))
 
 const APP_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/
 
@@ -218,7 +235,18 @@ function doInstall() {
   }
   appNameError.value = ''
 
-  // 若 compose 编辑器保存过内容，优先使用共享状态中的内容
+  // 除数据库类应用外，未勾选外部放行时先弹出确认：外部可能无法访问
+  if (!installForm.expose_port && !isDatabaseApp.value) {
+    showNoExposeConfirm.value = true
+    return
+  }
+  proceedInstall()
+}
+
+function proceedInstall() {
+  showNoExposeConfirm.value = false
+
+  const name = installForm.app_name
   const composeContent = (appStoreComposeState.content && appStoreComposeState.appId === props.app.id)
     ? appStoreComposeState.content
     : installForm.compose

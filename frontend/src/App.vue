@@ -56,7 +56,7 @@
       @move="(x, y) => moveWindow(w.id, x, y)"
       @resize="(width, height) => resizeWindow(w.id, width, height)"
     >
-      <component :is="w.component" v-bind="w.props || {}" @close="handleCloseWindow(w.id)" @dirty="(v) => { const ww=openWindows.value.find(x=>x.id===w.id); if(ww) ww.dirty=v }" @openTerminal="openTerminalAt" @openEditor="openEditor" @openMedia="openMedia" @openUsers="openUsers" @openLogs="openContainerLogs" @openContainerTerminal="openContainerTerminal" @openContainerDetails="openContainerDetails" @openContainerStats="openContainerStats" @openFiles="openFiles" @openDockerConfigEditor="openDockerConfigEditor" @openAppInstall="openAppStoreInstall" @openComposeEditor="openAppStoreComposeEditor" @openInstallLog="openAppStoreInstallLog" @openReadme="openAppStoreReadme" @openTaskCenter="openTasks" @openRuntimeCreate="openRuntimeCreate" @openConnectionForm="openConnectionForm" @openNetStorageBrowse="openNetStorageBrowse" @openNetStorageForm="openNetStorageForm" />
+      <component :is="w.component" v-bind="w.props || {}" @close="handleCloseWindow(w.id)" @dirty="(v) => { const ww=openWindows.value.find(x=>x.id===w.id); if(ww) ww.dirty=v }" @openTerminal="openTerminalAt" @openEditor="openEditor" @openMedia="openMedia" @openUsers="openUsers" @openLogs="openContainerLogs" @openContainerTerminal="openContainerTerminal" @openContainerDetails="openContainerDetails" @openContainerStats="openContainerStats" @openContainerEdit="openContainerEdit" @openFiles="openFiles" @openDockerConfigEditor="openDockerConfigEditor" @openAppInstall="openAppStoreInstall" @openComposeEditor="openAppStoreComposeEditor" @openInstallLog="openAppStoreInstallLog" @openReadme="openAppStoreReadme" @openTaskCenter="openTasks" @openRuntimeCreate="openRuntimeCreate" @openConnectionForm="openConnectionForm" @openNetStorageBrowse="openNetStorageBrowse" @openNetStorageForm="openNetStorageForm" @openSiteEdit="openSiteEdit" />
     </WindowFrame>
 
     <!-- Dock -->
@@ -120,6 +120,7 @@ import ProcessWindow from './components/windows/ProcessWindow.vue'
 import FilesWindow from './components/windows/FilesWindow.vue'
 import TerminalWindow from './components/windows/TerminalWindow.vue'
 import SitesWindow from './components/windows/SitesWindow.vue'
+import SiteEditWindow from './components/windows/SiteEditWindow.vue'
 import DatabaseWindow from './components/windows/DatabaseWindow.vue'
 import EditorWindow from './components/windows/EditorWindow.vue'
 import MediaWindow from './components/windows/MediaWindow.vue'
@@ -534,6 +535,35 @@ function openEditor({ path, content }) {
   activeWindowId.value = id
 }
 
+// 「网站」应用创建/编辑站点的独立表单窗口（类型选择留在网站窗口内，提交做成独立可移动窗口）
+function openSiteEdit(payload) {
+  const id = ++windowSeq
+  const isEdit = payload?.mode === 'edit'
+  const type = isEdit ? (payload?.site?.type || 'static') : (payload?.type || 'static')
+  const boundNode = settings.unifiedPanel ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'site-edit',
+    nodeId: boundNode, // 绑定当前打开的节点（统一面板兼容）
+    titleKey: 'app.winTitle.site',
+    title: '站点配置',
+    icon: markRaw(Globe),
+    component: markRaw(SiteEditWindow),
+    props: payload ? { ...payload } : {},
+    x: 160 + (openWindows.value.length * 28),
+    y: 70 + (openWindows.value.length * 24),
+    width: 540,
+    height: ['static', 'proxy'].includes(type) ? 430 : 540,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+  applyActiveRequestNode(id)
+}
+
 function openMedia({ path, name, type }) {
   const id = ++windowSeq
   const title = (type === 'image' ? '图片' : '视频') + ': ' + name
@@ -599,6 +629,31 @@ function openContainerStats({ id, name }) {
     y: 70 + (openWindows.value.length * 25),
     width: 760,
     height: 420,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id2
+}
+
+// Docker：右键「编辑」跳转到容器编辑窗口（预先指定容器）
+function openContainerEdit({ id, name }) {
+  const id2 = ++windowSeq
+  const w = reactive({
+    id: id2,
+    key: 'containeredit',
+    title: '容器编辑: ' + name,
+    titleKey: 'app.winTitle.containerEdit',
+    titleArgs: { name },
+    icon: markRaw(Settings2),
+    component: markRaw(ContainerEditWindow),
+    props: { id, name },
+    x: 140 + (openWindows.value.length * 30),
+    y: 60 + (openWindows.value.length * 25),
+    width: 760,
+    height: 660,
     z: ++zSeq,
     minimized: false,
     maximized: false,

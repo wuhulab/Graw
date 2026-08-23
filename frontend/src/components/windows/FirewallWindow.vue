@@ -9,6 +9,25 @@
       <span class="hint">{{ $t('firewall.platform', { platform }) }}</span>
     </div>
 
+    <h4>{{ $t('firewall.nolpRules') }}</h4>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>{{ $t('firewall.port') }}</th><th>{{ $t('firewall.action') }}</th><th>{{ $t('firewall.remark') }}</th><th>{{ $t('common.action') }}</th></tr></thead>
+        <tbody>
+          <tr v-for="r in nolpRules" :key="r.id"><td>{{ r.port }}</td>
+            <td><span class="badge warn">{{ $t('firewall.deny') }}</span></td>
+            <td>{{ r.comment }}</td>
+            <td><button class="iconbtn danger" @click="delPort(r.id)"><Trash2 :size="14"/></button></td>
+          </tr>
+          <tr v-if="nolpRules.length===0"><td colspan="4" class="empty">{{ $t('firewall.noLpRules') }}</td></tr>
+        </tbody>
+      </table>
+      <div class="block-unopened-bar">
+        <span v-if="blockUnopenedMsg" class="block-msg">{{ blockUnopenedMsg }}</span>
+        <button class="btn danger" style="margin-left:auto;" @click="doBlockUnopened">{{ $t('firewall.blockUnopened') }}</button>
+      </div>
+    </div>
+
     <h4>{{ $t('firewall.portRules') }}</h4>
     <div class="table-wrap">
       <table>
@@ -101,6 +120,8 @@ const enabled = ref(true)
 const platform = ref('')
 const portRules = ref([])
 const ipRules = ref([])
+const nolpRules = ref([])
+const blockUnopenedMsg = ref('')
 const showPortModal = ref(false)
 const showIpModal = ref(false)
 const portForm = ref({ port: 80, protocol: 'tcp', action: 'allow', comment: '' })
@@ -115,6 +136,34 @@ async function load() {
   const r = await firewallApi.rules()
   portRules.value = r.port_rules || []
   ipRules.value = r.ip_rules || []
+  nolpRules.value = (r.port_rules || []).filter(x => x.action === 'deny')
+}
+
+async function doBlockUnopened() {
+  // 高风险操作：批量屏蔽未放行端口需输入面板密码确认
+  confirm.value = {
+    show: true,
+    title: t('confirmDanger.blockUnopenedTitle'),
+    message: t('confirmDanger.blockUnopenedMsg'),
+    action: { type: 'blockUnopened' }
+  }
+}
+
+async function execBlockUnopened() {
+  try {
+    const d = await firewallApi.blockUnopened()
+    if (d.created > 0) {
+      blockUnopenedMsg.value = t('firewall.blockUnopenedDone', { count: d.created, ports: d.ports.join(', ') })
+    } else {
+      const skipped = (d.skipped_protected || []).join(', ')
+      blockUnopenedMsg.value = skipped
+        ? t('firewall.blockUnopenedSkip', { skipped })
+        : t('firewall.blockUnopenedNone')
+    }
+  } catch (e) {
+    blockUnopenedMsg.value = t('firewall.blockUnopenedFail', { error: e.response?.data?.detail || e.message })
+  }
+  await load()
 }
 
 async function toggle() {
@@ -149,6 +198,8 @@ async function doConfirm() {
     await firewallApi.delIp(a.id)
   } else if (a.type === 'clear') {
     await firewallApi.clear()
+  } else if (a.type === 'blockUnopened') {
+    await execBlockUnopened()
   }
   await load()
 }
@@ -197,6 +248,11 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; text-align: left; }
 th { background: #f9fafb; position: sticky; top: 0; }
 .empty { text-align: center; color: #9ca3af; padding: 20px; }
+.block-unopened-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid #f0f0f0; }
+.block-msg { font-size: 12px; color: #6e6e73; flex: 1; }
+.btn.danger { border-color: #fca5a5; color: #dc2626; }
+.btn.danger-text { border-color: transparent; color: #dc2626; background: transparent; }
+.btn.danger-text:hover { border-color: #fca5a5; }
 .btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
 .btn.primary { background: #111827; color: #fff; border-color: #111827; }
 .iconbtn { padding: 4px; border: 1px solid #e5e7eb; background: #fff; border-radius: 6px; cursor: pointer; }

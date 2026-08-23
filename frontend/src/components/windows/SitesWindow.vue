@@ -84,66 +84,7 @@
       </div>
     </div>
 
-    <!-- 创建 / 编辑 Modal -->
-    <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
-      <div class="modal">
-        <h3>{{ $t(editing ? 'sites.editLabel' : 'sites.createLabel', { type: typeLabel(form.type) }) }}</h3>
-        <div class="form">
-          <label>{{ $t('sites.siteName') }}</label>
-          <input v-model="form.name" :placeholder="$t('sites.namePlaceholder')" />
-
-          <!-- 静态网址 -->
-          <template v-if="form.type === 'static'">
-            <label>{{ $t('sites.domains') }}</label>
-            <input v-model="domainsText" :placeholder="$t('sites.domainsPlaceholder')" />
-            <label>{{ $t('sites.root') }}</label>
-            <input v-model="form.root" :placeholder="$t('sites.rootPlaceholder')" />
-            <label>{{ $t('sites.port') }}</label>
-            <input v-model.number="form.port" type="number" />
-          </template>
-
-          <!-- 反向代理 -->
-          <template v-else-if="form.type === 'proxy'">
-            <label>{{ $t('sites.domains') }}</label>
-            <input v-model="domainsText" :placeholder="$t('sites.domainsPlaceholder')" />
-            <label>{{ $t('sites.listenPort') }}</label>
-            <input v-model.number="form.port" type="number" />
-            <label>{{ $t('sites.reverseProxy') }}</label>
-            <input v-model="form.reverse_proxy" :placeholder="$t('sites.reverseProxyPlaceholder')" />
-          </template>
-
-          <!-- TCP/UDP 代理 -->
-          <template v-else-if="form.type === 'tcpudp'">
-            <label>{{ $t('sites.protocol') }}</label>
-            <div class="radio-row">
-              <label class="radio"><input type="radio" value="tcp" v-model="form.protocol" /> {{ $t('sites.tcp') }}</label>
-              <label class="radio"><input type="radio" value="udp" v-model="form.protocol" /> {{ $t('sites.udp') }}</label>
-            </div>
-            <label>{{ $t('sites.listenPort') }}</label>
-            <input v-model.number="form.port" type="number" />
-            <label>{{ $t('sites.upstream') }}</label>
-            <input v-model="form.upstream" :placeholder="$t('sites.upstreamPlaceholder')" />
-          </template>
-
-          <!-- 子网站 -->
-          <template v-else-if="form.type === 'subsite'">
-            <label>{{ $t('sites.subdomain') }}</label>
-            <input v-model="form.subdomain" :placeholder="$t('sites.subdomainPlaceholder')" />
-            <label>{{ $t('sites.domainRoot') }}</label>
-            <input v-model="form.domain" :placeholder="$t('sites.domainRootPlaceholder')" />
-            <label>{{ $t('sites.root') }}</label>
-            <input v-model="form.root" :placeholder="$t('sites.rootPlaceholder')" />
-            <label>{{ $t('sites.port') }}</label>
-            <input v-model.number="form.port" type="number" />
-          </template>
-
-          <div class="actions">
-            <button class="btn" @click="closeModal">{{ $t('common.cancel') }}</button>
-            <button class="btn primary" @click="saveSite">{{ $t('common.save') }}</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- 创建 / 编辑：由独立窗口承载（SitesWindow 仅负责打开） -->
 
     <!-- Config viewer -->
     <div v-if="showConfig" class="modal-overlay" @click.self="showConfig = false">
@@ -173,9 +114,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, markRaw, computed } from 'vue'
+import { ref, onMounted, markRaw, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { sitesApi } from '../../api'
+import { siteRevision } from '../../store/siteBus'
 import ConfirmDialog from '../ConfirmDialog.vue'
 import {
   Plus, Globe, Share2, Network, Layers
@@ -200,15 +142,23 @@ const sites = ref([])
 const webServer = ref('')
 const showTypePicker = ref(false)
 const pickedType = ref('')
-const showModal = ref(false)
 const showConfig = ref(false)
-const editing = ref(false)
 const configText = ref('')
 const configSite = ref(null)
 // 右键菜单状态
 const ctxMenu = ref({ show: false, x: 0, y: 0, site: null })
 // 高风险操作二次确认状态：记录待删除的站点
 const confirm = ref({ show: false, site: null })
+
+// 通知 App 打开独立「站点编辑」窗口（创建 / 编辑共用）
+const emit = defineEmits(['openSiteEdit'])
+
+// 站点列表发生变更（独立窗口保存成功）后自动刷新
+let revisionInited = false
+watch(siteRevision, () => {
+  revisionInited = true
+  load()
+})
 
 function openCtx(e, s) {
   const x = Math.min(e.clientX, window.innerWidth - 180)
@@ -244,22 +194,18 @@ function menuRemove() {
   if (s) remove(s)
 }
 
-const emptyForm = (type) => ({
-  name: '',
-  type,
-  domains: [],
-  root: '',
-  port: type === 'tcpudp' ? 443 : 80,
-  reverse_proxy: '',
-  protocol: 'tcp',
-  upstream: '',
-  subdomain: '',
-  domain: ''
-})
-const form = ref(emptyForm('static'))
-// 当前正在编辑的站点 id（编辑保存按 id 定位，兼容站点改名）
-const editingId = ref('')
-const domainsText = ref('')
+function remove(s) {
+  // 高风险操作二次确认：弹出对话框，要求输入站点名后才能删除
+  confirm.value = { show: true, site: s }
+}
+
+async function doDeleteSite() {
+  const s = confirm.value.site
+  confirm.value.show = false
+  if (!s) return
+  await sitesApi.delete(s.id)
+  await load()
+}
 
 async function load() {
   const data = await sitesApi.list()
@@ -292,53 +238,15 @@ function openTypePicker() {
 
 function confirmType() {
   if (!pickedType.value) return
-  editing.value = false
-  editingId.value = ''
-  form.value = emptyForm(pickedType.value)
-  domainsText.value = ''
+  const type = pickedType.value
   showTypePicker.value = false
-  showModal.value = true
+  // 打开独立「站点编辑」窗口承载创建表单
+  emit('openSiteEdit', { mode: 'create', type })
 }
 
 function openEdit(s) {
-  editing.value = true
-  editingId.value = s.id
-  form.value = {
-    name: s.name,
-    type: s.type || 'static',
-    domains: [...(s.domains || [])],
-    root: s.root || '',
-    port: s.port ?? (s.type === 'tcpudp' ? 443 : 80),
-    reverse_proxy: s.reverse_proxy || '',
-    protocol: s.protocol || 'tcp',
-    upstream: s.upstream || '',
-    subdomain: s.subdomain || '',
-    domain: s.domain || ''
-  }
-  domainsText.value = (s.domains || []).join(', ')
-  showModal.value = true
-}
-
-async function saveSite() {
-  const payload = {
-    name: form.value.name,
-    type: form.value.type,
-    domains: domainsText.value.split(',').map(d => d.trim()).filter(Boolean),
-    root: form.value.root,
-    port: Number(form.value.port) || (form.value.type === 'tcpudp' ? 443 : 80),
-    reverse_proxy: form.value.reverse_proxy || '',
-    protocol: form.value.protocol || 'tcp',
-    upstream: form.value.upstream || '',
-    subdomain: form.value.subdomain || '',
-    domain: form.value.domain || ''
-  }
-  if (editing.value) {
-    if (editingId.value) await sitesApi.update(editingId.value, payload)
-  } else {
-    await sitesApi.create(payload)
-  }
-  showModal.value = false
-  await load()
+  // 打开独立「站点编辑」窗口承载编辑表单
+  emit('openSiteEdit', { mode: 'edit', site: s })
 }
 
 async function toggleEnable(s) {
@@ -352,23 +260,6 @@ async function viewConfig(s) {
   configSite.value = data.site
   configText.value = data.config
   showConfig.value = true
-}
-
-function remove(s) {
-  // 高风险操作二次确认：弹出对话框，要求输入站点名后才能删除
-  confirm.value = { show: true, site: s }
-}
-
-async function doDeleteSite() {
-  const s = confirm.value.site
-  confirm.value.show = false
-  if (!s) return
-  await sitesApi.delete(s.id)
-  await load()
-}
-
-function closeModal() {
-  showModal.value = false
 }
 
 onMounted(load)

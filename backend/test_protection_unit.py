@@ -160,11 +160,16 @@ def test_evaluate_container_dispatch():
     print("[6] 单容器分派（持久化跳过 / 探测命中才告警）")
     cid, name, status = "abc123", "my-app", "Up 1 hours"
 
-    # 1) 已持久化 + 未命中关键字 -> 跳过（即使探测可能命中也不打扰）
+    # 1) 已持久化 + 未命中关键字 + 探测命中 sqlite -> 列为「已持久」(safe)
     with mock.patch.object(protection, "_detect_sqlite_in_container", return_value=["/data/app.db"]) as m:
         w = protection._evaluate_container(cid, name, "nginx:latest", status, [_mount("volume", "myvol", "/data")], "cli", None)
-        check("已持久化容器跳过", w is None)
-        check("已持久化不触发探测", m.call_count == 0)
+        check("普通容器 sqlite 已持久 -> safe", w is not None and w["level"] == "safe", f"w={w and w['level']}")
+        check("普通容器 sqlite 探测被触发", m.call_count == 1)
+        check("safe 不显示挂载目录建议", (w or {}).get("data_dir") == "")
+    # 1b) 已持久化 + 未命中关键字 + 未探测到 sqlite -> 跳过
+    with mock.patch.object(protection, "_detect_sqlite_in_container", return_value=None) as m:
+        w = protection._evaluate_container(cid, name, "nginx:latest", status, [_mount("volume", "myvol", "/data")], "cli", None)
+        check("已持久化且无 sqlite 跳过", w is None)
 
     # 2) 未持久化 + 独立数据库镜像 -> db 告警（不探测）
     with mock.patch.object(protection, "_detect_sqlite_in_container", return_value=None) as m:
@@ -193,6 +198,22 @@ def test_evaluate_container_dispatch():
     with mock.patch.object(protection, "_detect_sqlite_in_container", return_value=[]):
         w = protection._evaluate_container(cid, name, "myapp:v1", status, [], "cli", None)
         check("自定义镜像探测无结果跳过", w is None)
+
+    # 7) 回归：容器存在持久挂载（/config）但 SQLite 文件实际在别处（容器可写层 /data）
+    #    -> 不得判定为「已映射」(safe)，必须保持 danger（修复 1Panel-new-api 类误判）
+    with mock.patch.object(protection, "_detect_sqlite_in_container", return_value=["/data/app.db"]):
+        w = protection._evaluate_container(cid, name, "myapp:v1", status, [_mount("volume", "myvol", "/config")], "cli", None)
+        check("sqlite 不在持久挂载下 -> danger（修复误判）", w is not None and w["level"] == "danger", f"w={w and w['level']}")
+
+
+def test_sqlite_persisted_helper():
+    print("[7b] _sqlite_persisted 辅助判定")
+    # 命中持久挂载 Destination 前缀 -> True
+    check("命中 /data 前缀持久", protection._sqlite_persisted(["/data/app.db"], [{"Destination": "/data"}]) is True)
+    check("嵌套子目录命中持久", protection._sqlite_persisted(["/data/a/b/x.sqlite"], [{"Destination": "/data"}]) is True)
+    # 不命中 -> False
+    check("不在持久挂载下非持久", protection._sqlite_persisted(["/root/app.db"], [{"Destination": "/config"}]) is False)
+    check("无文件或空挂载非持久", protection._sqlite_persisted(None, [{"Destination": "/config"}]) is False)
 
 
 def test_backup_dir():
@@ -252,6 +273,7 @@ def main():
     test_embedded_message()
     test_container_internal_detection()
     test_evaluate_container_dispatch()
+    test_sqlite_persisted_helper()
     test_backup_dir()
     test_scan_docker_parses_fields()
     print(f"\n结果：通过 {PASS} 项，失败 {FAIL} 项")

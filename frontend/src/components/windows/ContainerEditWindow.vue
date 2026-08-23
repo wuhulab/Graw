@@ -309,8 +309,8 @@ onMounted(() => {
 .state-badge.other { background: #f3f4f6; color: #6b7280; }
 .img { font-size: 11.5px; color: #6b7280; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, Consolas, monospace; }
 
-/* 分区 */
-.section { border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; overflow: hidden; }
+/* 分区：不限制卡片高度，由外层整体滚动（同应用商店的上下滑查看体验） */
+.section { border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; }
 .section-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; background: #f9fafb; font-size: 12.5px; font-weight: 600; border-bottom: 1px solid #eef0f2; }
 .section-body { padding: 12px; }
 

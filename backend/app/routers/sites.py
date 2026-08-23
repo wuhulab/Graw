@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import platform
@@ -35,8 +36,12 @@ _DOMAIN_RE = re.compile(
 # 子域名前缀（拼入 server_name）：字母/数字/中划线，允许 * 通配
 _SUBDOMAIN_RE = re.compile(r"^[A-Za-z0-9*][A-Za-z0-9*-]*$")
 
-# 反向代理目标：http(s)://host[:port][/path]
-_PROXY_RE = re.compile(r"^https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+$")
+# 反向代理/TCP/UDP 的「域名」：靠端口/上游地址访问，允许 IP、localhost、
+# 单级或多级域名、通配符。仅拒绝会破坏配置的字符（冒号端口/斜杠/空白/分号/花括号）。
+_PROXY_DOMAIN_RE = re.compile(r"^[A-Za-z0-9*.-]+$")
+
+# 反向代理目标：http(s)://host[:port][/path]（支持下划线的服务名/主机名）
+_PROXY_RE = re.compile(r"^https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%_-]+$")
 
 # TCP/UDP 上游地址：host:port（域名或 IP + 端口）
 _UPSTREAM_RE = re.compile(r"^[A-Za-z0-9._-]+:[0-9]{1,5}$")
@@ -86,6 +91,32 @@ def _validate_conf_path(value, field: str) -> None:
         )
 
 
+def _normalize_proxy(value) -> str:
+    """规范反向代理目标地址：缺少协议时自动补 http://，避免因省略协议被 400 拒绝。"""
+    if not value:
+        return ""
+    v = str(value).strip()
+    if v and not re.match(r"^https?://", v, re.IGNORECASE):
+        v = "http://" + v
+    return v
+
+
+def _proxy_ssl_options(proxy: str) -> list:
+    """当上游为 https（如宝塔/Graw 兼容面板仅接受 TLS、明文 HTTP 会 RST 导致 502）时，
+    生成关闭证书校验与 SNI 下发所需的 nginx 指令。
+
+    面板类上游常使用自签或非承载域名匹配的证书，若按系统 CA 校验握手会失败，
+    从而让代理稳定返回 502。这里仅对 https 上游生效，http 上游不受影响。
+    """
+    if not str(proxy or "").lower().startswith("https://"):
+        return []
+    return [
+        "        proxy_ssl_verify off;",
+        "        proxy_ssl_server_name off;",
+        "        proxy_ssl_session_reuse on;",
+    ]
+
+
 def _validate_site_payload(
     *,
     site_type=None,
@@ -109,8 +140,12 @@ def _validate_site_payload(
     if domains is not None:
         if not isinstance(domains, list) or len(domains) > 32:
             raise HTTPException(status_code=400, detail="domains 必须是最多 32 项的列表")
+        # 反向代理/TCP-UDP 靠端口与上游地址访问，允许 IP/localhost/单级域名；
+        # 静态与子网站必须提供真实多级域名用于域名解析。
+        loose = site_type in (SITE_TYPE_PROXY, SITE_TYPE_TCPUDP)
+        rule = _PROXY_DOMAIN_RE if loose else _DOMAIN_RE
         for d in domains:
-            if not isinstance(d, str) or not _DOMAIN_RE.match(d):
+            if not isinstance(d, str) or not rule.match(d):
                 raise HTTPException(status_code=400, detail=f"域名格式非法: {d!r}")
     if root is not None:
         _validate_conf_path(root, "root")
@@ -512,85 +547,107 @@ def _site_server_name(site: dict) -> str:
 
 
 def _nginx_site_config(site: dict) -> str:
-    """根据站点类型生成 nginx http server 配置。"""
+    """根据站点类型生成 nginx http server 配置。
+
+    在 1Panel/容器化 openresty 下，站点常经 CDN 用 https(443) 回源，
+    只 listen 80 会落到默认 443 server 返回 404；故检测到 1Panel 默认
+    证书时额外生成一个 443 ssl server，保证 443 也命中该站点。
+    """
     site_type = site.get("type", SITE_TYPE_STATIC)
     server_name = _site_server_name(site)
     # 所有插值经 _conf_token 清洗（纵深防御，见函数注释）
     root_dir = _conf_token(site.get("root") or "/var/www/html")
     port = site.get("port", 80)
     ssl = site.get("ssl", {}) or {}
-    enable_ssl = ssl.get("enabled", False)
+    enable_ssl = ssl.get("enabled", False) and ssl.get("cert") and ssl.get("key")
     proxy = _conf_token(site.get("reverse_proxy", ""))
     locations = site.get("locations", []) or []
 
-    lines = [f"server {{"]
-    lines.append(f"    listen {int(port)};")
-    if enable_ssl and ssl.get("port", 443):
-        lines.append(f"    listen {int(ssl.get('port', 443))} ssl;")
-    lines.append(f"    server_name {server_name};")
-
-    if enable_ssl and ssl.get("cert") and ssl.get("key"):
-        lines.append(f"    ssl_certificate {_conf_token(ssl['cert'])};")
-        lines.append(f"    ssl_certificate_key {_conf_token(ssl['key'])};")
-
-    if site_type == SITE_TYPE_PROXY:
-        # 反向代理：整站转发到后端地址
-        if proxy:
-            lines.append(f"    location / {{")
-            lines.append(f"        proxy_pass {proxy};")
-            lines.append(f"        proxy_set_header Host $host;")
-            lines.append(f"        proxy_set_header X-Real-IP $remote_addr;")
-            lines.append(f"        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;")
-            lines.append(f"        proxy_set_header X-Forwarded-Proto $scheme;")
-            lines.append(f"    }}")
-    else:
-        # 静态网址 / 子网站：提供根目录静态文件
-        lines.append(f"    root {root_dir};")
-        lines.append(f"    index index.html index.htm index.php;")
-        if proxy:
-            lines.append(f"    location / {{")
-            lines.append(f"        proxy_pass {proxy};")
-            lines.append(f"        proxy_set_header Host $host;")
-            lines.append(f"        proxy_set_header X-Real-IP $remote_addr;")
-            lines.append(f"    }}")
+    # 站点内容（location / 代理或静态）；两种 Server 复用同一套
+    def _content() -> list:
+        body = []
+        if site_type == SITE_TYPE_PROXY:
+            if proxy:
+                body.append(f"    location / {{")
+                body.append(f"        proxy_pass {proxy};")
+                body.extend(_proxy_ssl_options(proxy))
+                body.append(f"        proxy_set_header Host $host;")
+                body.append(f"        proxy_set_header X-Real-IP $remote_addr;")
+                body.append(f"        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;")
+                body.append(f"        proxy_set_header X-Forwarded-Proto $scheme;")
+                body.append(f"    }}")
         else:
-            # 伪静态规则：用户通过「伪静态规则库」应用的模板 id（白名单）
-            # 若存在，用模板片段替代默认 location /（try_files 直出）
-            rewrite_id = site.get("rewrite", "") or ""
-            rewrite_frag = ""
-            if rewrite_id:
-                # 仅在规则 id 命中白名单模板时注入，绝不允许任意文本进配置
-                from app.routers.rewrite import get_nginx_fragment
-                rewrite_frag = get_nginx_fragment(rewrite_id)
-            for loc in locations:
-                path = _conf_token(loc.get("path") or "/", "/")
-                loc_root = _conf_token(loc.get("root") or root_dir, root_dir)
-                lines.append(f"    location {path} {{")
-                lines.append(f"        root {loc_root};")
-                lines.append(f"        try_files $uri $uri/ =404;")
-                lines.append(f"    }}")
-            if not locations:
-                if rewrite_frag:
-                    # 伪静态片段本身是完整的 location 块，注入时统一加缩进
-                    lines.extend("    " + ln if ln.strip() else ln for ln in rewrite_frag.split("\n"))
-                else:
-                    lines.append(f"    location / {{")
-                    lines.append(f"        try_files $uri $uri/ =404;")
-                    lines.append(f"    }}")
+            body.append(f"    root {root_dir};")
+            body.append(f"    index index.html index.htm index.php;")
+            if proxy:
+                body.append(f"    location / {{")
+                body.append(f"        proxy_pass {proxy};")
+                body.extend(_proxy_ssl_options(proxy))
+                body.append(f"        proxy_set_header Host $host;")
+                body.append(f"        proxy_set_header X-Real-IP $remote_addr;")
+                body.append(f"    }}")
+            else:
+                rewrite_id = site.get("rewrite", "") or ""
+                rewrite_frag = ""
+                if rewrite_id:
+                    from app.routers.rewrite import get_nginx_fragment
+                    rewrite_frag = get_nginx_fragment(rewrite_id)
+                for loc in locations:
+                    path = _conf_token(loc.get("path") or "/", "/")
+                    loc_root = _conf_token(loc.get("root") or root_dir, root_dir)
+                    body.append(f"    location {path} {{")
+                    body.append(f"        root {loc_root};")
+                    body.append(f"        try_files $uri $uri/ =404;")
+                    body.append(f"    }}")
+                if not locations:
+                    if rewrite_frag:
+                        body.extend("    " + ln if ln.strip() else ln for ln in rewrite_frag.split("\n"))
+                    else:
+                        body.append(f"    location / {{")
+                        body.append(f"        try_files $uri $uri/ =404;")
+                        body.append(f"    }}")
+        try:
+            from app.routers.sitesopts import get_nginx_extra
+            extra = get_nginx_extra(site)
+            if extra:
+                body.extend(ln if ln.strip() else ln for ln in extra.split("\n"))
+        except Exception:
+            pass
+        return body
 
-    # 站点增强配置：防盗链 / gzip / 静态资源缓存（见 sitesopts 路由）
-    try:
-        from app.routers.sitesopts import get_nginx_extra
+    servant = []
+    # 主 Server（监听站点端口，通常是 80）
+    servant.append("server {")
+    servant.append(f"    listen {int(port)};")
+    if enable_ssl and ssl.get("port", 443):
+        servant.append(f"    listen {int(ssl.get('port', 443))} ssl;")
+    servant.append(f"    server_name {server_name};")
+    if enable_ssl:
+        servant.append(f"    ssl_certificate {_conf_token(ssl['cert'])};")
+        servant.append(f"    ssl_certificate_key {_conf_token(ssl['key'])};")
+    servant.extend(_content())
+    servant.append("}")
 
-        extra = get_nginx_extra(site)
-        if extra:
-            lines.extend(ln if ln.strip() else ln for ln in extra.split("\n"))
-    except Exception:
-        # 增强配置生成失败不阻断站点配置主体（静态配置仍可用）
-        pass
+    # 1Panel 容器化 openresty：额外 443 ssl server（复用默认证书），
+    # 避免 CDN/浏览器走 https(443) 回源时落到默认 server 而 404。
+    if webserver.is_openresty() and not enable_ssl:
+        # 宿主挂载源（检测文件是否存在）与容器内挂载点（写入配置）不同：
+        # 宿主机 ../conf/ssl -> 容器 /usr/local/openresty/nginx/conf/ssl
+        host_cert = "/opt/1panel/apps/openresty/openresty/conf/ssl/fullchain.pem"
+        host_key = "/opt/1panel/apps/openresty/openresty/conf/ssl/privkey.pem"
+        if os.path.isfile(host_path(host_cert)) and os.path.isfile(host_path(host_key)):
+            if port != 443:
+                cert = "/usr/local/openresty/nginx/conf/ssl/fullchain.pem"
+                key = "/usr/local/openresty/nginx/conf/ssl/privkey.pem"
+                servant.append("server {")
+                servant.append("    listen 443 ssl;")
+                servant.append(f"    server_name {server_name};")
+                servant.append(f"    ssl_certificate {cert};")
+                servant.append(f"    ssl_certificate_key {key};")
+                servant.extend(_content())
+                servant.append("}")
 
-    lines.append("}")
-    return "\n".join(lines)
+    return "\n".join(servant)
 
 
 def _nginx_stream_config(site: dict) -> str:
@@ -658,24 +715,23 @@ def _apply_nginx_config(site_id: str, site: dict, enabled: bool):
         return
 
     conf_name = f"{site_id}.conf"
-    # 容器模式下映射为 /host/etc/... ，从而操作宿主机配置（按当前引擎解析）
-    avail_dir = host_path(webserver.available_dir())
-    enab_dir = host_path(webserver.enabled_dir())
-    avail = os.path.join(avail_dir, conf_name)
-    enab = os.path.join(enab_dir, conf_name)
+    # 1Panel/容器化 openresty：站点 conf 直接落宿主机 conf.d（容器 conf.d 加载，
+    # 与外部站点同目录），而标准 nginx 布局的 sites-available/enabled 不会被
+    # 该容器读入，会把自建站点写成“读不到”直到 404。检测到 1Panel 挂载点
+    # 时优先写 conf.d（普通文件，无需软链）；否则回退标准 sites-enabled 软链。
+    conf_dir = None
+    if webserver.is_openresty() and os.path.isdir(host_path("/opt/1panel/www/conf.d")):
+        conf_dir = host_path("/opt/1panel/www/conf.d")
+    if conf_dir is None:
+        conf_dir = host_path(webserver.enabled_dir())
+    conf = os.path.join(conf_dir, conf_name)
     if enabled:
-        os.makedirs(avail_dir, exist_ok=True)
-        os.makedirs(enab_dir, exist_ok=True)
-        with open(avail, "w", encoding="utf-8") as f:
+        os.makedirs(conf_dir, exist_ok=True)
+        with open(conf, "w", encoding="utf-8") as f:
             f.write(_nginx_site_config(site))
-        if os.path.exists(enab):
-            os.remove(enab)
-        os.symlink(avail, enab)
     else:
-        if os.path.exists(enab):
-            os.remove(enab)
-        if os.path.exists(avail):
-            os.remove(avail)
+        if os.path.exists(conf):
+            os.remove(conf)
 
 
 def _reload_nginx():
@@ -796,6 +852,8 @@ async def create_site(req: CreateSite):
     sites = _load_sites()
     if any(s["name"] == req.name for s in sites):
         raise HTTPException(status_code=400, detail="Site name already exists")
+    # 反向代理地址补全协议（缺 http:// 时自动补），保证后续校验通过
+    req.reverse_proxy = _normalize_proxy(req.reverse_proxy)
     # 安全校验：所有将写入 web 服务器配置的字段必须在入口处校验
     _validate_site_payload(
         site_type=req.type,
@@ -809,12 +867,12 @@ async def create_site(req: CreateSite):
         ssl=req.ssl,
     )
     # 站点 ID 直接用作配置文件名（<id>.conf）：将名称规范化为白名单字符，
-    # 阻止路径分隔符 / Windows 盘符（c:）等造成任意路径写入
+    # 阻止路径分隔符 / Windows 盘符（c:）等造成任意路径写入。
+    # 中文等无法 ASCII 化的站名，退化为「site-<名称哈希>」稳定 ID，
+    # 既保证配置文件名安全可写，也允许用户用中文命名站点。
     site_id = re.sub(r"[^a-z0-9_-]+", "-", req.name.lower()).strip("-")
     if not _SITE_ID_RE.match(site_id):
-        raise HTTPException(
-            status_code=400, detail="站点名称仅允许字母、数字与空格（自动转中划线）"
-        )
+        site_id = "site-" + hashlib.sha1(req.name.encode("utf-8")).hexdigest()[:10]
     if any(s["id"] == site_id for s in sites):
         raise HTTPException(status_code=400, detail="站点 ID 已存在，请更换名称")
     # 仅静态网址/子网站需要创建根目录
@@ -910,6 +968,8 @@ async def update_site(site_id: str, req: UpdateSite):
         if not site:
             raise HTTPException(status_code=404, detail="Site not found")
         external = True
+    # 反向代理地址补全协议（缺 http:// 时自动补），保证后续校验通过
+    req.reverse_proxy = _normalize_proxy(req.reverse_proxy)
     # 安全校验：与 create 一致，更新值同样禁止配置注入字符
     _validate_site_payload(
         site_type=req.type,

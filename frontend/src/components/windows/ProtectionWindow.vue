@@ -43,8 +43,8 @@
               <td class="mono">{{ w.image }}</td>
               <td><span class="badge" :class="w.status.startsWith('Up') ? 'ok' : 'off'">{{ w.status }}</span></td>
               <td>
-                <span class="badge" :class="w.level === 'danger' ? 'danger' : 'warn'">
-                  {{ w.level === 'danger' ? $t('protection.levelDanger') : $t('protection.levelWarn') }}
+                <span class="badge" :class="levelClass(w.level)">
+                  {{ levelLabel(w.level) }}
                 </span>
               </td>
               <td class="reason">
@@ -278,6 +278,14 @@ const ctxMenuItems = computed(() => ctxMenu.value.items)
 
 const uncoveredDb = computed(() => allDbFiles.value.filter(f => !f.covered))
 const allDbSelected = computed(() => uncoveredDb.value.length > 0 && selectedDbPaths.value.length === uncoveredDb.value.length)
+
+// Docker 扫描风险等级展示：danger/warn/safe（safe=已持久映射，数据安全）
+function levelLabel(l) {
+  return { danger: t('protection.levelDanger'), warn: t('protection.levelWarn'), safe: t('protection.levelSafe') }[l] || l
+}
+function levelClass(l) {
+  return l === 'danger' ? 'danger' : (l === 'safe' ? 'ok' : 'warn')
+}
 
 function toggleAllDb(checked) {
   selectedDbPaths.value = checked ? uncoveredDb.value.map(f => f.path) : []
@@ -563,7 +571,7 @@ h4:first-child { margin-top: 0; }
 .check-label { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
 .selected-count { font-size: 12px; color: #6e6e73; }
 
-.table-wrap { overflow: auto; max-height: 300px; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 10px; }
+.table-wrap { overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 10px; }
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 th, td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; text-align: left; vertical-align: top; }
 th { background: #f9fafb; position: sticky; top: 0; }

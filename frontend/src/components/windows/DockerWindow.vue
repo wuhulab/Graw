@@ -225,6 +225,7 @@
         <div class="menu-item" @click="menuLogs">查看日志</div>
         <div class="menu-item" @click="menuEnterDir">进入安装目录</div>
         <div class="menu-item" @click="menuOpenTerminal">打开容器内终端</div>
+        <div class="menu-item" @click="menuEdit">编辑</div>
         <div class="menu-divider"></div>
         <div class="menu-item" @click="menuToggleStar">{{ ctxMenu.item?.starred ? '取消标星' : '标星' }}</div>
         <div class="menu-item" @click="menuEditNotes">备注笔记</div>
@@ -315,7 +316,7 @@ import { dockerApi } from '../../api'
 import { docker, startDocker, refresh as refreshDockerStore } from '../../store/docker'
 import ConfirmDialog from '../ConfirmDialog.vue'
 
-const emit = defineEmits(['openLogs', 'openContainerTerminal', 'openContainerDetails', 'openFiles', 'openDockerConfigEditor', 'openContainerStats'])
+const emit = defineEmits(['openLogs', 'openContainerTerminal', 'openContainerDetails', 'openFiles', 'openDockerConfigEditor', 'openContainerStats', 'openContainerEdit'])
 
 // 当前视图：containers / config / compose / images / networks
 const view = ref('containers')
@@ -575,10 +576,30 @@ function closeMenus() {
   ctxMenu.value.show = false
 }
 
+// 预估右键菜单高度：菜单项约 31px、header 约 34px、分隔线约 9px
+function estimateMenuHeight(running) {
+  const items = 12 + (running ? 1 : 0) // 13(运行) / 12(停止) 个菜单项
+  return (items * 31) + 34 + (4 * 9) + 8
+}
+
+// 底部任务栏：距底部 12px + 高度 64px → 任务栏顶部约 innerHeight - 76
+const TASKBAR_TOP_OFFSET = 76
+const MENU_SIDE_MARGIN = 10
+
 function onContextMenu(e, c) {
-  const x = Math.min(e.clientX, window.innerWidth - 180)
-  const y = Math.min(e.clientY, window.innerHeight - 260)
+  const menuH = estimateMenuHeight(c.state === 'running')
+  // 横向不超出右缘
+  const x = Math.max(MENU_SIDE_MARGIN, Math.min(e.clientX, window.innerWidth - 180 - MENU_SIDE_MARGIN))
+  // 纵向：尽量贴近点击位置，但不允许菜单底部戳到下方任务栏（自动上移）
+  const maxTop = window.innerHeight - TASKBAR_TOP_OFFSET - menuH - MENU_SIDE_MARGIN
+  const y = Math.max(MENU_SIDE_MARGIN, Math.min(e.clientY, maxTop))
   ctxMenu.value = { show: true, x, y, item: c }
+}
+
+function menuEdit() {
+  const it = ctxMenu.value.item
+  closeMenus()
+  if (it) emit('openContainerEdit', { id: it.id, name: it.name })
 }
 
 function menuAct(action) {
