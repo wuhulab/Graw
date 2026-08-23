@@ -448,6 +448,67 @@ def get_backend():
     raise HTTPException(status_code=503, detail=_last_reason)
 
 
+# 承载当前面板自身的容器名；Docker 部署下用于读取面板版本号。
+# 可通过环境变量 GRAW_CONTAINER_NAME 覆盖（默认与 docker-compose.yml 一致）。
+SELF_CONTAINER_NAME = os.environ.get("GRAW_CONTAINER_NAME", "").strip() or "graw-panel"
+# 面板容器上标注版本号的镜像 label 键（OCI 标准），作镜像 tag 的兜底来源。
+VERSION_LABEL_KEY = "org.opencontainers.image.version"
+
+
+def _is_likely_digest(tag: str) -> bool:
+    """判定字符串是否为 docker 镜像 digest（如 63f6158255c41…），避免误当版本号。"""
+    return bool(tag and re.fullmatch(r"[0-9a-f]{12,}", tag))
+
+
+def get_self_app_version() -> Optional[str]:
+    """从承载当前面板的容器读取版本号，替代硬编码常量。
+
+    读取顺序：
+      1) Config.Image 的镜像 tag（如 shunx/graw:1.3.5 -> "1.3.5"）；
+      2) 容器上 org.opencontainers.image.version 版本 label 兜底。
+    任一路由拿到「非 latest、非 digest」的合法版本即返回（去除 v 前缀）。
+    Docker 未就绪 / 找不到面板容器 / 解析失败时返回 None，由调用方回退
+    到内置 APP_VERSION 常量（本机源码直跑或远端 Agent 均自然回退）。
+    """
+    try:
+        kind, client = get_backend()
+    except Exception:
+        # 引擎探测失败（如非 Docker 本机运行 / 远端 Agent）：不干扰健康检查
+        return None
+
+    data = None
+    try:
+        if kind == "cli":
+            arr = _podman_json(["inspect", SELF_CONTAINER_NAME])
+            if arr:
+                data = arr[0]
+        else:
+            cont = client.containers.get(SELF_CONTAINER_NAME)
+            data = cont.attrs if cont else None
+    except Exception:
+        # 容器缺失（非 Docker 部署/容器未按约定命名）或 SDK 查询失败
+        return None
+    if not data:
+        return None
+
+    cfg = (data.get("Config") or {}) or {}
+    # 1) 从镜像引用解析版本 tag
+    image_ref = (cfg.get("Image") or data.get("ImageName") or "").strip()
+    version = None
+    if ":" in image_ref:
+        tag = image_ref.rsplit(":", 1)[-1]
+        if tag.lower() != "latest" and not _is_likely_digest(tag):
+            version = tag
+    # 2) 版本 label 兜底
+    if not version:
+        label = ((cfg.get("Labels") or {}).get(VERSION_LABEL_KEY) or "").strip()
+        if label:
+            version = label
+    if not version:
+        return None
+    return version.strip().lstrip("vV")
+
+
 class ActionRequest(BaseModel):
     action: str
 

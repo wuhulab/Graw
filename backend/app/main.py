@@ -463,8 +463,13 @@ app.include_router(
 
 @app.get("/api/health")
 async def health():
-    """公开健康检查：返回面板状态与版本号（供前端「设置-关于」展示）。"""
-    return {"status": "ok", "name": "Graw", "version": APP_VERSION}
+    """公开健康检查：返回面板状态与版本号（供前端「设置-关于」展示）。
+
+    版本号优先从承载面板自身的容器读取（镜像 tag / version label），
+    Docker 非容器部署时回退到内置 APP_VERSION 常量。
+    """
+    version = docker_api.get_self_app_version() or APP_VERSION
+    return {"status": "ok", "name": "Graw", "version": version}
 
 
 # Serve frontend static files if built
