@@ -630,3 +630,10 @@ export function formatBytes(bytes) {
 export function formatSpeed(bytesPerSec) {
   return formatBytes(bytesPerSec) + '/s'
 }
+
+// 付费功能（VIP/月卡/年卡）：查询状态 + 用授权码激活。
+// 授权码服务地址固定在后端常量，前端不可修改，故无 config 接口。
+export const vipApi = {
+  status: () => api.get('/vip/status').then(r => r.data),
+  activate: (code) => api.post('/vip/activate', { code }).then(r => r.data)
+}

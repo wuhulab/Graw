@@ -7,6 +7,16 @@
         <span v-if="!isAdmin()" style="font-size:11px;color:#6e6e73;margin-left:8px;">{{ $t('common.adminOnly') }}</span>
       </div>
 
+      <!-- 付费功能：当前月卡/年卡状态 + 续费月卡（授权地址在后端固定，前端不可改） -->
+      <div class="block">
+        <div class="block-title">{{ $t('vip.title') }}</div>
+        <div class="row" style="justify-content:space-between; padding:2px 0;">
+          <span :class="['tag', isVip() ? 'tag-current' : '']" style="font-size:12px;">{{ vipStatusText }}</span>
+          <button class="btn btn-mini" @click="emit('openVip')">{{ $t('vip.renew') }}</button>
+        </div>
+        <div style="font-size:11px;color:#8e8e93;line-height:1.6;">{{ $t('vip.renewHint') }}</div>
+      </div>
+
       <!-- ShunX 安全入口管理（仅管理员） -->
       <div class="block" v-if="isAdmin()">
         <div class="block-title">{{ $t('settings.shunxTitle') }}</div>
@@ -50,14 +60,21 @@
           <span :class="['tag', current.type === 'ssh' ? 'tag-remote' : 'tag-local']">{{ current.type === 'ssh' ? $t('nodes.remoteBadge') : $t('nodes.localBadge') }}</span>
         </div>
 
-        <!-- 统一面板兼容开关：开启后每个窗口绑定打开时对应的节点，聚焦窗口即操作该节点 -->
+        <!-- 统一面板兼容开关（付费功能）：开启后每个窗口绑定打开时对应的节点，聚焦窗口即操作该节点。
+             非付费用户该选项锁定，需「付费解锁」开通 VIP 后方可开启。 -->
         <div class="row" style="justify-content:space-between; padding:2px 0;">
-          <label class="switch-label">
-            <input type="checkbox" v-model="settings.unifiedPanel" />
-            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('nodes.unifiedPanel') }}</span>
+          <label class="switch-label" :style="!isVip() ? { opacity: 0.5, cursor: 'not-allowed' } : {}">
+            <input type="checkbox" v-model="settings.unifiedPanel" :disabled="!isVip()" />
+            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">
+              {{ $t('nodes.unifiedPanel') }} <span v-if="!isVip()" style="color:#c0392b;">· {{ $t('vip.paid') }}</span>
+            </span>
           </label>
+          <span v-if="isVip()" class="tag tag-current">{{ $t('vip.active') }}</span>
+          <button v-else class="btn btn-mini" @click="emit('openVip')">{{ $t('vip.unlock') }}</button>
         </div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:6px;">{{ $t('nodes.unifiedPanelHint') }}</div>
+        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:6px;">
+          {{ isVip() ? $t('nodes.unifiedPanelHint') : $t('vip.lockedHint') }}
+        </div>
 
         <!-- 测试连接独立反馈区 -->
         <div v-if="connMsg" :class="['msg', connMsgType]" style="margin-top:6px;">{{ connMsg }}</div>
@@ -351,17 +368,39 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { settings } from '../../store/settings'
 import { isAdmin } from '../../store/auth'
+import { vip as vipStore, refreshVip, isVip } from '../../store/vip'
 import { nodesApi, shunxApi, panelApi, updateApi, webmodeApi, authApi, agentApi } from '../../api'
 import { nodes as nodesStore, refreshNodes, setCurrentNode } from '../../store/nodes'
 import { LANGUAGES, setLocale } from '../../locales'
 import ConfirmDialog from '../ConfirmDialog.vue'
 
 const { t } = useI18n()
-const emit = defineEmits(['openUsers'])
+const emit = defineEmits(['openUsers', 'openVip'])
+
+// 付费功能：计算当前 VIP 剩余天数，用于「月卡生效中：45天」样式的状态展示
+const remainingVipDays = computed(() => {
+  if (!vipStore.vip_until) return 0
+  const end = new Date(vipStore.vip_until).getTime()
+  const diff = end - Date.now()
+  return diff > 0 ? Math.max(1, Math.ceil(diff / 86400000)) : 0
+})
+const vipStatusText = computed(() => {
+  if (!vipStore.vip) return t('vip.inactive')
+  const plan = vipStore.plan === 'year' ? t('vip.year') : t('vip.month')
+  return remainingVipDays.value > 0
+    ? t('vip.activeDays', { plan, days: remainingVipDays.value })
+    : t('vip.inactive')
+})
+
+// 付费门控：VIP 失效/未解锁时强制关闭「统一面板兼容」，保持默认关闭 + 锁定，
+// 避免历史开启值在无授权状态下继续生效。
+watch(() => vipStore.vip, (active) => {
+  if (!active) settings.unifiedPanel = false
+})
 
 // 高风险操作二次确认状态（删除远程节点 / 清除安全入口等需输入面板密码）
 // 注意：不能命名为 confirm，否则会遮蔽全局 window.confirm（doUpdate 仍在用）
@@ -893,6 +932,8 @@ onMounted(() => {
   if (isAdmin()) loadNodes()
   if (isAdmin()) loadWebMode()
   if (isAdmin()) loadAgentCfg()
+  // 付费功能：刷新当前账号 VIP 状态（决定「统一面板兼容」是否可解锁）
+  refreshVip()
 })
 
 // 切换界面语言

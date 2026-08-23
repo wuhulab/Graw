@@ -51,6 +51,7 @@ from app.routers import (
     ftpusers,
     toolbox,
     phpversions,
+    vip,
 )
 from app.auth import (
     seed_default_users,
@@ -186,6 +187,7 @@ _AGENT_PROXY_EXCLUDE_PREFIX = (
     "/api/agent",
     "/api/ui",
     "/api/shunx",
+    "/api/vip",
     "/api/health",
 )
 
@@ -459,6 +461,11 @@ app.include_router(
     tags=["phpversions"],
     dependencies=ADMIN,
 )
+
+# 付费功能（VIP/月卡/年卡）：查询当前用户 VIP 状态 + 用授权码激活 +
+# 配置授权码服务地址。status/activate 需登录，config 需管理员，
+# 均在各端点内部自行鉴权（参照 ui/tamper 路由），故不挂全局依赖。
+app.include_router(vip.router, prefix="/api/vip", tags=["vip"])
 
 
 @app.get("/api/health")

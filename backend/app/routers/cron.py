@@ -2,6 +2,7 @@ import json
 import os
 import platform
 import re
+import shlex
 import subprocess
 import uuid
 from datetime import datetime
@@ -231,16 +232,24 @@ def _rewrite_linux_cron(tasks: list):
 
 
 # 标准记录支持的任务类型 -> 由内容生成可执行命令的函数
-# 说明：shell_command 直接使用脚本内容，其余类型按各自语义拼装命令。
+# 说明：shell_command 直接使用脚本内容（绝权功能，等价于管理员手写 crontab）；
+#       其余类型把 content 作为"参数"拼进命令，安全隐患：content 源自表单输入，
+#       若含 shell 元字符（; | & $() 反引号 空格）会在 host_shell/schr 执行时
+#       被对端 /bin/sh 二次解释为命令。故对这类参数统一 shlex.quote 转义——
+#       与 node_manager.host_cmd 的远程语义一致，URL/路径/容器名均安全。
+def _quote_param(s: str) -> str:
+    """安全转义单条命令参数（POSIX sh 语义），空串返回普通引号仍安全。"""
+    return shlex.quote(s or "")
+
+
 _STANDARD_BUILDERS = {
     "shell_command": lambda content: content,
     "backup_container": lambda content: (
-        f"docker export {content} | gzip > 'backup_{content}_"
-        f"{datetime.now():%Y%m%d%H%M%S}.tar.gz'"
+        f"docker export {_quote_param(content)} | gzip > 'backup_{datetime.now():%Y%m%d%H%M%S}.tar.gz'"
     ),
-    "visit_url": lambda content: f"curl -sS -o /dev/null {content}",
+    "visit_url": lambda content: f"curl -sS -o /dev/null {_quote_param(content)}",
     "clean_logs": lambda content: (
-        f"find {content} -type f -name '*.log' -mtime +7 -delete"
+        f"find {_quote_param(content)} -type f -name '*.log' -mtime +7 -delete"
     ),
     "sync_time": lambda content: (
         "w32tm /resync" if IS_WIN else "ntpdate pool.ntp.org"

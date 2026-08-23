@@ -255,7 +255,9 @@ def _sqlite_file(conn: dict) -> str:
     """解析 SQLite 数据库文件路径。
 
     - `database` 字段存文件路径（相对路径基于数据目录 DATA_DIR，绝对路径原样使用）；
-    - 拒绝空字节 / CR / LF 等控制字符，防止字符注入到文件路径与后续元数据写入。
+    - 拒绝空字节 / CR / LF 等控制字符，防止字符注入到文件路径与后续元数据写入；
+    - 相对路径归一化后必须仍位于 DATA_DIR 之内，拒绝经由 `..` 逃逸出数据目录
+      （否则可在任意可写位置建库或探测任意文件存在性）。
     """
     raw = (conn.get("database") or "").strip()
     if not raw:
@@ -265,7 +267,17 @@ def _sqlite_file(conn: dict) -> str:
         raise HTTPException(status_code=400, detail="SQLite 文件路径包含非法字符")
     if os.path.isabs(raw):
         return os.path.normpath(raw)
-    return os.path.normpath(os.path.join(DATA_DIR, raw))
+    resolved = os.path.normpath(os.path.join(DATA_DIR, raw))
+    # 相对路径逃逸防护：归一化后必须仍落在 DATA_DIR 之内
+    base = os.path.abspath(DATA_DIR)
+    abs_resolved = os.path.abspath(resolved)
+    try:
+        if os.path.commonpath([abs_resolved, base]) != base:
+            raise HTTPException(status_code=400, detail="SQLite 文件路径超出数据目录")
+    except ValueError:
+        # 跨盘符/UNC：不可能位于 DATA_DIR 内，直接拒绝
+        raise HTTPException(status_code=400, detail="SQLite 文件路径超出数据目录")
+    return resolved
 
 
 @router.get("/status")

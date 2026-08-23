@@ -34,3 +34,7 @@ app-store/
 .pw-test/
 TODO.md
 .trae/
+
+graw_site/
+graw_vip/
+backend/reset_vip.py  

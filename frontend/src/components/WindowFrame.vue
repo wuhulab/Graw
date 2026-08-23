@@ -39,6 +39,7 @@ import { useI18n } from 'vue-i18n'
 import { X, Minus, Square } from 'lucide-vue-next'
 import { nodes as nodesStore } from '../store/nodes'
 import { settings } from '../store/settings'
+import { isVip } from '../store/vip'
 
 const props = defineProps({
   window: { type: Object, required: true },
@@ -51,7 +52,8 @@ const { t } = useI18n()
 // 「统一面板兼容」下窗口绑定的节点名徽标（如“香港子节点”），提示该窗口操作哪台子机
 const nodeLabel = computed(() => {
   const w = props.window
-  if (!settings.unifiedPanel || !w || !w.nodeId) return ''
+  // 付费门控：未授权（未开通/已过期）时强制不生效，避免残留绑定值绕过锁定
+  if (!settings.unifiedPanel || !isVip() || !w || !w.nodeId) return ''
   const n = nodesStore.list.find(x => x.id === w.nodeId)
   return n ? n.name : ''
 })

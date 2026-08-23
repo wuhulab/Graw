@@ -13,6 +13,7 @@ from pydantic import BaseModel
 import os
 import logging
 import shutil
+import shlex
 import posixpath
 import platform
 from typing import Optional
@@ -81,7 +82,7 @@ def _safe_path(path: str) -> str:
             raise HTTPException(status_code=403, detail="无权访问面板数据目录")
         return sp
 
-    sp = os.path.abspath(path)
+    sp = os.path.realpath(os.path.abspath(path))
     if _is_forbidden(sp):
         raise HTTPException(status_code=403, detail="无权访问面板数据目录")
     return sp
@@ -222,7 +223,9 @@ async def mkdir(
     real = host_path(safe)
     try:
         if node_manager.is_remote():
-            node_manager.host_shell(f"mkdir -p {real}", timeout=30)
+            # 远程节点经 /bin/sh -c 执行：路径必须转义，防 shell 注入
+            # （对比 node_manager.host_cmd 的远程 shlex.quote 语义）
+            node_manager.host_shell(f"mkdir -p {shlex.quote(real)}", timeout=30)
         else:
             os.makedirs(real, exist_ok=True)
         auditlog.record("新建目录", user["username"], get_client_ip(request), safe)
@@ -248,7 +251,10 @@ async def rename(
         raise HTTPException(status_code=404, detail="Source not found")
     try:
         if node_manager.is_remote():
-            node_manager.host_shell(f"mv {src} {dst}", timeout=30)
+            # 远程节点经 /bin/sh -c 执行：src/dst 均须转义，防 shell 注入
+            node_manager.host_shell(
+                f"mv {shlex.quote(src)} {shlex.quote(dst)}", timeout=30
+            )
         else:
             os.rename(src, dst)
         auditlog.record("重命名", user["username"], get_client_ip(request), f"{req.src} -> {req.dst}")

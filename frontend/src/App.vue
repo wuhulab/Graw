@@ -56,7 +56,7 @@
       @move="(x, y) => moveWindow(w.id, x, y)"
       @resize="(width, height) => resizeWindow(w.id, width, height)"
     >
-      <component :is="w.component" v-bind="w.props || {}" @close="handleCloseWindow(w.id)" @dirty="(v) => { const ww=openWindows.value.find(x=>x.id===w.id); if(ww) ww.dirty=v }" @openTerminal="openTerminalAt" @openEditor="openEditor" @openMedia="openMedia" @openUsers="openUsers" @openLogs="openContainerLogs" @openContainerTerminal="openContainerTerminal" @openContainerDetails="openContainerDetails" @openContainerStats="openContainerStats" @openContainerEdit="openContainerEdit" @openFiles="openFiles" @openDockerConfigEditor="openDockerConfigEditor" @openAppInstall="openAppStoreInstall" @openComposeEditor="openAppStoreComposeEditor" @openInstallLog="openAppStoreInstallLog" @openReadme="openAppStoreReadme" @openTaskCenter="openTasks" @openRuntimeCreate="openRuntimeCreate" @openConnectionForm="openConnectionForm" @openNetStorageBrowse="openNetStorageBrowse" @openNetStorageForm="openNetStorageForm" @openSiteEdit="openSiteEdit" />
+      <component :is="w.component" v-bind="w.props || {}" @close="handleCloseWindow(w.id)" @dirty="(v) => { const ww=openWindows.value.find(x=>x.id===w.id); if(ww) ww.dirty=v }" @openTerminal="openTerminalAt" @openEditor="openEditor" @openMedia="openMedia" @openUsers="openUsers" @openVip="openVip" @openLogs="openContainerLogs" @openContainerTerminal="openContainerTerminal" @openContainerDetails="openContainerDetails" @openContainerStats="openContainerStats" @openContainerEdit="openContainerEdit" @openFiles="openFiles" @openDockerConfigEditor="openDockerConfigEditor" @openAppInstall="openAppStoreInstall" @openComposeEditor="openAppStoreComposeEditor" @openInstallLog="openAppStoreInstallLog" @openReadme="openAppStoreReadme" @openTaskCenter="openTasks" @openRuntimeCreate="openRuntimeCreate" @openConnectionForm="openConnectionForm" @openNetStorageBrowse="openNetStorageBrowse" @openNetStorageForm="openNetStorageForm" @openSiteEdit="openSiteEdit" />
     </WindowFrame>
 
     <!-- Dock -->
@@ -126,6 +126,7 @@ import EditorWindow from './components/windows/EditorWindow.vue'
 import MediaWindow from './components/windows/MediaWindow.vue'
 import UserWindow from './components/windows/UserWindow.vue'
 import ChangePasswordWindow from './components/windows/ChangePasswordWindow.vue'
+import VipWindow from './components/windows/VipWindow.vue'
 import CronWindow from './components/windows/CronWindow.vue'
 import FirewallWindow from './components/windows/FirewallWindow.vue'
 import FrpWindow from './components/windows/FrpWindow.vue'
@@ -180,6 +181,7 @@ import { shunxApi, systemApi } from './api'
 import { auth, clearAuth, isAdmin } from './store/auth'
 import { uiState, loadUi, loadUiEffective } from './store/ui'
 import { settings } from './store/settings'
+import { vip as vipStore, refreshVip } from './store/vip'
 import { systemState, startMetrics, stopMetrics } from './store/systemMetrics'
 import { startDocker, stopDocker, refresh as refreshDocker } from './store/docker'
 import { nodes as nodesStore, refreshNodes } from './store/nodes'
@@ -285,7 +287,7 @@ const shortcuts = ref([
   { key: 'dockervolumes', label: 'Docker卷', titleKey: 'app.shortcut.dockervolumes', icon: markRaw(DatabaseBackup), component: markRaw(DockerVolumesWindow), w: 860, h: 540, adminOnly: true },
   // 容器资源与端口编辑（CPU/内存/环境变量/端口映射，管理员专属）
   { key: 'containeredit', label: '容器编辑', titleKey: 'app.shortcut.containeredit', icon: markRaw(Settings2), component: markRaw(ContainerEditWindow), w: 760, h: 660, adminOnly: true },
-  { key: 'appstore', label: '应用商店', titleKey: 'app.shortcut.appstore', icon: markRaw(Store), component: markRaw(AppStoreWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local' },
+  { key: 'appstore', label: '应用商店', titleKey: 'app.shortcut.appstore', icon: markRaw(Store), component: markRaw(AppStoreWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local', vip: true },
   { key: 'tasks', label: '任务中心', titleKey: 'app.shortcut.tasks', icon: markRaw(ListChecks), component: markRaw(TaskCenterWindow), w: 900, h: 560, adminOnly: true, remoteCap: 'local' },
   { key: 'protection', label: 'Graw数据库保护机制', titleKey: 'app.shortcut.protection', icon: markRaw(ShieldCheck), component: markRaw(ProtectionWindow), w: 860, h: 560, adminOnly: true, remoteCap: 'local' },
   { key: 'tamper', label: 'ShunX网页防篡改', titleKey: 'app.shortcut.tamper', icon: markRaw(ShieldAlert), component: markRaw(TamperWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local' },
@@ -294,7 +296,7 @@ const shortcuts = ref([
   { key: 'process', label: '进程管理', titleKey: 'app.shortcut.process', icon: markRaw(Settings), component: markRaw(ProcessWindow), w: 780, h: 520, adminOnly: true },
   { key: 'files', label: '文件管理', titleKey: 'app.shortcut.files', icon: markRaw(Folder), component: markRaw(FilesWindow), w: 820, h: 540, adminOnly: true },
   { key: 'netstorage', label: '网络储存', titleKey: 'app.shortcut.netstorage', icon: markRaw(Cloud), component: markRaw(NetStorageWindow), w: 860, h: 540, adminOnly: true, remoteCap: 'local' },
-  { key: 'uisettings', label: '界面设置', titleKey: 'app.shortcut.uisettings', icon: markRaw(Palette), component: markRaw(UISettingsWindow), w: 520, h: 540, adminOnly: true, remoteCap: 'local' },
+  { key: 'uisettings', label: '界面设置', titleKey: 'app.shortcut.uisettings', icon: markRaw(Palette), component: markRaw(UISettingsWindow), w: 520, h: 540, adminOnly: true, remoteCap: 'local', vip: true },
   { key: 'disks', label: '磁盘管理', titleKey: 'app.shortcut.disks', icon: markRaw(HardDrive), component: markRaw(DisksWindow), w: 900, h: 560, adminOnly: true },
   { key: 'backup', label: '备份中心', titleKey: 'app.shortcut.backup', icon: markRaw(DatabaseBackup), component: markRaw(BackupWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local' },
   { key: 'notify', label: '通知中心', titleKey: 'app.shortcut.notify', icon: markRaw(BellRing), component: markRaw(NotifyWindow), w: 860, h: 560, adminOnly: true, remoteCap: 'local' },
@@ -334,6 +336,10 @@ const selected = ref(null)
 const openWindows = ref([])
 const activeWindowId = ref(null)
 const startMenuOpen = ref(false)
+
+// 统一面板兼容的实际生效值：设定开启且为生效 VIP 才启用。
+// 未授权（未解锁）时强制视为关闭，避免历史残留值绕过付费锁定。
+const unifiedPanelOn = computed(() => settings.unifiedPanel && !!vipStore.vip)
 
 // ShunX 安全入口：登录后检查是否已配置，未配置则强制设置。
 // 仅管理员触发（保存入口需要管理员权限）；后端对普通用户已脱敏
@@ -379,6 +385,7 @@ function toggleStartMenu() { startMenuOpen.value = !startMenuOpen.value }
 function openUsers() { openWindow('users') }
 function openChangePwd() { openWindow('changepwd') }
 function openSettings() { openWindow('settings') }
+function openVip() { openWindow('vip') }
 function openTasks() { openWindow('tasks') }
 
 // 报告问题：跳转到项目 GitHub Issues 新建页（新窗口，noopener 防钓鱼）
@@ -405,7 +412,8 @@ function openWindow(key) {
     const extras = {
       users: { label: '账号管理', titleKey: 'app.winTitle.users', icon: markRaw(UserCircle2), component: markRaw(UserWindow), w: 600, h: 460, adminOnly: true },
       changepwd: { label: '修改密码', titleKey: 'app.winTitle.changepwd', icon: markRaw(UserCircle2), component: markRaw(ChangePasswordWindow), w: 420, h: 360 },
-      settings: { label: '设置', titleKey: 'app.winTitle.settings', icon: markRaw(Settings), component: markRaw(SettingsWindow), w: 520, h: 480 }
+      settings: { label: '设置', titleKey: 'app.winTitle.settings', icon: markRaw(Settings), component: markRaw(SettingsWindow), w: 520, h: 480 },
+      vip: { label: 'VIP', titleKey: 'app.winTitle.vip', icon: markRaw(Lock), component: markRaw(VipWindow), w: 440, h: 400, adminOnly: false, remoteCap: 'local' }
     }
     def = extras[key]
     if (!def) return
@@ -420,9 +428,16 @@ function openWindow(key) {
     alert(t('nodes.localOnlyOnRemote'))
     return
   }
+  // 付费门控：vip 标记的功能（应用商店/界面管理）需生效 VIP。未解锁时拦截并
+  // 提示，转入「付费解锁」窗口；加载中（vip.loaded=false）暂不误拦，待状态明确。
+  if (def.vip && vipStore.loaded && !vipStore.vip) {
+    alert(t('vip.gateMsg'))
+    openWindow('vip')
+    return
+  }
   const id = ++windowSeq
   // 「统一面板兼容」：窗口绑定打开时对应的节点（聚焦该窗口即操作该节点）
-  const boundNode = settings.unifiedPanel ? nodesStore.currentId : ''
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
   const w = reactive({
     id,
     key,
@@ -540,7 +555,7 @@ function openSiteEdit(payload) {
   const id = ++windowSeq
   const isEdit = payload?.mode === 'edit'
   const type = isEdit ? (payload?.site?.type || 'static') : (payload?.type || 'static')
-  const boundNode = settings.unifiedPanel ? nodesStore.currentId : ''
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
   const w = reactive({
     id,
     key: 'site-edit',
@@ -1075,6 +1090,8 @@ onMounted(() => {
   if (loggedIn.value) {
     startRealtime()
     checkShunxRequired()
+    // 付费功能：启动即加载当前账号 VIP 状态，供「统一面板兼容」/应用商店等门控使用
+    refreshVip()
     // 已登录态（如页面刷新）也重新检测安装环境，确保缺失时弹窗提醒
     checkInstallCheck()
     // 加载当前账号生效的动态壁纸 / 环形图（「仅用于这个账号」优先）
@@ -1091,7 +1108,7 @@ onMounted(() => {
 // （应用名称已显示新节点、实际连接却还是旧节点）。先定义再供 watch 与 open/focus 复用。
 function applyActiveRequestNode(id) {
   let node = ''
-  if (settings.unifiedPanel) {
+  if (unifiedPanelOn.value) {
     const w = openWindows.value.find(x => x.id === id)
     node = (w && w.nodeId) || ''
   }
@@ -1107,6 +1124,8 @@ watch(activeWindowId, (id) => {
 watch(loggedIn, (v) => {
   if (v) {
     startRealtime()
+    // 付费功能：登录后刷新当前账号 VIP 状态，保证门控（应用商店/界面管理）准确
+    refreshVip()
     loadUiEffective().catch(() => {})
   } else {
     stopRealtime()
