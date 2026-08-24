@@ -75,7 +75,7 @@ def assert_safe_http_url(url: str, *, allow_private: bool = False) -> None:
     _assert_resolved_host(hostname, allow_private=allow_private, strict_dns=True)
 
 
-def assert_safe_host(host: str, *, allow_private: bool = True) -> None:
+def assert_safe_host(host: str, *, allow_private: bool = True, allow_loopback: bool = False) -> None:
     """校验裸主机名 / IP（供 FTP/SMB/S3 等非 HTTP 协议的出站连接使用）。
 
     与 assert_safe_http_url 同基线：解析主机名得到的全部 IP 逐一判定，任一
@@ -86,6 +86,11 @@ def assert_safe_host(host: str, *, allow_private: bool = True) -> None:
     安全修复（第八轮审计，Medium）：此前 FTP/FTPS/SMB/S3 连接仅做字符
     白名单校验，169.254.169.254 等云元数据地址可直接连接，构成管理员级
     SSRF（内网探测 / 元数据凭据窃取）。
+
+    安全修复（本轮审计）：新增 allow_loopback 参数——用于「本机回环服务
+    属合法场景」的连接（如通知中心的 SMTP 本机 postfix）。默认 False 保持
+    原有语义（回环始终拒绝）；置 True 时放行回环地址，但链路本地（含云
+    元数据 169.254.169.254）/ 组播 / 保留 / 未指定地址仍始终拒绝。
     """
     if not host or not isinstance(host, str):
         raise ValueError("主机不能为空（SSRF 防护）")
@@ -111,15 +116,22 @@ def assert_safe_host(host: str, *, allow_private: bool = True) -> None:
     # 注意：strict_dns=False —— 主机名当前解析失败（如内网主机名仅能在服务器
     # 侧网络解析 / 离线环境）时放行交由连接阶段兜底：解析不了就连接不上，
     # 无 SSRF 风险；IP 字面量与「能解析到受保护地址」的主机名仍在此处拒绝。
-    _assert_resolved_host(hostname, allow_private=allow_private, strict_dns=False)
+    _assert_resolved_host(
+        hostname,
+        allow_private=allow_private,
+        strict_dns=False,
+        allow_loopback=allow_loopback,
+    )
 
 
-def _assert_resolved_host(hostname: str, *, allow_private: bool, strict_dns: bool = False) -> None:
+def _assert_resolved_host(hostname: str, *, allow_private: bool, strict_dns: bool = False, allow_loopback: bool = False) -> None:
     """解析主机名并对全部解析 IP 执行受保护地址判定（HTTP/裸主机共用）。
 
     :param strict_dns: True（HTTP URL 场景）时，主机名无法解析即拒绝
         （fail-closed）；False（FTP/SMB/S3 裸主机场景）时解析失败放行，
         交由实际连接阶段兜底。
+    :param allow_loopback: True 时放行回环地址（如本机 SMTP postfix）；
+        链路本地（含云 metadata）/ 组播 / 保留 / 未指定仍始终拒绝。
     """
     # IP 字面量快速路径：直接判定，无需 DNS（也避免离线环境解析失败）
     try:
@@ -127,7 +139,7 @@ def _assert_resolved_host(hostname: str, *, allow_private: bool, strict_dns: boo
     except ValueError:
         literal_ip = None
     if literal_ip is not None:
-        _assert_ip(literal_ip, hostname, allow_private)
+        _assert_ip(literal_ip, hostname, allow_private, allow_loopback)
         return
     try:
         infos = socket.getaddrinfo(hostname, None)
@@ -145,11 +157,13 @@ def _assert_resolved_host(hostname: str, *, allow_private: bool, strict_dns: boo
             ip = ipaddress.ip_address(addr)
         except ValueError as exc:
             raise ValueError(f"非法 IP 地址: {addr}（SSRF 防护）") from exc
-        _assert_ip(ip, hostname, allow_private)
+        _assert_ip(ip, hostname, allow_private, allow_loopback)
 
 
-def _assert_ip(ip, hostname: str, allow_private: bool) -> None:
+def _assert_ip(ip, hostname: str, allow_private: bool, allow_loopback: bool = False) -> None:
     """对单个 IP 执行受保护区间判定（HTTP/裸主机共用）。"""
+    if allow_loopback and ip.is_loopback:
+        return  # 显式放行回环（本机服务场景，如 SMTP postfix）
     reason = _blocked_reason(ip)
     if reason is not None:
         raise ValueError(

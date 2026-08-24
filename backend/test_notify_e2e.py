@@ -10,6 +10,8 @@
     冷却去重、普通用户权限、告警记录。
 
 用法：
+  # 后端需以放行私网地址的方式启动（SSRF 防护默认拒绝私网/回环 webhook）：
+  GRAW_NOTIFY_ALLOW_PRIVATE_NET=1 python -m uvicorn app.main:app --port 8000
   python test_notify_e2e.py          # 默认 http://localhost:8000
   python test_notify_e2e.py 8011     # 指定端口
 """
@@ -57,12 +59,42 @@ class HookMock(http.server.BaseHTTPRequestHandler):
         self.wfile.write(b"ok")
 
 
+def _lan_ip() -> str:
+    """获取本机非回环 IPv4 地址。
+
+    SSRF 防护（本轮审计）禁止通知渠道指向回环地址，e2e 的本地 mock 必须
+    通过局域网地址直连，因此后端需以 GRAW_NOTIFY_ALLOW_PRIVATE_NET=1 启动。
+    """
+    import socket as _socket
+
+    try:
+        s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+        finally:
+            s.close()
+        if ip and not ip.startswith("127."):
+            return ip
+    except Exception:
+        pass
+    return ""
+
+
 def start_hook_mock():
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), HookMock)
+    # 绑定 0.0.0.0 使后端可通过局域网地址访问 mock（回环被 SSRF 防护拒绝）
+    server = http.server.ThreadingHTTPServer(("0.0.0.0", 0), HookMock)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    host, port = server.server_address
+    _host, port = server.server_address
+    lan = _lan_ip()
+    if not lan:
+        raise RuntimeError(
+            "未检测到可用局域网 IP：SSRF 防护禁止回环 webhook，"
+            "本测试需后端以 GRAW_NOTIFY_ALLOW_PRIVATE_NET=1 启动，且本机存在非回环 IP。"
+        )
+    base = f"http://{lan}:{port}"
     HookMock.received.clear()
-    return server, f"http://{host}:{port}/push"
+    return server, f"{base}/push"
 
 
 def ok(name, detail=""):

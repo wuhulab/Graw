@@ -136,11 +136,71 @@ def _append_log(entry: dict):
 # ---------------------------------------------------------------------------
 # 渠道字段校验与脱敏
 # ---------------------------------------------------------------------------
+# SSRF 防护（本轮审计修复，Medium）：此前渠道 URL 仅校验 scheme 前缀，
+# 未做任何主机/IP 校验且 requests 默认跟随重定向——管理员可把 webhook/
+# 钉钉/企微地址指向回环、私网或云元数据（169.254.169.254），触发「测试
+# 发送」或资源告警时面板服务端即向内网发起请求（内网探测 / 元数据窃取），
+# 且 30x 重定向可绕过仅针对初始 URL 的校验。此处统一接入 app/ssrf_guard：
+#   - 保存（_validate_channel）与每次实际发送前都重新校验（缓解 DNS
+#     rebinding 的 TOCTOU 窗口，与 uptime/backup/netstorage 同基线）；
+#   - 请求不跟随重定向，收到 3xx 一律拒绝；
+#   - 默认仅允许公网地址；内网（RFC1918/ULA）部署可设环境变量
+#     GRAW_NOTIFY_ALLOW_PRIVATE_NET=1 显式放开，但回环 / 链路本地（含云
+#     元数据）/ 组播 / 保留 / 未指定地址始终拒绝。
+#   - SMTP 属于「本机回环服务合法」场景（如本机 postfix），放行回环与
+#     私网，但仍拒绝链路本地（含 169.254.169.254）/ 组播 / 保留地址。
+_allow_private = os.environ.get("GRAW_NOTIFY_ALLOW_PRIVATE_NET") == "1"
+
+
 def _validate_url(url: str, field: str = "URL") -> str:
+    """创建/保存时的 URL 校验：scheme + 主机安全基线。
+
+    使用「宽松解析」策略（与 netstorage 的 FTP/SMB/S3 裸主机校验一致）：
+    - IP 字面量与「当前可解析的主机名」逐一判定，回环 / 链路本地（含云
+      元数据 169.254.169.254）/ 组播 / 保留 / 未指定地址一律拒绝；私网
+      地址在未设置 GRAW_NOTIFY_ALLOW_PRIVATE_NET=1 时拒绝；
+    - 当前无法解析的主机名放行（解析不了即连不上，无 SSRF 风险），实际
+      发送前还会做一次严格校验，避免误伤内网/离线环境中的合法 webhook。
+    """
     url = (url or "").strip()
     if not url.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail=f"{field}必须为 http/https URL")
+    from urllib.parse import urlparse
+
+    hostname = (urlparse(url).hostname or "").strip()
+    if not hostname:
+        raise HTTPException(status_code=400, detail=f"{field}缺少主机名")
+    try:
+        from app.ssrf_guard import assert_safe_host
+
+        assert_safe_host(hostname, allow_private=_allow_private)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return url
+
+
+def _assert_send_target_url(url: str, field: str = "URL") -> None:
+    """发送前严格校验出站 URL（缓解 DNS rebinding 的 TOCTOU 窗口）。
+
+    与创建时不同：此处在每次实际请求前执行，主机名解析失败即拒绝
+    （fail-closed），确保真正发出的请求不会到达受保护地址。
+    """
+    try:
+        from app.ssrf_guard import assert_safe_http_url
+
+        assert_safe_http_url(url or "", allow_private=_allow_private)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"{field} 校验失败：{e}")
+
+
+def _assert_send_target_host(host: str) -> None:
+    """发送前重新校验 SMTP 主机（回环与私网放行，受保护地址拒绝）。"""
+    try:
+        from app.ssrf_guard import assert_safe_host
+
+        assert_safe_host(host or "", allow_private=True, allow_loopback=True)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"SMTP 主机校验失败：{e}")
 
 
 def _validate_channel(channel: dict) -> None:
@@ -158,9 +218,14 @@ def _validate_channel(channel: dict) -> None:
             raise HTTPException(status_code=400, detail="Telegram 机器人 Token 不能为空")
         if not (cfg.get("chat_id") or "").strip():
             raise HTTPException(status_code=400, detail="Telegram 接收 chat_id 不能为空")
+        # token/chat_id 会拼入请求 URL 或 JSON，拒绝控制字符与空白防注入
+        if _has_ctrl_or_space(str(cfg.get("bot_token") or "")) or _has_ctrl_or_space(str(cfg.get("chat_id") or "")):
+            raise HTTPException(status_code=400, detail="Telegram Token/chat_id 不能包含空白或控制字符")
     elif ctype == "serverchan":
         if not (cfg.get("key") or "").strip():
             raise HTTPException(status_code=400, detail="Server酱 SendKey 不能为空")
+        if _has_ctrl_or_space(str(cfg.get("key") or "")):
+            raise HTTPException(status_code=400, detail="Server酱 SendKey 不能包含空白或控制字符")
     elif ctype == "smtp":
         if not (cfg.get("host") or "").strip():
             raise HTTPException(status_code=400, detail="SMTP 主机不能为空")
@@ -169,8 +234,15 @@ def _validate_channel(channel: dict) -> None:
             raise HTTPException(status_code=400, detail="SMTP 端口必须在 1-65535")
         if not (cfg.get("from") or "").strip() or not (cfg.get("to") or "").strip():
             raise HTTPException(status_code=400, detail="SMTP 发件人/收件人不能为空")
+        # SSRF 防护：拒绝链路本地（含云元数据）/ 组播 / 保留地址
+        _assert_send_target_host(str(cfg.get("host") or ""))
     else:
         raise HTTPException(status_code=400, detail="不支持的通知渠道类型")
+
+
+def _has_ctrl_or_space(value: str) -> bool:
+    """是否包含空白或控制字符（用于拼 URL / 请求头的敏感字段）。"""
+    return any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value)
 
 
 def _mask_channel(channel: dict) -> dict:
@@ -200,25 +272,37 @@ def _alert_message(metric: str, value: float, threshold: float) -> str:
     )
 
 
-def _send_webhook(cfg: dict, message: str) -> None:
+def _post_no_redirect(url: str, **kwargs):
+    """发起 POST，不跟随重定向；收到 3xx 抛错（SSRF 防护）。
+
+    ssrf_guard 只校验初始 URL 解析出的地址，跟随 30x 重定向可直达
+    169.254.169.254（云元数据）或内网服务，构成 SSRF 绕过（与
+    backup/netstorage 的 WebDAV 处理保持一致）。
+    """
     import requests
 
-    r = requests.post(cfg["url"], json={"text": message, "msgtype": "text"}, timeout=15)
+    r = requests.post(url, timeout=15, allow_redirects=False, **kwargs)
+    if r.status_code in (301, 302, 303, 307, 308):
+        raise RuntimeError(f"检测到重定向跳转（HTTP {r.status_code}），已拒绝（SSRF 防护）")
     r.raise_for_status()
+
+
+def _send_webhook(cfg: dict, message: str) -> None:
+    url = cfg["url"]
+    _assert_send_target_url(url, "Webhook 地址")
+    _post_no_redirect(url, json={"text": message, "msgtype": "text"})
 
 
 def _send_dingtalk(cfg: dict, message: str) -> None:
-    import requests
-
-    r = requests.post(cfg["webhook"], json={"msgtype": "text", "text": {"content": message}}, timeout=15)
-    r.raise_for_status()
+    url = cfg["webhook"]
+    _assert_send_target_url(url, "钉钉机器人地址")
+    _post_no_redirect(url, json={"msgtype": "text", "text": {"content": message}})
 
 
 def _send_wecom(cfg: dict, message: str) -> None:
-    import requests
-
-    r = requests.post(cfg["webhook"], json={"msgtype": "text", "text": {"content": message}}, timeout=15)
-    r.raise_for_status()
+    url = cfg["webhook"]
+    _assert_send_target_url(url, "企业微信机器人地址")
+    _post_no_redirect(url, json={"msgtype": "text", "text": {"content": message}})
 
 
 def _send_telegram(cfg: dict, message: str) -> None:
@@ -244,15 +328,18 @@ def _send_smtp(cfg: dict, message: str) -> None:
     import smtplib
     from email.mime.text import MIMEText
 
+    host = cfg["host"]
+    # 发送前重新校验 SMTP 主机（拒绝链路本地/云元数据等受保护地址）
+    _assert_send_target_host(host)
     msg = MIMEText(message, "plain", "utf-8")
     msg["Subject"] = (cfg.get("subject") or "").strip() or "Graw 资源告警"
     msg["From"] = cfg["from"]
     msg["To"] = cfg["to"]
     port = int(cfg.get("port") or 25)
     if cfg.get("ssl"):
-        server = smtplib.SMTP_SSL(cfg["host"], port, timeout=15)
+        server = smtplib.SMTP_SSL(host, port, timeout=15)
     else:
-        server = smtplib.SMTP(cfg["host"], port, timeout=15)
+        server = smtplib.SMTP(host, port, timeout=15)
     try:
         if not cfg.get("ssl") and cfg.get("starttls"):
             server.starttls()
