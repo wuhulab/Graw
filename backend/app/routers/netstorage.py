@@ -94,6 +94,16 @@ class ConnectionIn(BaseModel):
         # 默认端口
         if self.port is None:
             self.port = {"ftp": 21, "ftps": 990, "webdav": 443, "s3": 9000, "smb": 445}[self.type]
+        # SSRF 防护（第八轮审计修复，Medium）：FTP/FTPS/SMB/S3 的 host 为裸
+        # 主机/IP，此前仅过字符白名单，169.254.169.254（云元数据）等受保护
+        # 地址可直接连接。此处统一用 assert_safe_host 拒绝回环/链路本地/
+        # 保留/未指定地址（内网存储允许 RFC1918/ULA，受保护地址始终拒绝）。
+        if self.type in ("ftp", "ftps", "smb", "s3"):
+            try:
+                from app.ssrf_guard import assert_safe_host
+                assert_safe_host(self.host, allow_private=True)
+            except ValueError as e:
+                raise HTTPException(400, str(e))
         # 基础路径校验
         if self.base:
             if _CTRL.search(self.base):
@@ -218,6 +228,13 @@ class FTPAdapter(BaseAdapter):
         username = self.conn.get("username") or ""
         password = self.conn.get("password") or ""
         passive = bool(self.conn.get("params", {}).get("passive", True))
+        # SSRF 防护（纵深防御，与 validate_rules 同基线）：每次实际连接前
+        # 复检主机，拒绝云元数据（169.254.169.254）等受保护地址。
+        try:
+            from app.ssrf_guard import assert_safe_host
+            assert_safe_host(host, allow_private=True)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
         if self.ftps:
             ftp = ftplib.FTP_TLS()
             ftp.connect(host, port, timeout=15)
@@ -400,6 +417,13 @@ class SMBAdapter(BaseAdapter):
         # 同一会话重复注册是安全的；每次连接 CPU 取真实凭据
         if self.conn.get("username"):
             smbclient = __import__("smbclient")
+            # SSRF 防护（纵深防御，与 validate_rules 同基线）：每次注册会话
+            # 前复检主机，拒绝云元数据（169.254.169.254）等受保护地址。
+            try:
+                from app.ssrf_guard import assert_safe_host
+                assert_safe_host(self.host, allow_private=True)
+            except ValueError as e:
+                raise HTTPException(400, str(e))
             smbclient.register_session(
                 self.host,
                 username=self.conn.get("username") or "",
@@ -544,7 +568,17 @@ class WebDAVAdapter(BaseAdapter):
 
     def _req(self, method, url, **kw):
         import requests
-        r = requests.request(method, url, headers=self._headers(), timeout=30, **kw)
+        # SSRF 防护（第八轮审计修复，High）：禁止跟随 30x 重定向。
+        # ssrf_guard 只校验初始 URL 解析出的地址，重定向后的 Location 目标
+        # 不再经过任何校验——攻击者可配置一个公网 WebDAV 地址，其服务器 302
+        # 跳转到 http://169.254.169.254/（云元数据 IAM 凭据）或任意内网服务。
+        # WebDAV 操作本就不应依赖重定向，遇 3xx 一律按异常拒绝。
+        r = requests.request(
+            method, url, headers=self._headers(), timeout=30,
+            allow_redirects=False, **kw,
+        )
+        if r.status_code in (301, 302, 303, 307, 308):
+            raise HTTPException(400, "检测到重定向跳转，已拒绝（SSRF 防护）")
         if r.status_code in (401, 403):
             raise HTTPException(r.status_code, "认证失败或无权限")
         if r.status_code >= 400:
@@ -559,8 +593,10 @@ class WebDAVAdapter(BaseAdapter):
         r = requests.request(
             "PROPFIND", url, headers={**self._headers(), "Depth": "1",
                                      "Content-Type": 'application/xml'},
-            data=body, timeout=30,
+            data=body, timeout=30, allow_redirects=False,
         )
+        if r.status_code in (301, 302, 303, 307, 308):
+            raise HTTPException(400, "检测到重定向跳转，已拒绝（SSRF 防护）")
         if r.status_code in (401, 403):
             raise HTTPException(r.status_code, "认证失败或无权限")
         if r.status_code >= 400:
@@ -592,7 +628,10 @@ class WebDAVAdapter(BaseAdapter):
     def mkdir(self, lpath: str) -> None:
         import requests
         url = self._url(lpath)
-        r = requests.request("MKCOL", url, headers=self._headers(), timeout=30)
+        r = requests.request("MKCOL", url, headers=self._headers(), timeout=30,
+                             allow_redirects=False)
+        if r.status_code in (301, 302, 303, 307, 308):
+            raise HTTPException(400, "检测到重定向跳转，已拒绝（SSRF 防护）")
         if r.status_code in (401, 403):
             raise HTTPException(r.status_code, "认证失败或无权限")
         if r.status_code not in (200, 201, 204, 301, 405):
@@ -601,7 +640,10 @@ class WebDAVAdapter(BaseAdapter):
     def delete(self, lpath: str) -> None:
         import requests
         url = self._url(lpath)
-        r = requests.request("DELETE", url, headers=self._headers(), timeout=30)
+        r = requests.request("DELETE", url, headers=self._headers(), timeout=30,
+                             allow_redirects=False)
+        if r.status_code in (301, 302, 303, 307, 308):
+            raise HTTPException(400, "检测到重定向跳转，已拒绝（SSRF 防护）")
         if r.status_code in (401, 403):
             raise HTTPException(r.status_code, "认证失败或无权限")
         if r.status_code not in (200, 202, 204, 404):
@@ -612,7 +654,10 @@ class WebDAVAdapter(BaseAdapter):
         r = requests.request(
             "MOVE", self._url(src),
             headers={**self._headers(), "Destination": self._url(dst)}, timeout=30,
+            allow_redirects=False,
         )
+        if r.status_code in (301, 302, 303, 307, 308):
+            raise HTTPException(400, "检测到重定向跳转，已拒绝（SSRF 防护）")
         if r.status_code in (401, 403):
             raise HTTPException(r.status_code, "认证失败或无权限")
         if r.status_code not in (200, 201, 204, 301):
@@ -707,6 +752,13 @@ class S3Adapter(BaseAdapter):
         port = self.conn.get("port")
         if port and port not in (80, 443) and ":" not in endpoint:
             endpoint = endpoint + ":" + str(port)
+        # SSRF 防护（纵深防御，与 validate_rules 同基线）：每次创建客户端前
+        # 复检主机，拒绝云元数据（169.254.169.254）等受保护地址。
+        try:
+            from app.ssrf_guard import assert_safe_host
+            assert_safe_host(endpoint, allow_private=True)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
         return Minio(
             endpoint,
             access_key=self.conn.get("username") or "",

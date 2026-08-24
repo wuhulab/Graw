@@ -20,24 +20,66 @@ router = APIRouter()
 _DB_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 # Redis 控制台危险方法黑名单：run_query 通过反射调用 redis.Redis 的方法，
-# 以下方法可关停服务 / 改配置写任意文件（RCE 链）/ 执行 Lua / 外带数据，
-# 必须与 MySQL/PG 的 SQL 黑名单（drop database / shutdown / grant all）同级拦截。
+# 以下方法可关停服务 / 清空数据 / 改配置写任意文件（RCE 链）/ 执行 Lua /
+# 外带数据，必须与 MySQL/PG 的 SQL 黑名单（drop database / shutdown / grant all）
+# 同级拦截。
+#
+# 安全修复（第八轮审计，Medium）：补齐此前遗漏的高危命令——
+#   flushall/flushdb       清空全部/当前库（数据销毁）
+#   debug_segfault         使 Redis 进程崩溃（DoS）
+#   config_get             泄露 requirepass / dir / dbfilename 等敏感配置
+#   function_*/fcall*      Redis 7 Lua 函数加载与执行
+#   failover/replconf      主从拓扑破坏
+#   monitor/psync/sync     命令流与数据流外带
+#   memory_purge           强制内存清理（DoS）
+#   client_pause/kill      连接级 DoS
+#   module_*               加载原生模块（任意代码执行）
+#   acl_*                  权限篡改
 _REDIS_FORBIDDEN_METHODS = {
     "shutdown",            # 关停远程 Redis（DoS）
+    "shutdown_nosave",
     "config_set",          # 改 dir/dbfilename + save 即任意文件写（RCE 链）
     "config_rewrite",
+    "config_get",          # 泄露 requirepass / dir / dbfilename 等配置
+    "config_resetstat",
     "save", "bgsave",      # 落盘触发上述文件写
     "bgrewriteaof",
     "eval", "evalsha",     # Lua 脚本任意执行
     "script_load", "script",
+    "register_script",     # 加载任意 Lua
+    "function_load", "function_load_code",  # Redis 7 Lua 函数
+    "function_delete", "function_flush", "function_restore",
+    "function_dump", "function_kill", "function_stats",
+    "fcall", "fcall_ro",   # 调用已加载的 Lua 函数
     "replicaof", "slaveof",  # 主从复制外带数据
+    "failover",            # 强制主从切换（拓扑破坏）
+    "replconf",
     "migrate", "restore",  # 跨实例搬数据
     "cluster",             # 集群拓扑破坏
     "swapdb",
+    "flushall", "flushdb",  # 清空全部/当前库（数据销毁）
+    "monitor",             # 监控所有命令流（数据外带）
+    "psync", "sync",       # 复制数据流外带
+    "memory_purge",        # 强制内存清理（DoS）
+    "client_pause", "client_unpause", "client_kill",  # 连接级 DoS
+    "module_load", "module_loadex", "module_unload",  # 模块加载（原生代码）
+    "acl", "acl_setuser", "acl_deluser", "acl_save",  # 权限篡改
     "execute_command",     # 原始命令入口，绕过一切上层过滤
-    "register_script",     # 加载任意 Lua
     "pubsub",
 }
+
+# 按前缀整体封禁的反射方法族（纵深防御：拦截 debug_/config_ 等家族尚未
+# 枚举到的新增变体，避免再次出现"枚举不全"的漏洞模式）
+_REDIS_FORBIDDEN_PREFIX = ("debug_", "config_", "function_", "module_", "acl_", "client_")
+
+
+def _is_forbidden_redis(method: str) -> bool:
+    """判断 Redis 反射方法是否应被禁止（精确名 + 前缀族双保险）。"""
+    if not method or method.startswith("_"):
+        return True
+    if method in _REDIS_FORBIDDEN_METHODS:
+        return True
+    return any(method.startswith(p) for p in _REDIS_FORBIDDEN_PREFIX)
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 DB_FILE = os.path.join(DATA_DIR, "databases.json")
@@ -559,25 +601,52 @@ async def list_databases(conn_id: str):
 #      执行类原语（采用单词边界正则，避免误伤正常标识符）。
 # ---------------------------------------------------------------------------
 def _normalize_sql(sql: str) -> str:
-    """清洗注释并把字符串字面量内容置空，便于安全地做危险原语匹配。
+    """清洗注释并把「字符串字面量」内容置空，便于安全地做危险原语匹配。
 
     危险原语（pg_read_file / into outfile / drop ...）永远不会出现在字符串
     字面量内部，因此把字面量内容置空可避免「列数据/注释含关键词」造成误判，
     同时保留引号外壳以便多语句拆分时正确跳过字面量内的分号。
+
+    安全修复（第八轮审计，High）：此前把单引号与双引号一律当作字符串字面量
+    处理，进入引号后每个字符都被替换为引号外壳（内容整体置空）——但
+    PostgreSQL 中双引号是「标识符引用」（quoted identifier）而非字符串，
+    SELECT "pg_read_file"('/etc/passwd') 经清洗后危险函数名完全消失，
+    全部危险正则不命中，过滤器被彻底绕过（数据库服务端任意文件读写）。
+
+    修复策略：
+      - 单引号 '...'        -> 字符串字面量，内容置空（保留外壳）
+      - 双引号 "..." / 反引号 `...` -> 标识符，内容保留原文，使被引号包裹的
+        危险函数名仍能被单词边界正则命中（过滤器宁可误拦，不可漏拦）
+      - 转义引号（'' / "" / ``）按 SQL 语义处理，避免提前退出引用状态
     """
     out = []
     i, n = 0, len(sql)
-    quote = None
+    quote = None  # 当前引用类型: ' 字符串字面量 / " 标识符 / ` 标识符
     while i < n:
         ch = sql[i]
         if quote:
-            # 保留引号外壳，跳过字面量内容
-            out.append(quote)
+            # 转义引号：连续两个同种引号表示一个字面引号，不结束引用状态
+            if ch == quote and i + 1 < n and sql[i + 1] == quote:
+                if quote == "'":
+                    out.append(quote)  # 字符串内转义引号：保留外壳即可
+                else:
+                    out.append(ch)     # 标识符内转义引号：保留原文
+                i += 2
+                continue
             if ch == quote:
+                out.append(quote)
                 quote = None
+                i += 1
+                continue
+            if quote == "'":
+                # 字符串字面量：内容置空（只保留外壳），避免误判与混淆
+                out.append(quote)
+            else:
+                # 标识符（"..." / `...`）：保留原文，防止过滤绕过
+                out.append(ch)
             i += 1
             continue
-        if ch in ("'", '"'):
+        if ch in ("'", '"', "`"):
             quote = ch
             out.append(ch)
             i += 1
@@ -730,7 +799,7 @@ async def run_query(conn_id: str, req: DBQuery):
             #   eval/evalsha/script_load（Lua 任意执行）、
             #   replicaof/slaveof/migrate/restore/cluster（数据外带与拓扑破坏）、
             #   execute_command（绕过一切上层过滤的原始命令入口）。
-            if method in _REDIS_FORBIDDEN_METHODS or method.startswith("_"):
+            if _is_forbidden_redis(method):
                 raise HTTPException(
                     status_code=403, detail=f"Forbidden redis command: {method}"
                 )

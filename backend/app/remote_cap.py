@@ -38,7 +38,7 @@ LOCAL_PREFIX = (
     "/api/uptime",
     "/api/webstats",
     "/api/rewrite",
-    "/api/siteopts",
+    "/api/sitesopts",
     "/api/waf",
     "/api/tamper",
     "/api/phpversions",

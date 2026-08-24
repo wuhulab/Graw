@@ -541,7 +541,8 @@ async function fetchAgentSecret() {
     agentSecretMsgType.value = 'err'
     return ''
   } catch (e) {
-    agentSecretMsg.value = e?.response?.data?.detail || t('agent.saveFailed')
+    const d = e?.response?.data?.detail
+    agentSecretMsg.value = (typeof d === 'string' && d) ? d : (t('agent.loadFailed') || '').replace('{error}', '')
     agentSecretMsgType.value = 'err'
     return ''
   } finally {
@@ -652,7 +653,8 @@ async function saveAgentCfg() {
     agentMsg.value = t('agent.saved')
     agentMsgType.value = 'ok'
   } catch (e) {
-    agentMsg.value = e?.response?.data?.detail || t('agent.saveFailed')
+    const d = e?.response?.data?.detail
+    agentMsg.value = (typeof d === 'string' && d) ? d : (t('agent.saveFailed') || '').replace('{error}', '')
     agentMsgType.value = 'err'
   } finally {
     agentSaving.value = false

@@ -31,7 +31,11 @@ AGENT_CFG_FILE = os.path.join(DATA_DIR, "agent.json")
 # 时间戳新鲜度窗口（秒）：超过即视为重放/过时，拒绝
 AGENT_TS_WINDOW = int(os.environ.get("GRAW_AGENT_TS_WINDOW", "300"))
 
-_lock = threading.Lock()
+# 使用可重入锁：reveal_secret() 会在持锁状态下调 _load()/_save()，二者各自
+# 也要加同一把锁。若用 threading.Lock（非重入），同线程二次 acquire 会永久
+# 死锁：一旦触发，整个 agent 配置读改全被占死（本机与子节点保存后卡顿、报
+# 保存失败即由此而来）。RLock 允许同线程重入，解除该隐患。
+_lock = threading.RLock()
 _cache: Optional[dict] = None
 
 

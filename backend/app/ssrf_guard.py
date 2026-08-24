@@ -35,6 +35,7 @@ Graw 中多处功能接受「用户提供的 URL」并发起到该地址的服�
      DNS rebinding 的 TOCTOU 窗口；重定向应禁用或逐跳复用本校验。
 """
 from urllib.parse import urlparse
+import re
 import socket
 import ipaddress
 
@@ -71,24 +72,90 @@ def assert_safe_http_url(url: str, *, allow_private: bool = False) -> None:
     hostname = urlparse(url).hostname or ""
     if not hostname:
         raise ValueError("URL 缺少主机名（SSRF 防护）")
+    _assert_resolved_host(hostname, allow_private=allow_private, strict_dns=True)
+
+
+def assert_safe_host(host: str, *, allow_private: bool = True) -> None:
+    """校验裸主机名 / IP（供 FTP/SMB/S3 等非 HTTP 协议的出站连接使用）。
+
+    与 assert_safe_http_url 同基线：解析主机名得到的全部 IP 逐一判定，任一
+    命中受保护区间（回环 / 链路本地 / 组播 / 保留 / 未指定，含云 metadata
+    169.254.169.254）即拒绝；allow_private 控制是否放行 RFC1918/ULA 私网
+    地址（网络存储场景默认允许内网，但受保护地址始终拒绝）。
+
+    安全修复（第八轮审计，Medium）：此前 FTP/FTPS/SMB/S3 连接仅做字符
+    白名单校验，169.254.169.254 等云元数据地址可直接连接，构成管理员级
+    SSRF（内网探测 / 元数据凭据窃取）。
+    """
+    if not host or not isinstance(host, str):
+        raise ValueError("主机不能为空（SSRF 防护）")
+    hostname = (host or "").strip()
+    # 剥离可能的端口/协议前缀（如 "host:port" / "https://host" / "[::1]:22"）
+    if "://" in hostname:
+        hostname = urlparse(hostname).hostname or hostname
+    _ipv6_bracket = re.match(r"^\[([0-9A-Fa-f:.]+)\](?::\d+)?$", hostname)
+    if _ipv6_bracket:
+        hostname = _ipv6_bracket.group(1)
+    elif hostname.startswith("[") and hostname.endswith("]"):
+        hostname = hostname.strip("[]")
+    # IPv6 字面量（如 fe80::1）整体处理，不做冒号拆端口
+    try:
+        ipaddress.ip_address(hostname)
+        is_literal = True
+    except ValueError:
+        is_literal = False
+    if not is_literal and ":" in hostname:
+        hostname = hostname.split(":", 1)[0].strip()
+    if not hostname:
+        raise ValueError("主机缺少有效主机名（SSRF 防护）")
+    # 注意：strict_dns=False —— 主机名当前解析失败（如内网主机名仅能在服务器
+    # 侧网络解析 / 离线环境）时放行交由连接阶段兜底：解析不了就连接不上，
+    # 无 SSRF 风险；IP 字面量与「能解析到受保护地址」的主机名仍在此处拒绝。
+    _assert_resolved_host(hostname, allow_private=allow_private, strict_dns=False)
+
+
+def _assert_resolved_host(hostname: str, *, allow_private: bool, strict_dns: bool = False) -> None:
+    """解析主机名并对全部解析 IP 执行受保护地址判定（HTTP/裸主机共用）。
+
+    :param strict_dns: True（HTTP URL 场景）时，主机名无法解析即拒绝
+        （fail-closed）；False（FTP/SMB/S3 裸主机场景）时解析失败放行，
+        交由实际连接阶段兜底。
+    """
+    # IP 字面量快速路径：直接判定，无需 DNS（也避免离线环境解析失败）
+    try:
+        literal_ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        literal_ip = None
+    if literal_ip is not None:
+        _assert_ip(literal_ip, hostname, allow_private)
+        return
     try:
         infos = socket.getaddrinfo(hostname, None)
-    except OSError as exc:
-        raise ValueError(f"无法解析主机名: {hostname}（SSRF 防护）") from exc
+    except OSError:
+        if strict_dns:
+            raise ValueError(f"无法解析主机名: {hostname}（SSRF 防护）")
+        return  # 非严格模式：解析失败放行，连接阶段自然失败（无 SSRF 风险）
     if not infos:
-        raise ValueError(f"主机名无可解析地址: {hostname}（SSRF 防护）")
+        if strict_dns:
+            raise ValueError(f"主机名无可解析地址: {hostname}（SSRF 防护）")
+        return
     for info in infos:
         addr = info[4][0] if isinstance(info[4], (tuple, list)) else info[4]
         try:
             ip = ipaddress.ip_address(addr)
         except ValueError as exc:
             raise ValueError(f"非法 IP 地址: {addr}（SSRF 防护）") from exc
-        reason = _blocked_reason(ip)
-        if reason is not None:
-            raise ValueError(
-                f"目标主机 {hostname} 解析为受保护地址（{reason}: {ip}），已拒绝（SSRF 防护）"
-            )
-        if not allow_private and ip.is_private:
-            raise ValueError(
-                f"目标主机 {hostname} 不是公网地址（{ip}），已拒绝（SSRF 防护）"
-            )
+        _assert_ip(ip, hostname, allow_private)
+
+
+def _assert_ip(ip, hostname: str, allow_private: bool) -> None:
+    """对单个 IP 执行受保护区间判定（HTTP/裸主机共用）。"""
+    reason = _blocked_reason(ip)
+    if reason is not None:
+        raise ValueError(
+            f"目标主机 {hostname} 解析为受保护地址（{reason}: {ip}），已拒绝（SSRF 防护）"
+        )
+    if not allow_private and ip.is_private:
+        raise ValueError(
+            f"目标主机 {hostname} 不是公网地址（{ip}），已拒绝（SSRF 防护）"
+        )

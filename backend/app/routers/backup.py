@@ -251,7 +251,12 @@ def _webdav_url(remote: dict, path: str = "") -> str:
 
 def _webdav_request(method: str, remote: dict, path: str, headers_extra: dict = None,
                     timeout: int = 30, **kw):
-    """执行 WebDAV HTTP 请求，统一处理认证失败与网络异常。"""
+    """执行 WebDAV HTTP 请求，统一处理认证失败与网络异常。
+
+    SSRF 防护（第八轮审计修复，High）：强制 allow_redirects=False 并拒绝 3xx。
+    ssrf_guard 只校验初始 URL，跟随 30x 重定向会直达 169.254.169.254（云
+    元数据）或内网服务，构成 SSRF 绕过。
+    """
     import requests
 
     url = _webdav_url(remote, path)
@@ -259,9 +264,14 @@ def _webdav_request(method: str, remote: dict, path: str, headers_extra: dict = 
     if headers_extra:
         headers.update(headers_extra)
     try:
-        r = requests.request(method, url, headers=headers, timeout=timeout, **kw)
+        r = requests.request(
+            method, url, headers=headers, timeout=timeout,
+            allow_redirects=False, **kw,
+        )
     except requests.RequestException as e:
         raise HTTPException(status_code=502, detail=f"WebDAV 请求失败：{e}")
+    if r.status_code in (301, 302, 303, 307, 308):
+        raise HTTPException(status_code=400, detail="检测到重定向跳转，已拒绝（SSRF 防护）")
     if r.status_code in (401, 403):
         raise HTTPException(status_code=401, detail="WebDAV 认证失败或无权限")
     return r
@@ -275,12 +285,15 @@ def _remote_ensure_dir(remote: dict, path: str) -> None:
 
     try:
         r = requests.request("MKCOL", _webdav_url(remote, path),
-                             headers=_remote_auth_header(remote), timeout=30)
+                             headers=_remote_auth_header(remote), timeout=30,
+                             allow_redirects=False)
     except requests.RequestException:
         return  # 网络问题静默，由后续 PUT 步骤最终报错
+    if r.status_code in (301, 302, 303, 307, 308):
+        raise HTTPException(status_code=400, detail="检测到重定向跳转，已拒绝（SSRF 防护）")
     if r.status_code in (401, 403):
         raise HTTPException(status_code=401, detail="WebDAV 认证失败或无权限")
-    # 405 = 已存在，301/201/204 = 创建成功，均视为 OK
+    # 405 = 已存在，201/204 = 创建成功，均视为 OK
 
 
 def _remote_upload(remote: dict, local_path: str, remote_dir: str, filename: str) -> None:
@@ -292,11 +305,13 @@ def _remote_upload(remote: dict, local_path: str, remote_dir: str, filename: str
     try:
         with open(local_path, "rb") as f:
             r = requests.request("PUT", url, headers=_remote_auth_header(remote),
-                                 data=f, timeout=600)
+                                 data=f, timeout=600, allow_redirects=False)
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"读取本地备份文件失败：{e}")
     except requests.RequestException as e:
         raise HTTPException(status_code=502, detail=f"WebDAV 上传失败：{e}")
+    if r.status_code in (301, 302, 303, 307, 308):
+        raise HTTPException(status_code=400, detail="检测到重定向跳转，已拒绝（SSRF 防护）")
     if r.status_code in (401, 403):
         raise HTTPException(status_code=401, detail="WebDAV 认证失败或无权限")
     if r.status_code not in (200, 201, 204):
