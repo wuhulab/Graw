@@ -1,0 +1,49 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Programming environment
+.venv
+__pycache__
+.vscode
+backend/data/*
+data/
+
+# playwright
+.playwright-cli/
+.pw-profile/
+.pw-test/
+
+# AI use
+TODO.md
+.trae/
+.workbuddy/
+outputs/
+
+# Other projects
+app-store/
+graw_site/
+
+# Maintain the server side
+graw_vip/
+backend/reset_vip.py  

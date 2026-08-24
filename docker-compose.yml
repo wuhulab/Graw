@@ -1,0 +1,70 @@
+# ============================================================
+# Graw Server Panel - Docker Compose 编排（完整管理宿主机模式）
+#
+# 方案说明：
+#   将宿主机根目录 "/" 挂载到容器内 "/host"，并通过环境变量
+#   HOST_ROOT=/host 让面板后端（app/hostfs.py 适配层）据此：
+#     - 读写宿主机文件（文件管理、网站配置、日志、证书等）
+#     - 通过 chroot /host 执行宿主机命令（nginx/certbot/iptables/crontab）
+#   配合 privileged + host 网络 + pid:host，面板可完整管理宿主机。
+#
+# 高权限说明（面板必需）：
+#   - privileged  授予完整内核能力（访问设备、iptables、chroot、挂载等）
+#   - network_mode: host  使用宿主机网络，管理端口/防火墙，直接监听 8000
+#   - pid: host    共享宿主机进程命名空间（进程管理/系统监控）
+#   - 挂载 Docker socket  启用容器与镜像管理
+#
+# 安全警告：该容器拥有宿主机 root 级权限，仅部署于可信环境，
+# 请务必修改默认密码并妥善保护登录凭据。
+#
+# 用法:
+#   启动:      docker compose up -d --build
+#   查看日志:  docker compose logs -f
+#   停止:      docker compose down
+#
+# 注意: privileged / host 网络 / pid host 均为 Linux 特性，
+#       在 Docker Desktop for Windows 上无法完整生效。
+# ============================================================
+
+services:
+  graw:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: shunx/graw
+    container_name: graw-panel
+    # ---------- 高权限运行（面板必需） ----------
+    privileged: true                # 授予容器全部能力
+    network_mode: host              # 使用宿主机网络，直接监听宿主机 8000 端口
+    pid: host                       # 共享宿主机进程命名空间（进程管理/监控）
+
+    # ---------- 数据与宿主机资源挂载 ----------
+    volumes:
+      # 面板自身数据（用户账号、签名密钥、站点/证书/任务配置等）。
+      # 用 bind mount 绑定到宿主目录，而不是匿名命名卷：这样才能让
+      # 宿主机 docker 直接读到 appstore 的 docker-compose.yml（见 GRAW_HOST_DATA）。
+      - /opt/graw/data:/app/backend/data
+      # 宿主机根目录：面板据此完整管理宿主机文件系统与命令
+      - /:/host:rslave
+      # Docker 管理功能（容器 / 镜像 / 日志）：复用宿主机 Docker daemon 的 socket
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    environment:
+      # 告知后端宿主机根目录挂载点，启用 /host 模式（关键配置）
+      - HOST_ROOT=/host
+      # 宿主上 === 面板 data 目录的路径：宿主 docker 据此读取 compose 文件/导出备份
+      - GRAW_HOST_DATA=/opt/graw/data
+      - TZ=Asia/Shanghai
+
+    # 使用 host 网络后，端口由宿主机直接占用（8000），无需 ports 映射。
+    # 若改用 bridge 网络，可取消下面注释并删除 network_mode 行。
+    # ports:
+    #   - "8000:8000"
+
+    restart: unless-stopped
+
+# 若希望用命名卷持久化面板数据（非本机化），可注释上方 bind mount 行、
+# 取消开下面声明；但此时宿主 docker 无法直接读到 appstore 的 compose 文件，
+# 需配合把 GRAW_HOST_DATA 指向该卷在宿主上的实际路径。
+# volumes:
+#   graw-data:

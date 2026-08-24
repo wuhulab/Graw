@@ -1,0 +1,250 @@
+/* macOS 26 inspired base */
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --text-primary: #1d1d1f;
+  --text-secondary: #6e6e73;
+  --text-tertiary: #8e8e93;
+  --text-on-accent: #ffffff;
+
+  --accent: #0a84ff;
+  --accent-hover: #006edc;
+  --danger: #ff3b30;
+
+  --surface: #ffffff;
+  --surface-elevated: rgba(255, 255, 255, 0.72);
+  --surface-sunken: #f5f5f7;
+  --surface-hover: rgba(0, 0, 0, 0.05);
+  --surface-active: rgba(0, 0, 0, 0.08);
+
+  --separator: rgba(0, 0, 0, 0.1);
+  --border-soft: rgba(0, 0, 0, 0.08);
+
+  --radius-window: 12px;
+  --radius-card: 16px;
+  --radius-control: 8px;
+  --radius-pill: 999px;
+
+  --shadow-window: 0 24px 60px rgba(0, 0, 0, 0.25), 0 2px 6px rgba(0, 0, 0, 0.12);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+html, body, #app {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text-primary);
+  background: #000;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.36);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+/* Window (legacy .win7-* kept for compatibility) */
+.win7-window {
+  position: absolute;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-window);
+  box-shadow: var(--shadow-window);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.win7-titlebar {
+  height: 38px;
+  background: rgba(246, 246, 248, 0.85);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid var(--separator);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  user-select: none;
+  cursor: default;
+  position: relative;
+}
+.win7-titlebar.inactive {
+  background: rgba(246, 246, 248, 0.7);
+  color: var(--text-secondary);
+}
+
+/* Traffic light style buttons */
+.win7-btn {
+  width: 12px;
+  height: 12px;
+  border: 0.5px solid rgba(0, 0, 0, 0.12);
+  border-radius: 50%;
+  background: #d6d6d8;
+  margin-left: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 0;
+  line-height: 1;
+  color: transparent;
+  padding: 0;
+}
+.win7-btn:hover { color: rgba(0, 0, 0, 0.55); font-size: 9px; }
+.win7-btn.close { background: #ff5f57; }
+.win7-btn.minimize, .win7-btn.min { background: #febc2e; }
+.win7-btn.maximize, .win7-btn.max { background: #28c840; }
+.win7-btn.close:hover { background: #ff5f57; color: rgba(0,0,0,0.65); }
+
+.win7-content {
+  flex: 1;
+  overflow: auto;
+  padding: 12px;
+  background: var(--surface);
+}
+
+/* Generic card */
+.glass-card {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: saturate(180%) blur(24px);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  padding: 14px;
+  color: var(--text-primary);
+}
+
+/* Taskbar => Dock */
+.taskbar {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 10px;
+  height: 60px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  backdrop-filter: saturate(180%) blur(30px);
+  -webkit-backdrop-filter: saturate(180%) blur(30px);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 9999;
+  right: auto;
+  width: auto;
+  max-width: calc(100% - 40px);
+}
+.taskbar-start {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 14px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  border: none;
+}
+.taskbar-start:hover { background: rgba(0, 0, 0, 0.08); }
+.taskbar-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  height: 44px;
+  border-radius: 12px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  max-width: 180px;
+  overflow: hidden;
+  white-space: nowrap;
+  position: relative;
+}
+.taskbar-item:hover { background: rgba(0, 0, 0, 0.06); }
+.taskbar-item.active { background: rgba(0, 0, 0, 0.08); }
+.taskbar-item.active::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-primary);
+}
+.taskbar-clock {
+  margin-left: 6px;
+  padding: 0 12px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: 12px;
+  border-left: 1px solid var(--separator);
+}
+
+/* Shortcut */
+.shortcut-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 76px;
+  padding: 8px 6px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: #fff;
+  font-size: 11px;
+  text-align: center;
+  gap: 6px;
+}
+.shortcut-item:hover { background: rgba(255, 255, 255, 0.12); }
+.shortcut-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #fff;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}

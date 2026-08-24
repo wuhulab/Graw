@@ -1,0 +1,756 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #app {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  user-select: none;
+  color: #1d1d1f;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  font-family: inherit;
+}
+
+.desktop {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background-color: #1f2937;
+  background-image: url("./hero.png");
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
+}
+
+/* 动态壁纸层：视频壁纸 / 多背景轮播（置于桌面内容之下） */
+.wallpaper-video,
+.wallpaper-carousel {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: #1f2937;
+}
+.wallpaper-video video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.wallpaper-carousel-slide {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 1.2s ease-in-out;
+}
+.wallpaper-carousel-slide.active {
+  opacity: 1;
+}
+.wallpaper-carousel-mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.18);
+}
+.wallpaper-video-mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+/* Card */
+.win7-card {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.08);
+  backdrop-filter: saturate(180%) blur(24px);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  padding: 14px;
+}
+
+.win7-card .card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1d1d1f;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.win7-card .card-title .tabs {
+  display: flex;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 2px;
+  border-radius: 8px;
+}
+
+.win7-card .card-title .tabs button {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #1d1d1f;
+  font-weight: 500;
+}
+
+.win7-card .card-title .tabs button.active {
+  background: #ffffff;
+  color: #1d1d1f;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* Desktop layout */
+.desktop-content {
+  position: absolute;
+  inset: 0;
+  bottom: 84px;
+  display: grid;
+  grid-template-columns: auto 1fr 360px;
+  gap: 18px;
+  padding: 18px;
+  z-index: 1; /* 置于动态壁纸层之上 */
+}
+
+/* Shortcuts column: 每列固定 6 个，行高自适应，底部不留大片空白 */
+.shortcuts {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(6, minmax(60px, auto));
+  grid-auto-columns: 80px;
+  column-gap: 14px;
+  row-gap: 14px;
+  align-content: start;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.shortcut {
+  width: 80px;
+  min-height: 60px;
+  text-align: center;
+  cursor: pointer;
+  padding: 4px 0;
+  border-radius: 10px;
+  transition: background 0.15s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: hidden;
+}
+
+.shortcut:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.shortcut.selected {
+  background: rgba(255, 255, 255, 0.22);
+  outline: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.shortcut .icon {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 14px;
+  color: #fff;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.shortcut .label {
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.2;
+  margin-top: 4px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  width: 76px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Right cards column */
+.right-cards {
+  display: grid;
+  grid-template-rows: 1fr 1fr 1fr;
+  gap: 14px;
+  min-height: 0;
+}
+
+.ring-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.ring-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.ring-cell .ring-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #1d1d1f;
+  margin-top: 2px;
+}
+
+.chart-area {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+}
+
+/* Dock (replaces taskbar) */
+.taskbar {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 12px;
+  height: 64px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 22px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  backdrop-filter: saturate(180%) blur(30px);
+  -webkit-backdrop-filter: saturate(180%) blur(30px);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 9000;
+  width: auto;
+  max-width: calc(100% - 40px);
+}
+
+.start-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.06);
+  border: none;
+  cursor: pointer;
+  margin-right: 4px;
+  font-size: 22px;
+  color: #1d1d1f;
+}
+
+.start-button:hover { background: rgba(0, 0, 0, 0.12); }
+
+.task-items {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  overflow-x: auto;
+}
+
+.task-item {
+  width: 52px;
+  height: 52px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  color: #1d1d1f;
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  position: relative;
+  padding: 2px;
+}
+
+.task-item:hover { background: rgba(0, 0, 0, 0.06); }
+.task-item.active { background: rgba(0, 0, 0, 0.08); }
+.task-item.active::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #1d1d1f;
+}
+
+.task-item .icon { font-size: 20px; }
+.task-item .title {
+  max-width: 48px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.clock {
+  color: #1d1d1f;
+  font-size: 11px;
+  text-align: right;
+  padding: 0 14px;
+  height: 52px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-left: 1px solid rgba(0, 0, 0, 0.1);
+  margin-left: 4px;
+  line-height: 1.3;
+}
+
+/* 当前管理主机指示（多机管理） */
+.host-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: #0a7d3b;
+}
+.host-badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #0a7d3b;
+  flex-shrink: 0;
+}
+.host-badge.remote {
+  color: #006ee6;
+}
+.host-badge.remote .dot {
+  background: #0a84ff;
+}
+
+.user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px 0 10px;
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.04);
+  font-size: 12px;
+  color: #1d1d1f;
+  cursor: pointer;
+  font-weight: 500;
+  margin-left: 4px;
+  user-select: none;
+}
+
+.user-chip:hover { background: rgba(0, 0, 0, 0.1); }
+.user-chip:active { background: rgba(0, 0, 0, 0.16); }
+
+.user-chip .name {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-chip .role-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(10, 132, 255, 0.16);
+  color: #0a3d7a;
+}
+
+.start-menu {
+  position: absolute;
+  bottom: 76px;
+  left: 12px;
+  min-width: 200px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+  backdrop-filter: saturate(180%) blur(28px);
+  -webkit-backdrop-filter: saturate(180%) blur(28px);
+  padding: 6px;
+  z-index: 9100;
+  user-select: none;
+}
+.start-header {
+  padding: 6px 12px 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  margin-bottom: 4px;
+}
+.start-list { display: flex; flex-direction: column; gap: 2px; }
+.start-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 12px;
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #1d1d1f;
+  font-family: inherit;
+}
+.start-item:hover { background: rgba(0, 0, 0, 0.06); }
+.start-item.danger { color: #c0392b; }
+.start-item.danger:hover { background: rgba(255, 59, 48, 0.12); }
+
+.task-item.icon-only { padding: 2px; }
+.task-item.no-text { padding: 2px; }
+
+/* Window */
+.window {
+  position: absolute;
+  background: rgba(246, 246, 248, 0.92);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25), 0 2px 6px rgba(0, 0, 0, 0.12);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  display: flex;
+  flex-direction: column;
+  min-width: 320px;
+  min-height: 200px;
+  overflow: hidden;
+}
+
+.window .titlebar {
+  height: 38px;
+  background: rgba(246, 246, 248, 0.85);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  cursor: grab;
+  flex-shrink: 0;
+  gap: 8px;
+  position: relative;
+}
+
+.window .titlebar.dragging { cursor: grabbing; }
+
+.window .titlebar .icon {
+  font-size: 14px;
+  position: absolute;
+  left: 12px;
+}
+
+.window .titlebar .title {
+  flex: 1;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1d1d1f;
+  pointer-events: none;
+}
+
+.window .titlebar .actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.window .titlebar .actions button {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  color: #1d1d1f;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.window .titlebar .actions button:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.window .titlebar .actions button.close:hover {
+  background: #e01b24;
+  color: #ffffff;
+}
+
+.window .content {
+  flex: 1;
+  overflow: auto;
+  background: #ffffff;
+}
+
+/* Tables */
+table.dt {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+table.dt th, table.dt td {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  padding: 8px 10px;
+  text-align: left;
+}
+table.dt th {
+  background: #f5f5f7;
+  position: sticky;
+  top: 0;
+  font-weight: 600;
+  color: #1d1d1f;
+}
+table.dt tr:hover td { background: #f5f5f7; }
+
+.btn {
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: #ffffff;
+  cursor: pointer;
+  color: #1d1d1f;
+  margin-right: 4px;
+  font-weight: 500;
+}
+.btn:hover { background: #f5f5f7; }
+.btn:active { background: #ebebed; }
+.btn.danger {
+  background: #ff3b30;
+  color: #ffffff;
+  border-color: transparent;
+}
+.btn.danger:hover { background: #e0342a; }
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f5f5f7;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  font-size: 12px;
+}
+
+.toolbar input[type='text'] {
+  flex: 1;
+  padding: 5px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: #ffffff;
+  color: #1d1d1f;
+}
+.toolbar input[type='text']:focus {
+  outline: none;
+  border-color: #0a84ff;
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.2);
+}
+
+.empty {
+  padding: 24px;
+  text-align: center;
+  color: #8e8e93;
+  font-size: 12px;
+}
+
+.notes-area {
+  width: 100%;
+  height: 100%;
+  border: none;
+  resize: none;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 12px;
+  background: transparent;
+  outline: none;
+  color: #1d1d1f;
+}
+
+.sysinfo {
+  font-size: 11px;
+  padding: 10px;
+  line-height: 1.7;
+}
+
+.sysinfo .row {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  padding: 4px 0;
+}
+
+.sysinfo .row .k { color: #6e6e73; font-weight: 500; }
+.sysinfo .row .v { color: #1d1d1f; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
+/* ============================================================
+   移动端轻量响应式适配（手机宽度 <= 768px）
+   桌面布局转为宫格：快捷方式成网格、窗口全屏化、右侧卡片隐藏、
+   底栏简化。不重写任何窗口组件，仅通过媒体查询覆盖布局。
+   ============================================================ */
+@media (max-width: 768px) {
+  /* 桌面内容：单列，去掉右侧卡片 */
+  .desktop-content {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 10px;
+    bottom: 76px;
+    overflow: hidden;
+  }
+
+  /* 快捷方式：从「每列 6 个」改为横向自适应宫格。
+     必须完整覆盖桌面端的三条 grid 规则（grid-auto-flow / grid-template-columns /
+     grid-template-rows），否则残留的 repeat(6, minmax(60px,auto)) 会导致
+     行高错乱、出现「上部拥挤、下部空闲」。 */
+  .shortcuts {
+    display: grid;
+    grid-auto-flow: row;
+    grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+    grid-template-rows: none;
+    grid-auto-rows: 92px;
+    column-gap: 8px;
+    row-gap: 8px;
+    align-content: start;
+    overflow-y: auto;
+  }
+
+  .shortcut {
+    width: auto;
+    height: 86px;
+    min-height: 0;
+    padding: 4px 2px;
+    justify-content: flex-start;
+    box-sizing: border-box;
+  }
+
+  .shortcut .icon {
+    width: 50px;
+    height: 50px;
+    font-size: 26px;
+    border-radius: 12px;
+    flex-shrink: 0;
+  }
+
+  .shortcut .label {
+    width: 100%;
+    font-size: 11px;
+    margin-top: 2px;
+  }
+
+  /* 右侧监控卡片：手机屏幕隐藏（空间有限），桌面端不受影响 */
+  .right-cards {
+    display: none;
+  }
+
+  /* 窗口：全屏化，去掉定位偏移与圆角 */
+  .window {
+    left: 0 !important;
+    top: 0 !important;
+    width: 100vw !important;
+    height: calc(100vh - 66px) !important;
+    border-radius: 0;
+    border: none;
+    z-index: 9000;
+  }
+
+  .window .titlebar {
+    height: 40px;
+    padding: 0 8px;
+  }
+
+  /* 窗口内容区保持 flex 撑满（勿改 height:auto，会被窗口 overflow:hidden
+     裁剪导致内部组件无法滚动，例如容器编辑/端口配置等长内容）。 */
+  .window .content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  /* 底栏：横向铺满，精简高度 */
+  .taskbar {
+    left: 0;
+    right: 0;
+    transform: none;
+    bottom: 0;
+    width: 100%;
+    max-width: 100%;
+    height: 56px;
+    border-radius: 0;
+    padding: 4px 6px;
+    gap: 2px;
+    justify-content: flex-start;
+  }
+
+  .start-button {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+  }
+
+  .task-item {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* 时钟与主机徽标在手机上隐藏（空间有限） */
+  .clock {
+    display: none;
+  }
+
+  .host-badge {
+    display: none;
+  }
+
+  .user-chip .name {
+    max-width: 60px;
+  }
+
+  /* 开始菜单随底栏位置调整 */
+  .start-menu {
+    bottom: 62px;
+    left: 8px;
+    right: 8px;
+    min-width: 0;
+  }
+
+  /* 移动端工具栏换行，避免按钮溢出 */
+  .toolbar {
+    flex-wrap: wrap;
+  }
+
+  /* 移动端表格允许横向滚动（保留表头吸附） */
+  .table-wrap,
+  table.dt {
+    font-size: 11px;
+  }
+}

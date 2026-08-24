@@ -1,0 +1,21 @@
+fastapi==0.115.14
+uvicorn[standard]==0.30.6
+psutil==6.0.0
+docker==7.1.0
+websockets==12.0
+pydantic==2.9.2
+python-multipart==0.0.31
+pyjwt==2.9.0
+bcrypt==4.2.0
+pymysql==1.1.1
+redis==8.1.0
+psycopg2-binary==2.9.12
+pymongo==4.17.0
+pyyaml==6.0.3
+# 网络储存（SMB / 对象存储 S3 兼容）：FTP/FTPS 用标准库 ftplib，WebDAV 用 requests
+smbprotocol==1.17.0
+minio==7.2.20
+# SSH 远程节点（多机管理）：用 paramiko 做密码认证，避免依赖控制器主机
+# 安装 sshpass（Linux 工具，Windows 上无法直接可用）
+# 5.0.0 修复 CVE-2026-44405（rsakey.py 允许 SHA-1 签名算法降级）
+paramiko==5.0.0
