@@ -224,10 +224,20 @@ def _should_agent_proxy(path: str) -> bool:
 #      因为代理附加的是 agent 的管理员令牌，子节点侧不会拦截。
 # ---------------------------------------------------------------------------
 # 非管理员可代理的路径前缀 -> 允许的 HTTP 方法（与各路由 PROTECTED 级别一致）
+#
+# 安全修复（第九轮审计，High）：此白名单中的路径经代理转发时，原始
+# Authorization 会被替换为 agent 的【管理员】JWT（见 agent_client.agent_proxy）。
+# 因此只有「子节点侧鉴权等级 ≤ 登录即可」的接口才能进入白名单——
+# 任何子节点侧为 require_admin 的接口一旦命中白名单前缀，就会被放大为
+# 非管理员可访问（越权）。据此：
+#   - /api/loginlog 已移除：子节点侧 /list、/clear、/config、/test-alert 均为
+#     require_admin；代理后 /list 会被 agent 管理员令牌放行，低权限用户即可
+#     读取全部用户登录日志（含管理员 IP/设备/时间），构成越权信息泄露。
+#   - 其余前缀保留：/api/system、/api/notes、/api/tamper 在子节点侧均为
+#     「登录即可」级别（_PROTECTED / PROTECTED / _READ），无权限放大。
 _PROXY_USER_SAFE = {
     "/api/system": ("GET",),        # 系统概览/监控（_PROTECTED）
     "/api/notes": ("GET", "POST"),  # 备忘录读写（PROTECTED）
-    "/api/loginlog": ("GET",),      # 登录历史（PROTECTED；list/clear 内部要求 admin）
     "/api/tamper": ("GET",),        # 防篡改状态（_READ；写操作为 admin）
 }
 

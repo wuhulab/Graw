@@ -1574,6 +1574,25 @@ def _parse_registries_toml(content: str) -> dict:
     return result
 
 
+def _toml_str(value: str) -> str:
+    """TOML 基础字符串字面量（兜底转义）：转义反斜杠、双引号与换行/制表。
+
+    TOML 基础字符串不能包含裸换行（会提前终止字符串字面量），因此除 \" 与
+    \\\\ 外，\\n/\\r/\\t 必须转为转义序列。防御纵深：即使调用方绕过
+    _validate_registry_value 传入含 TOML 结构字符的值（历史存量 / 其它调用
+    路径），转义后也无法逃逸字符串字面量注入新的表/键（第九轮审计修复）。
+    """
+    escaped = (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
+    return '"' + escaped + '"'
+
+
 def _build_registries_toml(search: list, mirrors: list, private: list) -> str:
     """生成 registries.conf (TOML)，把镜像加速作为 docker.io 的 mirror。"""
     lines = ["# 由 Graw 面板生成，请勿手动编辑本文件头", ""]
@@ -1587,11 +1606,11 @@ def _build_registries_toml(search: list, mirrors: list, private: list) -> str:
     for m in mirrors:
         lines.append("")
         lines.append("[[registry.mirror]]")
-        lines.append(f'location = "{m}"')
+        lines.append(f"location = {_toml_str(m)}")
     for p in private:
         lines.append("")
         lines.append("[[registry]]")
-        lines.append(f'location = "{p}"')
+        lines.append(f"location = {_toml_str(p)}")
         lines.append("insecure = true")
     return "\n".join(lines) + "\n"
 
@@ -1650,6 +1669,26 @@ async def update_docker_config(req: ConfigRequest):
     return await asyncio.to_thread(_update_docker_config_sync, req)
 
 
+# 镜像加速/私有仓库地址白名单：仅允许 域名 / IP / 端口 / 路径 常用字符。
+# 值会被拼入 registries.conf（TOML）的 location = "..." 字符串字面量，
+# 若允许 " \ [ ] # 换行等字符可逃逸字符串注入任意 TOML 结构（第九轮审计修复，
+# 中危：此前仅 strip()，可注入额外 [[registry]] 表篡改镜像源或破坏配置）。
+_REGISTRY_VALUE_RE = re.compile(r"^[A-Za-z0-9._:/@-]{1,253}$")
+
+
+def _validate_registry_value(value: str, field: str) -> str:
+    """校验并规范化单个镜像仓库地址，拒绝可破坏 TOML 结构的字符。"""
+    v = (value or "").strip()
+    if not v:
+        return ""
+    if not _REGISTRY_VALUE_RE.match(v):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{field} 含非法字符（仅允许字母/数字/._:/@-，长度 ≤253）",
+        )
+    return v
+
+
 def _update_docker_config_sync(req: ConfigRequest):
     try:
         get_backend()
@@ -1657,9 +1696,9 @@ def _update_docker_config_sync(req: ConfigRequest):
         raise
     engine, config_path, config_type = _engine_config_path()
 
-    # 清理空项
-    mirrors = [m.strip() for m in (req.mirrors or []) if m and m.strip()]
-    private = [p.strip() for p in (req.private_registries or []) if p and p.strip()]
+    # 清理空项 + 字符白名单校验（防 TOML 注入）
+    mirrors = [_validate_registry_value(m, "镜像加速地址") for m in (req.mirrors or []) if m and m.strip()]
+    private = [_validate_registry_value(p, "私有仓库地址") for p in (req.private_registries or []) if p and p.strip()]
     if not req.mirror_enabled:
         mirrors = []
 

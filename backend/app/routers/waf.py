@@ -404,6 +404,11 @@ def _render_acl(acl: dict) -> list:
     """渲染单条自定义 ACL 为 nginx if 规则。
 
     match: uri|ip|ua|args|method | op: eq|regex|contains|starts | action: allow|deny|challenge
+
+    安全修复（第九轮审计，中危）：所有插值一律用双引号包裹。nginx if 表达式中
+    未加引号的正则/字符串遇到空格、#（行注释符）、括号等字符会截断或注释，
+    生成语法错误的片段（持久 DoS）。值内的双引号已在 _validate_acl 统一拒绝，
+    因此包裹后值中的空格 / # / ( ) / | 均按正则字面量处理，无法逃逸。
     """
     match = acl.get("match", "uri")
     op = acl.get("op", "eq")
@@ -414,13 +419,13 @@ def _render_acl(acl: dict) -> list:
     var = {"uri": "$request_uri", "ip": "$remote_addr", "ua": "$http_user_agent",
            "args": "$args", "method": "$request_method"}.get(match, "$request_uri")
     if op == "regex":
-        cond = f"({var} ~* {value})"
+        cond = f'({var} ~* "{value}")'
     elif op == "contains":
-        cond = f"({var} ~ {re.escape(value)})"
+        cond = f'({var} ~ "{re.escape(value)}")'
     elif op == "starts":
-        cond = f"({var} ~ ^{re.escape(value)})"
+        cond = f'({var} ~ "^{re.escape(value)}")'
     else:  # eq
-        cond = f"({var} = {value})"
+        cond = f'({var} = "{value}")'
     if action == "allow":
         return [f"    if {cond} {{ allow all; }}"]
     if action == "challenge":
@@ -752,6 +757,13 @@ def _validate_acl(x: dict) -> dict:
         except re.error:
             raise HTTPException(status_code=400, detail="ACL value 正则非法")
         _reject_control(value, "ACL value")
+        # 安全修复（第九轮审计，中危）：regex 分支此前跳过 _validate_ng_value，
+        # 且渲染时值直接裸拼进 `if ($var ~* <value>)`（未加引号包裹），空格 / #
+        # 等字符可截断 nginx 表达式或把后续内容注释掉，生成语法错误的 nginx
+        # 片段并写入磁盘，导致 reload 失败、重启后 nginx 无法加载（持久 DoS）。
+        # 此处补上与其它分支一致的字符校验（拒绝 " ; { } 与控制字符），
+        # 配合 _render_acl 的双引号包裹，彻底封堵配置注入。
+        _validate_ng_value(value, "ACL value")
     else:
         _validate_ng_value(value, "ACL value")
     return {"id": str(x.get("id") or uuid.uuid4().hex[:8]), "match": match,
