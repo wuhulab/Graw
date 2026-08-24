@@ -135,8 +135,12 @@ def _scan_weak_passwords() -> list:
             if kind == "weak" and (uname, weak) in hits:
                 findings.append({
                     "level": "medium",
-                    "title": f"账号「{uname}」密码过于简单（{weak}）",
-                    "detail": "该密码命中常见弱口令字典，容易被暴力破解。",
+                    # 安全修复（第十轮审计，Medium）：不回显命中的明文弱密码。
+                    # 此前 title 直接带 {weak}，多管理员场景下任意管理员运行
+                    # 体检即可确认/获知其他管理员账号的真实明文密码，等价于
+                    # 在线爆破辅助。仅提示命中常见弱口令，不影响排查价值。
+                    "title": f"账号「{uname}」密码过于简单（命中常见弱口令字典）",
+                    "detail": "该密码命中常见弱口令字典，容易被暴力破解，请尽快更换。",
                     "advice": "建议更换为 12 位以上含大小写/数字/符号的强密码。",
                 })
                 # 同账号后续候选不再重复上报

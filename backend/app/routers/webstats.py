@@ -46,6 +46,42 @@ _EXT_LOG_GLOBS = [
 # 单文件最多处理的字节数（约 200MB），防止超大日志拖垮后端
 _MAX_BYTES = 200 * 1024 * 1024
 
+# 面板数据目录：内含 secret.key / users.json 等敏感文件，日志解析接口
+# 不得触碰（与 logs.py / files.py 同基线，第十轮审计修复）
+_DATA_DIR = os.path.normpath(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data"))
+)
+
+
+def _reject_forbidden_log_path(log_path: str) -> str:
+    """校验日志解析路径：拒绝设备命名空间 / UNC / `..` 穿越 / data 目录。
+
+    返回规范化的绝对路径（宿主视角）；不合法时抛 HTTPException。
+    """
+    # 拒绝设备命名空间（\\?\ / \\.\）与 UNC 网络路径（\\host\share 与
+    # //host/share）：前者绕过 Win32 规范化，后者与本地 data 目录比较时
+    # commonpath 抛 ValueError 会 fail-open，且管理共享可指回本机任意目录。
+    if log_path.startswith(("\\\\?\\", "\\\\.\\", "\\\\", "//")):
+        raise HTTPException(status_code=400, detail="非法日志路径（不支持设备/UNC 路径）")
+    # `..` 检查必须在 normpath 折叠之前对原始输入做：normpath 会把
+    # "data/../data/secret.key" 折叠为 "data/secret.key"，导致 .. 检查失效
+    if any(part == ".." for part in log_path.replace("\\", "/").split("/")):
+        raise HTTPException(status_code=400, detail="日志路径不允许包含 ..")
+    norm = os.path.normpath(log_path)
+    if not os.path.isabs(norm):
+        raise HTTPException(status_code=400, detail="日志路径必须是绝对路径")
+    # 拦截面板数据目录（fail-closed：跨盘符比较抛 ValueError 时拒绝，
+    # 与 logs.py 不同——此处宁可误拦不可放行）
+    try:
+        inside = os.path.commonpath(
+            [os.path.normcase(norm), os.path.normcase(_DATA_DIR)]
+        ) == os.path.normcase(_DATA_DIR)
+    except ValueError:
+        inside = False
+    if inside:
+        raise HTTPException(status_code=403, detail="无权访问面板数据目录")
+    return norm
+
 # combined 日志格式：
 #   $remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"
 _LOG_RE = re.compile(
@@ -271,13 +307,9 @@ async def analyze(
     - 未指定 log_path 时自动探测常见路径；找不到则 400。
     - 日志超大会自动只取尾部并截断（部分统计）。
     """
-    # 校验输入：绝对路径 + 禁止 .. 穿越（Linux/Windows 统一处理）
+    # 校验输入：绝对路径 + 禁止 .. 穿越 + 禁止 data 目录（安全修复）
     if log_path:
-        norm = os.path.normpath(log_path)
-        if not os.path.isabs(norm):
-            raise HTTPException(status_code=400, detail="日志路径必须是绝对路径")
-        if ".." in norm.split(os.sep):
-            raise HTTPException(status_code=400, detail="日志路径不允许包含 ..")
+        norm = _reject_forbidden_log_path(log_path)
         path = host_path(norm)
     else:
         found = _discover_logs()

@@ -34,9 +34,20 @@ def _safe_log_path(path: str) -> str:
       commonpath 抛 ValueError 走 fail-open 分支，实测可读取 secret.key；
     - 比较前统一 normcase：否则大小写变体（S:\\GRaw\\...\\DATA）可绕过
       包含性判断（文件系统本身大小写不敏感，文件仍可被读取）。
+
+    Windows 加固（第十轮审计修复）：
+    - 拒绝 UNC 网络路径（\\\\host\\share\\... 与 //host/share/...）：UNC 与
+      本地 data 目录分属不同根，commonpath 抛 ValueError 走 fail-open 分支
+      直接放行。攻击者可用 \\\\localhost\\S$\\Graw\\backend\\data\\secret.key
+      这类管理共享路径指回 data 目录，实测可绕过保护读取 secret.key。
     """
     if path.startswith("\\\\?\\") or path.startswith("\\\\.\\"):
         raise HTTPException(status_code=400, detail="非法日志路径")
+    # 拒绝 UNC 网络路径（\\host\share 与 //host/share）：跨设备共享路径与
+    # 本地 data 目录比较时 commonpath 必然抛 ValueError（fail-open），
+    # 且管理共享（\\localhost\S$\...）可指回本机任意目录，必须显式拦截。
+    if path.startswith("\\\\") or path.startswith("//"):
+        raise HTTPException(status_code=400, detail="非法日志路径（不支持 UNC 网络路径）")
     sp = os.path.normpath(os.path.abspath(path))
     if os.path.normcase(sp) == os.path.normcase(_PANEL_LOG_NORM):
         return sp

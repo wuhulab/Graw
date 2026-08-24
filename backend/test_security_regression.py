@@ -7,6 +7,13 @@ test_security_regression.py - 第八轮安全审计回归测试
   2. Redis 命令反射黑名单缺口（Medium，databases.py _is_forbidden_redis）
   3. remote_cap 前缀笔误漏拦 sitesopts（Medium，remote_cap.py LOCAL_PREFIX）
   4. WebDAV SSRF 重定向绕过（High，netstorage.py / backup.py allow_redirects=False）
+
+第十轮安全审计回归测试（本轮新增）：
+  5. MySQL 可执行注释 /*!...*/ / /*M!...*/ 绕过（High，databases.py _normalize_sql）
+  6. PostgreSQL `#` 操作符被误当注释剥离绕过（High，databases.py _normalize_sql）
+  7. Redis rdb_save/rdb_bgsave 反射绕过（High，databases.py _is_forbidden_redis）
+  8. logs.py Windows UNC 网络路径绕过 data 目录防护（Medium，logs.py _safe_log_path）
+  9. webstats.py log_path 任意文件读取（Medium，webstats.py _reject_forbidden_log_path）
 """
 import os
 import sys
@@ -205,3 +212,125 @@ class TestWebdavRedirectSsrp:
         finally:
             server.shutdown()
             server.server_close()
+
+
+# ---------------------------------------------------------------------------
+# 5. MySQL 可执行注释 /*!...*/ 不得绕过 SQL 危险原语过滤（第十轮审计，High）
+# ---------------------------------------------------------------------------
+class TestSqlExecutableCommentBypass:
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            "SELECT /*!50000 LOAD_FILE('/etc/passwd') */",
+            "SELECT 1 /*! INTO OUTFILE '/tmp/pwned' */",
+            "SELECT /*!50000 LOAD_FILE(CONCAT('/etc/', 'passwd')) */",
+            "SELECT /*!99999 LOAD_FILE('/etc/shadow') */",
+            "SELECT /*M!100000 LOAD_FILE('/etc/passwd') */",   # MariaDB 变体
+            "SELECT /*!50000 pg_read_file('/etc/passwd') */",  # 通用原语变体
+            "SELECT /*!50000 INTO DUMPFILE '/tmp/x' */ FROM t",
+        ],
+    )
+    def test_executable_comment_rejected(self, payload):
+        """MySQL/MariaDB 可执行注释内容会被数据库实际执行，必须整体拒绝。"""
+        assert _reject_dangerous_sql(payload) is True, f"应拦截: {payload}"
+
+    def test_normal_comment_still_allowed(self):
+        """普通 /*...*/ 注释不改变语句语义，正常查询仍应放行。"""
+        assert _reject_dangerous_sql("SELECT id, name FROM users /* 普通注释 */") is False
+
+
+# ---------------------------------------------------------------------------
+# 6. PostgreSQL `#` 操作符不得被误当注释剥离（第十轮审计，High）
+# ---------------------------------------------------------------------------
+class TestSqlHashOperatorNoStripping:
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            # PG 中 `#` 是位异或操作符，`#>`/`#>>` 是 jsonb 操作符，不是注释。
+            # 剥离后危险原语会消失导致绕过，现在必须保留并拦截。
+            "SELECT 1 # length(pg_read_file('/etc/passwd'))",
+            "SELECT CASE WHEN (1 # length(pg_read_file('/etc/passwd'))) > 0 THEN 1 ELSE 0 END",
+            "SELECT data #> '{a}' FROM t",
+            "SELECT 1 # 1",
+        ],
+    )
+    def test_hash_not_stripped(self, payload):
+        cleaned = _normalize_sql(payload)
+        # `#` 必须保留在清洗结果中（不再被当作注释删除）
+        assert "#" in cleaned, f"`#` 被错误剥离: {payload!r} -> {cleaned!r}"
+        # 含 pg_read_file 的语句必须被拦截
+        if "pg_read_file" in payload:
+            assert _reject_dangerous_sql(payload) is True
+
+    def test_mysql_hash_comment_still_works(self):
+        """MySQL 中 `#` 是行注释，正常使用不受影响（数据库自行解析）。"""
+        assert _reject_dangerous_sql("SELECT 1 # 普通注释") is False
+
+
+# ---------------------------------------------------------------------------
+# 7. Redis rdb_save/rdb_bgsave 反射绕过（第十轮审计，High）
+# ---------------------------------------------------------------------------
+class TestRedisRdbSaveBlocked:
+    @pytest.mark.parametrize("method", ["rdb_save", "rdb_bgsave", "rdb_load"])
+    def test_rdb_methods_forbidden(self, method):
+        """rdb_* 方法族内部执行 CONFIG SET dir/dbfilename + SAVE，与
+        config_set/save 相同文件写 RCE 链，必须全部封禁。"""
+        assert _is_forbidden_redis(method) is True, f"应拦截: {method}"
+
+    def test_legit_commands_still_allowed(self):
+        """正常只读/键操作命令不受影响。"""
+        for ok in ("get", "set", "keys", "lrange", "hgetall", "ttl", "memory_usage"):
+            assert _is_forbidden_redis(ok) is False, f"不应拦截: {ok}"
+
+
+# ---------------------------------------------------------------------------
+# 8. logs.py Windows UNC 网络路径不得绕过 data 目录防护（第十轮审计，Medium）
+# ---------------------------------------------------------------------------
+class TestLogsUncPathBlocked:
+    def test_unc_management_share_rejected(self):
+        from fastapi import HTTPException
+        from app.routers.logs import _safe_log_path
+
+        for p in (
+            r"\\localhost\S$\Graw\backend\data\secret.key",
+            r"\\127.0.0.1\c$\Graw\backend\data\users.json",
+            "//localhost/S$/Graw/backend/data/secret.key",
+        ):
+            with pytest.raises(HTTPException) as exc:
+                _safe_log_path(p)
+            assert exc.value.status_code == 400, f"应 400 拒绝: {p}"
+
+    def test_normal_log_path_still_allowed(self):
+        from app.routers.logs import _safe_log_path, _DATA_DIR_NORM
+
+        # 正常日志路径与面板自身日志仍可访问
+        _safe_log_path("/var/log/nginx/access.log")
+        _safe_log_path("C:\\Windows\\System32\\winevt\\Logs\\System.evtx")
+        assert "panel.log" in _safe_log_path(os.path.join(_DATA_DIR_NORM, "panel.log"))
+
+
+# ---------------------------------------------------------------------------
+# 9. webstats.py log_path 不得读取面板 data 目录（第十轮审计，Medium）
+# ---------------------------------------------------------------------------
+class TestWebstatsDataDirBlocked:
+    def test_data_dir_and_unc_rejected(self):
+        from fastapi import HTTPException
+        from app.routers.webstats import _reject_forbidden_log_path, _DATA_DIR
+
+        payloads = [
+            os.path.join(_DATA_DIR, "secret.key"),
+            os.path.join(_DATA_DIR, "users.json"),
+            os.path.join(_DATA_DIR, "..", "data", "secret.key"),  # .. 混淆
+            r"\\localhost\S$\Graw\backend\data\secret.key",
+            "//localhost/S$/Graw/backend/data/secret.key",
+            "relative/path.log",
+        ]
+        for p in payloads:
+            with pytest.raises(HTTPException):
+                _reject_forbidden_log_path(p)
+
+    def test_legit_log_path_allowed(self):
+        from app.routers.webstats import _reject_forbidden_log_path
+
+        _reject_forbidden_log_path("/var/log/nginx/access.log")
+        _reject_forbidden_log_path("/opt/1panel/www/sites/example.com/log/access.log")

@@ -414,16 +414,18 @@ class SMBAdapter(BaseAdapter):
         self._root = "//{host}/{share}".format(host=self.host, share=self.share)
 
     def _register(self):
-        # 同一会话重复注册是安全的；每次连接 CPU 取真实凭据
+        # 同一会话重复注册是安全的；每次连接 CPU 取真实凭据。
+        # SSRF 防护（第十轮审计加固，Low）：此前校验仅包在 username 非空
+        # 分支内，匿名 SMB 连接（username 为空）直接跳过复检——若存储配置
+        # 被其它途径（如面板备份导入）写入恶意 host，可绕过校验连接内网。
+        # 现在无论是否匿名，注册会话前一律复检（拒绝云元数据等受保护地址）。
+        from app.ssrf_guard import assert_safe_host
+        try:
+            assert_safe_host(self.host, allow_private=True)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
         if self.conn.get("username"):
             smbclient = __import__("smbclient")
-            # SSRF 防护（纵深防御，与 validate_rules 同基线）：每次注册会话
-            # 前复检主机，拒绝云元数据（169.254.169.254）等受保护地址。
-            try:
-                from app.ssrf_guard import assert_safe_host
-                assert_safe_host(self.host, allow_private=True)
-            except ValueError as e:
-                raise HTTPException(400, str(e))
             smbclient.register_session(
                 self.host,
                 username=self.conn.get("username") or "",

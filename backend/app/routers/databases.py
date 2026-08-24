@@ -43,6 +43,8 @@ _REDIS_FORBIDDEN_METHODS = {
     "config_get",          # 泄露 requirepass / dir / dbfilename 等配置
     "config_resetstat",
     "save", "bgsave",      # 落盘触发上述文件写
+    "rdb_save", "rdb_bgsave",  # redis-py 反射：内部执行 CONFIG SET dir +
+    #   dbfilename + SAVE，与 config_set/save 相同的任意文件写 RCE 链
     "bgrewriteaof",
     "eval", "evalsha",     # Lua 脚本任意执行
     "script_load", "script",
@@ -70,7 +72,7 @@ _REDIS_FORBIDDEN_METHODS = {
 
 # 按前缀整体封禁的反射方法族（纵深防御：拦截 debug_/config_ 等家族尚未
 # 枚举到的新增变体，避免再次出现"枚举不全"的漏洞模式）
-_REDIS_FORBIDDEN_PREFIX = ("debug_", "config_", "function_", "module_", "acl_", "client_")
+_REDIS_FORBIDDEN_PREFIX = ("debug_", "config_", "function_", "module_", "acl_", "client_", "rdb_")
 
 
 def _is_forbidden_redis(method: str) -> bool:
@@ -618,6 +620,19 @@ def _normalize_sql(sql: str) -> str:
       - 双引号 "..." / 反引号 `...` -> 标识符，内容保留原文，使被引号包裹的
         危险函数名仍能被单词边界正则命中（过滤器宁可误拦，不可漏拦）
       - 转义引号（'' / "" / ``）按 SQL 语义处理，避免提前退出引用状态
+
+    安全修复（第十轮审计，High）：
+      - MySQL/MariaDB 可执行注释 /*!...*/ 与 /*M!...*/ 的内容会被数据库
+        **实际执行**（版本条件语法）。此前与普通注释一起整体删除，攻击者可
+        用 SELECT /*!50000 LOAD_FILE('/etc/passwd') */ 把危险原语隐藏进
+        "注释" 绕过全部检测。此处改为「去壳保留」：去掉 /*! 与版本号外壳后
+        把真实内容当作普通代码输出，使首动词白名单与危险原语检测正常生效；
+        另在 _reject_dangerous_sql 顶层对可执行注释 fail-closed 直接拒绝。
+      - `#` 仅在 MySQL 中才是行注释；PostgreSQL 里 `#` 是位异或运算符、
+        `#>` / `#>>` 是 jsonb 操作符，SQLite 也不认 `#` 注释。此前无条件把
+        `#` 当作注释剥离，攻击者可用 SELECT 1 # length(pg_read_file('/etc/
+        passwd')) 隐藏危险原语绕过过滤器。此处不再剥离 `#`：对 MySQL 无影响
+        （数据库自身会正确解析 `#` 注释），对 PG/SQLite 则修复了过滤绕过。
     """
     out = []
     i, n = 0, len(sql)
@@ -655,12 +670,25 @@ def _normalize_sql(sql: str) -> str:
             while i < n and sql[i] not in ("\r", "\n"):
                 i += 1
             continue
-        if ch == "#":
-            while i < n and sql[i] not in ("\r", "\n"):
-                i += 1
-            continue
+        # 注意：`#` 不再视为注释剥离（详见 docstring 第十轮审计说明）。
+        # MySQL 中 `#` 是行注释，保留原文后数据库自身会正确解析，不影响
+        # 正常查询；PostgreSQL 中 `#` 是位异或、`#>`/#>> 是 jsonb 操作符，
+        # 若误当注释剥离会隐藏危险原语导致过滤器绕过。
         if sql[i:i + 2] == "/*":
             end = sql.find("*/", i + 2)
+            # MySQL/MariaDB 可执行注释 /*!...*/ / /*M!...*/：内容会被数据库
+            # 实际执行，绝不能与普通注释一样整体删除。去掉版本号外壳后把
+            # 真实内容作为普通代码保留，交由首动词白名单与危险原语检测；
+            # _reject_dangerous_sql 顶层另有 fail-closed 硬拦截双保险。
+            inner = sql[i + 2:end] if end != -1 else sql[i + 2:]
+            if inner.startswith("!") or inner.startswith("M!"):
+                body = inner[1:]
+                if body and body[0].isdigit():
+                    # 版本号（如 50000）仅用于条件执行判定，对过滤无意义，跳过
+                    body = re.sub(r"^\d{1,6}", "", body, count=1)
+                out.append(body)
+                i = end + 2 if end != -1 else n
+                continue
             i = end + 2 if end != -1 else n
             continue
         out.append(ch)
@@ -720,7 +748,14 @@ def _reject_dangerous_sql(sql: str) -> bool:
       4. 危险原语拦截：即便以查询动词开头，也禁止文件读写（pg_read_file /
          pg_ls_dir / pg_write_file / load_file / into outfile ...）、
          SELECT ... INTO（建表/写变量/写文件）及提权执行类原语。
+      5. MySQL/MariaDB 可执行注释（/*!...*/ / /*M!...*/）一律拒绝（fail-
+         closed）：其内容会被数据库实际执行，_normalize_sql 虽已去壳保留，
+         此处仍从源头硬拦截，杜绝任何清洗疏漏导致绕过。
     """
+    # 可执行注释 fail-closed：/*!...*/（MySQL）与 /*M!...*/（MariaDB）的内容
+    # 会被数据库执行，属于明显的绕过企图，直接拒绝（第十轮审计修复）。
+    if re.search(r"/\*(?:M)?!", sql, re.IGNORECASE):
+        return True
     cleaned = _normalize_sql(sql).strip()
     if not cleaned:
         return True
