@@ -39,6 +39,8 @@ TODO.md
 .trae/
 .workbuddy/
 outputs/
+agent/
+skills-lock.json
 
 # Other projects
 app-store/
