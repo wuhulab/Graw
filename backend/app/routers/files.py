@@ -133,11 +133,15 @@ async def list_dir(path: Optional[str] = None):
     # exists/isdir 在远程模式下会发 SSH 探测，可能抛 TimeoutExpired 或 I/O 错误，
     # 一并纳入统一异常分类，避免漏成 FastAPI 默认 500（前端只能看到无 detail 的报错）。
     try:
-        if not node_manager.exists(real):
+        # 传给 node_manager 的存在/枚举原语必须用"宿主机视角"路径 sp：这些原语在
+        # 本地容器部署下会再自行 host_path 一次（补 /host 前缀）。若把上方已映射
+        # 的 real 传进去会得到 /host/host 双前缀，根目录就 404 Path not found；
+        # 远程节点因 host_path 原样返回，sp 与 real 等价，统一传 sp 两种场景皆正确。
+        if not node_manager.exists(sp):
             raise HTTPException(status_code=404, detail="Path not found")
-        if not node_manager.isdir(real):
+        if not node_manager.isdir(sp):
             raise HTTPException(status_code=400, detail="Not a directory")
-        entries = node_manager.listdir_detail(real)
+        entries = node_manager.listdir_detail(sp)
     except PermissionError:
         raise HTTPException(status_code=403, detail="Permission denied")
     except HTTPException:
@@ -186,13 +190,14 @@ async def roots():
 
 @router.get("/read")
 async def read_file(path: str):
-    real = host_path(_safe_path(path))
-    if not node_manager.isfile(real):
+    sp = _safe_path(path)
+    # 原语统一传宿主视角 sp，由 node_manager 内部完成 /host 映射（见 list_dir 注释）
+    if not node_manager.isfile(sp):
         raise HTTPException(status_code=404, detail="File not found")
-    if node_manager.getsize(real) > 2 * 1024 * 1024:
+    if node_manager.getsize(sp) > 2 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="File too large (>2MB)")
     try:
-        return {"path": _safe_path(path), "content": node_manager.read_text(real)}
+        return {"path": sp, "content": node_manager.read_text(sp)}
     except Exception as e:
         logger.warning("读取文件失败: %s", e)
         raise _files_error(e, "读取文件失败")
@@ -209,11 +214,12 @@ async def write_file(
     request: Request,
     user: dict = Depends(get_current_user),
 ):
-    real = host_path(_safe_path(req.path))
+    sp = _safe_path(req.path)
     try:
-        node_manager.write_text(real, req.content)
+        # 写文件用宿主视角 sp，由 node_manager 内部完成 /host 映射（见 list_dir 注释）
+        node_manager.write_text(sp, req.content)
         auditlog.record(
-            "写文件", user["username"], get_client_ip(request), _safe_path(req.path)
+            "写文件", user["username"], get_client_ip(request), sp
         )
         return {"ok": True}
     except Exception as e:
@@ -232,11 +238,11 @@ async def delete_path(
     user: dict = Depends(get_current_user),
 ):
     safe = _safe_path(req.path)
-    real = host_path(safe)
-    if not node_manager.exists(real):
+    # 原语统一传宿主视角 safe，由 node_manager 内部完成 /host 映射（见 list_dir 注释）
+    if not node_manager.exists(safe):
         raise HTTPException(status_code=404, detail="Not found")
     try:
-        node_manager.remove(real)
+        node_manager.remove(safe)
         auditlog.record("删除", user["username"], get_client_ip(request), safe)
         return {"ok": True}
     except Exception as e:
@@ -281,9 +287,13 @@ async def rename(
     request: Request,
     user: dict = Depends(get_current_user),
 ):
-    src = host_path(_safe_path(req.src))
-    dst = host_path(_safe_path(req.dst))
-    if not node_manager.exists(src):
+    src_sp = _safe_path(req.src)
+    dst_sp = _safe_path(req.dst)
+    src = host_path(src_sp)
+    dst = host_path(dst_sp)
+    # exists 判断传宿主视角 src_sp（本地资源内部自动 /host 映射）；
+    # 而 os.rename / 远程 host_shell 需要容器真实路径 src/dst（二者保持一致）
+    if not node_manager.exists(src_sp):
         raise HTTPException(status_code=404, detail="Source not found")
     try:
         if node_manager.is_remote():
