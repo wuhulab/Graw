@@ -36,6 +36,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from app.ssrf_guard import assert_safe_http_url
 
 logger = logging.getLogger("graw.uptime")
 
@@ -95,10 +96,16 @@ def _find_item(items: list, item_id: str) -> dict:
 
 def _validate_url(url: str) -> str:
     url = (url or "").strip()
-    if not url.startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="监控地址必须为 http/https URL")
     if len(url) > 2048:
         raise HTTPException(status_code=400, detail="监控地址过长")
+    # SSRF 防护：拒绝回环 / 链路本地（含云 metadata 169.254.169.254）/ 保留 /
+    # 私网地址。内网监控可用环境变量 GRAW_UPTIME_ALLOW_PRIVATE_NET=1 显式放开，
+    # 但回环 / 链路本地 / 保留地址始终拒绝。
+    allow_private = os.environ.get("GRAW_UPTIME_ALLOW_PRIVATE_NET") == "1"
+    try:
+        assert_safe_http_url(url, allow_private=allow_private)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return url
 
 
@@ -115,9 +122,16 @@ def _probe_url(url: str, timeout_seconds: int) -> dict:
 
     timeout = max(1, min(int(timeout_seconds or 10), 60))
     start = time.time()
+    # 每次探测重新校验目标（缓解 DNS rebinding 的 TOCTOU 窗口）；
+    # 不跟随重定向，避免经 30x 跳转到受保护内网地址绕过主机校验。
+    allow_private = os.environ.get("GRAW_UPTIME_ALLOW_PRIVATE_NET") == "1"
+    try:
+        assert_safe_http_url(url, allow_private=allow_private)
+    except ValueError as e:
+        return {"status": "down", "code": None, "latency_ms": None, "error": str(e)[:200]}
     for method in ("HEAD", "GET"):
         try:
-            r = requests.request(method, url, timeout=timeout, allow_redirects=True)
+            r = requests.request(method, url, timeout=timeout, allow_redirects=False)
             latency = round((time.time() - start) * 1000, 1)
             return {"status": "ok", "code": r.status_code, "latency_ms": latency, "error": None}
         except requests.exceptions.Timeout:

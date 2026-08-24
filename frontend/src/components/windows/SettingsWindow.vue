@@ -173,7 +173,20 @@
                      :type="agentSecretVisible ? 'text' : 'password'"
                      :placeholder="$t('agent.secretLabel') + ' · ' + $t('agent.secretPlaceholder')"
                      spellcheck="false" style="flex:1;" />
-              <button class="btn btn-mini" type="button" :disabled="agentSaving"
+              <button class="btn btn-mini" type="button" :disabled="agentSaving || agentSecretBusy"
+                      :title="$t('agent.toggleSecret')" @click="toggleAgentSecret">
+                <svg v-if="!agentSecretVisible" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+                <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"></path>
+                  <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"></path>
+                  <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"></path>
+                  <line x1="1" y1="1" x2="23" y2="23"></line>
+                </svg>
+              </button>
+              <button class="btn btn-mini" type="button" :disabled="agentSaving || agentSecretBusy"
                       :title="$t('agent.copySecret')" @click="copyAgentSecret">
                 {{ agentSecretVisible ? $t('common.copy') : $t('agent.copySecret') }}
               </button>
@@ -472,9 +485,48 @@ const agentMsgType = ref('')
 const agentSecretVisible = ref(false)
 const agentSecretMsg = ref('')
 const agentSecretMsgType = ref('')
+// 拉取 secret / 复制过程中的忙态：防止并发点击
+const agentSecretBusy = ref(false)
 
-// 一次性拉取子节点校验 secret 明文（供复制）。后端返回即标记已展示，第二次为空。
+// 复制文本到剪贴板。优先 Clipboard API（仅 https/localhost 的 secure context 可用）；
+// 面板常以纯 http 提供服务（如 http://ip:8041），此时 navigator.clipboard 不可用，
+// 旧实现会直接报「复制失败」，故降级到隐藏 textarea + document.execCommand('copy')。
+async function copyTextToClipboard(text) {
+  if (text == null) return false
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch (e) {
+      /* 权限被拒等：降级到 execCommand，不中断流程 */
+    }
+  }
+  return fallbackCopy(text)
+}
+
+function fallbackCopy(text) {
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.setAttribute('readonly', '')
+    ta.style.position = 'fixed'
+    ta.style.top = '-1000px'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    ta.setSelectionRange(0, text.length)
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    return ok
+  } catch (e) {
+    return false
+  }
+}
+
+// 一次性拉取子节点校验 secret 明文（供复制/眼睛查看）。后端返回即标记已展示，第二次为空。
 async function fetchAgentSecret() {
+  if (agentSecretBusy.value) return ''
+  agentSecretBusy.value = true
   try {
     const r = await agentApi.revealSecret()
     if (r.secret) {
@@ -492,23 +544,36 @@ async function fetchAgentSecret() {
     agentSecretMsg.value = e?.response?.data?.detail || t('agent.saveFailed')
     agentSecretMsgType.value = 'err'
     return ''
+  } finally {
+    agentSecretBusy.value = false
   }
 }
 
 // 复制 secret 到剪贴板；尚未拉取明文则先拉取再复制（初次/重置后触发）
 async function copyAgentSecret() {
+  if (agentSecretBusy.value) return
   let secret = agentForm.secret
   if (!agentSecretVisible.value || !secret) {
     secret = await fetchAgentSecret()
   }
   if (!secret) return
-  try {
-    await navigator.clipboard.writeText(secret)
-    agentSecretMsg.value = t('agent.copySuccess')
-    agentSecretMsgType.value = 'ok'
-  } catch (e) {
-    agentSecretMsg.value = t('agent.copyFailed')
-    agentSecretMsgType.value = 'err'
+  const ok = await copyTextToClipboard(secret)
+  agentSecretMsg.value = ok ? t('agent.copySuccess') : (t('agent.copyFailed') || '').replace('{error}', '')
+  agentSecretMsgType.value = ok ? 'ok' : 'err'
+}
+
+// 眼睛按钮：切换 secret 明文可见。框内无明文但后端存有可展示 secret（初次/重置后）
+// 时，先拉取一次明文再显示；其余情况仅切换当前输入框明文/密文显示。
+async function toggleAgentSecret() {
+  if (agentSecretBusy.value) return
+  if (agentSecretVisible.value) {
+    agentSecretVisible.value = false
+    return
+  }
+  if (!agentForm.secret && agentStatus.has_secret) {
+    await fetchAgentSecret()
+  } else {
+    agentSecretVisible.value = true
   }
 }
 

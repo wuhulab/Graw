@@ -108,6 +108,13 @@ class ConnectionIn(BaseModel):
                 if "://" in self.base and self.type == "webdav":
                     if not self.base.startswith(("http://", "https://")):
                         raise HTTPException(400, "WebDAV 根地址仅支持 http/https")
+                    # SSRF 防护：拒绝回环/链路本地（含云 metadata）/保留地址；
+                    # 内网存储（RFC1918/ULA）允许，但受保护地址始终拒绝。
+                    try:
+                        from app.ssrf_guard import assert_safe_http_url
+                        assert_safe_http_url(self.base, allow_private=True)
+                    except ValueError as e:
+                        raise HTTPException(400, str(e))
         return self
 
 
@@ -510,6 +517,17 @@ class WebDAVAdapter(BaseAdapter):
         self.conn = conn
         base = (conn.get("base") or "").strip() or ""
         self.base = base.rstrip("/")  # 已是完整 URL（如 https://host/dav/user/）
+        # SSRF 防护（请求级兜底，缓解 DNS rebinding 的 TOCTOU 窗口）：
+        # 每次实际操作前重新校验基础 URL 的主机位置，拒绝回环/链路本地/
+        # 保留地址（含云 metadata 169.254.169.254）。内网存储允许，但受
+        # 保护地址始终拒绝。
+        if base:
+            eff = self.base if self.base.startswith("http") else "http://" + self.base
+            try:
+                from app.ssrf_guard import assert_safe_http_url
+                assert_safe_http_url(eff, allow_private=True)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
 
     def _headers(self) -> dict:
         if self.conn.get("username"):

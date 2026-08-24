@@ -234,11 +234,18 @@ def _remote_auth_header(remote: dict) -> dict:
 def _webdav_url(remote: dict, path: str = "") -> str:
     """拼接 WebDAV URL：base 去尾斜杠 + 相对路径。
 
-    仅允许 http/https scheme，防止 file:// 等绕过 SSRF 校验。
+    仅允许 http/https scheme，且目标主机不得为回环 / 链路本地（含云
+    metadata 169.254.169.254）/ 保留地址；内网存储（RFC1918/ULA）允许，
+    但受保护地址始终拒绝（SSRF 防护，与 appstore 同基线）。
     """
     base = (remote.get("base") or "").strip().rstrip("/")
     if not base.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="WebDAV 地址必须为 http/https URL")
+    try:
+        from app.ssrf_guard import assert_safe_http_url
+        assert_safe_http_url(base, allow_private=True)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return base + "/" + path.lstrip("/")
 
 
