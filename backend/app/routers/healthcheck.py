@@ -87,8 +87,11 @@ def _scan_weak_passwords() -> list:
             continue
         if not hashed:
             continue
-        # 默认密码校验并入线程池，避免串行阻塞（管理员/普通账号都查）
-        tasks.append(("default", uname, hashed, ""))
+        # 默认密码校验并入线程池，避免串行阻塞。仅对 admin 角色判定「默认密码」
+        # 高危（普通账号用默认口令会走下方弱密码校验以中危上报），避免出现
+        # 「没有 admin 账号仍报 admin 使用默认密码」这类误报/命名不符。
+        if (u or {}).get("role") == "admin":
+            tasks.append(("default", uname, hashed, ""))
         # 常见弱密码：管理员查全量字典，普通账号只查高频口令（性能优化）
         candidates = WEAK_PASSWORDS if (u or {}).get("role") == "admin" else WEAK_PASSWORDS_HIGH
         for weak in candidates:

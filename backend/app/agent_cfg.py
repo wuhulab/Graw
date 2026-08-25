@@ -4,18 +4,18 @@ agent_cfg.py - 「作为子节点」Agent 收取模式配置（持久化）
 
 背景：
   Graw 允许一台面板作为子节点，供其它主面板通过 Agent 隧道 + 成对访问密钥接入。
-  收取模式的开启（key/secret/role）传统上用环境变量 GRAW_AGENT_KEY / GRAW_AGENT_SECRET /
-  GRAW_AGENT_ROLE 注入，进程启动时确定、无法热切换。
+  收取模式的开启/关闭（key/secret）传统上用环境变量 GRAW_AGENT_KEY / GRAW_AGENT_SECRET
+  注入，进程启动时确定、无法热切换。
 
   本模块引入一份可持久化配置 `data/agent.json`，让管理员在「设置」里动态启用/禁用
   并配置密钥，而无需改环境变量或重启进程。读取优先级：
     1. 持久化配置（data/agent.json）——设置界面写入
-    2. 环境变量（GRAW_AGENT_KEY/SECRET/ROLE）——容器/脚本部署的传统方式
+    2. 环境变量（GRAW_AGENT_KEY/SECRET）——容器/脚本部署的传统方式
   二者任一满足即可工作；持久化配置优先，便于覆盖环境变量。
 
 安全：
   - secret 为机器间鉴权核心，允许设置时留空表示「保持原值」，读取时不回传明文。
-  - role 仅允许 admin | user，其余字段按白名单收紧。
+  - 接入角色固定为 admin（子节点始终以管理员权限被管理，不再提供角色选择）。
 """
 import json
 import logging
@@ -40,12 +40,12 @@ _cache: Optional[dict] = None
 
 
 def _default() -> dict:
-    """默认配置：未启用。"""
+    """默认配置：未启用。子节点接入角色固定为 admin。"""
     return {
         "enabled": False,
         "key": "",
         "secret": "",
-        "role": "user",
+        "role": "admin",
         # secret 是否已被展示过（一次性展示标记）。新建/重置 secret 后置 False，
         # 前端可拉取一次明文用于复制；展示后置 True，之后不再回传。
         "secret_revealed": False,
@@ -83,11 +83,11 @@ def _save() -> None:
 
 
 def _env_cfg() -> dict:
-    """从环境变量读取的传统配置（无持久化配置时使用）。"""
+    """从环境变量读取的传统配置（无持久化配置时使用）。子节点接入角色固定为 admin。"""
     return {
         "key": os.environ.get("GRAW_AGENT_KEY", "").strip(),
         "secret": os.environ.get("GRAW_AGENT_SECRET", "").strip(),
-        "role": os.environ.get("GRAW_AGENT_ROLE", "user").strip().lower(),
+        "role": "admin",
     }
 
 
@@ -105,11 +105,11 @@ def get_config() -> dict:
                 "enabled": True,
                 "key": env["key"],
                 "secret": env["secret"],
-                "role": env["role"] if env["role"] in ("admin", "user") else "user",
+                "role": "admin",
                 # 环境变量注入的 secret 无持久化标记，视为已展示（不回传明文）
                 "secret_revealed": True,
             }
-        return {"enabled": False, "key": "", "secret": "", "role": d.get("role") or "user", "secret_revealed": True}
+        return {"enabled": False, "key": "", "secret": "", "role": "admin", "secret_revealed": True}
     return d
 
 
@@ -124,7 +124,7 @@ def public_status() -> dict:
     cfg = get_config()
     return {
         "enabled": enabled(),
-        "role": cfg.get("role") or "user",
+        "role": "admin",
         # key 是半公开标识（主面板需要它来换取 token），可回传用于展示；
         # secret 属机器间核心秘密，永不回传。
         "key": cfg.get("key") or "",
@@ -152,7 +152,7 @@ def reveal_secret() -> dict:
         _cache = cfg
         plain = cfg.get("secret") or ""
         _save()
-        return {"secret": plain, "revealed": False, "role": cfg.get("role") or "user"}
+        return {"secret": plain, "revealed": False, "role": "admin"}
 
 
 def reload() -> None:
@@ -162,9 +162,10 @@ def reload() -> None:
         _cache = None
 
 
-def set_config(enabled: bool, key: str = "", secret: str = "", role: str = "user") -> dict:
+def set_config(enabled: bool, key: str = "", secret: str = "") -> dict:
     """写入持久化 Agent 配置（secret 留空表示保持原值）。返回脱敏状态。
 
+    子节点接入角色固定为 admin（不再提供角色选择，避免低权限接入越权面）。
     仅管理员经设置界面调用。切换为禁用时 secret 一并清除（失活后不再鉴权）。
     secret 被更新/重置后，secret_revealed 复位为 False，允许前端再次一次性展示。
     """
@@ -183,12 +184,11 @@ def set_config(enabled: bool, key: str = "", secret: str = "", role: str = "user
             effective_secret = cur.get("secret")
         else:
             raise ValueError("未配置校验 secret，无法启用")
-        effective_role = role if role in ("admin", "user") else "user"
+        effective_role = "admin"
     else:
         effective_key = effective_key
         effective_secret = ""  # 禁用时清除 secret，避免残留鉴权面
-        # 保留用户选择的角色（仅作展示记忆）；禁用态不会签发，无鉴权风险
-        effective_role = role if role in ("admin", "user") else (cur.get("role") or "user")
+        effective_role = "admin"
     cfg = {
         "enabled": bool(enabled),
         "key": effective_key,

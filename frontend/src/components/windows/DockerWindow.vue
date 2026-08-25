@@ -4,10 +4,11 @@
     <div class="toolbar">
       <select v-model="view" class="view-select" @change="onViewChange">
         <option value="containers">容器</option>
-        <option value="config">配置</option>
-        <option value="compose">编排</option>
         <option value="images">镜像</option>
+        <option value="volumes">数据卷</option>
         <option value="networks">网络</option>
+        <option value="compose">编排</option>
+        <option value="config">配置</option>
       </select>
       <button class="btn" @click="refreshCurrent">刷新</button>
       <span style="margin-left:8px; color:#0a3d7a;" v-if="status && view === 'containers'">
@@ -212,6 +213,34 @@
           </tbody>
         </table>
       </div>
+
+      <!-- ================= 数据卷视图 ================= -->
+      <div v-else-if="view === 'volumes'">
+        <table class="dt">
+          <thead>
+            <tr>
+              <th>名称</th>
+              <th style="width:120px;">驱动</th>
+              <th>挂载点</th>
+              <th style="width:80px;">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="v in volumes" :key="v.name">
+              <td>
+                {{ v.name }}
+                <div style="font-size:10px;color:#888;">{{ v.mountpoint || '-' }}</div>
+              </td>
+              <td>{{ v.driver }}</td>
+              <td style="font-family:monospace;font-size:11px;">{{ v.mountpoint || '-' }}</td>
+              <td><button class="btn sm danger" @click="removeVolumeItem(v)">删除</button></td>
+            </tr>
+            <tr v-if="!volumes.length">
+              <td colspan="4"><div class="empty">暂无数据卷</div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- 右键菜单（容器） -->
@@ -349,6 +378,8 @@ const buildDialog = ref({ show: false, name: '', tag: 'latest', context_dir: '',
 
 // ---------- 网络 ----------
 const networks = ref([])
+// ---------- 数据卷 ----------
+const volumes = ref([])
 
 // 标星的容器优先显示在最上面
 const sortedContainers = computed(() => {
@@ -366,6 +397,7 @@ async function onViewChange() {
     else if (view.value === 'compose') await loadCompose()
     else if (view.value === 'images') await loadImages()
     else if (view.value === 'networks') await loadNetworks()
+    else if (view.value === 'volumes') await loadVolumes()
     else await refreshContainers()
   } finally {
     loading.value = false
@@ -516,6 +548,10 @@ async function doBuild() {
   }
 }
 
+async function loadVolumes() {
+  volumes.value = await dockerApi.volumes()
+}
+
 // ---------- 网络操作 ----------
 function removeNetworkItem(n) {
   // 高风险操作：删除网络需输入面板密码确认
@@ -527,6 +563,17 @@ function removeNetworkItem(n) {
   }
 }
 
+// ---------- 数据卷操作 ----------
+function removeVolumeItem(v) {
+  // 高风险操作：删除数据卷需输入面板密码确认
+  confirm.value = {
+    show: true,
+    title: '删除数据卷确认',
+    message: `确认删除数据卷「${v.name}」？\n使用中的数据卷无法删除。\n请输入面板密码以确认。`,
+    action: { type: 'volume', name: v.name }
+  }
+}
+
 async function doConfirmDanger() {
   const a = confirm.value.action
   confirm.value.show = false
@@ -535,6 +582,9 @@ async function doConfirmDanger() {
     if (a.type === 'image') {
       await dockerApi.removeImage(a.id)
       await loadImages()
+    } else if (a.type === 'volume') {
+      await dockerApi.removeVolume(a.name)
+      await loadVolumes()
     } else if (a.type === 'network') {
       await dockerApi.removeNetwork(a.name)
       await loadNetworks()

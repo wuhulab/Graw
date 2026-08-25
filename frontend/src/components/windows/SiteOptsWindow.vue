@@ -129,8 +129,8 @@ onMounted(load)
 .siteopts-window { padding: 10px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; gap: 10px; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .hint { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #1d1d1f; }
-.sites-list { overflow: auto; flex: 1; display: flex; flex-direction: column; gap: 10px; }
-.site-card { border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+.sites-list { overflow-y: auto; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; align-content: flex-start; }
+.site-card { border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; flex-shrink: 0; }
 .card-header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #f9fafb; font-size: 13px; font-weight: 600; border-bottom: 1px solid #e5e7eb; }
 .site-name { flex: 1; }
 .site-type { font-weight: 400; font-size: 11px; color: #6e6e73; }

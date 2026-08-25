@@ -193,20 +193,6 @@
             </div>
             <div style="font-size:11px;color:#8e8e93;">{{ $t('agent.secretHint') }}</div>
             <div v-if="agentSecretMsg" :class="['msg', agentSecretMsgType]" style="font-size:11px;">{{ agentSecretMsg }}</div>
-
-            <!-- 角色选择 -->
-            <div class="row" style="gap:16px;">
-              <span style="font-size:12px;color:#1d1d1f;">{{ $t('agent.roleLabel') }}：</span>
-              <label class="switch-label">
-                <input type="radio" name="agentRole" value="admin" v-model="agentForm.role" />
-                <span>{{ $t('agent.roleAdmin') }}</span>
-              </label>
-              <label class="switch-label">
-                <input type="radio" name="agentRole" value="user" v-model="agentForm.role" />
-                <span>{{ $t('agent.roleUser') }}</span>
-              </label>
-            </div>
-            <div style="font-size:11px;color:#8e8e93;">{{ $t('agent.roleHint') }}</div>
           </div>
         </template>
 
@@ -317,6 +303,12 @@
           <label class="switch-label">
             <input type="checkbox" v-model="settings.taskbarTextOnly" />
             <span>{{ $t('settings.taskbarTextOnly') }}</span>
+          </label>
+        </div>
+        <div class="row">
+          <label class="switch-label">
+            <input type="checkbox" v-model="settings.hideFoxcode" />
+            <span>{{ $t('settings.hideFoxcode') }}</span>
           </label>
         </div>
       </div>
@@ -476,7 +468,7 @@ async function saveWebMode() {
 }
 
 // ---- 「作为子节点」Agent 收取模式 ----
-const agentForm = reactive({ enabled: false, key: '', secret: '', role: 'user' })
+const agentForm = reactive({ enabled: false, key: '', secret: '' })
 const agentStatus = reactive({ enabled: false })
 const agentSaving = ref(false)
 const agentMsg = ref('')
@@ -587,7 +579,6 @@ async function loadAgentCfg() {
       enabled: !!s.enabled,
       key: s.key || '',
       secret: '', // 明文不回显，留空表示保持原值
-      role: s.role === 'admin' ? 'admin' : 'user',
     })
     agentMsg.value = ''
   } catch (e) {
@@ -638,7 +629,6 @@ async function saveAgentCfg() {
       enabled: !!agentForm.enabled,
       key: agentForm.key.trim(),
       secret: agentForm.secret.trim(), // 后端留空保持原值
-      role: agentForm.role === 'admin' ? 'admin' : 'user',
     })
     agentStatus.enabled = !!res.enabled
     agentStatus.has_secret = !!res.has_secret

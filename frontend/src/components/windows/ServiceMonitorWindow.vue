@@ -282,7 +282,7 @@ th { background: #f9fafb; position: sticky; top: 0; }
 tbody tr:hover { background: #f9fafb; }
 .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; white-space: normal; max-width: 220px; }
 .sub { font-size: 10px; color: #888; }
-.actions-cell { display: flex; gap: 4px; }
+.actions-cell { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
 
 .badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
 .badge.ok { background: #d1fae5; color: #065f46; }

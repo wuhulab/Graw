@@ -30,6 +30,11 @@
       <button class="btn-primary" :disabled="activating" @click="activate">
         {{ activating ? $t('vip.activating') : $t('vip.activate') }}
       </button>
+      <!-- 购买授权码：跳转爱发电下单页（新窗口打开） -->
+      <div class="purchase-row">
+        <span class="purchase-hint">{{ $t('vip.purchaseHint') }}</span>
+        <a class="purchase-link" :href="PURCHASE_URL" target="_blank" rel="noopener">{{ $t('vip.purchase') }}</a>
+      </div>
       <div v-if="msg" :class="msgType === 'ok' ? 'ok' : 'error'">{{ msg }}</div>
     </div>
   </div>
@@ -46,6 +51,9 @@ const code = ref('')
 const activating = ref(false)
 const msg = ref('')
 const msgType = ref('')
+
+// 授权码购买 / 下单地址（爱发电商品页）
+const PURCHASE_URL = 'https://ifdian.net/item/24342f98a05111f1b9445254001e7c00'
 
 const expireText = computed(() => {
   if (!vipStore.vip_until) return '-'
@@ -116,4 +124,8 @@ onMounted(() => {
 
 .error { color: #c0392b; font-size: 12px; background: rgba(255,59,48,0.08); border: 1px solid rgba(255,59,48,0.2); border-radius: 8px; padding: 6px 10px; margin-top: 10px; }
 .ok { color: #2d6a4f; font-size: 12px; background: rgba(103,194,58,0.12); border: 1px solid rgba(103,194,58,0.32); border-radius: 8px; padding: 6px 10px; margin-top: 10px; }
+.purchase-row { margin-top: 10px; display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.purchase-hint { color: #8e8e93; }
+.purchase-link { color: #0a84ff; font-weight: 600; text-decoration: none; cursor: pointer; }
+.purchase-link:hover { text-decoration: underline; }
 </style>

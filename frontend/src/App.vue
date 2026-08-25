@@ -115,7 +115,6 @@ import MonitorCard from './components/cards/MonitorCard.vue'
 import InfoNotesCard from './components/cards/InfoNotesCard.vue'
 import WindowFrame from './components/WindowFrame.vue'
 import DockerWindow from './components/windows/DockerWindow.vue'
-import DockerVolumesWindow from './components/windows/DockerVolumesWindow.vue'
 import ProcessWindow from './components/windows/ProcessWindow.vue'
 import FilesWindow from './components/windows/FilesWindow.vue'
 import TerminalWindow from './components/windows/TerminalWindow.vue'
@@ -127,16 +126,9 @@ import MediaWindow from './components/windows/MediaWindow.vue'
 import UserWindow from './components/windows/UserWindow.vue'
 import ChangePasswordWindow from './components/windows/ChangePasswordWindow.vue'
 import VipWindow from './components/windows/VipWindow.vue'
-import CronWindow from './components/windows/CronWindow.vue'
-import FirewallWindow from './components/windows/FirewallWindow.vue'
 import FrpWindow from './components/windows/FrpWindow.vue'
-import SSLWindow from './components/windows/SSLWindow.vue'
 import LogsWindow from './components/windows/LogsWindow.vue'
-import AuditLogWindow from './components/windows/AuditLogWindow.vue'
 import SettingsWindow from './components/windows/SettingsWindow.vue'
-import ProtectionWindow from './components/windows/ProtectionWindow.vue'
-import TamperWindow from './components/windows/TamperWindow.vue'
-import WafWindow from './components/windows/WafWindow.vue'
 import ContainerLogsWindow from './components/windows/ContainerLogsWindow.vue'
 import ContainerDetailWindow from './components/windows/ContainerDetailWindow.vue'
 import ContainerStatsWindow from './components/windows/ContainerStatsWindow.vue'
@@ -147,7 +139,8 @@ import AppStoreInstallWindow from './components/windows/AppStoreInstallWindow.vu
 import AppStoreComposeEditorWindow from './components/windows/AppStoreComposeEditorWindow.vue'
 import AppStoreInstallLogWindow from './components/windows/AppStoreInstallLogWindow.vue'
 import AppStoreReadmeWindow from './components/windows/AppStoreReadmeWindow.vue'
-import TaskCenterWindow from './components/windows/TaskCenterWindow.vue'
+import TasksWindow from './components/windows/TasksWindow.vue'
+import ShunxSecurityWindow from './components/windows/ShunxSecurityWindow.vue'
 import UISettingsWindow from './components/windows/UISettingsWindow.vue'
 import ConnectionFormWindow from './components/windows/ConnectionFormWindow.vue'
 import NetStorageWindow from './components/windows/NetStorageWindow.vue'
@@ -156,23 +149,17 @@ import NetStorageFormWindow from './components/windows/NetStorageFormWindow.vue'
 import RuntimeWindow from './components/windows/RuntimeWindow.vue'
 import RuntimeCreateWindow from './components/windows/RuntimeCreateWindow.vue'
 import DisksWindow from './components/windows/DisksWindow.vue'
-import BackupWindow from './components/windows/BackupWindow.vue'
-import NotifyWindow from './components/windows/NotifyWindow.vue'
-import UptimeWindow from './components/windows/UptimeWindow.vue'
+import MonitoringWindow from './components/windows/MonitoringWindow.vue'
 import CertWindow from './components/windows/CertWindow.vue'
 import PanelBackupWindow from './components/windows/PanelBackupWindow.vue'
-import LoginLogWindow from './components/windows/LoginLogWindow.vue'
 import WebStatsWindow from './components/windows/WebStatsWindow.vue'
 import RewriteWindow from './components/windows/RewriteWindow.vue'
 import SiteOptsWindow from './components/windows/SiteOptsWindow.vue'
 import MetricsHistoryWindow from './components/windows/MetricsHistoryWindow.vue'
-import ServiceMonitorWindow from './components/windows/ServiceMonitorWindow.vue'
-import SSHKeysWindow from './components/windows/SSHKeysWindow.vue'
 import HealthCheckWindow from './components/windows/HealthCheckWindow.vue'
 import FtpUsersWindow from './components/windows/FtpUsersWindow.vue'
 import PhpVersionsWindow from './components/windows/PhpVersionsWindow.vue'
 import SessionsWindow from './components/windows/SessionsWindow.vue'
-import UpdateWindow from './components/windows/UpdateWindow.vue'
 import ShunXSetup from './components/ShunXSetup.vue'
 import TamperAlert from './components/TamperAlert.vue'
 import InstallCheckAlert from './components/InstallCheckAlert.vue'
@@ -187,7 +174,7 @@ import { startDocker, stopDocker, refresh as refreshDocker } from './store/docke
 import { nodes as nodesStore, refreshNodes } from './store/nodes'
 import { setRequestNode } from './store/requestNode'
 import { tamperState, startTamper, stopTamper } from './store/tamper'
-import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Clock, Shield, Lock, ScrollText, ShieldCheck, ShieldAlert, ShieldBan, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, DatabaseBackup, BellRing, Activity, Archive, Fingerprint, BarChart3, FileCode2, History, Server, KeyRound, Stethoscope, MonitorSmartphone, Unlink, UserCheck, RefreshCw, Wrench, Settings2, ServerCog, Bug } from 'lucide-vue-next'
+import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, Archive, BarChart3, FileCode2, History, Stethoscope, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug } from 'lucide-vue-next'
 
 const loggedIn = computed(() => !!auth.token)
 
@@ -275,48 +262,62 @@ const shortcuts = ref([
   // remoteCap：host（缺省）可在远端节点使用；local 为面板自身管理项，远端节点隐藏
   { key: 'sites', label: '网站', titleKey: 'app.shortcut.sites', icon: markRaw(Globe), component: markRaw(SitesWindow), w: 900, h: 560, adminOnly: true, remoteCap: 'local' },
   { key: 'database', label: '数据库', titleKey: 'app.shortcut.database', icon: markRaw(Database), component: markRaw(DatabaseWindow), w: 860, h: 540, adminOnly: true, remoteCap: 'local' },
-  { key: 'cron', label: '计划任务', titleKey: 'app.shortcut.cron', icon: markRaw(Clock), component: markRaw(CronWindow), w: 800, h: 520, adminOnly: true, remoteCap: 'local' },
-  { key: 'firewall', label: '防火墙', titleKey: 'app.shortcut.firewall', icon: markRaw(Shield), component: markRaw(FirewallWindow), w: 800, h: 540, adminOnly: true },
+  // 计划任务已合并进「任务」应用，桌面不再单独保留
+  // { key: 'cron', label: '计划任务', titleKey: 'app.shortcut.cron', icon: markRaw(Clock), component: markRaw(CronWindow), w: 800, h: 520, adminOnly: true, remoteCap: 'local' },
+  // 防火墙已合并进「ShunX保护机制」应用，桌面不再单独保留
+  // { key: 'firewall', label: '防火墙', titleKey: 'app.shortcut.firewall', icon: markRaw(Shield), component: markRaw(FirewallWindow), w: 800, h: 540, adminOnly: true },
   { key: 'frp', label: 'Frp内网穿透', titleKey: 'app.shortcut.frp', icon: markRaw(Radio), component: markRaw(FrpWindow), w: 900, h: 600, adminOnly: true, remoteCap: 'local' },
-  { key: 'ssl', label: 'SSL', titleKey: 'app.shortcut.ssl', icon: markRaw(Lock), component: markRaw(SSLWindow), w: 820, h: 520, adminOnly: true, remoteCap: 'local' },
+  // SSL 已合并进「网站」应用的 SSL证书 标签页，桌面不再单独保留
+  // { key: 'ssl', label: 'SSL', titleKey: 'app.shortcut.ssl', icon: markRaw(Lock), component: markRaw(SSLWindow), w: 820, h: 520, adminOnly: true, remoteCap: 'local' },
   { key: 'logs', label: '日志', titleKey: 'app.shortcut.logs', icon: markRaw(ScrollText), component: markRaw(LogsWindow), w: 900, h: 560, adminOnly: true },
-  // 审计日志：面板操作审计记录（管理员专属）
-  { key: 'auditlog', label: '审计日志', titleKey: 'app.shortcut.auditlog', icon: markRaw(ScrollText), component: markRaw(AuditLogWindow), w: 900, h: 560, adminOnly: true, remoteCap: 'local' },
+  // 审计日志已合并进「日志」应用的审计日志标签页，桌面不再单独保留
+  // { key: 'auditlog', label: '审计日志', titleKey: 'app.shortcut.auditlog', icon: markRaw(ScrollText), component: markRaw(AuditLogWindow), w: 900, h: 560, adminOnly: true, remoteCap: 'local' },
   { key: 'docker', label: 'Docker', titleKey: 'app.shortcut.docker', icon: markRaw(Container), component: markRaw(DockerWindow), w: 820, h: 520, adminOnly: true },
-  // Docker 数据卷与网络（管理员专属）
-  { key: 'dockervolumes', label: 'Docker卷', titleKey: 'app.shortcut.dockervolumes', icon: markRaw(DatabaseBackup), component: markRaw(DockerVolumesWindow), w: 860, h: 540, adminOnly: true },
+  // Docker 数据卷已合并进「Docker」应用的数据卷视图，桌面不再单独保留
+  // { key: 'dockervolumes', label: 'Docker卷', titleKey: 'app.shortcut.dockervolumes', icon: markRaw(DatabaseBackup), component: markRaw(DockerVolumesWindow), w: 860, h: 540, adminOnly: true },
   // 容器资源与端口编辑（CPU/内存/环境变量/端口映射，管理员专属）
-  { key: 'containeredit', label: '容器编辑', titleKey: 'app.shortcut.containeredit', icon: markRaw(Settings2), component: markRaw(ContainerEditWindow), w: 760, h: 660, adminOnly: true },
+  // 已从桌面隐藏，仅保留 Docker 容器右键「编辑」入口（openContainerEdit）
+  // { key: 'containeredit', label: '容器编辑', titleKey: 'app.shortcut.containeredit', icon: markRaw(Settings2), component: markRaw(ContainerEditWindow), w: 760, h: 660, adminOnly: true },
   { key: 'appstore', label: '应用商店', titleKey: 'app.shortcut.appstore', icon: markRaw(Store), component: markRaw(AppStoreWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local', vip: true },
-  { key: 'tasks', label: '任务中心', titleKey: 'app.shortcut.tasks', icon: markRaw(ListChecks), component: markRaw(TaskCenterWindow), w: 900, h: 560, adminOnly: true, remoteCap: 'local' },
-  { key: 'protection', label: 'Graw数据库保护机制', titleKey: 'app.shortcut.protection', icon: markRaw(ShieldCheck), component: markRaw(ProtectionWindow), w: 860, h: 560, adminOnly: true, remoteCap: 'local' },
-  { key: 'tamper', label: 'ShunX网页防篡改', titleKey: 'app.shortcut.tamper', icon: markRaw(ShieldAlert), component: markRaw(TamperWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local' },
-  { key: 'waf', label: '应用防火墙', titleKey: 'app.shortcut.waf', icon: markRaw(ShieldBan), component: markRaw(WafWindow), w: 980, h: 620, adminOnly: true, remoteCap: 'local' },
+  // 任务 = 计划任务 + 任务中心 合并
+  { key: 'tasks', label: '任务', titleKey: 'app.shortcut.tasks', icon: markRaw(ListChecks), component: markRaw(TasksWindow), w: 900, h: 560, adminOnly: true, remoteCap: 'local' },
+  // ShunX保护机制 = 防火墙 + 应用防火墙 + 网页防篡改 + 数据库保护 合并
+  { key: 'shunxprotection', label: 'ShunX保护机制', titleKey: 'app.shortcut.shunxprotection', icon: markRaw(ShieldCheck), component: markRaw(ShunxSecurityWindow), w: 980, h: 620, adminOnly: true },
+  // 下述应用已合并进「ShunX保护机制」，桌面不再单独保留
+  // { key: 'protection', label: 'Graw数据库保护机制', titleKey: 'app.shortcut.protection', icon: markRaw(ShieldCheck), component: markRaw(ProtectionWindow), w: 860, h: 560, adminOnly: true, remoteCap: 'local' },
+  // { key: 'tamper', label: 'ShunX网页防篡改', titleKey: 'app.shortcut.tamper', icon: markRaw(ShieldAlert), component: markRaw(TamperWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local' },
+  // { key: 'waf', label: '应用防火墙', titleKey: 'app.shortcut.waf', icon: markRaw(ShieldBan), component: markRaw(WafWindow), w: 980, h: 620, adminOnly: true, remoteCap: 'local' },
   { key: 'runtime', label: '运行环境', titleKey: 'app.shortcut.runtime', icon: markRaw(Cpu), component: markRaw(RuntimeWindow), w: 900, h: 560, adminOnly: true, remoteCap: 'local' },
   { key: 'process', label: '进程管理', titleKey: 'app.shortcut.process', icon: markRaw(Settings), component: markRaw(ProcessWindow), w: 780, h: 520, adminOnly: true },
   { key: 'files', label: '文件管理', titleKey: 'app.shortcut.files', icon: markRaw(Folder), component: markRaw(FilesWindow), w: 820, h: 540, adminOnly: true },
   { key: 'netstorage', label: '网络储存', titleKey: 'app.shortcut.netstorage', icon: markRaw(Cloud), component: markRaw(NetStorageWindow), w: 860, h: 540, adminOnly: true, remoteCap: 'local' },
   { key: 'uisettings', label: '界面设置', titleKey: 'app.shortcut.uisettings', icon: markRaw(Palette), component: markRaw(UISettingsWindow), w: 520, h: 540, adminOnly: true, remoteCap: 'local', vip: true },
   { key: 'disks', label: '磁盘管理', titleKey: 'app.shortcut.disks', icon: markRaw(HardDrive), component: markRaw(DisksWindow), w: 900, h: 560, adminOnly: true },
-  { key: 'backup', label: '备份中心', titleKey: 'app.shortcut.backup', icon: markRaw(DatabaseBackup), component: markRaw(BackupWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local' },
-  { key: 'notify', label: '通知中心', titleKey: 'app.shortcut.notify', icon: markRaw(BellRing), component: markRaw(NotifyWindow), w: 860, h: 560, adminOnly: true, remoteCap: 'local' },
-  { key: 'uptime', label: '站点监控', titleKey: 'app.shortcut.uptime', icon: markRaw(Activity), component: markRaw(UptimeWindow), w: 860, h: 560, adminOnly: true, remoteCap: 'local' },
+  // 备份中心已合并进「ShunX保护机制」应用，桌面不再单独保留
+  // { key: 'backup', label: '备份中心', titleKey: 'app.shortcut.backup', icon: markRaw(DatabaseBackup), component: markRaw(BackupWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local' },
+  // 通知中心已合并进「ShunX保护机制」应用，桌面不再单独保留
+  // { key: 'notify', label: '通知中心', titleKey: 'app.shortcut.notify', icon: markRaw(BellRing), component: markRaw(NotifyWindow), w: 860, h: 560, adminOnly: true, remoteCap: 'local' },
+  // 站点监控 + 服务监控 合并为「监控」
+  { key: 'monitoring', label: '监控', titleKey: 'app.shortcut.monitoring', icon: markRaw(Activity), component: markRaw(MonitoringWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local' },
+  // { key: 'uptime', label: '站点监控', titleKey: 'app.shortcut.uptime', icon: markRaw(Activity), component: markRaw(UptimeWindow), w: 860, h: 560, adminOnly: true, remoteCap: 'local' },
   { key: 'webstats', label: '访问统计', titleKey: 'app.shortcut.webstats', icon: markRaw(BarChart3), component: markRaw(WebStatsWindow), w: 980, h: 640, adminOnly: true, remoteCap: 'local' },
   { key: 'rewrite', label: '伪静态规则', titleKey: 'app.shortcut.rewrite', icon: markRaw(FileCode2), component: markRaw(RewriteWindow), w: 780, h: 560, adminOnly: true, remoteCap: 'local' },
   { key: 'siteopts', label: '防盗链缓存', titleKey: 'app.shortcut.siteopts', icon: markRaw(Unlink), component: markRaw(SiteOptsWindow), w: 860, h: 600, adminOnly: true, remoteCap: 'local' },
   { key: 'metricshistory', label: '历史监控', titleKey: 'app.shortcut.metricshistory', icon: markRaw(History), component: markRaw(MetricsHistoryWindow), w: 980, h: 640, adminOnly: true, remoteCap: 'local' },
-  { key: 'svcmonitor', label: '服务监控', titleKey: 'app.shortcut.svcmonitor', icon: markRaw(Server), component: markRaw(ServiceMonitorWindow), w: 920, h: 560, adminOnly: true },
-  { key: 'sshkeys', label: 'SSH 密钥', titleKey: 'app.shortcut.sshkeys', icon: markRaw(KeyRound), component: markRaw(SSHKeysWindow), w: 880, h: 540, adminOnly: true, remoteCap: 'local' },
+  // 服务监控已合并进「监控」应用，桌面不再单独保留
+  // { key: 'svcmonitor', label: '服务监控', titleKey: 'app.shortcut.svcmonitor', icon: markRaw(Server), component: markRaw(ServiceMonitorWindow), w: 920, h: 560, adminOnly: true },
+  // SSH 密钥已合并进「ShunX保护机制」应用，桌面不再单独保留
+  // { key: 'sshkeys', label: 'SSH 密钥', titleKey: 'app.shortcut.sshkeys', icon: markRaw(KeyRound), component: markRaw(SSHKeysWindow), w: 880, h: 540, adminOnly: true, remoteCap: 'local' },
   { key: 'certcheck', label: '证书到期', titleKey: 'app.shortcut.certcheck', icon: markRaw(Lock), component: markRaw(CertWindow), w: 820, h: 540, adminOnly: true, remoteCap: 'local' },
   { key: 'healthcheck', label: '系统体检', titleKey: 'app.shortcut.healthcheck', icon: markRaw(Stethoscope), component: markRaw(HealthCheckWindow), w: 820, h: 600, adminOnly: true, remoteCap: 'local' },
   { key: 'ftpusers', label: 'FTP用户', titleKey: 'app.shortcut.ftpusers', icon: markRaw(UserCheck), component: markRaw(FtpUsersWindow), w: 860, h: 560, adminOnly: true, remoteCap: 'local' },
   // PHP 多版本管理：探测系统 PHP/FPM + 站点 PHP 版本关联（仅管理员）
   { key: 'phpversions', label: 'PHP版本', titleKey: 'app.shortcut.phpversions', icon: markRaw(ServerCog), component: markRaw(PhpVersionsWindow), w: 900, h: 580, adminOnly: true, remoteCap: 'local' },
   { key: 'panelbackup', label: '面板备份', titleKey: 'app.shortcut.panelbackup', icon: markRaw(Archive), component: markRaw(PanelBackupWindow), w: 860, h: 540, adminOnly: true, remoteCap: 'local' },
-  // 系统更新：面板自身版本检测与一键更新（仅管理员）
-  { key: 'update', label: '系统更新', titleKey: 'app.shortcut.update', icon: markRaw(RefreshCw), component: markRaw(UpdateWindow), w: 640, h: 420, adminOnly: true, remoteCap: 'local' },
-  // 登录日志/异地提示：记录登录 IP/时间/设备，异常登录提醒（普通用户仅看自己的历史）
-  { key: 'loginlog', label: '登录日志', titleKey: 'app.shortcut.loginlog', icon: markRaw(Fingerprint), component: markRaw(LoginLogWindow), w: 900, h: 560, adminOnly: false, remoteCap: 'local' },
+  // 系统更新已从桌面移除（面板自身更新入口走其他渠道）
+  // { key: 'update', label: '系统更新', titleKey: 'app.shortcut.update', icon: markRaw(RefreshCw), component: markRaw(UpdateWindow), w: 640, h: 420, adminOnly: true, remoteCap: 'local' },
+  // 登录日志已合并进「日志」应用的登录日志标签页，桌面不再单独保留
+  // { key: 'loginlog', label: '登录日志', titleKey: 'app.shortcut.loginlog', icon: markRaw(Fingerprint), component: markRaw(LoginLogWindow), w: 900, h: 560, adminOnly: false, remoteCap: 'local' },
   // 会话管理：在线会话列表、踢出单设备、强制全部下线（普通用户仅管理自己的会话）
   { key: 'sessions', label: '会话管理', titleKey: 'app.shortcut.sessions', icon: markRaw(MonitorSmartphone), component: markRaw(SessionsWindow), w: 900, h: 560, adminOnly: false, remoteCap: 'local' },
   { key: 'terminal', label: '终端', titleKey: 'app.shortcut.terminal', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true },
@@ -329,6 +330,7 @@ const shortcuts = ref([
 // 已配置 Agent 时 local 类经 Agent 代理在子节点可用，正常显示。
 const visibleShortcuts = computed(() => shortcuts.value.filter(s =>
   (!s.adminOnly || isAdmin()) &&
+  !(s.key === 'foxcode' && settings.hideFoxcode) &&
   !(isCurrentHostRemote.value && !currentHostAgentReady.value && s.remoteCap === 'local')
 ))
 

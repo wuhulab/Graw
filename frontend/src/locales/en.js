@@ -69,6 +69,7 @@ export default {
     panelTitle: 'Panel',
     showTaskbarText: 'Show detailed text in taskbar',
     taskbarTextOnly: 'Taskbar text only (hide icons)',
+    hideFoxcode: 'Hide Foxcode shortcut',
     language: 'Language',
     // Web server engine (NGINX / OpenResty)
     webmode: {
@@ -192,6 +193,8 @@ export default {
     activateSuccess: 'Activated! Paid features unlocked.',
     activateFailed: 'Activation failed',
     codeRequired: 'Please enter a license code',
+    purchase: 'Buy a license code',
+    purchaseHint: "Don't have a code yet? Click to buy:",
     paid: 'Paid unlock',
     unlock: 'Unlock',
     lockedHint: 'This is a paid feature; unlock it by activating VIP.',
@@ -230,6 +233,21 @@ export default {
     copyFailed: 'Copy failed: {error}',
     secretShownOnce: 'Verify secret shown (visible once; save it after copying)',
     secretAlreadyShown: 'Verify secret was already shown; click "Generate random key/secret" to reset and re-save to view again.',
+  },
+  // ShunX Protection Hub (Firewall / WAF / Tamper / Database protection)
+  shunx: {
+    modeFirewall: 'Firewall',
+    modeWaf: 'WAF',
+    modeTamper: 'Anti-Tamper',
+    modeProtection: 'Database',
+    modeBackup: 'Backup Center',
+    modeNotify: 'Notification Center',
+    modeSshkeys: 'SSH Keys',
+  },
+  // Monitoring (Uptime / Service monitor)
+  monitoring: {
+    modeUptime: 'Uptime Monitor',
+    modeSvcmonitor: 'Service Monitor',
   },
   // UI branding
   ui: {
@@ -299,7 +317,8 @@ export default {
       dockervolumes: 'Docker Volumes',
       containeredit: 'Container Edit',
       appstore: 'App Store',
-      tasks: 'Task Center',
+      tasks: 'Tasks',
+      shunxprotection: 'ShunX Protection',
       protection: 'Graw Database Protection',
       tamper: 'ShunX Web Tamper Protection',
       runtime: 'Runtime',
@@ -312,6 +331,7 @@ export default {
       backup: 'Backup Center',
       notify: 'Notification Center',
       uptime: 'Uptime Monitor',
+      monitoring: 'Monitoring',
       webstats: 'Web Stats',
       rewrite: 'Rewrite Rules',
       siteopts: 'Hotlink & Cache',
@@ -647,6 +667,8 @@ export default {
   // Websites
   sites: {
     title: 'Websites',
+    tabSites: 'Websites',
+    tabSsl: 'SSL Certificates',
     add: 'Add',
     webServer: 'Web server: {server}',
     name: 'Name',
@@ -920,6 +942,9 @@ export default {
   // Logs
   logs: {
     title: 'Logs',
+    modeSys: 'System Logs',
+    modeLogin: 'Login Logs',
+    modeAudit: 'Audit Logs',
     add: 'Add Log',
     refresh: 'Refresh',
     exists: 'Exists',
@@ -1381,6 +1406,7 @@ export default {
     noConnections: 'No network storage yet. Click "Add Storage" to create one.',
     host: 'Host',
     base: 'Base path',
+    baseLabel: 'Base path',
     username: 'Username',
     open: 'Open',
     test: 'Test',

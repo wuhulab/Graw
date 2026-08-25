@@ -9,6 +9,8 @@ const defaults = {
   locale: 'zh-CN',
   // 统一面板兼容：开启后每个应用窗口绑定打开时对应的节点，聚焦窗口即操作该节点
   unifiedPanel: false,
+  // 隐藏桌面上的 Foxcode 快捷方式
+  hideFoxcode: false,
 }
 
 function load() {
@@ -29,6 +31,7 @@ watch(
     taskbarTextOnly: settings.taskbarTextOnly,
     locale: settings.locale,
     unifiedPanel: settings.unifiedPanel,
+    hideFoxcode: settings.hideFoxcode,
   }),
   (val) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(val))

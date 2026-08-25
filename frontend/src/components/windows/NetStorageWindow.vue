@@ -1,5 +1,5 @@
 <template>
-  <div style="display:flex; flex-direction:column; height:100%; background:#f5f5f7;">
+  <div style="display:flex; flex-direction:column; height:100%;">
     <!-- 工具栏：新增打开独立表单窗口 -->
     <div class="toolbar">
       <span style="color:#0a3d7a; font-weight:600;">{{ $t('netstorage.title') }}</span>
@@ -25,7 +25,7 @@
             <div v-if="c.username" class="meta-line">{{ $t('netstorage.username') }}: {{ c.username }}</div>
           </div>
           <div class="card-actions">
-            <button class="btn btn-primary btn-sm" @click="openConn(c)">{{ $t('netstorage.open') }}</button>
+            <button class="btn primary btn-sm" @click="openConn(c)">{{ $t('netstorage.open') }}</button>
             <button class="btn btn-sm" :disabled="testingId === c.id" @click="testConn(c)">
               {{ testingId === c.id ? $t('netstorage.testing') : $t('netstorage.test') }}
             </button>
@@ -148,6 +148,9 @@ onMounted(load)
 </script>
 
 <style scoped>
+/* 与其它应用一致的主按钮配色（中性深色，替代旧的 btn-primary 蓝） */
+.btn.primary { background: #111827; color: #fff; border-color: #111827; }
+.btn.primary:hover:not(:disabled) { background: #1f2937; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 .card { background: #fff; border: 1px solid rgba(0,0,0,0.08); border-radius: 12px; padding: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); transition: box-shadow .2s; }
 .card:hover { box-shadow: 0 6px 18px rgba(0,0,0,0.1); }

@@ -218,8 +218,14 @@ async function loadNodes() {
   try {
     const r = await sshkeysApi.nodes()
     sshNodes.value = (r && r.nodes) || []
+    // 加载成功清除错误提示；避免残留上一次的报错误导
+    if (!deployOpen.value) formError.value = ''
   } catch (e) {
     sshNodes.value = []
+    // 加载失败不再静默，弹窗内提示，方便排查节点列表为空的原因
+    if (deployOpen.value) {
+      formError.value = '加载节点失败：' + (e.response?.data?.detail || e.message)
+    }
   }
 }
 
@@ -308,7 +314,8 @@ async function openDeploy(k) {
   deployKey.value = k
   deployNode.value = ''
   formError.value = ''
-  if (sshNodes.value.length === 0) await loadNodes()
+  // 每次打开都重新拉取节点，确保能弹出最新已配置的节点（避免首次为空后不再刷新）
+  await loadNodes()
   deployOpen.value = true
 }
 

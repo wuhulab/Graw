@@ -1,11 +1,18 @@
 <template>
   <div class="sites-window" @click="closeCtx">
-    <div class="toolbar">
-      <button class="btn primary" @click="openTypePicker"><Plus :size="14" /> {{ $t('sites.add') }}</button>
-      <span class="hint">{{ $t('sites.webServer', { server: webServer || $t('sites.none') }) }}</span>
-      <span class="hint right">{{ $t('sites.rightClickHint') }}</span>
+    <!-- 视图切换：网站 / SSL证书 -->
+    <div class="mode-tabs">
+      <button class="tab" :class="{ active: mode === 'sites' }" @click="switchMode('sites')">{{ $t('sites.tabSites') }}</button>
+      <button class="tab" :class="{ active: mode === 'ssl' }" @click="switchMode('ssl')">{{ $t('sites.tabSsl') }}</button>
     </div>
-    <div class="table-wrap">
+
+    <template v-if="mode === 'sites'">
+      <div class="toolbar">
+        <button class="btn primary" @click="openTypePicker"><Plus :size="14" /> {{ $t('sites.add') }}</button>
+        <span class="hint">{{ $t('sites.webServer', { server: webServer || $t('sites.none') }) }}</span>
+        <span class="hint right">{{ $t('sites.rightClickHint') }}</span>
+      </div>
+      <div class="table-wrap">
       <table>
         <thead>
           <tr>
@@ -37,6 +44,12 @@
           </tr>
         </tbody>
       </table>
+    </div>
+    </template>
+
+    <!-- SSL证书视图（合并自独立的「SSL」应用） -->
+    <div v-else class="ssl-wrap">
+      <SSLWindow />
     </div>
 
     <!-- 右键菜单 -->
@@ -119,11 +132,19 @@ import { useI18n } from 'vue-i18n'
 import { sitesApi } from '../../api'
 import { siteRevision } from '../../store/siteBus'
 import ConfirmDialog from '../ConfirmDialog.vue'
+import SSLWindow from './SSLWindow.vue'
 import {
   Plus, Globe, Share2, Network, Layers
 } from 'lucide-vue-next'
 
 const { t } = useI18n()
+
+// 视图模式：'sites' 网站 / 'ssl' SSL证书
+const mode = ref('sites')
+
+function switchMode(m) {
+  mode.value = m
+}
 
 // 站点类型定义（文案走 i18n）
 const typeItems = computed(() => [
@@ -267,6 +288,10 @@ onMounted(load)
 
 <style scoped>
 .sites-window { padding: 10px; }
+/* 视图切换标签（网站 / SSL证书） */
+.mode-tabs { display: inline-flex; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 10px; }
+.mode-tabs .tab { padding: 6px 14px; font-size: 13px; background: #fff; border: none; cursor: pointer; color: #6b7280; }
+.mode-tabs .tab.active { background: #111827; color: #fff; }
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .hint { color: #6e6e73; font-size: 12px; }
 .hint.right { margin-left: auto; }

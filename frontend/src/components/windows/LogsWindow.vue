@@ -1,10 +1,20 @@
 <template>
   <div class="logs-window">
     <div class="toolbar">
-      <button class="btn primary" @click="showAdd=true">{{ $t('logs.add') }}</button>
-      <button class="btn" @click="refresh">{{ $t('logs.refresh') }}</button>
+      <!-- 视图切换：系统日志 / 登录日志 / 审计日志 -->
+      <div class="mode-tabs">
+        <button class="tab" :class="{ active: mode === 'logs' }" @click="switchMode('logs')">{{ $t('logs.modeSys') }}</button>
+        <button class="tab" :class="{ active: mode === 'login' }" @click="switchMode('login')">{{ $t('logs.modeLogin') }}</button>
+        <button class="tab" :class="{ active: mode === 'audit' }" @click="switchMode('audit')">{{ $t('logs.modeAudit') }}</button>
+      </div>
+      <template v-if="mode === 'logs'">
+        <button class="btn primary" @click="showAdd=true">{{ $t('logs.add') }}</button>
+        <button class="btn" @click="refresh">{{ $t('logs.refresh') }}</button>
+      </template>
     </div>
-    <div class="layout">
+
+    <!-- 系统日志视图 -->
+    <div v-if="mode === 'logs'" class="layout">
       <div class="sidebar">
         <div v-for="log in logs" :key="log.id" class="log-item" :class="{active: currentId===log.id}" @click="select(log)">
           <div class="log-name">{{ logName(log) }}</div>
@@ -20,6 +30,16 @@
         </div>
         <pre class="content">{{ contentText }}</pre>
       </div>
+    </div>
+
+    <!-- 登录日志视图（合并自独立的「登录日志」应用） -->
+    <div v-else-if="mode === 'login'" class="login-wrap">
+      <LoginLogWindow />
+    </div>
+
+    <!-- 审计日志视图（合并自独立的「审计日志」应用） -->
+    <div v-else class="login-wrap">
+      <AuditLogWindow />
     </div>
 
     <div v-if="showAdd" class="modal-overlay" @click.self="showAdd=false">
@@ -56,6 +76,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { logsApi } from '../../api'
 import ConfirmDialog from '../ConfirmDialog.vue'
+import LoginLogWindow from './LoginLogWindow.vue'
+import AuditLogWindow from './AuditLogWindow.vue'
 
 const { t } = useI18n()
 const logs = ref([])
@@ -66,6 +88,12 @@ const showAdd = ref(false)
 const addForm = ref({ name: '', path: '' })
 // 高风险操作二次确认状态
 const confirm = ref({ show: false, path: '' })
+// 视图模式：'logs' 系统日志 / 'login' 登录日志 / 'audit' 审计日志
+const mode = ref('logs')
+
+function switchMode(m) {
+  mode.value = m
+}
 
 const contentText = computed(() => lines.value.join(''))
 
@@ -122,6 +150,12 @@ onMounted(refresh)
 <style scoped>
 .logs-window { padding: 10px; display: flex; flex-direction: column; height: 100%; }
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+/* 视图切换标签 */
+.mode-tabs { display: inline-flex; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+.mode-tabs .tab { padding: 6px 14px; font-size: 13px; background: #fff; border: none; cursor: pointer; color: #6b7280; }
+.mode-tabs .tab.active { background: #111827; color: #fff; }
+/* 登录日志视图容器 */
+.login-wrap { flex: 1; min-height: 0; }
 .layout { display: flex; gap: 10px; flex: 1; min-height: 0; }
 .sidebar { width: 220px; border: 1px solid #e5e7eb; border-radius: 8px; overflow: auto; background: #fff; }
 .log-item { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; cursor: pointer; }

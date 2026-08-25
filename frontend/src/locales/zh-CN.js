@@ -185,6 +185,8 @@ export default {
   // 网站
   sites: {
     title: '网站',
+    tabSites: '网站',
+    tabSsl: 'SSL证书',
     add: '添加',
     webServer: 'Web服务器: {server}',
     name: '名称',
@@ -460,6 +462,9 @@ export default {
   // 日志
   logs: {
     title: '日志',
+    modeSys: '系统日志',
+    modeLogin: '登录日志',
+    modeAudit: '审计日志',
     add: '添加日志',
     refresh: '刷新',
     exists: '存在',
@@ -1319,6 +1324,7 @@ export default {
     panelTitle: '面板',
     showTaskbarText: '底栏显示详细文字',
     taskbarTextOnly: '底栏只显示文字（隐藏图标）',
+    hideFoxcode: '隐藏 Foxcode 快捷方式',
     language: '界面语言',
     // Web 服务器引擎（NGINX / OpenResty）
     webmode: {
@@ -1372,6 +1378,7 @@ export default {
     noConnections: '暂无网络储存，点击「添加存储」创建',
     host: '主机',
     base: '基础路径',
+    baseLabel: '基础路径',
     username: '账号',
     open: '打开',
     test: '测试',
@@ -1496,6 +1503,8 @@ export default {
     activateSuccess: '激活成功，付费功能已解锁！',
     activateFailed: '激活失败',
     codeRequired: '请输入授权码',
+    purchase: '购买授权码',
+    purchaseHint: '还没有授权码？点击前往购买：',
     paid: '付费解锁',
     unlock: '解锁',
     lockedHint: '该选项为付费功能，开通 VIP 后即可解锁使用。',
@@ -1534,6 +1543,21 @@ export default {
     copyFailed: '复制失败：{error}',
     secretShownOnce: '校验 secret 已显示（仅本次可见，复制后请妥善保存）',
     secretAlreadyShown: '校验 secret 已展示过；如需再次查看，请点击「生成随机 key/secret」重置后重新保存',
+  },
+  // ShunX 保护机制（聚合：防火墙 / 应用防火墙 / 网页防篡改 / 数据库保护）
+  shunx: {
+    modeFirewall: '防火墙',
+    modeWaf: '应用防火墙',
+    modeTamper: '网页防篡改',
+    modeProtection: '数据库保护',
+    modeBackup: '备份中心',
+    modeNotify: '通知中心',
+    modeSshkeys: 'SSH密钥',
+  },
+  // 监控（聚合：站点监控 / 服务监控）
+  monitoring: {
+    modeUptime: '站点监控',
+    modeSvcmonitor: '服务监控',
   },
   // 界面设置（品牌）
   ui: {
@@ -1604,7 +1628,8 @@ export default {
       dockervolumes: 'Docker卷',
       containeredit: '容器编辑',
       appstore: '应用商店',
-      tasks: '任务中心',
+      tasks: '任务',
+      shunxprotection: 'ShunX保护机制',
       protection: 'Graw数据库保护机制',
       tamper: 'ShunX网页防篡改',
       runtime: '运行环境',
@@ -1617,6 +1642,7 @@ export default {
       backup: '备份中心',
       notify: '通知中心',
       uptime: '站点监控',
+      monitoring: '监控',
       webstats: '访问统计',
       rewrite: '伪静态规则',
       siteopts: '防盗链缓存',

@@ -12,7 +12,6 @@ agent_auth.py - 子节点 Agent API 鉴权（成对访问密钥）
   - 子节点启动时通过环境变量注入：
       GRAW_AGENT_KEY    访问 key（主面板需持有）
       GRAW_AGENT_SECRET 校验 secret（主面板需持有）
-      GRAW_AGENT_ROLE   该 agent 换取的 JWT 所属角色：admin | user
     （未配置则 agent 端点整体关闭，不影响面板正常登录使用）
   - 主面板请求 GET /api/agent/issue 时在查询参数/头携带签名：
       X-Graw-Agent-Key  : 访问 key
@@ -20,12 +19,13 @@ agent_auth.py - 子节点 Agent API 鉴权（成对访问密钥）
       nonce             : 本次请求唯一随机串
       sig               = HMAC-SHA256(secret, key|ts|nonce)
     子节点用同一 secret 常量时间重算比对；超时（默认 300s）拒绝。
-  - 校验通过即用与面板同源的 JWT 密钥签发一个指定角色(admin/user)的令牌，
+  - 校验通过即用与面板同源的 JWT 密钥签发一个固定 admin 角色的令牌，
     到期后主面板凭此令牌按常规 /api/* 鉴权访问全部应用接口。
 
 安全要点：
   - hmac.compare_digest 常量时间比较，防时序侧信道
-  - 角色由子节点环境变量决定（而非主面板自报），防越权
+  - 角色固定为 admin（子节点始终以管理员权限被管理，由子节点侧强制，
+    而非主面板自报），防越权
   - 时间戳 ±新鲜度校验防重放；nonce 防同秒重放
 """
 from typing import Optional
@@ -168,9 +168,8 @@ def agent_issue(
         raise HTTPException(status_code=400, detail="缺少 ts/nonce/sig")
     if not _verify_agent_credential(ts, nonce or "", sig or "", x_graw_agent_key or ""):
         raise HTTPException(status_code=401, detail="Agent 凭证校验失败")
-    # 角色强制取自子节点配置（不可由请求方自报），防越权
-    cfg = agent_cfg.get_config()
-    role = cfg.get("role") if cfg.get("role") in ("admin", "user") else "user"
+    # 角色强制为 admin（子节点接入固定管理员权限，不可由请求方自报，防越权）
+    role = "admin"
     username = "agent"
     # 确保 agent 本地账号存在且角色正确（JWT 经 get_current_user 校验时用到）
     _ensure_agent_user(role)
@@ -186,11 +185,10 @@ def agent_issue(
 
 
 class AgentCfgBody(BaseModel):
-    """设置界面「作为子节点」配置入参。"""
+    """设置界面「作为子节点」配置入参。子节点接入角色固定为 admin。"""
     enabled: bool
     key: str = ""
     secret: str = ""
-    role: str = "user"
 
 
 @router.get("/cfg", name="agent_cfg_get", dependencies=[Depends(require_admin)])
@@ -210,7 +208,6 @@ def agent_cfg_set(body: AgentCfgBody):
             enabled=bool(body.enabled),
             key=body.key or "",
             secret=body.secret or "",
-            role=body.role or "user",
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
