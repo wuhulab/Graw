@@ -22,6 +22,9 @@ frp.py - Frp（内网穿透）管理
   - 所有写接口挂在 ADMIN 权限（main.py 注册时依赖 ADMIN）。
   - 模式 / 端口 / 代理 / token / 域名等字段白名单校验，拒绝换行与控制字符，
     防止向最终 shell / systemd / toml 中注入额外配置或命令。
+  - configPath 必须经过 _validate_config_path 约束在 FRP_CONFIG_DIR
+    （/etc/frp）目录内，realpath 解析后禁止 ".." 穿越与绝对路径逃逸，
+    杜绝已认证管理员借 configPath 对任意可写路径的任意文件写入。
 """
 
 import json
@@ -57,6 +60,10 @@ DEFAULT_SERVER_CONFIG = "/etc/frp/frps.toml"
 DEFAULT_CLIENT_CONFIG = "/etc/frp/frpc.toml"
 # 后台运行日志
 DEFAULT_LOG_PATH = "/var/log/frp_{mode}.log"
+# 配置文件允许写入的「基目录」：自定义 configPath 解析后必须落在此目录内，
+# 防止任意文件写入（见 _validate_config_path）。与默认配置路径保持一致，
+# 故 Linux / Windows 下默认行为不受影响。
+FRP_CONFIG_DIR = "/etc/frp"
 
 # 代理名：frp 要求代理名只能由字母数字 _ - 组成、不能包含空格与点
 _PROXY_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
@@ -130,6 +137,47 @@ def _reject_ctrl(value: str, field: str) -> str:
     if any(ord(c) < 32 or ord(c) == 127 for c in value):
         raise HTTPException(status_code=400, detail=f"{field} 不能包含控制字符或换行")
     return value.strip()
+
+
+def _validate_config_path(value: str, field: str) -> str:
+    """校验 frp 配置文件路径，禁止任意文件写入（CWE-73 / CWE-22）。
+
+    此前 configPath 仅做长度与控制字符校验，已认证管理员可将其指向任意可写
+    路径，使 _write_toml 把攻击者可控的 TOML 写到系统任意位置（如覆盖系统
+    配置、植入内容等）。现要求：
+
+      - 空字符串表示使用默认路径（DEFAULT_SERVER_CONFIG / DEFAULT_CLIENT_CONFIG），
+        直接放行；
+      - 非空时必须为绝对路径；
+      - 拒绝 Windows 设备命名空间前缀（\\\\?\\\\ / \\\\.\\\\）；
+      - 经 os.path.realpath 解析（消除符号链接与 ".." 穿越）后，必须仍位于
+        FRP_CONFIG_DIR 目录内（含其自身），否则拒绝。
+
+    这样即使传入 "/etc/frp/../../tmp/x.toml" 之类的逃逸路径，realpath 解析后
+    也会落在 FRP_CONFIG_DIR 之外而被拦截；默认路径与合法子路径不受影响。
+    """
+    value = (value or "").strip()
+    if not value:
+        return ""
+    value = _reject_ctrl(value, field)  # 先拒绝控制字符 / 换行
+    if value.startswith("\\\\?\\") or value.startswith("\\\\.\\"):
+        raise HTTPException(
+            status_code=400, detail=f"{field} 包含非法的设备命名空间前缀"
+        )
+    if not os.path.isabs(value):
+        raise HTTPException(status_code=400, detail=f"{field} 必须为绝对路径")
+    try:
+        base = os.path.realpath(FRP_CONFIG_DIR)
+        real = os.path.realpath(value)
+    except Exception as exc:  # pragma: no cover - 路径解析异常统一拒绝
+        logger.warning("configPath realpath 失败 %s: %s", value, exc)
+        raise HTTPException(status_code=400, detail=f"{field} 路径解析失败")
+    if real != base and not real.startswith(base + os.sep):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{field} 必须位于 {FRP_CONFIG_DIR} 目录内（禁止路径穿越 / 逃逸）",
+        )
+    return value
 
 
 def _check_port(value: int, field: str) -> int:
@@ -529,9 +577,10 @@ async def preview_config():
 @router.put("/config")
 async def save_config(req: FrpConfigModel):
     """保存面板配置（模式 / 服务端或客户端项），自动重写 toml。"""
-    # 字段级安全校验（配置路径 / token 拒绝换行与控制字符）
-    cfg_server = _reject_ctrl(req.server.configPath, "服务端配置路径")
-    cfg_client = _reject_ctrl(req.client.configPath, "客户端配置路径")
+    # 字段级安全校验：配置路径做基目录约束（防任意文件写入），
+    # token 拒绝换行与控制字符。
+    cfg_server = _validate_config_path(req.server.configPath, "服务端配置路径")
+    cfg_client = _validate_config_path(req.client.configPath, "客户端配置路径")
     token = _reject_ctrl(req.server.token, "服务端 token")
     _reject_ctrl(req.client.token, "客户端 token")
 

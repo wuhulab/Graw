@@ -56,6 +56,18 @@ _PRE_IMPORT_RE = re.compile(r"^pre-import-\d{8}_\d{6}\.tar\.gz$")
 # 上传导入的大小上限（200MB），防止撑爆磁盘
 MAX_IMPORT_BYTES = 200 * 1024 * 1024
 
+# 解压炸弹防护（第十二轮审计修复，Medium）：
+#   此前仅限制压缩后体积，解压时无总量/成员数/单成员大小上限——
+#   攻击者上传高压缩比 tar.gz（200MB 内可含数十 GB 重复数据），
+#   导入即瞬间写满数据分区（磁盘耗尽 DoS）。
+#   在 extractall 之前先对成员清单做三重复核：
+#     - 单成员大小上限（tar 成员的 size 即展开后字节数，稀疏文件同口径）
+#     - 成员总数上限
+#     - 解压后总字节数上限（含目录项元数据开销的近似值：成员 size 之和）
+MAX_IMPORT_MEMBERS = 2000
+MAX_IMPORT_MEMBER_BYTES = 256 * 1024 * 1024   # 单文件 256MB
+MAX_IMPORT_EXPANDED_BYTES = 1024 * 1024 * 1024  # 解压总量 1GB
+
 _lock = threading.Lock()
 
 
@@ -166,9 +178,29 @@ def _import_sync(content: bytes) -> dict:
     os.makedirs(tmp_root, exist_ok=True)
     try:
         with tarfile.open(fileobj=io.BytesIO(content), mode="r:gz") as tf:
-            for m in tf.getmembers():
+            members = tf.getmembers()
+            # 解压炸弹防护：先对成员清单做总量/数量/单成员大小核验，
+            # 任何一项超限立即中止（此时尚未向磁盘写入任何解压内容）。
+            if len(members) > MAX_IMPORT_MEMBERS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"归档成员过多（{len(members)} > {MAX_IMPORT_MEMBERS}），已中止导入",
+                )
+            total_expanded = 0
+            for m in members:
                 _sanitize_member(m, tmp_root)
-            tf.extractall(tmp_root, members=tf.getmembers())
+                if m.size > MAX_IMPORT_MEMBER_BYTES:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"归档包含超大文件（{m.name} 展开 {m.size} 字节 > 上限），已中止导入",
+                    )
+                total_expanded += m.size
+                if total_expanded > MAX_IMPORT_EXPANDED_BYTES:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="归档解压后总量超过 1GB 上限，已中止导入（疑似解压炸弹）",
+                    )
+            tf.extractall(tmp_root, members=members)
     except tarfile.TarError as e:
         shutil.rmtree(tmp_root, ignore_errors=True)
         raise HTTPException(status_code=400, detail=f"归档解压失败：{e}")

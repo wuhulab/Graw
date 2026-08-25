@@ -86,6 +86,20 @@ def _is_forbidden_redis(method: str) -> bool:
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 DB_FILE = os.path.join(DATA_DIR, "databases.json")
 
+# SQLite 允许的「绝对路径」根目录集合（第十二轮审计修复）：
+#   默认 = 面板数据目录 + 常见站点/应用数据目录；可通过环境变量
+#   GRAW_SQLITE_ALLOWED_ROOTS 覆盖（逗号分隔的绝对路径列表）。
+#   不在允许根内的绝对路径一律拒绝，防止任意 SQLite 文件读取 / 任意文件创建。
+_SQLITE_ALLOWED_ROOTS = [
+    os.path.normpath(os.path.abspath(DATA_DIR)),
+] + [
+    os.path.normpath(os.path.abspath(x.strip()))
+    for x in os.environ.get(
+        "GRAW_SQLITE_ALLOWED_ROOTS", "/srv,/var/www,/www,/opt"
+    ).split(",")
+    if x.strip()
+]
+
 # 各数据库驱动是否可用（缺驱动时接口返回 503 提示，避免崩溃）
 MYSQL_LIBS = False
 REDIS_LIBS = False
@@ -298,10 +312,22 @@ def _find_connection(conn_id: str) -> dict:
 def _sqlite_file(conn: dict) -> str:
     """解析 SQLite 数据库文件路径。
 
-    - `database` 字段存文件路径（相对路径基于数据目录 DATA_DIR，绝对路径原样使用）；
+    - `database` 字段存文件路径（相对路径基于数据目录 DATA_DIR，绝对路径
+      必须位于「允许根目录」之内）；
     - 拒绝空字节 / CR / LF 等控制字符，防止字符注入到文件路径与后续元数据写入；
     - 相对路径归一化后必须仍位于 DATA_DIR 之内，拒绝经由 `..` 逃逸出数据目录
       （否则可在任意可写位置建库或探测任意文件存在性）。
+
+    安全修复（第十二轮审计，Medium）：此前绝对路径「原样放行」，管理员可
+    连接宿主机上任意位置的 SQLite 文件：
+      - 读取其它应用/站点的数据库内容（任意 SQLite 文件读取，LFI 变体）；
+      - 连接不存在的路径时由 sqlite3.connect 在该处创建库文件（任意文件
+        创建原语，与 files.py 对 data/ 的保护基线不一致）。
+    现改为：绝对路径必须位于允许根目录集合内——默认仅数据目录 DATA_DIR 与
+    常见站点数据目录（/srv、/var/www、/www、/opt），可通过环境变量
+    GRAW_SQLITE_ALLOWED_ROOTS 覆盖（逗号分隔）；并拒绝 Windows 设备命名
+    空间与 UNC 网络路径（与 files/logs 模块同基线，防止 commonpath
+    fail-open 绕过）。
     """
     raw = (conn.get("database") or "").strip()
     if not raw:
@@ -309,8 +335,23 @@ def _sqlite_file(conn: dict) -> str:
         raise HTTPException(status_code=400, detail="SQLite 文件路径不能为空")
     if "\x00" in raw or "\r" in raw or "\n" in raw:
         raise HTTPException(status_code=400, detail="SQLite 文件路径包含非法字符")
+    if raw.startswith("\\\\?\\") or raw.startswith("\\\\.\\"):
+        raise HTTPException(status_code=400, detail="SQLite 文件路径非法（不支持设备命名空间路径）")
+    if raw.startswith("\\\\") or raw.startswith("//"):
+        raise HTTPException(status_code=400, detail="SQLite 文件路径非法（不支持 UNC 网络路径）")
     if os.path.isabs(raw):
-        return os.path.normpath(raw)
+        p = os.path.normpath(raw)
+        # 绝对路径必须落在允许根目录之内（默认 data 目录 + 常见站点数据目录）
+        for root in _SQLITE_ALLOWED_ROOTS:
+            try:
+                if os.path.commonpath([os.path.normcase(p), os.path.normcase(root)]) == os.path.normcase(root):
+                    return p
+            except ValueError:
+                continue  # 跨盘符/不同根：不可能在该允许根下
+        raise HTTPException(
+            status_code=400,
+            detail="SQLite 绝对路径不在允许的目录范围内（可通过 GRAW_SQLITE_ALLOWED_ROOTS 配置）",
+        )
     resolved = os.path.normpath(os.path.join(DATA_DIR, raw))
     # 相对路径逃逸防护：归一化后必须仍落在 DATA_DIR 之内
     base = os.path.abspath(DATA_DIR)
@@ -358,6 +399,9 @@ async def list_connections():
 @router.post("/connections")
 async def add_connection(req: DBConnection):
     """新增数据库连接配置。"""
+    # SQLite：创建时即校验文件路径合法（快速失败，第十二轮审计修复）
+    if req.db_type == "sqlite":
+        _sqlite_file(req.model_dump())
     data = _load_connections()
     conn = {
         "id": str(uuid.uuid4())[:8],
@@ -380,6 +424,9 @@ async def add_connection(req: DBConnection):
 @router.put("/connections/{conn_id}")
 async def update_connection(conn_id: str, req: DBConnection):
     """编辑数据库连接配置（密码留空表示保持原密码）。"""
+    # SQLite：更新时同样快速校验文件路径合法（第十二轮审计修复）
+    if req.db_type == "sqlite":
+        _sqlite_file(req.model_dump())
     data = _load_connections()
     conn = next((c for c in data if c["id"] == conn_id), None)
     if not conn:

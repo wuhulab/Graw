@@ -134,6 +134,67 @@ MOUNT_MODES = ("rw", "ro")
 # 容器名校验：Docker/Podman 容器名仅允许字母数字及 _ . -，且不能以 - 开头
 _CONTAINER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
+# ---------------------------------------------------------------------------
+# 宿主路径挂载安全校验（第十二轮审计修复，Low）
+#
+# 背景：MountItem.host / project_dir 会原样拼入容器引擎的 `-v <host>:<c>`。
+# 此前 host 无任何校验，管理员可挂载宿主机根目录 / 或 docker.sock 进容器，
+# 容器内即可读写宿主任意文件 / 执行任意 docker 命令（宿主逃逸级能力），
+# 与 files.py 对 data/ 目录的保护基线不一致。
+#
+# 规则：
+#   - 必须为绝对路径（Linux / 开头；Windows 盘符/UNC 一律拒绝——容器引擎
+#     挂载语义以 POSIX 为准，UNC 设备共享路径无正当用途）；
+#   - 拒绝 Windows 设备命名空间（\\?\ / \\.\），防 commonpath fail-open；
+#   - 拒绝根目录 /（挂载根 = 宿主全盘逃逸）；
+#   - 拒绝 docker.sock 与系统敏感目录（/etc /usr /var /run /bin /sbin /boot
+#     /proc /sys /dev /lib /lib64 /root 及其子路径）——运行时开发容器
+#     没有理由挂载这些目录；
+#   - 拒绝面板数据目录（data/，含 JWT 密钥 / 用户表等敏感文件）。
+# ---------------------------------------------------------------------------
+_DATA_DIR_NORM = os.path.normpath(os.path.abspath(DATA_DIR))
+_MOUNT_SYSTEM_ROOTS = tuple(
+    os.path.normpath(r) for r in (
+        "/etc", "/usr", "/var", "/run", "/bin", "/sbin", "/boot",
+        "/proc", "/sys", "/dev", "/lib", "/lib64", "/root",
+    )
+)
+# 额外可通过环境变量追加拒绝根（逗号分隔），便于部署方自定义
+for _extra in os.environ.get("GRAW_RUNTIME_MOUNT_DENY", "").split(","):
+    _extra = _extra.strip()
+    if _extra:
+        _MOUNT_SYSTEM_ROOTS += (os.path.normpath(_extra),)
+
+
+def _validate_mount_host(host: str, field: str = "挂载源路径") -> str:
+    """校验将被挂载进容器的宿主机路径；非法抛 HTTPException。"""
+    host = (host or "").strip()
+    if not host:
+        raise HTTPException(status_code=400, detail=f"{field}不能为空")
+    if host.startswith("\\\\?\\") or host.startswith("\\\\.\\"):
+        raise HTTPException(status_code=400, detail=f"{field}非法（不支持设备命名空间路径）")
+    if host.startswith("\\\\") or host.startswith("//") or (len(host) > 1 and host[1] == ":"):
+        raise HTTPException(status_code=400, detail=f"{field}非法（不支持 Windows 盘符/UNC 路径）")
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in host):
+        raise HTTPException(status_code=400, detail=f"{field}包含非法控制字符")
+    norm = os.path.normpath(host.replace("\\", "/"))
+    if norm in ("/", "."):
+        raise HTTPException(status_code=400, detail=f"{field}不能是根目录或当前目录")
+    if "docker.sock" in norm:
+        raise HTTPException(status_code=400, detail=f"{field}禁止挂载 docker.sock（宿主逃逸风险）")
+    for root in _MOUNT_SYSTEM_ROOTS:
+        if norm == root or norm.startswith(root + "/"):
+            raise HTTPException(
+                status_code=400, detail=f"{field}位于系统敏感目录（{root}），禁止挂载"
+            )
+    try:
+        in_data = os.path.commonpath([os.path.normcase(norm), os.path.normcase(_DATA_DIR_NORM)]) == os.path.normcase(_DATA_DIR_NORM)
+    except ValueError:
+        in_data = False
+    if in_data:
+        raise HTTPException(status_code=400, detail=f"{field}位于面板数据目录，禁止挂载")
+    return host
+
 
 # ------------------------------------------------------------
 # 配置持久化
@@ -243,8 +304,9 @@ def _build_run_args(cfg: dict) -> list:
     """根据运行环境配置构造 `run -d` 剩余参数（不含镜像与命令）。"""
     args = []
     workdir = (cfg.get("workdir") or DEFAULT_WORKDIR).rstrip("/")
-    # 项目目录自动挂载到工作目录
+    # 项目目录自动挂载到工作目录（入口已校验，此处纵深防御）
     if cfg.get("project_dir"):
+        _validate_mount_host(cfg["project_dir"], "项目目录")
         args += ["-v", f"{_mount_path(cfg['project_dir'])}:{workdir}"]
     # 端口映射：外部:内部/协议
     for p in cfg.get("ports") or []:
@@ -262,11 +324,12 @@ def _build_run_args(cfg: dict) -> list:
         if not name:
             continue
         args += ["-e", f"{name}={value}"]
-    # 自定义挂载：宿主机:容器[:ro]
+    # 自定义挂载：宿主机:容器[:ro]（入口已校验，此处纵深防御）
     for m in cfg.get("mounts") or []:
         host, container = m.get("host"), m.get("container")
         if not host or not container:
             continue
+        _validate_mount_host(host, "挂载源路径")
         mode = "ro" if m.get("mode") in MOUNT_MODES and m.get("mode") == "ro" else "rw"
         spec = f"{_mount_path(host)}:{container}"
         if mode == "ro":
@@ -522,6 +585,11 @@ async def create_runtime(req: RuntimeCreate):
     # 项目目录要求绝对路径（允许 Windows 盘符路径或 Linux 绝对路径）
     if not os.path.isabs(req.project_dir):
         raise HTTPException(status_code=400, detail="项目目录必须为绝对路径")
+    # 安全修复（第十二轮审计）：项目目录与自定义挂载的宿主路径均不得为
+    # 根目录 / 系统敏感目录 / docker.sock / 面板数据目录（防容器逃逸）。
+    _validate_mount_host(req.project_dir, "项目目录")
+    for m in req.mounts or []:
+        _validate_mount_host(m.host, "挂载源路径")
     if req.container_name and not _CONTAINER_NAME_RE.match(req.container_name):
         raise HTTPException(status_code=400, detail="容器名称只能包含字母、数字、_、-、.，且不能以 - 开头")
     # 端口范围 / 主机映射 IP 已由 RuntimeCreate 的 field_validator 拦截
