@@ -40,6 +40,7 @@ TODO.md
 .workbuddy/
 outputs/
 agent/
+WorkBuddy/
 skills-lock.json
 GETMEREAD/
 tmp_audit/

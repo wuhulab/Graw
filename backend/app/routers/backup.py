@@ -136,6 +136,11 @@ def _validate_source_path(path: str) -> str:
 
     要求：绝对路径、无控制字符、不以 - 开头（防 tar 选项注入）、
     不在面板 data 目录内。
+
+    安全修复（第十一轮审计）：Windows 下额外拒绝 `"`——该字符在 Windows
+    文件名中本身非法，且会被拼入计划任务的 `powershell -Command "..."`
+    外层双引号包裹（见 _build_cron_command），裸 `"` 可提前闭合外层引号，
+    使 `&`/`|`/`>` 等 cmd 元字符逃逸为命令分隔符（存储型命令注入）。
     """
     path = (path or "").strip()
     if not path:
@@ -143,6 +148,8 @@ def _validate_source_path(path: str) -> str:
     _reject_device_namespace(path)
     if "\x00" in path:
         raise HTTPException(status_code=400, detail="备份源路径不能包含非法字符")
+    if IS_WINDOWS and '"' in path:
+        raise HTTPException(status_code=400, detail="路径包含非法字符 \"（Windows 文件名不允许双引号）")
     if not os.path.isabs(path):
         raise HTTPException(status_code=400, detail="备份源路径必须为绝对路径")
     base = os.path.basename(path.rstrip("/\\"))
@@ -157,6 +164,10 @@ def _validate_target_dir(path: str, allow_empty: bool = True) -> str:
     """校验并规范化备份目标目录（可为空，空则使用默认备份目录）。
 
     要求：绝对路径、无控制字符、不在面板 data 目录内、不能是根目录。
+
+    安全修复（第十一轮审计）：Windows 下额外拒绝 `"`（同
+    _validate_source_path —— 防计划任务命令注入；该字符在 Windows
+    文件名中本身非法，拒绝不影响任何合法路径）。
     """
     path = (path or "").strip()
     if not path:
@@ -166,6 +177,8 @@ def _validate_target_dir(path: str, allow_empty: bool = True) -> str:
     _reject_device_namespace(path)
     if "\x00" in path:
         raise HTTPException(status_code=400, detail="目标目录不能包含非法字符")
+    if IS_WINDOWS and '"' in path:
+        raise HTTPException(status_code=400, detail="路径包含非法字符 \"（Windows 文件名不允许双引号）")
     if not os.path.isabs(path):
         raise HTTPException(status_code=400, detail="目标目录必须为绝对路径")
     norm = os.path.normpath(path)
@@ -473,7 +486,23 @@ def _build_cron_command(source: str, target: str, safe: str) -> str:
     安全说明：source/target 会拼入 shell / PowerShell 命令串，必须严格转义
     （Linux 用 shlex.quote，Windows 用 PowerShell 单引号双写），且 basename
     以 "-" 开头已在 _validate_source_path 入口拒绝（tar 选项注入防护）。
+
+    安全修复（第十一轮审计，High）：Windows 分支整体包裹在
+    `powershell -Command "..."` 的【双引号】中，_ps_quote 的单引号转义只对
+    PowerShell 解析层有效——target/parent/base 中的裸 `"` 会在 cmd.exe
+    解析层提前闭合外层引号，使 `&`/`|`/`>` 逃逸为命令分隔符（存储型命令
+    注入，写入 data/<tid>_task.bat 后由 schtasks 执行）。此处 fail-closed：
+    任何插值含 `"` 一律拒绝（`"` 在 Windows 文件名中本身非法，不影响合法
+    路径；入口 _validate_source_path/_validate_target_dir 已先行拦截，
+    本断言为纵深防御，防止未来新增调用方绕过入口校验）。
     """
+    if IS_WINDOWS:
+        for name, val in (("source", source), ("target", target), ("safe", safe)):
+            if '"' in (val or ""):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"计划备份命令构造中止：{name} 含非法字符 \"（命令注入防护）",
+                )
     source = source.rstrip("/\\")
     parent, base = os.path.split(source)
     if not parent:

@@ -238,6 +238,17 @@ def upsert_ssh_node(node: dict) -> dict:
     """
     store = _get_store()
     node_id = (node.get("id") or "").strip() or ("node_" + os.urandom(4).hex())
+    # 保留字校验（第十一轮审计修复）：内置本地节点 ID（local）不可被覆盖——
+    # 此前 POST /api/nodes 带 id="local"（或 PUT /api/nodes/local）会把
+    # type=local 的内置节点改写成 SSH 节点：get_current_node() 的本机语义
+    # 被劫持为远端主机，且 delete_node 对 LOCAL_ID 的保护使该覆盖无法撤销，
+    # 经 API 构成不可恢复的持久化完整性破坏。与 delete_node 的防护对齐。
+    if node_id == LOCAL_ID:
+        raise ValueError("内置本机节点（local）不可被覆盖或改为 SSH 节点")
+    # 节点 ID 白名单：ID 会进入 URL 路径（PUT/DELETE /{node_id}）与 JSON 键，
+    # 限制为安全字符集，避免控制字符/路径分隔符等脏数据进入存储。
+    if not re.match(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$", node_id):
+        raise ValueError("节点 ID 仅允许字母/数字/._-（≤64 字符，且以字母或数字开头）")
     existing = store["nodes"].get(node_id) or {}
 
     cleaned = {
@@ -287,6 +298,18 @@ def upsert_ssh_node(node: dict) -> dict:
     _save_store(store)
     # 节点凭据可能变更（密码/密钥/主机），仅丢弃该节点的连接避免复用旧凭据的长连接
     _paramiko_drop_pool(_paramiko_node_key(cleaned) if cleaned.get("type") == "ssh" else None)
+    # agent token 缓存联动清理（第十一轮审计修复）：缓存键 (host,port,user)
+    # 不含凭据，凭据轮换后旧的管理员 JWT 若不主动清除会被继续复用（最长 7 天）。
+    # 旧键（编辑前 host/port/user）与新键一并清理；agent_client 依赖本模块，
+    # 此处必须延迟导入避免循环依赖。
+    try:
+        from app import agent_client  # noqa: PLC0415 - 打破循环依赖需局部导入
+
+        if existing.get("type") == "ssh":
+            agent_client.drop_token_cache(_paramiko_node_key(existing))
+        agent_client.drop_token_cache(_paramiko_node_key(cleaned))
+    except Exception:
+        pass
     logger.info("已保存 SSH 节点 %s (%s@%s)", node_id, cleaned["user"], cleaned["host"])
     return next((n for n in list_nodes() if n["id"] == node_id), None)
 
@@ -307,6 +330,14 @@ def delete_node(node_id: str) -> bool:
     _save_store(store)
     # 节点被删，仅丢弃该节点残留的连接池（由 nkey 定位），不影响其它节点在途连接
     _paramiko_drop_pool(nkey)
+    # agent token 缓存同样清理：同 (host,port,user) 的新节点不应继承旧节点的
+    # 管理员 JWT（第十一轮审计修复，与 upsert 的清理保持同一语义）
+    try:
+        from app import agent_client  # noqa: PLC0415 - 打破循环依赖需局部导入
+
+        agent_client.drop_token_cache(nkey)
+    except Exception:
+        pass
     return True
 
 

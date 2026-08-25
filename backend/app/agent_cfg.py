@@ -141,7 +141,13 @@ def reveal_secret() -> dict:
 
     仅当「启用 + 有 secret + 尚未展示过」时才返回明文；否则返回空。返回后
     无论是否复制都置 secret_revealed=True，避免明文常驻接口。
+
+    修复（第十一轮审计）：此处原先缺少 `global _cache` 声明——`_cache = cfg`
+    只是创建了局部变量。当前恰好因 _load() 按引用返回全局缓存对象、就地
+    mutation 仍能生效而「碰巧可用」；一旦 _load 改为返回副本，「一次性展示」
+    标记就会静默失效（secret 可被反复拉取明文）。补上声明消除该隐患。
     """
+    global _cache
     with _lock:
         cfg = _load()
         can = bool(cfg.get("enabled")) and bool(cfg.get("secret")) and not cfg.get("secret_revealed")

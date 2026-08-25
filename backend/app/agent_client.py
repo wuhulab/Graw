@@ -57,6 +57,23 @@ def _node_agent_cfg(node: dict) -> dict:
     }
 
 
+def drop_token_cache(node_key=None) -> None:
+    """清除缓存的子节点 agent JWT。
+
+    节点凭据（agent_key/agent_secret）轮换或节点删除/编辑时必须调用：
+    _token_cache 的键是 (host, port, user)，不含凭据本身——若不清理，
+    旧凭据换取的管理员 JWT 会在缓存有效期内（默认 7 天）继续被复用，
+    「轮换密钥立即失效旧访问」的安全语义失效（第十一轮审计修复）。
+
+    传入 node_key 只清该节点；不传清空全部（节点大量变更时的兜底）。
+    """
+    with _token_lock:
+        if node_key is not None:
+            _token_cache.pop(node_key, None)
+            return
+        _token_cache.clear()
+
+
 def agent_ready(node: dict) -> bool:
     """当前节点是否已配置 Agent 访问（key+secret 齐全且为 SSH 节点）。"""
     if not node or node.get("type") != "ssh":
