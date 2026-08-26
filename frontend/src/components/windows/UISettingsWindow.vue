@@ -492,6 +492,8 @@ input:focus, textarea:focus {
   gap: 8px;
   cursor: pointer;
   color: #1d1d1f;
+  /* 与界面设置其它说明文字保持相同字号（如「仅用于这个账号」） */
+  font-size: 12px;
 }
 .switch-label input {
   width: 16px;
