@@ -43,7 +43,7 @@ from app.auth import (
     get_current_user,
     require_admin,
     require_non_default_password,
-    get_current_user_ws,
+    get_current_user_ws_checked,
 )
 from app.hostfs import host_path
 from app.routers.sites import _load_sites as _load_sites_data
@@ -582,10 +582,17 @@ async def stop_tamper_monitor():
 # WebSocket：篡改告警实时推送
 # ---------------------------------------------------------------------------
 @router.websocket("/ws")
-async def tamper_ws(websocket: WebSocket, user: Optional[dict] = Depends(get_current_user_ws)):
-    """网页防篡改告警推送 WebSocket（?token= 鉴权，登录用户可订阅）。"""
+async def tamper_ws(websocket: WebSocket, user: Optional[dict] = Depends(get_current_user_ws_checked)):
+    """网页防篡改告警推送 WebSocket（?token= 鉴权，登录用户可订阅）。
+
+    安全修复（第十四轮审计，Medium）：此前用 get_current_user_ws（仅校验登录），
+    与 HTTP 只读接口（require_non_default_password）口径不一致——默认密码账号
+    （未完成强制改密）及低权限账号仍可订阅防篡改状态与篡改事件（含站点根路径、
+    受保护文件清单）。改用 get_current_user_ws_checked（登录 + 非默认密码），
+    与 HTTP 只读口径对齐，避免经 WS 绕过默认密码拦截获取防护元数据。
+    """
     if user is None:
-        # get_current_user_ws 内部已在鉴权失败时关闭连接
+        # get_current_user_ws_checked 内部已在鉴权失败时关闭连接
         return
     await websocket.accept()
     _tamper_clients.add(websocket)

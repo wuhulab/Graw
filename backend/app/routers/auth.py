@@ -337,11 +337,12 @@ async def login(req: LoginRequest, request: Request):
         logger.warning("用户 %s 使用默认密码登录，已强制要求改密", req.username)
     # 签发 JWT 时携带当前 token_version，改密/注销后旧令牌自动失效；
     # 同时创建会话记录（sid），支持「在线会话列表 / 踢出单个设备」
+    # 安全（第十三轮审计）：token_version 缺失/为 null 按 0 处理（防 TypeError）
     sid = create_session(
         user["username"], get_client_ip(request),
         loginlog.parse_device(request.headers.get("user-agent"))
     )
-    token = create_token(user["username"], token_version=int(user.get("token_version", 0)), sid=sid)
+    token = create_token(user["username"], token_version=int(user.get("token_version") or 0), sid=sid)
     logger.info("用户 %s 登录成功（IP %s, sid=%s）", req.username, get_client_ip(request), sid[:12] if sid else "-")
     auditlog.record("登录成功", req.username, get_client_ip(request))
     # 登录日志：记录成功登录，并做新 IP / 新设备异常检测
@@ -496,7 +497,7 @@ async def change_password(
     # bump_token_version 已将 token_version 递增；必须读取递增后的新版本
     # 签发，否则新令牌携带旧版本号，会被 verify_token_version 吊销校验拒绝。
     users = _load_users() or {}
-    new_tv = int(users.get(user["username"], {}).get("token_version", 0))
+    new_tv = int(users.get(user["username"], {}).get("token_version") or 0)
     new_token = create_token(user["username"], token_version=new_tv)
     logger.info("用户 %s 已修改密码并刷新令牌（IP %s）", user["username"], get_client_ip(request))
     auditlog.record("修改密码", user["username"], get_client_ip(request))

@@ -175,7 +175,8 @@ def agent_issue(
     _ensure_agent_user(role)
     users = _load_users() or {}
     cur = users.get("agent") or {}
-    token = create_token(username, token_version=int(cur.get("token_version", 0)), sid="")
+    # 安全（第十三轮审计）：token_version 缺失/为 null 按 0 处理（防 TypeError）
+    token = create_token(username, token_version=int(cur.get("token_version") or 0), sid="")
     return {
         "token": token,
         "role": role,

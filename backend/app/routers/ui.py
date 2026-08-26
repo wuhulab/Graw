@@ -257,19 +257,38 @@ def _effective_ring(username: str) -> dict:
     }
 
 
+# 公开接口允许返回的单张背景图上限（解码后字节数，1MB）：
+# 登录页展示足够；超大背景仅登录后（/api/ui/effective、config）可见，
+# 保证匿名请求的响应体积有确定上界（第十三轮审计）。
+_PUBLIC_BACKGROUND_MAX_BYTES = 1024 * 1024
+
+
 @router.get("/public")
 async def get_public_config():
-    """公开接口：登录页展示所需品牌信息，无需登录。"""
+    """公开接口：登录页展示所需品牌信息，无需登录。
+
+    安全修复（第十三轮审计，Medium）：此接口此前把 wallpaper_video（最大
+    50MB 的 base64 视频壁纸）与完整轮播列表 backgrounds/背景图一并回传——
+    匿名攻击者每次请求即可拉取数十 MB 响应，构成无鉴权的带宽放大 / 流量
+    DoS 面（实测单次匿名请求可达 28MB+）。登录页实际仅使用 site_name /
+    welcome / logo / 单张 background；动态视频壁纸与轮播是「登录后桌面」
+    才使用的功能，一律不再经公开接口回传。单张 background 同样设 1MB
+    硬上限——超大背景图仅登录后可见，匿名请求不回传。
+    """
     d = _load()
+    background = d.get("background") or ""
+    if background:
+        try:
+            body = background.split(",", 1)[1].split(";")[0]
+            if len(base64.b64decode(body, validate=True)) > _PUBLIC_BACKGROUND_MAX_BYTES:
+                background = ""  # 超大背景仅登录后可见，公开接口不放大流量
+        except Exception:
+            background = ""
     return {
         "site_name": d.get("site_name") or "Graw",
         "welcome": d.get("welcome") or "",
         "logo": d.get("logo") or "",
-        "background": d.get("background") or "",
-        "backgrounds": d.get("backgrounds") or [],
-        "wallpaper_video": d.get("wallpaper_video") or "",
-        "background_mode": d.get("background_mode") or "image",
-        "background_interval": int(d.get("background_interval") or 8),
+        "background": background,
         "ring_color": d.get("ring_color") or "#409eff",
         "ring_alarm": bool(d.get("ring_alarm", True)),
     }

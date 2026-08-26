@@ -233,11 +233,16 @@ def _should_agent_proxy(path: str) -> bool:
 #   - /api/loginlog 已移除：子节点侧 /list、/clear、/config、/test-alert 均为
 #     require_admin；代理后 /list 会被 agent 管理员令牌放行，低权限用户即可
 #     读取全部用户登录日志（含管理员 IP/设备/时间），构成越权信息泄露。
-#   - 其余前缀保留：/api/system、/api/notes、/api/tamper 在子节点侧均为
-#     「登录即可」级别（_PROTECTED / PROTECTED / _READ），无权限放大。
+#   - /api/notes 仅放行 GET（第十四轮审计修复）：子节点侧 GET / 为 PROTECTED
+#     （登录即可）可代理；但 POST / 在第十二轮审计已升级为 require_admin
+#     （防止低权限用户篡改全局共享备忘录）。此前白名单允许 ("GET","POST")，
+#     非管理员经代理即被替换为 agent 管理员令牌、以管理员身份写入子节点
+#     共享备忘录——与 /api/loginlog 同一类越权放大，故移除 POST。
+#   - 其余前缀保留：/api/system、/api/tamper 在子节点侧均为
+#     「登录即可」级别（_PROTECTED / _READ），无权限放大。
 _PROXY_USER_SAFE = {
     "/api/system": ("GET",),        # 系统概览/监控（_PROTECTED）
-    "/api/notes": ("GET", "POST"),  # 备忘录读写（PROTECTED）
+    "/api/notes": ("GET",),         # 备忘录读取（PROTECTED；写操作为 admin，不代理）
     "/api/tamper": ("GET",),        # 防篡改状态（_READ；写操作为 admin）
 }
 

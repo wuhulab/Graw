@@ -102,7 +102,16 @@ def _find_item(items: list, item_id: str) -> dict:
 # 探测实现（线程安全，无共享状态）
 # ---------------------------------------------------------------------------
 def _probe_port(target: str, timeout_seconds: int) -> dict:
-    """TCP 端口连通性探测。target 格式：host:port 或 port（默认 127.0.0.1）。"""
+    """TCP 端口连通性探测。target 格式：host:port 或 port（默认 127.0.0.1）。
+
+    安全修复（第十四轮审计，Low）：此前 host 仅过字符集校验（_TARGET_RE），
+    可直接连接 169.254.169.254（云元数据）等受保护地址，构成管理员级 SSRF
+    探测面（与 uptime/notify 的 ssrf_guard 基线不一致）。此处对每次探测的
+    host 复用 ssrf_guard.assert_safe_host：回环 / 链路本地（含云 metadata）/
+    组播 / 保留 / 未指定地址始终拒绝；内网（RFC1918/ULA）默认放行（服务监控
+    的本机/内网场景是正当用途），可通过环境变量 GRAW_SVCMON_ALLOW_PRIVATE_NET=0
+    收紧为仅公网。默认 127.0.0.1 回环探测是核心用例，需显式放行回环。
+    """
     host = "127.0.0.1"
     port = target
     if ":" in target:
@@ -113,6 +122,13 @@ def _probe_port(target: str, timeout_seconds: int) -> dict:
         return {"status": "down", "detail": "端口号非法"}
     if not 1 <= port <= 65535:
         return {"status": "down", "detail": "端口号超出范围 1-65535"}
+    # SSRF 防护：拒绝云元数据 / 回环（除非显式配置）等受保护地址
+    try:
+        from app.ssrf_guard import assert_safe_host
+        allow_private = os.environ.get("GRAW_SVCMON_ALLOW_PRIVATE_NET", "1") != "0"
+        assert_safe_host(host, allow_private=allow_private, allow_loopback=True)
+    except ValueError as e:
+        return {"status": "down", "detail": f"目标地址非法：{str(e)[:200]}"}
     timeout = max(1, min(int(timeout_seconds or 5), 30))
     start = time.time()
     try:

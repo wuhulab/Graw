@@ -205,7 +205,9 @@ def bump_token_version(username: str) -> None:
     target = users.get(username)
     if target is None:
         return
-    target["token_version"] = int(target.get("token_version", 0)) + 1
+    # 安全（第十三轮审计）：token_version 缺失或为 null 时按 0 处理，
+    # 避免 int(None) 抛 TypeError 打挂改密/注销接口（配置被手工损坏时）。
+    target["token_version"] = int(target.get("token_version") or 0) + 1
     _save_users(users)
     # 同步吊销该用户全部会话记录（列表页不再显示）
     _revoke_user_sessions(username)
@@ -454,13 +456,16 @@ def verify_token_version(token_payload: dict) -> bool:
     """校验 JWT 中的 token_version（tv）是否与用户当前版本一致。
 
     不一致说明令牌已被撤销，返回 False。
+    安全（第十三轮审计）：对缺失/为 null 的 token_version 均按 0 处理，
+    避免 int(None) 抛 TypeError 使鉴权链 500（攻击者可构造 tv=null 的
+    令牌在密钥泄露场景下触发拒绝服务；配置损坏时同样容错）。
     """
     username = token_payload.get("sub", "")
-    token_tv = int(token_payload.get("tv", -1))
+    token_tv = int(token_payload.get("tv") or 0)
     user = _get_user(username)
     if user is None:
         return False
-    current_tv = int(user.get("token_version", 0))
+    current_tv = int(user.get("token_version") or 0)
     return token_tv == current_tv
 
 
@@ -559,6 +564,28 @@ async def get_current_user_ws_admin(
         return None
     if user.get("role") != "admin":
         await websocket.close(code=4403)
+        return None
+    full = _get_user(user["username"])
+    if full is not None and is_default_password(full.get("password", "")):
+        await websocket.close(code=4403)
+        return None
+    return user
+
+
+async def get_current_user_ws_checked(
+    websocket: WebSocket, token: str = Query(default="")
+) -> Optional[dict]:
+    """WebSocket 鉴权依赖：登录 + 非默认密码（与 _PROTECTED HTTP 语义对齐）。
+
+    安全修复（第十三轮审计，Medium）：/api/system/ws 此前仅用
+    get_current_user_ws——默认密码账号（或尚未完成强制改密的账号）虽被
+    HTTP 只读接口（require_non_default_password）全面拦截，却仍可通过
+    WebSocket 订阅本机/子节点的实时监控流（CPU/内存/磁盘/网络），构成
+    鉴权不一致的信息泄露。此依赖在 get_current_user_ws 基础上追加默认
+    密码拦截，供订阅敏感数据流的 WS 端点（如 system/ws）使用。
+    """
+    user = await get_current_user_ws(websocket, token)
+    if user is None:
         return None
     full = _get_user(user["username"])
     if full is not None and is_default_password(full.get("password", "")):

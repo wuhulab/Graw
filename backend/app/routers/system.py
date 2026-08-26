@@ -20,6 +20,7 @@ from app.auth import (
     require_non_default_password,
     require_admin,
     get_current_user_ws,
+    get_current_user_ws_checked,
 )
 
 logger = logging.getLogger("graw.system")
@@ -859,25 +860,38 @@ async def _bridge_agent_ws(node: dict, browser: WebSocket) -> None:
 @router.websocket("/ws")
 async def system_ws(
     websocket: WebSocket,
-    user: Optional[dict] = Depends(get_current_user_ws),
+    user: Optional[dict] = Depends(get_current_user_ws_checked),
     node: str = Query(default=""),
 ):
     """统一系统指标 WebSocket。
 
-    通过 ?token= 鉴权（get_current_user_ws）；鉴权失败时依赖内部已关闭连接，
-    此处直接返回。鉴权通过后：
+    通过 ?token= 鉴权（get_current_user_ws_checked：登录 + 非默认密码，
+    与 /api/system/* HTTP 只读接口的 _PROTECTED 语义对齐）；鉴权失败时
+    依赖内部已关闭连接，此处直接返回。鉴权通过后：
       - 目标节点是「已配置 Agent 的 SSH 子节点」（?node= 显式指定或全局当前）：
         桥接到子节点自身的 /api/system/ws，前端直接使用子节点原生指标。
       - 其余（本地 / 未配置 agent 的远程节点）：订阅主面板后台生产者的广播，
         并先回放一次缓存数据。桥接失败同样回退到本路径（SSH 采集失败时
         生产者会广播不可用帧，前端正常降级提示）。
+
+    安全修复（第十三轮审计，Medium）：
+      1) 鉴权升级为 get_current_user_ws_checked——默认密码账号无法再经
+         WebSocket 绕过改密拦截订阅监控流（此前可读本机与任意子节点实时
+         指标，与 HTTP 只读接口被 403 拦截的语义不一致）。
+      2) ?node= 仅管理员可用——此前任意登录用户可指定任意已配置 SSH
+         子节点 ID 桥接其监控数据，普通用户的数据可见范围被放大到全部
+         节点；现非管理员忽略 ?node=（回落到全局当前节点，与 HTTP
+         /api/system/overview 的可视范围一致）。
     """
     if user is None:
-        # get_current_user_ws 内部已在鉴权失败时 close(4401)
+        # get_current_user_ws_checked 内部已在鉴权失败时 close(4401/4403)
         return
     await websocket.accept()
 
     # 解析目标节点（?node= 显式指定优先，否则全局当前主机）
+    # 非管理员不得指定任意节点：监控数据可见范围与 HTTP 接口保持一致
+    if node and user.get("role") != "admin":
+        node = ""
     target = node_manager.get_node(node) if node else None
     if target is None:
         target = node_manager.get_current_node()
