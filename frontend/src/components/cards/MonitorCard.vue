@@ -16,7 +16,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart } from 'echarts/charts'
@@ -68,8 +68,10 @@ watch(mode, () => {
   resetSeries()
 })
 
-// 返回前台时清空采样缓冲，从当前时刻重新开始累积：
-// 避免后台期间遗留的旧采样点与当前数据间形成一条「断裂斜线」或快速补点。
+// 切换网卡/磁盘标签页时清空采样缓冲，避免新旧数据混在同一张图上。
+// 注：不再在页面切回前台时清空——后台期间共享指标流（store/systemMetrics.js）
+// 只累积「最新一帧」，回前台后仅追加一个采样点继续渲染；若清空会令图表
+// 每次从零重新开始，观感突兀。
 function resetSeries() {
   netSeries.value.times.length = 0
   netSeries.value.up.length = 0
@@ -78,13 +80,6 @@ function resetSeries() {
   diskSeries.value.read.length = 0
   diskSeries.value.write.length = 0
 }
-
-function onVisibilityChange() {
-  if (document.visibilityState !== 'hidden') resetSeries()
-}
-
-onMounted(() => document.addEventListener('visibilitychange', onVisibilityChange))
-onUnmounted(() => document.removeEventListener('visibilitychange', onVisibilityChange))
 
 const option = computed(() => {
   const isNet = mode.value === 'net'
