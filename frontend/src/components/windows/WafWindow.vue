@@ -583,7 +583,7 @@ function aclActionClass(a) {
 </script>
 
 <style scoped>
-.waf-window { display: flex; flex-direction: column; height: 100%; padding: 6px; gap: 6px; }
+.waf-window { display: flex; flex-direction: column; height: 100%; padding: 0; gap: 6px; } /* 内嵌聚合窗口：外边距由父容器提供，避免上栏与父窗口边缘错位 */
 .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .toolbar-inline { display: flex; gap: 8px; margin-bottom: 6px; }
 .sep { width: 1px; height: 20px; background: #d0d0d4; }

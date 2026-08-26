@@ -117,7 +117,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.auditlog-window { padding: 10px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; }
+.auditlog-window { padding: 0; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; } /* 内嵌聚合窗口：外边距由父容器提供 */
 .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; justify-content: space-between; }
 .global-status { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #dbeafe; color: #1e40af; }

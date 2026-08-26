@@ -538,7 +538,7 @@ onMounted(loadAll)
 </script>
 
 <style scoped>
-.prot-window { padding: 10px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; }
+.prot-window { padding: 0; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; } /* 内嵌聚合窗口：外边距由父容器提供 */
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
 .tabs { display: flex; gap: 4px; }
 .tab {

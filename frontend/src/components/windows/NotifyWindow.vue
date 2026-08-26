@@ -533,7 +533,7 @@ onMounted(loadAll)
 </script>
 
 <style scoped>
-.notify-window { padding: 10px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; }
+.notify-window { padding: 0; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; } /* 内嵌聚合窗口：外边距由父容器提供 */
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; justify-content: space-between; }
 .global-status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .status-badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }

@@ -319,7 +319,7 @@ onMounted(load)
 </script>
 
 <style scoped>
-.cron-window { padding: 10px; }
+.cron-window { padding: 0; } /* 内嵌于「任务」聚合窗口：外边距由父容器提供 */
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; position: relative; }
 .hint { color: #6e6e73; font-size: 12px; }
 .add-wrap { position: relative; }

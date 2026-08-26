@@ -358,7 +358,7 @@ onMounted(loadAll)
 </script>
 
 <style scoped>
-.sshkeys-window { padding: 10px; display: flex; flex-direction: column; gap: 10px; height: 100%; overflow: hidden; }
+.sshkeys-window { padding: 0; display: flex; flex-direction: column; gap: 10px; height: 100%; overflow: hidden; } /* 内嵌聚合窗口：外边距由父容器提供 */
 .toolbar { display: flex; align-items: center; gap: 10px; }
 .hint { color: #6e6e73; font-size: 12px; flex: 1; }
 .table-wrap { overflow: auto; flex: 1; border: 1px solid #e5e7eb; border-radius: 8px; }

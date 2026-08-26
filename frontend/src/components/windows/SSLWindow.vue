@@ -114,7 +114,7 @@ onMounted(load)
 </script>
 
 <style scoped>
-.ssl-window { padding: 10px; }
+.ssl-window { padding: 0; } /* 内嵌于「网站」聚合视图：外边距由父容器提供，上栏与父边缘平齐 */
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .hint { color: #6e6e73; font-size: 12px; margin-left: auto; }
 .table-wrap { overflow: auto; max-height: 420px; border: 1px solid #e5e7eb; border-radius: 8px; }

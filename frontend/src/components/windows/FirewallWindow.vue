@@ -235,7 +235,7 @@ onMounted(load)
 </script>
 
 <style scoped>
-.fw-window { padding: 10px; }
+.fw-window { padding: 0; } /* 内嵌于 ShunX 保护机制聚合窗口，外边距由父容器统一提供，上栏可与父窗口边缘平齐 */
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
 .hint { color: #6e6e73; font-size: 12px; margin-left: auto; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
