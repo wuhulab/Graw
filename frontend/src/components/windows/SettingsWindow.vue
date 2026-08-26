@@ -384,7 +384,20 @@ import { LANGUAGES, setLocale } from '../../locales'
 import ConfirmDialog from '../ConfirmDialog.vue'
 
 const { t } = useI18n()
-const emit = defineEmits(['openUsers', 'openVip'])
+// 声明父组件（App.vue 窗口插槽）统一绑定的监听事件。本组件模板为双根
+// （内容区 + ConfirmDialog），无法自动继承属性；全部声明为组件自定义事件后，
+// Vue 不再尝试把它们落到 DOM 上，从而消除「Extraneous non-emits listener」告警。
+// 其中仅 openUsers / openVip 会被本组件实际触发，其余为窗口系统公共事件。
+const emit = defineEmits([
+  'close', 'dirty',
+  'openUsers', 'openVip',
+  'openTerminal', 'openEditor', 'openMedia', 'openLogs',
+  'openContainerTerminal', 'openContainerDetails', 'openContainerStats', 'openContainerEdit',
+  'openFiles', 'openDockerConfigEditor',
+  'openAppInstall', 'openComposeEditor', 'openInstallLog', 'openReadme',
+  'openTaskCenter', 'openRuntimeCreate', 'openConnectionForm',
+  'openNetStorageBrowse', 'openNetStorageForm', 'openSiteEdit',
+])
 
 // 付费功能：计算当前 VIP 剩余天数，用于「月卡生效中：45天」样式的状态展示
 const remainingVipDays = computed(() => {

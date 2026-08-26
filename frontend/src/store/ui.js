@@ -36,27 +36,61 @@ export const uiState = reactive({
   ring_alarm: cached?.ring_alarm !== false, // 默认开启「超 90% 变红」
 })
 
+// localStorage 单键缓存上限（约 1.6MB，实际配额多为 5MB）：超限时逐级降级写入，
+// 避免把用户上传的大体积 base64 背景图塞满配额导致 QuotaExceededError 反复刷屏。
+const CACHE_MAX_BYTES = 1600 * 1024
+// 本会话内缓存彻底不可用（配额不足且降级仍失败）时置为 false，跳过后续写入
+let cacheWritable = true
+
+/** 构造缓存载荷；keepBackgrounds=false 时不写背景，避免超大 base64 撑爆配额。*/
+function buildPayload(keepBackgrounds) {
+  const backgrounds = keepBackgrounds ? (uiState.backgrounds || []) : []
+  return {
+    site_name: uiState.site_name,
+    welcome: uiState.welcome,
+    logo: uiState.logo,
+    background: backgrounds[0] || uiState.background || '',
+    backgrounds,
+    wallpaper_video: uiState.wallpaper_video || '',
+    background_mode: uiState.background_mode || 'image',
+    background_interval: uiState.background_interval || 8,
+    ring_color: uiState.ring_color,
+    ring_alarm: uiState.ring_alarm,
+  }
+}
+
+/** 尝试将载荷序列化写入 localStorage；返回是否成功（写入失败不抛错）。*/
+function writePayload(payload) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+    return true
+  } catch (e) {
+    // 配额超限等环境限制：交给调用方降级处理
+    return false
+  }
+}
+
 /** 将最新配置写入 localStorage，供下次同步回填。*/
 function saveCache() {
-  try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        site_name: uiState.site_name,
-        welcome: uiState.welcome,
-        logo: uiState.logo,
-        background: (uiState.backgrounds && uiState.backgrounds[0]) || uiState.background || '',
-        backgrounds: uiState.backgrounds || [],
-        wallpaper_video: uiState.wallpaper_video || '',
-        background_mode: uiState.background_mode || 'image',
-        background_interval: uiState.background_interval || 8,
-        ring_color: uiState.ring_color,
-        ring_alarm: uiState.ring_alarm,
-      })
-    )
-  } catch (e) {
-    console.warn('[ui] 写入界面配置缓存失败:', e)
+  // 本会话已确认缓存不可用：直接跳过，避免每次加载都重试并刷控制台警告
+  if (!cacheWritable) return
+  // 优先完整写入；序列化长度超限或写入失败时逐级降级：
+  // 第一张背景 → 去掉背景（仅保留面板设置），仍失败则放弃整键并标记本会话不可写
+  const candidates = [true, false]
+  for (const keepBackgrounds of candidates) {
+    const payload = buildPayload(keepBackgrounds)
+    if (JSON.stringify(payload).length > CACHE_MAX_BYTES) continue
+    if (writePayload(payload)) return
+    // 写入失败（如配额被其它数据占满）：清掉可能残留的半写数据再试下一级
+    try {
+      localStorage.removeItem(STORAGE_KEY)
+    } catch (e) {
+      // removeItem 失败（如隐私模式下存储被禁用），继续降级
+    }
   }
+  // 无背景精简载荷仍失败：存储能力确实不可用，标记后跳过后续写入
+  cacheWritable = false
+  console.warn('[ui] 界面配置缓存不可用（容量不足或被禁用），本次会话跳过缓存写入')
 }
 
 // 防并发：同一时刻只允许一个加载请求

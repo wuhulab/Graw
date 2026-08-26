@@ -6,17 +6,23 @@ import socket
 import time
 import os
 import asyncio
+import base64
+import logging
+import urllib.parse
 from datetime import datetime
 
 from app.hostfs import host_path
 from app import node_manager
 from app import metrics_store
+from app import agent_client
 from app.auth import (
     get_current_user,
     require_non_default_password,
     require_admin,
     get_current_user_ws,
 )
+
+logger = logging.getLogger("graw.system")
 
 router = APIRouter()
 
@@ -474,10 +480,21 @@ def _info_sync():
 # ------------------------------------------------------------
 # 每隔多久向所有 WS 客户端推送一次合并指标
 _METRICS_INTERVAL = 2.0
+# 单次采集的超时保护（秒）。本地 psutil 采样通常 <1s；远程走单条 SSH
+# 脚本采集，含建连 + 脚本执行一般 2~5s。超时即按失败处理，防止远端节点
+# 慢/卡时无限期拖住采集周期。
+_METRICS_COLLECT_TIMEOUT = 15.0
+# 连续采集失败时的退避（秒）：正常每 _METRICS_INTERVAL 拉一个周期；
+# 远程节点不可达时按 5s→10s→20s→30s 分级拉长，避免对不可达主机反复
+# 触发长时间 SSH 尝试（连接风暴 + 线程池占用）。
+_METRICS_FAIL_SLEEP_BASE = 5.0
+_METRICS_FAIL_SLEEP_MAX = 30.0
 # 已连接的系统指标 WebSocket 客户端集合
 _ws_clients: set = set()
 # 最近一次采集的合并指标缓存（供新客户端连入时立即回放）
 _metrics_cache: Optional[dict] = None
+# 连续采集失败计数（退避与日志用）；成功后清零
+_metrics_fails = 0
 
 
 def _collect_sync() -> dict:
@@ -493,34 +510,75 @@ def _collect_sync() -> dict:
     }
 
 
+async def _broadcast(payload: dict) -> None:
+    """把一帧推送给所有已连接客户端，并顺带清理失效连接。"""
+    dead = []
+    for ws in list(_ws_clients):
+        try:
+            await ws.send_json(payload)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        _ws_clients.discard(ws)
+
+
 async def _metrics_producer():
     """后台采集协程：周期性采集指标并广播给所有已连接的 WS 客户端。
 
     采用单生产者模式，即便同时存在多个 WS 客户端，也只做一次采集，
     避免每个客户端各自触发 psutil 采样（连接池优化）。
     同时把采样点交给 metrics_store 持久化，供历史监控回放使用。
+
+    健壮性（本轮修复）：
+      - 采集经 asyncio.to_thread 放入线程池，并用 wait_for 加超时保护，
+        远端节点慢/卡时不会无限期拖住采集周期。
+      - 采集失败时记录日志、保留上一次缓存，并按 5→30s 指数退避重试，
+        避免对不可达的 SSH 节点反复触发长时间连接尝试。
+      - 失败时向所有客户端广播 {"type":"unavailable"} 帧，前端据此展示
+        「当前管理节点不可达」降级提示，而不是永久空白/假数据。
     """
-    global _metrics_cache
+    global _metrics_cache, _metrics_fails
+    fail_sleep = _METRICS_FAIL_SLEEP_BASE
     while True:
+        success = False
         try:
-            # to_thread 保证 psutil 的阻塞采样不阻塞事件循环
-            _metrics_cache = await asyncio.to_thread(_collect_sync)
+            # to_thread 保证 psutil/SSH 的阻塞采样不阻塞事件循环；
+            # wait_for 兜底防卡死，超时后丢弃该次结果、按失败处理
+            snapshot = await asyncio.wait_for(
+                asyncio.to_thread(_collect_sync), timeout=_METRICS_COLLECT_TIMEOUT
+            )
+            _metrics_cache = snapshot
+            _metrics_fails = 0
+            success = True
+        except asyncio.CancelledError:
+            # 应用关闭：向上抛出，由 stop_metrics_producer 统一收尾
+            raise
+        except Exception as e:
+            _metrics_fails += 1
+            # 连续失败只留一条 warning，避免刷屏；恢复后下一帧即正常
+            logger.warning(
+                "系统指标采集失败（连续 %d 次）：%s", _metrics_fails, e
+            )
+
+        # 落盘历史采样（成功才记录；失败/None 由 metrics_store 自行忽略）
+        try:
+            metrics_store.record_sample(_metrics_cache if success else None)
         except Exception:
-            # 采集失败时保留上一次缓存，避免频繁报错
             pass
-        # 落盘历史采样（记录失败不影响实时推送，见 metrics_store.record_sample）
-        metrics_store.record_sample(_metrics_cache)
-        if _metrics_cache is not None:
-            dead = []
-            payload = {"type": "metrics", "data": _metrics_cache}
-            for ws in list(_ws_clients):
-                try:
-                    await ws.send_json(payload)
-                except Exception:
-                    dead.append(ws)
-            for ws in dead:
-                _ws_clients.discard(ws)
-        await asyncio.sleep(_METRICS_INTERVAL)
+
+        if success and _metrics_cache is not None:
+            await _broadcast({"type": "metrics", "data": _metrics_cache})
+        else:
+            # 广播不可用状态：节点不可达 / 采集超时，前端立即降级提示
+            await _broadcast({
+                "type": "unavailable",
+                "reason": f"当前管理节点数据采集失败（连续 {_metrics_fails} 次），请检查节点连通性或在「多节点管理」中切换主机",
+            })
+
+        # 连续失败时指数退避，降低对不可达节点的无效连接风暴
+        sleep_for = _METRICS_INTERVAL if success else min(_METRICS_FAIL_SLEEP_MAX, fail_sleep)
+        fail_sleep = min(_METRICS_FAIL_SLEEP_MAX, fail_sleep * 2)
+        await asyncio.sleep(sleep_for)
 
 
 _producer_task: Optional[asyncio.Task] = None
@@ -539,13 +597,17 @@ async def _metrics_flusher():
 
 
 async def start_metrics_producer():
-    """在应用启动时预热一次并启动后台采集协程。重复调用是安全的。"""
-    global _producer_task, _flush_task, _metrics_cache
-    try:
-        _metrics_cache = await asyncio.to_thread(_collect_sync)
-    except Exception:
-        pass
+    """在应用启动时启动后台采集协程（非阻塞，立即返回）。重复调用安全。
+
+    注意：这里**不再**同步 await 一次预热采集。此前 warmup 在 lifespan
+    里阻塞执行 `to_thread(_collect_sync)`，而采集会跟随「当前选中节点」：
+    若启动时选中的是不可达的 SSH 节点，SSH 连接超时（可达数十秒）会把整个
+    应用启动卡住，表现为所有请求（含「多节点管理」）一律超时。改为纯异步
+    建任务后，首次采集由 producer 协程自行完成（同样受超时与退避保护）。
+    """
+    global _producer_task, _flush_task, _metrics_fails
     if _producer_task is None or _producer_task.done():
+        _metrics_fails = 0
         _producer_task = asyncio.create_task(_metrics_producer())
     if _flush_task is None or _flush_task.done():
         _flush_task = asyncio.create_task(_metrics_flusher())
@@ -553,7 +615,7 @@ async def start_metrics_producer():
 
 async def stop_metrics_producer():
     """停止后台采集/落盘协程（关闭连接），并清空剩余缓冲。"""
-    global _producer_task, _flush_task
+    global _producer_task, _flush_task, _metrics_fails
     for task in (_producer_task, _flush_task):
         if task is not None:
             task.cancel()
@@ -563,6 +625,7 @@ async def stop_metrics_producer():
                 pass
     _producer_task = None
     _flush_task = None
+    _metrics_fails = 0
     # 进程退出前把残留采样落盘，避免丢失最近一个周期
     try:
         await asyncio.to_thread(metrics_store.flush)
@@ -570,17 +633,275 @@ async def stop_metrics_producer():
         pass
 
 
+# --------------------------------------------------------------------------
+# 子节点指标 WS 桥接（系统概览 / 实时监控走子节点原生 WebSocket）
+# --------------------------------------------------------------------------
+# 子节点本身运行完整的 Graw（含统一的指标生产者 /api/system/ws）。
+# 此前主面板对子节点的指标来自「SSH 批量脚本采集」（_REMOTE_SCRIPT），
+# 数据路径重且函数覆盖有限。此处当当前节点为「已配置 Agent 的 SSH 子节点」时，
+# 把浏览器 WS 经 SSH 隧道桥接到子节点自身的 /api/system/ws：
+#   浏览器 <-> 主面板 system_ws <-> (SSH direct-tcpip 隧道) <-> 子节点 /api/system/ws
+# 让概览/实时监控直接使用子节点原生 psutil 指标，与子节点侧 WS 完全一致。
+# 仅做帧级双向转发，不解析业务内容；桥接失败自动回退到本地生产者采集。
+# --------------------------------------------------------------------------
+def _ws_server_frame_parse(buf: bytes):
+    """解析（服务端→客户端）WebSocket 帧；缓冲不足返回 (None, 0)。
+
+    返回 ((fin, opcode, payload), consumed)。按 RFC 6455，服务端帧不带掩码，
+    但这里对带掩码的服务端帧也做容错解析（防御非标实现）。
+    """
+    if len(buf) < 2:
+        return None, 0
+    b0, b1 = buf[0], buf[1]
+    opcode = b0 & 0x0F
+    fin = bool(b0 & 0x80)
+    length = b1 & 0x7F
+    masked = bool(b1 & 0x80)
+    off = 2
+    if length == 126:
+        if len(buf) < 4:
+            return None, 0
+        length = int.from_bytes(buf[2:4], "big")
+        off = 4
+    elif length == 127:
+        if len(buf) < 10:
+            return None, 0
+        length = int.from_bytes(buf[2:10], "big")
+        off = 10
+    mask = None
+    if masked:
+        if len(buf) < off + 4:
+            return None, 0
+        mask = buf[off:off + 4]
+        off += 4
+    if len(buf) < off + length:
+        return None, 0
+    payload = buf[off:off + length]
+    if mask:
+        payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    return (fin, opcode, payload), off + length
+
+
+def _ws_client_frame(opcode: int, payload: bytes) -> bytes:
+    """构造（客户端→服务端，带掩码）WebSocket 帧。"""
+    head = bytearray([0x80 | opcode])
+    n = len(payload)
+    if n < 126:
+        head.append(0x80 | n)
+    elif n < 65536:
+        head.append(0x80 | 126)
+        head += n.to_bytes(2, "big")
+    else:
+        head.append(0x80 | 127)
+        head += n.to_bytes(8, "big")
+    mask = os.urandom(4)
+    masked = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    return bytes(head) + mask + masked
+
+
+def _tunnel_ws_handshake(client, dst_port: int, path: str, jwt: str) -> tuple:
+    """在 SSH 隧道通道上完成 WebSocket 握手，返回 (channel, 已读出的首帧字节)。
+
+    direct-tcpip 通道是原始字节流，可承载 WebSocket 协议：手写 HTTP/1.1
+    Upgrade 握手 + 后续帧级转发。jwt 为子节点 agent JWT（主面板换取的管理员令牌）。
+    """
+    chan = agent_client._open_tunnel_channel(client, dst_port)
+    sec_key = base64.b64encode(os.urandom(16)).decode("ascii")
+    req = (
+        f"GET {path} HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        f"Sec-WebSocket-Key: {sec_key}\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        # 浏览器 WS 无法带 Bearer 头，但这里是我们自己发起的连接，可带
+        f"Authorization: Bearer {jwt}\r\n"
+        "\r\n"
+    )
+    try:
+        chan.sendall(req.encode("utf-8"))
+        resp = b""
+        # 握手限时保护：子节点异常（无响应/握手不清零）时不能无限等待
+        deadline = time.time() + 15
+        while b"\r\n\r\n" not in resp:
+            if time.time() > deadline:
+                raise ConnectionError("子节点 WebSocket 握手超时")
+            chunk = chan.recv(65536)
+            if not chunk:
+                break
+            resp += chunk
+    except Exception:
+        try:
+            chan.close()
+        except Exception:
+            pass
+        raise
+    head, sep, extra = resp.partition(b"\r\n\r\n")
+    status = head.split(b"\r\n", 1)[0].decode("utf-8", "replace") if head else ""
+    if not sep or "101" not in status:
+        try:
+            chan.close()
+        except Exception:
+            pass
+        raise ConnectionError(f"子节点 WebSocket 握手失败: {status or '无响应'}")
+    return chan, extra
+
+
+def _agent_ws_connect(node: dict) -> tuple:
+    """同步建立到子节点 Agent 的 WS 隧道连接（放线程池执行）。
+
+    - 取回/复用 SSH 连接池 client；
+    - 用成对密钥向子节点 /api/agent/issue 换取 agent JWT（带缓存）；
+    - 在隧道上完成 WebSocket 握手，返回 (channel, 已读出的首帧字节)。
+    全部为阻塞 I/O，调用方必须用 asyncio.to_thread 包裹。
+    """
+    timeout = 20
+    client = node_manager._paramiko_pool_client(node, timeout)
+    jwt = agent_client._ensure_token(node, client)
+    cfg = agent_client._node_agent_cfg(node)
+    # 子节点 WS 端点走 ?token= 鉴权（get_current_user_ws），agent JWT 同样有效
+    path = "/api/system/ws?token=" + urllib.parse.quote(jwt, safe="")
+    return _tunnel_ws_handshake(client, cfg["port"], path, jwt)
+
+
+async def _bridge_agent_ws(node: dict, browser: WebSocket) -> None:
+    """把浏览器 WS 桥接到子节点 Agent 的 /api/system/ws（走 SSH 隧道）。
+
+    双向转发：
+      - 子节点→浏览器：解析隧道上的服务端 WS 帧，文本帧 send_text / 二进制帧
+        send_bytes 转发；子节点 ping 自动回 pong；收到 close 则关闭浏览器侧。
+      - 浏览器→子节点：浏览器发来的文本/二进制帧按客户端帧规则转发到隧道
+        （前端心跳 ping 会被子节点 receive_text 正常消费）。
+    任一侧断开（或异常）都会结束桥接并关闭两侧连接。
+    """
+    # 连接/换 token/握手都是阻塞 I/O，放线程池避免卡住事件循环
+    chan, buf = await asyncio.to_thread(_agent_ws_connect, node)
+
+    closed = asyncio.Event()
+
+    async def _node_to_browser():
+        nonlocal buf
+        try:
+            while not closed.is_set():
+                frame = _ws_server_frame_parse(buf)
+                if frame[0] is not None:
+                    _, opcode, payload = frame[0]
+                    buf = buf[frame[1]:]
+                    if opcode == 1:  # 文本帧（指标 JSON）
+                        await browser.send_text(payload.decode("utf-8", "replace"))
+                    elif opcode == 2:  # 二进制帧
+                        await browser.send_bytes(payload)
+                    elif opcode == 8:  # 子节点主动关闭
+                        try:
+                            await browser.close()
+                        except Exception:
+                            pass
+                        return
+                    elif opcode == 9:  # 子节点 ping -> 回 pong
+                        try:
+                            chan.sendall(_ws_client_frame(10, payload))
+                        except Exception:
+                            pass
+                    continue
+                # 缓冲不足：读更多字节（paramiko recv 阻塞，放线程池）
+                data = await asyncio.to_thread(chan.recv, 65536)
+                if not data:
+                    break
+                buf += data
+        except Exception:
+            # 正常断连（浏览器关闭/子节点关通道）也会走到这里，仅记 debug
+            logger.debug("子节点指标 WS 桥接读循环结束（连接关闭）", exc_info=True)
+        finally:
+            closed.set()
+
+    async def _browser_to_node():
+        try:
+            while not closed.is_set():
+                msg = await browser.receive()
+                if msg.get("type") == "websocket.disconnect":
+                    break
+                text = msg.get("text")
+                if isinstance(text, str):
+                    chan.sendall(_ws_client_frame(1, text.encode("utf-8")))
+                else:
+                    raw = msg.get("bytes")
+                    if raw:
+                        chan.sendall(_ws_client_frame(2, raw))
+        except Exception:
+            pass  # 浏览器关闭/异常：放弃转发，交由主循环收尾
+        finally:
+            closed.set()
+
+    t1 = asyncio.create_task(_node_to_browser())
+    t2 = asyncio.create_task(_browser_to_node())
+    try:
+        await asyncio.wait({t1, t2}, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        closed.set()
+        for t in (t1, t2):
+            if not t.done():
+                t.cancel()
+        for t in (t1, t2):
+            try:
+                await t
+            except (asyncio.CancelledError, Exception):
+                pass
+        try:
+            chan.close()
+        except Exception:
+            pass
+        try:
+            await browser.close()
+        except Exception:
+            pass
+
+
 @router.websocket("/ws")
-async def system_ws(websocket: WebSocket, user: Optional[dict] = Depends(get_current_user_ws)):
+async def system_ws(
+    websocket: WebSocket,
+    user: Optional[dict] = Depends(get_current_user_ws),
+    node: str = Query(default=""),
+):
     """统一系统指标 WebSocket。
 
     通过 ?token= 鉴权（get_current_user_ws）；鉴权失败时依赖内部已关闭连接，
-    此处直接返回。鉴权通过后订阅后台生产者的广播，并先回放一次缓存数据。
+    此处直接返回。鉴权通过后：
+      - 目标节点是「已配置 Agent 的 SSH 子节点」（?node= 显式指定或全局当前）：
+        桥接到子节点自身的 /api/system/ws，前端直接使用子节点原生指标。
+      - 其余（本地 / 未配置 agent 的远程节点）：订阅主面板后台生产者的广播，
+        并先回放一次缓存数据。桥接失败同样回退到本路径（SSH 采集失败时
+        生产者会广播不可用帧，前端正常降级提示）。
     """
     if user is None:
         # get_current_user_ws 内部已在鉴权失败时 close(4401)
         return
     await websocket.accept()
+
+    # 解析目标节点（?node= 显式指定优先，否则全局当前主机）
+    target = node_manager.get_node(node) if node else None
+    if target is None:
+        target = node_manager.get_current_node()
+
+    if (
+        target is not None
+        and target.get("type") == "ssh"
+        and agent_client.agent_ready(target)
+    ):
+        try:
+            await _bridge_agent_ws(target, websocket)
+            return
+        except Exception as e:  # noqa: BLE001 - 桥接失败需回退，不中断连接
+            logger.warning("桥接子节点指标 WS 失败，回退本地代理采集: %s", e)
+            # 桌面卡片是全局语义：仅当目标即全局当前节点时才能交给本地生产者回退，
+            # 否则（跨节点误连）关闭连接，由前端带正确 node 重连。
+            if node and target.get("id") != node_manager.current_node_id():
+                try:
+                    await websocket.close(code=1011)
+                except Exception:
+                    pass
+                return
+
+    # —— 本地路径：加入主面板后台生产者广播 ——
     _ws_clients.add(websocket)
     # 新客户端连入立即回放最近一次指标，无需等待下一个生产周期
     if _metrics_cache is not None:

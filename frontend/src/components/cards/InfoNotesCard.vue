@@ -25,6 +25,8 @@
         @blur="saveNote"
       ></textarea>
     </div>
+    <!-- 当前管理节点不可达/数据过期时的降级提示（仅系统信息页展示，备忘录与监控无关） -->
+    <MetricsFallback v-if="mode === 'info'" />
   </div>
 </template>
 
@@ -32,6 +34,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { notesApi } from '../../api'
 import { systemState } from '../../store/systemMetrics'
+import MetricsFallback from './MetricsFallback.vue'
 
 const mode = ref('info')
 // 系统信息由共享「单条 WS」指标推送驱动（见 store/systemMetrics.js），

@@ -10,6 +10,8 @@
     <div class="chart-area">
       <v-chart class="chart" :option="option" autoresize />
     </div>
+    <!-- 当前管理节点不可达/数据过期时的降级提示 -->
+    <MetricsFallback />
   </div>
 </template>
 
@@ -22,6 +24,7 @@ import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/compon
 import VChart from 'vue-echarts'
 import { formatSpeed } from '../../api'
 import { systemState } from '../../store/systemMetrics'
+import MetricsFallback from './MetricsFallback.vue'
 
 use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent])
 

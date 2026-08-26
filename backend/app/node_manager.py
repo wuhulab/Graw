@@ -23,6 +23,7 @@ import os
 import re
 import shlex
 import shutil
+import socket
 import subprocess
 import threading
 import logging
@@ -41,6 +42,12 @@ LOCAL_ID = "local"
 # SSH 连接默认值与超时（秒）
 _DEFAULT_PORT = 22
 _SSH_CONNECT_TIMEOUT = 10
+# 新建 SSH 连接前的 TCP 可达性预检超时（秒）：
+# paramiko 的 connect 在部分平台（尤其 Windows + 被防火墙静默丢弃的 IP）上
+# 可能远超 timeout 才返回，导致「当前选中节点宕机」时所有跟随当前节点的
+# 操作（监控采集/文件/终端）被连接超时拖住数十秒。先用 OS 层 TCP 握手
+# 快速探活，不可达即秒级失败，再决定是否进入完整的 SSH 握手。
+_SSH_PRE_CHECK_TIMEOUT = 5
 
 # SSH 目标格式白名单：host 允许主机名 / IPv4 / IPv6（含端口形式以外的冒号），
 # user 允许常规 POSIX 用户名字符。二者最终会拼入 ssh 的 argv：
@@ -369,15 +376,43 @@ def _paramiko_ok() -> bool:
     return _paramiko_available
 
 
+def _tcp_reachable(host: str, port: int) -> None:
+    """对 SSH 目标做 OS 层 TCP 握手预检，失败抛 ConnectionError。
+
+    超时取 _SSH_PRE_CHECK_TIMEOUT（秒）；create_connection 会自动尝试
+    主机的全部地址族（IPv4/IPv6），兼容两种版本的目标。预检失败说明
+    主机宕机/端口未监听/被防火墙丢弃，没必要再进入完整的 SSH 握手。
+    """
+    last_err = None
+    try:
+        sock = socket.create_connection((host, port), timeout=_SSH_PRE_CHECK_TIMEOUT)
+    except OSError as e:
+        last_err = e
+    else:
+        try:
+            sock.close()
+        except OSError:
+            pass
+        return
+    raise ConnectionError(
+        f"SSH 端口不可达（{host}:{port}）：{last_err}。请确认主机在线、SSH 服务已启动且防火墙放行该端口"
+    )
+
+
 def _paramiko_new_client(node: dict, timeout: int) -> "paramiko.client.SSHClient":
     """新建一个到 node 的 paramiko client（仅建立连接，未执行命令）。"""
     import paramiko
 
+    host = str(node.get("host") or "")
+    port = int(node.get("port") or _DEFAULT_PORT)
+    # 快速可达性预检：不可达时秒级失败，避免慢网络上挂起整个连接流程
+    _tcp_reachable(host, port)
+
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     connect_kw = {
-        "hostname": str(node.get("host") or ""),
-        "port": int(node.get("port") or _DEFAULT_PORT),
+        "hostname": host,
+        "port": port,
         "username": str(node.get("user") or ""),
         "timeout": timeout,
         # 只使用显式凭据，避免扫描本机 ~/.ssh 或调用 agent

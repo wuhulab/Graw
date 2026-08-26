@@ -1229,6 +1229,9 @@ export default {
       bootTime: '启动时间',
       uptime: '运行时长',
     },
+    // 监控数据降级提示（当前管理节点不可达/数据过期时展示）
+    metricsUnavailable: '监控数据暂不可用',
+    metricsUnavailableDetail: '当前管理节点长期未返回数据，请检查节点连通性或在「多节点管理」中切换主机',
   },
   // ShunX 安全入口设置
   shunxsetup: {

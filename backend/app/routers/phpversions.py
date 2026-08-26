@@ -27,6 +27,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
+from app import hostfs
+from app.hostfs import host_path, unhost_path
+from app import node_manager
+
 logger = logging.getLogger("phpversions")
 
 router = APIRouter()
@@ -88,10 +92,15 @@ def _find_site(site_id: str) -> dict:
 # PHP 版本探测
 # ---------------------------------------------------------------------------
 def _run(argv: list) -> Optional[str]:
-    """安全执行一条外部命令并返回 stdout（去首尾空白）；失败返回 None。"""
+    """安全执行一条外部命令并返回 stdout（去首尾空白）；失败返回 None。
+
+    argv 使用「宿主机视角」路径（如 /usr/bin/php）：容器 /host 挂载模式下经
+    node_manager.host_cmd chroot 到宿主机根执行，避免直接用容器内路径调宿主
+    二进制时动态库解析错误；非容器模式等价于直接 subprocess 执行。
+    """
     try:
-        r = subprocess.run(
-            argv, capture_output=True, text=True, timeout=_EXEC_TIMEOUT,
+        r = node_manager.host_cmd(
+            list(argv), capture_output=True, text=True, timeout=_EXEC_TIMEOUT,
             check=False, errors="replace",
         )
         if r.returncode == 0:
@@ -134,21 +143,27 @@ def _fpm_socket_for(version: str) -> str:
 
 
 def _detect_linux() -> list:
-    """Linux：扫描 php 与 php-fpm 可执行文件，返回已安装版本列表。"""
+    """Linux：扫描 php 与 php-fpm 可执行文件，返回已安装版本列表。
+
+    容器 /host 挂载模式：_PHP_BIN_DIRS 是宿主机视角目录（/usr/bin 等），必须先经
+    host_path() 映射到容器内实际路径再扫描；对外（path 字段）统一返回宿主机视角
+    路径，供后续 nginx 配置/展示与经 host_cmd 的 php -v 解析使用。
+    """
     found = []
     discovered = set()
 
     # 1) 扫描系统目录中的 php<版本> / php-fpm<版本> 可执行文件
     for d in _PHP_BIN_DIRS:
-        if not os.path.isdir(d):
+        real_dir = host_path(d)
+        if not os.path.isdir(real_dir):
             continue
-        for name in os.listdir(d):
+        for name in os.listdir(real_dir):
             if not name.startswith("php"):
                 continue
             m = re.match(r"^php(?P<ver>\d+(?:\.\d+){0,2})$", name)
             if not m:
                 continue
-            path = os.path.join(d, name)
+            path = os.path.join(real_dir, name)
             if not os.path.isfile(path) or not os.access(path, os.X_OK):
                 continue
             ver = _PHP_VERSION_RE.match(m.group("ver"))
@@ -159,20 +174,21 @@ def _detect_linux() -> list:
                 found.append({
                     "version": ver.group(0),
                     "sapi": "cli",
-                    "path": path,
+                    "path": unhost_path(path),
                     "fpm_sock": _fpm_socket_for(ver.group(0)),
                 })
 
     # 2) 扫描 php-fpm 可执行文件路径
     for d in _PHPFPM_BIN_DIRS:
-        if not os.path.isdir(d):
+        real_dir = host_path(d)
+        if not os.path.isdir(real_dir):
             continue
-        for name in os.listdir(d):
+        for name in os.listdir(real_dir):
             if not name.startswith("php-fpm"):
                 continue
             m = re.match(r"^php-fpm(?P<ver>\d+(?:\.\d+){0,2})$", name)
             ver = m.group("ver") if m else ""
-            path = os.path.join(d, name)
+            path = os.path.join(real_dir, name)
             if not os.path.isfile(path) or not os.access(path, os.X_OK):
                 continue
             # 版本号归一化：php-fpm8.2 -> 8.2；无版本号则后续用 php -v 推断
@@ -180,18 +196,19 @@ def _detect_linux() -> list:
             found.append({
                 "version": ver2,
                 "sapi": "fpm",
-                "path": path,
+                "path": unhost_path(path),
                 "fpm_sock": _fpm_socket_for(ver2) if ver2 else "",
             })
 
-    # 3) 若扫描到通用 php / php-fpm（无版本号），运行 `php -v` 推断版本
-    bin_php = shutil.which("php")
-    if bin_php is None:
-        # 目录扫描中已带版本号的路径也可作为 php 解析入口
-        for c in found:
-            if c["sapi"] == "cli" and c["version"]:
-                bin_php = c["path"]
-                break
+    # 3) 若扫描到通用 php / php-fpm（无版本号），运行 `php -v` 推断版本。
+    #    优先用扫描到的 cli 路径（宿主机视角，经 host_cmd chroot 执行）；
+    #    容器模式下不使用 shutil.which（那是容器内 PATH，宿主 php 不在其中）。
+    bin_php = next(
+        (c["path"] for c in found if c["sapi"] == "cli" and c["version"]),
+        None,
+    )
+    if bin_php is None and not hostfs.is_host_mounted():
+        bin_php = shutil.which("php")
     if bin_php:
         ver = _parse_version(_run([bin_php, "-v"]))
         if ver and ver not in discovered:

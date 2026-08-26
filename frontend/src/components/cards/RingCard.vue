@@ -21,6 +21,8 @@
         <div class="ring-label">{{ $t('cards.ring.storage') }}</div>
       </div>
     </div>
+    <!-- 当前管理节点不可达/数据过期时的降级提示 -->
+    <MetricsFallback />
   </div>
 </template>
 
@@ -32,6 +34,7 @@ import { PieChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
 import { uiState } from '../../store/ui'
+import MetricsFallback from './MetricsFallback.vue'
 
 use([CanvasRenderer, PieChart, TitleComponent, TooltipComponent])
 

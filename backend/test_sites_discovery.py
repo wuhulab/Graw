@@ -197,6 +197,89 @@ class DiscoverTest(unittest.TestCase):
         self.assertEqual(item["domains"], ["graw-proxy.shunx.top"])
 
 
+class HostRootDiscoverTest(unittest.TestCase):
+    """容器 /host 挂载模式（HOST_ROOT=/host）下的外部站点发现。
+
+    真实站点配置位于宿主机 /opt/1panel/www/conf.d，容器内实际路径带 HOST_ROOT
+    前缀。发现逻辑必须经 host_path() 映射，否则在容器内找不到目录而漏掉全部
+    1Panel/openresty 外部站点（用户报告的场景）。
+    """
+
+    def _host_root(self):
+        # 返回一个临时目录作为 HOST_ROOT，宿主视角目录挂在它下面
+        return tempfile.TemporaryDirectory()
+
+    def test_discovers_1panel_sites_under_host_root(self):
+        # 宿主 /opt/1panel/www/conf.d 在容器内为 <host_root>/opt/1panel/www/conf.d
+        with self._host_root() as root:
+            conf_dir = os.path.join(root, "opt/1panel/www/conf.d")
+            os.makedirs(conf_dir)
+            with open(os.path.join(conf_dir, "hk6-a-1p.shunx.top.conf"), "w", encoding="utf-8") as f:
+                f.write(PROXY_CONF)
+            with mock.patch("app.hostfs.HOST_ROOT", root):
+                with mock.patch.object(
+                    sites, "_existing_site_dirs",
+                    return_value=[{"path": "/opt/1panel/www/conf.d", "source": "1panel"}],
+                ):
+                    found = sites._discover_existing_sites()
+        self.assertEqual(len(found), 1)
+        item = found[0]
+        self.assertEqual(item["name"], "graw-proxy.shunx.top")
+        self.assertEqual(item["type"], "proxy")
+        self.assertEqual(item["source"], "1panel")
+        self.assertTrue(item["external"])
+        # config_file 保存宿主机视角路径，供外部站点编辑写回时二次 host_path
+        self.assertEqual(
+            os.path.normpath(item["config_file"]),
+            os.path.normpath("/opt/1panel/www/conf.d/hk6-a-1p.shunx.top.conf"),
+        )
+
+    def test_resolve_site_conf_inlines_proxy_under_host_root(self):
+        # 容器模式下主配置的 include（/www/sites -> /opt/1panel/www/sites -> /host 前缀）
+        # 也要能读到反代片段，才能把 1Panel 反代站点识别为 proxy 而非 static
+        with self._host_root() as root:
+            conf_path = os.path.join(root, "opt/1panel/www/conf.d/hk6-a-1p.shunx.top.conf")
+            os.makedirs(os.path.dirname(conf_path))
+            # MOD_CONF 的 include 指向 graw-test-1p.shunx.top 的 proxy 目录
+            site_root = os.path.join(root, "opt/1panel/www/sites/graw-test-1p.shunx.top/proxy")
+            os.makedirs(site_root)
+            with open(conf_path, "w", encoding="utf-8") as f:
+                f.write(MOD_CONF)  # 主配置：server_name + include /www/sites/.../proxy/*.conf
+            with open(os.path.join(site_root, "root.conf"), "w", encoding="utf-8") as f:
+                f.write(MOD_PROXY_CONF)
+            with mock.patch("app.hostfs.HOST_ROOT", root):
+                conf = sites._resolve_site_conf(
+                    "/opt/1panel/www/conf.d/hk6-a-1p.shunx.top.conf"
+                )
+        self.assertEqual(sites._parse_server_name(conf), "graw-test-1p.shunx.top")
+        self.assertEqual(sites._parse_proxy_pass(conf), "http://127.0.0.1:15874")
+
+    def test_discover_1panel_proxy_under_host_root(self):
+        # 完整链路：1Panel 反代站点（主配置 + include 片段）在容器模式下应被发现为 proxy
+        with self._host_root() as root:
+            conf_dir = os.path.join(root, "opt/1panel/www/conf.d")
+            os.makedirs(conf_dir)
+            conf_path = os.path.join(conf_dir, "hk6-a-1p.shunx.top.conf")
+            with open(conf_path, "w", encoding="utf-8") as f:
+                f.write(MOD_CONF)
+            proxy_dir = os.path.join(root, "opt/1panel/www/sites/graw-test-1p.shunx.top/proxy")
+            os.makedirs(proxy_dir)
+            with open(os.path.join(proxy_dir, "root.conf"), "w", encoding="utf-8") as f:
+                f.write(MOD_PROXY_CONF)
+            with mock.patch("app.hostfs.HOST_ROOT", root):
+                with mock.patch.object(
+                    sites, "_existing_site_dirs",
+                    return_value=[{"path": "/opt/1panel/www/conf.d", "source": "1panel"}],
+                ):
+                    found = sites._discover_existing_sites()
+        self.assertEqual(len(found), 1)
+        item = found[0]
+        self.assertEqual(item["domains"], ["graw-test-1p.shunx.top"])
+        self.assertEqual(item["type"], "proxy")
+        self.assertEqual(item["reverse_proxy"], "http://127.0.0.1:15874")
+        self.assertEqual(item["source"], "1panel")
+
+
 class EditExternalTest(unittest.TestCase):
     def test_find_external_site_by_id(self):
         with tempfile.TemporaryDirectory() as d:

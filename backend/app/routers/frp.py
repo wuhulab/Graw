@@ -323,15 +323,20 @@ def _bin_for(data: dict) -> str:
     name = "frps" if mode == "server" else "frpc"
     stored = (data.get("serverBin") if mode == "server" else data.get("clientBin") or "").strip()
 
-    # 1) 存储的路径本身有效（Windows 自动补 .exe）
+    # 1) 存储的路径本身有效（Windows 自动补 .exe）。
+    #    容器 /host 挂载模式下存储的是宿主机视角路径（如 /usr/local/bin/frps），
+    #    必须映射到容器内实际路径（host_path）后才能做存在性检查。
     for cand in (stored, stored + ".exe" if (IS_WIN and stored) else stored):
-        if cand and os.path.exists(cand):
+        if cand and os.path.exists(node_manager.host_path(cand)):
             return cand
-    # 2) 通过 PATH 探测（Windows 尝试带 / 不带 .exe）
+    # 2) 通过 PATH 探测（Windows 尝试带 / 不带 .exe）。
+    #    host_which 在容器模式返回容器内实际路径（/host/...），本机可存在性检查；
+    #    命中后统一还原为宿主机视角路径返回（后续 host_shell/chroot 命令按宿主机
+    #    视角解释）；SSH 远程路径在本机不存在时按旧逻辑回退。
     for base in (name, name + ".exe") if IS_WIN else (name,):
         found = node_manager.host_which(base)
         if found and os.path.exists(found):
-            return found
+            return node_manager.unhost_path(found)
     # 3) 兜底：回退存储值或可执行名（由启动层给出友好报错）
     return stored or name
 

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import os
 import platform
 import re
@@ -12,6 +13,8 @@ from pydantic import BaseModel, Field
 
 from app.hostfs import host_path, host_cmd, host_which
 from app import webserver
+
+logger = logging.getLogger("graw.sites")
 
 # ---------------------------------------------------------------------------
 # 安全校验：防止 web 服务器配置注入与配置文件路径穿越
@@ -371,12 +374,17 @@ def _resolve_site_conf(conf_path: str) -> str:
     而该 include 路径是「容器内视角」（/www/sites/...）。代理在宿主机运行，
     实际文件位于 /opt/1panel/www/sites/...，因此这里把 include 路径做一次
     /www/sites/ → /opt/1panel/www/sites/ 映射后再 glob 取文件内容。
+
+    路径处理：conf_path 是「宿主机视角」绝对路径，读取前经 host_path() 映射
+    到容器内实际路径（HOST_ROOT=/host 挂载模式），否则在容器内找不到宿主的
+    /opt/1panel/www/conf.d 从而漏掉全部外部站点；非容器模式映射为原样。
     """
     parts = []
     try:
-        with open(conf_path, "r", encoding="utf-8", errors="replace") as f:
+        with open(host_path(conf_path), "r", encoding="utf-8", errors="replace") as f:
             parts.append(f.read())
-    except Exception:
+    except Exception as e:
+        logger.warning("站点配置读取失败: %s (%s)", host_path(conf_path), e)
         return "".join(parts)
     for inc in re.finditer(r"\binclude\s+([^;]+);", parts[0]):
         pattern = inc.group(1).strip()
@@ -385,14 +393,14 @@ def _resolve_site_conf(conf_path: str) -> str:
         try:
             import glob as _glob
 
-            for p in _glob.glob(pattern) or []:
+            for p in _glob.glob(host_path(pattern)) or []:
                 try:
                     with open(p, "r", encoding="utf-8", errors="replace") as f:
                         parts.append("\n" + f.read())
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                except Exception as e:
+                    logger.debug("include 片段读取失败: %s (%s)", p, e)
+        except Exception as e:
+            logger.debug("include 路径解析失败: %s (%s)", pattern, e)
     return "\n".join(parts)
 
 
@@ -417,18 +425,28 @@ def _existing_site_dirs() -> List[dict]:
 
 
 def _discover_existing_sites() -> List[dict]:
-    """扫描当前节点上已存在的站点配置，返回「外部站点」列表（来源外部，不写改）。"""
+    """扫描当前节点上已存在的站点配置，返回「外部站点」列表（来源外部，不写改）。
+
+    目录与文件路径统一按 host_path() 映射：_existing_site_dirs 返回的是「宿主机
+    视角」路径（如 /opt/1panel/www/conf.d），容器 /host 挂载模式下实际文件在
+    HOST_ROOT 前缀下，不映射会扫描不到任何外部站点（自建站点仍显示，造成
+    「1Panel兼容/反向代理站点不展示」）。config_file 仍保存宿主机视角路径，
+    与 _apply_external_nginx_config 中的 host_path() 写回逻辑呼应。
+    """
     found = []
     seen_ids = set()
     idx = 0
     for dir_entry in _existing_site_dirs():
         d = dir_entry["path"]
         source = dir_entry.get("source", "nginx")
+        real_dir = host_path(d)
         try:
-            if not os.path.isdir(d):
+            if not os.path.isdir(real_dir):
+                logger.debug("站点配置目录不存在，跳过扫描: %s", real_dir)
                 continue
-            names = sorted(os.listdir(d))
-        except Exception:
+            names = sorted(os.listdir(real_dir))
+        except Exception as e:
+            logger.warning("站点配置目录扫描失败: %s (%s)", real_dir, e)
             continue
         for conf_name in names:
             if not conf_name.endswith(".conf"):
