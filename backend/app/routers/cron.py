@@ -110,10 +110,16 @@ def _parse_schtasks_xml(xml_text: str) -> list:
 
 def _list_windows_tasks():
     try:
+        # encoding 兜底（第十四轮审计修复）：中文 Windows 下 schtasks 输出 GBK，
+        # 而 PYTHONUTF8=1 环境（常见于容器/CI/此开发机）下 text=True 按 utf-8 解码
+        # 必抛 UnicodeDecodeError，导致计划任务创建/列表接口 500。显式指定
+        # utf-8 + errors=replace：可读字段正常解析，损坏字节降级为替换符不中断流程。
         r = subprocess.run(
             ["schtasks", "/query", "/xml", "/fo", "list"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=15,
         )
         if r.returncode != 0:
@@ -147,12 +153,18 @@ def _create_windows_task(tid: str, name: str, command: str, schedule: str):
     # schedule is in cron-like string; for windows convert to daily at specific time for simplicity
     # Parse cron "minute hour * * *" -> /ST HH:MM
     parts = schedule.split()
+    minute = hour = None
     if len(parts) >= 5:
         minute = parts[0]
         hour = parts[1]
-        st = f"{hour.zfill(2)}:{minute.zfill(2)}"
+    # 兼容性修复（第十四轮审计）：通配符/列表/步进字段（* */5 0-6 等）无法
+    # 映射为 schtasks /st 的 HH:MM，此前直接 f"{hour.zfill(2)}:{minute.zfill(2)}"
+    # 得到 "00:*/5" 等非法值，schtasks /create 必失败（创建计划任务 500）。
+    # 非纯数字时回退默认 09:00，保证任务能创建、可立即运行。
+    if not (minute and hour and minute.isdigit() and hour.isdigit()):
+        st = "09:00"
     else:
-        st = "00:00"
+        st = f"{hour.zfill(2)}:{minute.zfill(2)}"
     tmp_bat = os.path.join(DATA_DIR, f"{tid}_task.bat")
     with open(tmp_bat, "w", encoding="utf-8") as f:
         f.write(command)
@@ -172,6 +184,8 @@ def _create_windows_task(tid: str, name: str, command: str, schedule: str):
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=15,
     )
     if r.returncode != 0:
@@ -183,41 +197,82 @@ def _delete_windows_task(name: str):
         ["schtasks", "/delete", "/tn", name, "/f"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=15,
+    )
+
+
+def _sync_windows_task(task: dict, existed: bool = True) -> None:
+    """把面板任务状态同步到系统计划任务（第十四轮审计修复）。
+
+    - enabled=False：删除系统任务（此前"禁用"只改 JSON，schtasks 仍按
+      旧命令定时执行 —— 处置失效）
+    - 命令/时间变化：schtasks /create /f 覆盖重建为最新命令
+    - 新增任务（existed=False）：直接创建
+    """
+    if not task.get("enabled", True):
+        if existed:
+            _delete_windows_task(task["name"])
+        return
+    _create_windows_task(
+        task["id"], task["name"], task["command"], task.get("schedule", "0 9 * * *")
     )
 
 
 def _run_windows_task(name: str):
     subprocess.run(
-        ["schtasks", "/run", "/tn", name], capture_output=True, text=True, timeout=30
+        ["schtasks", "/run", "/tn", name], capture_output=True, text=True,
+        encoding="utf-8", errors="replace", timeout=30,
     )
 
 
 def _list_linux_cron():
+    """读取宿主 crontab，返回 (tasks, preserved)。
+
+    - tasks: 面板可管理的「5 字段」任务列表 [{schedule, command}]
+    - preserved: 宿主 crontab 中无法用 5 字段解析的行（@reboot/@daily 等
+      special 时间、PATH=/SHELL= 等环境变量、注释），重写时必须原样保留
+
+    安全修复（第十四轮审计，Medium）：此前仅识别 5 字段行，面板任何一次
+    增删任务都会全量重写 crontab 并静默删除宿主自有的 @reboot 任务与
+    环境变量行（宿主任务被破坏）。
+    """
     try:
         # 在宿主机环境执行 crontab（容器模式经 chroot 映射，读写宿主 crontab）
         r = host_cmd(["crontab", "-l"], capture_output=True, text=True, timeout=10)
         if r.returncode != 0:
-            return []
+            return [], []
         lines = r.stdout.splitlines()
         tasks = []
+        preserved = []
         for line in lines:
             line = line.strip()
-            if not line or line.startswith("#"):
+            if not line:
                 continue
             m = re.match(r"^((?:\S+\s+){5})(.*)$", line)
             if m:
                 schedule = m.group(1).strip()
                 command = m.group(2).strip()
                 tasks.append({"schedule": schedule, "command": command})
-        return tasks
+            else:
+                # @reboot / 环境变量 / 注释等：不可面板化管理，保留原文
+                preserved.append(line)
+        return tasks, preserved
     except Exception:
-        return []
+        return [], []
 
 
-def _rewrite_linux_cron(tasks: list):
-    lines = []
+def _rewrite_linux_cron(tasks: list, preserved: list):
+    """全量重写宿主 crontab。
+
+    - 仅写入 enabled 的任务（禁用 = 从 crontab 移除，确保"禁用"真实生效）
+    - preserved 中的宿主自有行原样保留，不因面板操作而丢失
+    """
+    lines = list(preserved)
     for t in tasks:
+        if not t.get("enabled", True):
+            continue
         lines.append(f"{t['schedule']} {t['command']}")
     text = "# Managed by Graw Panel\n" + "\n".join(lines) + "\n"
     r = host_cmd(
@@ -333,14 +388,14 @@ async def create_task(req: CreateTask):
     }
     if IS_WIN:
         try:
-            _create_windows_task(tid, req.name, command, req.schedule)
+            _sync_windows_task(task, existed=False)
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     else:
-        crons = _list_linux_cron()
-        crons.append({"schedule": req.schedule, "command": command})
+        crons, preserved = _list_linux_cron()
+        crons.append({"schedule": req.schedule, "command": command, "enabled": task["enabled"]})
         try:
-            _rewrite_linux_cron(crons)
+            _rewrite_linux_cron(crons, preserved)
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     tasks.append(task)
@@ -354,6 +409,8 @@ async def update_task(task_id: str, req: UpdateTask):
     task = next((t for t in tasks if t["id"] == task_id), None)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    # 记录旧命令：更新后系统侧同步时用于移除 crontab 中的旧条目
+    old_command = task.get("command", "")
     if req.schedule is not None:
         # 安全校验：更新调度表达式同样走白名单（防 crontab 注入）
         _validate_schedule(req.schedule)
@@ -382,6 +439,34 @@ async def update_task(task_id: str, req: UpdateTask):
         _validate_cron_command(regenerated)
         task["command"] = regenerated
     _save_tasks(tasks)
+    # 安全修复（第十四轮审计，High）：此前 update_task 只写 JSON 存储，
+    # 从不同步系统计划任务——管理员"禁用任务"或"改为安全命令"后，
+    # crontab/schtasks 仍按旧命令旧时间表持续执行（处置失效，CWE-672）。
+    # 现同步到系统侧：Linux 全量重写（仅启用任务）+ 保留宿主自有行；
+    # Windows 禁用则删除系统任务、变更则覆盖重建。
+    try:
+        if IS_WIN:
+            _sync_windows_task(task, existed=True)
+        else:
+            crons, preserved = _list_linux_cron()
+            # 移除该任务此前写入 crontab 的旧条目（按旧命令匹配）
+            crons = [c for c in crons if c.get("command") != old_command]
+            if task.get("enabled", True):
+                crons.append({
+                    "schedule": task["schedule"], "command": task["command"],
+                    "enabled": True,
+                })
+            _rewrite_linux_cron(crons, preserved)
+    except HTTPException:
+        raise
+    except Exception as e:
+        # 系统同步失败不应回滚 JSON（面板状态已保存），但必须让管理员感知
+        logger.error("计划任务系统侧同步失败: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"面板配置已保存，但系统计划任务同步失败（{e}）。"
+                   f"请检查 crontab/schtasks 权限后重试。",
+        )
     return task
 
 
@@ -394,9 +479,9 @@ async def delete_task(task_id: str):
     if IS_WIN:
         _delete_windows_task(task["name"])
     else:
-        crons = _list_linux_cron()
+        crons, preserved = _list_linux_cron()
         crons = [c for c in crons if c["command"] != task["command"]]
-        _rewrite_linux_cron(crons)
+        _rewrite_linux_cron(crons, preserved)
     tasks = [t for t in tasks if t["id"] != task_id]
     _save_tasks(tasks)
     return {"ok": True}

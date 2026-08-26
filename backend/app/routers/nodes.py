@@ -88,12 +88,21 @@ def update_node(node_id: str, req: SSHNodeIn):
 @router.delete("/{node_id}")
 def delete_node(node_id: str):
     """删除一个 SSH 节点（本地节点不可删除）。"""
+    node = node_manager.get_node(node_id)
     try:
         ok = node_manager.delete_node(node_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if not ok:
         raise HTTPException(status_code=404, detail="节点不存在")
+    # 清理该节点的主机密钥 TOFU 记录（第十四轮审计配套）：节点重装/换钥后，
+    # 删除并重新添加节点即可重建信任，不被旧的 known_hosts 指纹拦截
+    if node and node.get("type") == "ssh" and node.get("host"):
+        try:
+            from app.ssh_host_keys import forget
+            forget(f"{node['host']}:{node.get('port') or 22}")
+        except Exception:
+            pass
     return {"ok": True}
 
 

@@ -409,7 +409,13 @@ def _paramiko_new_client(node: dict, timeout: int) -> "paramiko.client.SSHClient
     _tcp_reachable(host, port)
 
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    # 安全修复（第十四轮审计，High）：此前 AutoAddPolicy 对任意主机密钥
+    # 无条件接受且不持久化，网络位置攻击者可冒充 SSH 节点执行任意远程
+    # 命令（host_cmd/host_shell 全链路受影响）。改用 TOFU 策略：首次
+    # 连接记录主机密钥指纹，之后密钥变更即拒绝连接（app/ssh_host_keys）。
+    from app.ssh_host_keys import HostKeyPolicy
+
+    client.set_missing_host_key_policy(HostKeyPolicy())
     connect_kw = {
         "hostname": host,
         "port": port,

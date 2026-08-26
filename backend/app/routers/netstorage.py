@@ -960,19 +960,41 @@ def _make_adapter(conn: dict) -> BaseAdapter:
 
 
 def _validate_lpath(lpath: Optional[str]) -> str:
-    """云端逻辑路径规范化：必须以 / 开头，拒绝控制字符与穿越。"""
+    """云端逻辑路径规范化：必须以 / 开头，拒绝控制字符与穿越。
+
+    安全修复（第十四轮审计，High）：此前只拦截明文 ".." 段，攻击者可
+    用百分号编码（%2e%2e / %2e. / .%2e）绕过——RFC 3986 中 %2E == '.',
+    真实 WebDAV/FTP/S3 服务器收到 URL 后会先解码再规范化路径，面板
+    拼出的 base + "/%2e%2e/x" 实际指向 base 之外（越权读写远端文件）。
+    现改为：先对每个路径段做 URL 解码，再判定是否为 ".."（或解码后
+    残留斜杠/反斜杠/空字节等试图拆分或逃逸路径的编码）。
+    """
+    from urllib.parse import unquote
+
     p = (lpath or "/").strip() or "/"
     if _CTRL.search(p):
         raise HTTPException(400, "路径包含非法字符")
     if not p.startswith("/"):
         raise HTTPException(400, "路径必须以 / 开头")
-    # 归一化并拦截 .. 穿越
+    # 归一化并拦截 .. 穿越（含百分号编码变体）
     parts = []
     for seg in p.split("/"):
         if seg in ("", "."):
             continue
-        if seg == "..":
-            raise HTTPException(400, "路径非法（不允许 ..）")
+        # URL 解码后再判定：%2e%2e / %2e. / .%2e 均为 ".." 语义。
+        # 迭代解码（最多 3 层）以覆盖双重编码（%252e%252e）——WAF / 反代 /
+        # 应用层存在多层解码场景时，单次 unquote 拦不住二次编码的 ".."。
+        dseg = seg
+        for _ in range(3):
+            nd = unquote(dseg)
+            if nd == dseg:
+                break
+            dseg = nd
+        if dseg == "..":
+            raise HTTPException(400, "路径非法（不允许 .. 或编码变体）")
+        # 解码后的斜杠/反斜杠/空字节会拆分段或逃逸路径，一律拒绝
+        if "/" in dseg or "\\" in dseg or "\x00" in dseg:
+            raise HTTPException(400, "路径包含非法编码字符")
         parts.append(seg)
     return "/" + "/".join(parts) if parts else "/"
 

@@ -339,12 +339,21 @@ async def _try_paramiko_interactive(websocket: WebSocket, node: dict) -> str:
     """尝试用 paramiko 建立远程交互终端（invoke_shell）。
 
     成功时接管整个会话直到断开并返回 None；任何失败返回可读错误串。
+
+    安全（第十四轮审计修复，High）：此前 set_missing_host_key_policy(
+    AutoAddPolicy()) 对任意主机密钥无条件接受且不持久化，网络位置攻击者
+    可冒充 SSH 节点收割面板存储的节点密码（MITM）。现改为 TOFU 策略
+    （app.ssh_host_keys.HostKeyPolicy）：首次连接记录主机密钥指纹，
+    之后密钥变更即拒绝连接。
     """
     import paramiko
 
     try:
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        # TOFU 主机密钥校验：首次记录、之后必须一致（替代无校验的 AutoAddPolicy）
+        from app.ssh_host_keys import HostKeyPolicy
+
+        client.set_missing_host_key_policy(HostKeyPolicy())
         connect_kw = {
             "hostname": str(node.get("host") or ""),
             "port": int(node.get("port") or 22),
