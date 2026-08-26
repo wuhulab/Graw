@@ -1,3 +1,11 @@
+<!--
+  MonitorCard.vue — 实时流量 / 磁盘IO 监控卡片（桌面版）
+  作用：桌面卡片之一，用 ECharts 面积图绘制最近约 30 秒的上传 / 下载（或读取 / 写入）
+        速率曲线，可在「流量」与「磁盘IO」两个标签页间切换，切换时清空采样缓冲。
+  数据：采样点由共享 systemState.network / systemState.diskio 每次 WS 推送追加，
+        最多保留 MAX_POINTS(15) 个点（约 30s 滚动窗口）；节点不可达时由 MetricsFallback 提示。
+  打开方式：作为桌面卡片渲染。
+-->
 <template>
   <div class="win7-card" style="display:flex; flex-direction:column;">
     <div class="card-title">
@@ -16,24 +24,24 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
-import { use } from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
-import { LineChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
-import VChart from 'vue-echarts'
-import { formatSpeed } from '../../api'
-import { systemState } from '../../store/systemMetrics'
-import MetricsFallback from './MetricsFallback.vue'
+import { ref, computed, watch } from 'vue'   // Vue 响应式 / 计算属性 / 侦听
+import { use } from 'echarts/core'           // ECharts 按需注册
+import { CanvasRenderer } from 'echarts/renderers'   // Canvas 渲染器
+import { LineChart } from 'echarts/charts'           // 折线图
+import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'   // 网格 / 提示 / 图例组件
+import VChart from 'vue-echarts'             // ECharts 的 Vue 封装
+import { formatSpeed } from '../../api'       // 字节速率格式化（如 1.2M/s）
+import { systemState } from '../../store/systemMetrics'   // 共享系统指标状态
+import MetricsFallback from './MetricsFallback.vue'       // 监控数据降级提示
 
-use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent])
+use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent])   // 注册所需 ECharts 模块
 
-const mode = ref('net')
+const mode = ref('net')   // 当前标签页：net=流量 / disk=磁盘IO
 // 时间监控跨度：指标约每 2s 推送一个采样点，15 个点 ≈ 最近 30s
 const MAX_POINTS = 15
 
-const netSeries = ref({ up: [], down: [], times: [] })
-const diskSeries = ref({ read: [], write: [], times: [] })
+const netSeries = ref({ up: [], down: [], times: [] })     // 流量采样缓冲（上传 / 下载 / 时间轴）
+const diskSeries = ref({ read: [], write: [], times: [] }) // 磁盘IO 采样缓冲（读取 / 写入 / 时间轴）
 
 // 由共享「单条 WS」指标推送驱动（见 store/systemMetrics.js）。
 // systemState.network / systemState.diskio 每次推送即新增一个采样点，
@@ -81,6 +89,7 @@ function resetSeries() {
   diskSeries.value.write.length = 0
 }
 
+// --- 图表配置（按当前标签页组装数据与系列名） ---
 const option = computed(() => {
   const isNet = mode.value === 'net'
   const s = isNet ? netSeries.value : diskSeries.value

@@ -1,3 +1,10 @@
+<!--
+  运行环境管理主窗口
+  业务：列出运行时容器，支持启动/停止/重启/删除（高危需面板密码二次确认），并打开创建向导。
+  后端模块：/api/runtime
+  关键状态：runtimes（容器列表）、templates（创建菜单）、confirm（删除二次确认）、timer（5 秒轮询）
+  打开方式：独立「运行环境」入口挂载
+-->
 <template>
   <div class="rt-window" @click="closeMenus">
     <!-- 工具栏：创建下拉 + 刷新 -->
@@ -74,14 +81,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { runtimeApi } from '../../api'
-import { Plus, RefreshCw, Play, Square, RotateCw, Trash2 } from 'lucide-vue-next'
-import ConfirmDialog from '../ConfirmDialog.vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'   // 响应式、计算属性、挂载/卸载（清理轮询）
+import { useI18n } from 'vue-i18n'                            // 国际化：取 t() 生成动态文案
+import { runtimeApi } from '../../api'                       // 运行时容器后端接口封装
+import { Plus, RefreshCw, Play, Square, RotateCw, Trash2 } from 'lucide-vue-next'   // 图标集合
+import ConfirmDialog from '../ConfirmDialog.vue'              // 高危操作二次确认弹窗（输入面板密码）
 
 const { t } = useI18n()
-const emit = defineEmits(['close', 'openRuntimeCreate'])
+const emit = defineEmits(['close', 'openRuntimeCreate'])   // 向桌面发出：关闭窗口、打开创建向导
 
 const runtimes = ref([])
 const templates = ref([])
@@ -187,7 +194,7 @@ async function confirmDelete() {
 onMounted(() => {
   load()
   loadTemplates()
-  timer = setInterval(load, 5000)
+  timer = setInterval(load, 5000)   // 每 5 秒轮询容器状态，及时反映启停结果
 })
 onUnmounted(() => clearInterval(timer))
 </script>

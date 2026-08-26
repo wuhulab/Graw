@@ -1,3 +1,12 @@
+<!--
+  网络储存浏览窗口（后端 /api/netstorage 模块）
+  作用：浏览远程网络储存（FTP / FTPS / SMB / WebDAV / S3）上的文件，支持上传 / 下载 / 新建 /
+        重命名 / 删除 / 文本编辑。每个窗口实例绑定一个已配置的连接（conn）。
+  后端模块：/api/netstorage/connections/<id>（list 列目录、read/write 文本读写、upload/download、
+            mkdir、rename、remove）。
+  关键状态：items/parent/path（当前目录浏览）、editor（文本编辑对话框）、contextMenu（右键菜单）。
+  打开方式：桌面「网络储存」卡片选择连接后进入；下载用 fetch+blob 带 Bearer 头（与文件管理器一致）。
+-->
 <template>
   <div style="display:flex; flex-direction:column; height:100%; background:#fff;" @click="closeMenus">
     <!-- 工具栏：协议徽标 + 当前连接名 + 路径导航 -->
@@ -71,11 +80,17 @@
 </template>
 
 <script setup>
+// 响应式状态与生命周期钩子
 import { ref, onMounted } from 'vue'
+// 国际化
 import { useI18n } from 'vue-i18n'
+// 网络储存 API 与字节格式化工具
 import { netstorageApi, formatBytes } from '../../api'
+// 统一的后端错误消息提取（读取 detail 或 i18n 兜底）
 import { getApiErrorMessage } from '../../utils/apiErrors'
+// 登录态 store：下载接口需带 Bearer token
 import { auth } from '../../store/auth'
+// 图标（返回上级 / 目录 / 文本 / 图片 / 视频 / 上传）
 import { ArrowUp, Folder, FileText, Image as ImageIcon, Film, Upload } from 'lucide-vue-next'
 
 const { t } = useI18n()
@@ -83,22 +98,24 @@ const { t } = useI18n()
 // props：通过桌面点「网络储存」卡片进入，conn 为 { id, name, type }
 const props = defineProps({ conn: { type: Object, default: null } })
 
-const items = ref([])
-const parent = ref(null)
-const path = ref('/')
-const pathInput = ref('/')
-const newMenuOpen = ref(false)
-const contextMenu = ref({ show: false, x: 0, y: 0, item: null })
-const editor = ref({ show: false, name: '', path: '', content: '', saving: false })
+const items = ref([])            // 当前目录条目列表
+const parent = ref(null)         // 上级目录路径（null 表示已到根）
+const path = ref('/')            // 当前路径（网络储存统一用正斜杠）
+const pathInput = ref('/')       // 地址栏输入值
+const newMenuOpen = ref(false)   // 「新建」下拉菜单显隐
+const contextMenu = ref({ show: false, x: 0, y: 0, item: null })   // 右键菜单
+const editor = ref({ show: false, name: '', path: '', content: '', saving: false })   // 文本编辑对话框
 
+// 连接类型 → 展示用的协议名称
 function protoLabel(type) {
   return ({ ftp: 'FTP', ftps: 'FTPS', smb: 'SMB', webdav: 'WebDAV', s3: 'S3' })[type] || type || ''
 }
 
+// --- 动作：加载指定连接下某目录的文件列表 ---
 async function load(p) {
-  if (!props.conn?.id) return
+  if (!props.conn?.id) return   // 无连接则提前返回（例如直接打开窗口未传 conn）
   try {
-    const r = await netstorageApi.list(props.conn.id, p)
+    const r = await netstorageApi.list(props.conn.id, p)   // 调用 /api/netstorage/connections/<id>/list
     items.value = r.items || []
     parent.value = r.parent || null
     path.value = r.path || '/'
@@ -108,17 +125,21 @@ async function load(p) {
   }
 }
 
+// --- 动作：刷新 / 跳转 / 返回上级（三个导航入口） ---
 function refresh() { load(path.value) }
 function go() { load(pathInput.value || '/') }
 function goUp() { if (parent.value) load(parent.value) }
 
+// 按扩展名判断是否图片（用于选择图标）
 function isImage(name) {
   return ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg'].includes((name.split('.').pop() || '').toLowerCase())
 }
+// 按扩展名判断是否视频
 function isVideo(name) {
   return ['mp4', 'webm', 'mov', 'avi', 'mkv'].includes((name.split('.').pop() || '').toLowerCase())
 }
 
+// --- 动作：双击条目，目录进入，文件打开文本编辑 ---
 function openItem(it) {
   if (it.is_dir) load(it.path)
   else editText(it)
@@ -146,10 +167,11 @@ async function download(it) {
   }
 }
 
+// --- 动作：读取远程文件文本并打开编辑对话框 ---
 async function editText(it) {
   editor.value = { show: true, name: it.name, path: it.path, content: '', saving: false }
   try {
-    const r = await netstorageApi.read(props.conn.id, it.path)
+    const r = await netstorageApi.read(props.conn.id, it.path)   // 调用 /api/netstorage read
     editor.value.content = r.content
   } catch (e) {
     alert(t('files.readFailed', { error: getApiErrorMessage(e, t) }))
@@ -157,6 +179,7 @@ async function editText(it) {
   }
 }
 
+// --- 动作：把编辑框内容写回远程文件 ---
 async function saveEditor() {
   editor.value.saving = true
   try {
@@ -170,16 +193,18 @@ async function saveEditor() {
 }
 function closeEditor() { editor.value.show = false }
 
+// --- 动作：删除远程文件（先原生确认） ---
 async function remove(it) {
   if (!confirm(t('files.confirmDelete', { name: it.name }))) return
   try {
-    await netstorageApi.remove(props.conn.id, it.path)
+    await netstorageApi.remove(props.conn.id, it.path)   // 调用 /api/netstorage remove
     refresh()
   } catch (e) {
     alert(t('files.deleteFailed', { error: getApiErrorMessage(e, t) }))
   }
 }
 
+// --- 动作：重命名（替换路径最后一段，网络储存统一用正斜杠） ---
 async function renameItem(it) {
   const name = prompt(t('files.renamePrompt'), it.name)
   if (!name || name === it.name) return
@@ -192,6 +217,7 @@ async function renameItem(it) {
   }
 }
 
+// --- 动作：新建文件夹（确保以 / 结尾拼接） ---
 async function createFolder() {
   newMenuOpen.value = false
   const name = prompt(t('files.newFolderPrompt'))
@@ -205,19 +231,21 @@ async function createFolder() {
   }
 }
 
+// --- 动作：新建空文件 ---
 async function createFile() {
   newMenuOpen.value = false
   const name = prompt(t('files.newFilePrompt'))
   if (!name) return
   const newPath = (path.value.endsWith('/') ? path.value : path.value + '/') + name
   try {
-    await netstorageApi.write(props.conn.id, newPath, '')
+    await netstorageApi.write(props.conn.id, newPath, '')   // 写空内容创建
     refresh()
   } catch (e) {
     alert(t('files.createFailed', { error: getApiErrorMessage(e, t) }))
   }
 }
 
+// --- 动作：选择本地文件上传到当前目录 ---
 async function onUpload(e) {
   const file = e.target.files[0]
   if (!file) return
@@ -235,13 +263,19 @@ async function onUpload(e) {
 function formatTime(t) {
   return new Date(t * 1000).toLocaleString()
 }
+
+// --- 动作：关闭所有弹出菜单 ---
 function closeMenus() {
   newMenuOpen.value = false
   contextMenu.value.show = false
 }
+
+// 记录右键位置与目标条目，弹出上下文菜单
 function onContextMenu(e, it) {
   contextMenu.value = { show: true, x: e.clientX, y: e.clientY, item: it }
 }
+
+// ---------- 右键菜单动作：取出目标条目后分发到对应操作 ----------
 function menuEdit() {
   const it = contextMenu.value.item
   closeMenus()
@@ -251,7 +285,7 @@ function menuDelete() { const it = contextMenu.value.item; closeMenus(); if (it)
 function menuRename() { const it = contextMenu.value.item; closeMenus(); if (it) renameItem(it) }
 function menuDownload() { const it = contextMenu.value.item; closeMenus(); if (it && !it.is_dir) download(it) }
 
-onMounted(() => load('/'))
+onMounted(() => load('/'))   // 挂载后从根目录开始浏览
 </script>
 
 <style scoped>

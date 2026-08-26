@@ -1,3 +1,19 @@
+<!--
+  AuditLogWindow.vue — 审计日志查看窗口
+  ==========================================================
+  业务作用：
+    查看服务器上的日志文件（默认选中面板审计日志）。可在预置/自定义日志源之间
+    切换，选择读取的末尾行数（100/200/500/1000），以等宽字体展示日志内容。
+  后端模块：
+    /api/logs 的 list（日志源列表）与 read（读取末尾 N 行）。
+  关键状态：
+    - sources    日志源列表（内置 + 自定义源）
+    - currentId  当前选中日志源 id（默认 'panel' 即面板审计日志）
+    - tail       读取行数（默认 200，与后端 read 默认值一致）
+    - lines      已读取的日志行
+  打开方式：
+    由桌面/任务栏（或安全中心聚合窗口）打开，无 props。
+-->
 <template>
   <div class="auditlog-window">
     <!-- 工具栏：日志源选择 / 行数选择 / 刷新 -->
@@ -40,10 +56,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { RefreshCw, ScrollText } from 'lucide-vue-next'
-import { logsApi } from '../../api'
+import { ref, computed, onMounted } from 'vue'   // 状态/派生值/挂载钩子
+import { useI18n } from 'vue-i18n'   // 翻译函数
+import { RefreshCw, ScrollText } from 'lucide-vue-next'   // 刷新按钮/空状态图标
+import { logsApi } from '../../api'   // /api/logs：日志源列表与日志读取
 
 const { t } = useI18n()
 
@@ -53,9 +69,9 @@ const sources = ref([])
 const currentId = ref('panel')
 // 读取行数，默认 200（与 logsApi.read 默认值一致）
 const tail = ref(200)
-const lines = ref([])
-const loadingSources = ref(false)
-const loading = ref(false)
+const lines = ref([])   // 已读取的日志行
+const loadingSources = ref(false)   // 日志源列表加载中
+const loading = ref(false)   // 日志内容加载中
 
 const current = computed(() => sources.value.find((s) => s.id === currentId.value) || null)
 const contentText = computed(() => lines.value.join(''))
@@ -115,6 +131,7 @@ onMounted(async () => {
   await load()
 })
 </script>
+
 
 <style scoped>
 .auditlog-window { padding: 0; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; } /* 内嵌聚合窗口：外边距由父容器提供 */

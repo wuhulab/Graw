@@ -1,3 +1,13 @@
+<!--
+  FTP 虚拟用户管理窗口（后端 /api/ftpusers 模块）
+  作用：管理面板内置的纯 Python 虚拟 FTP 用户（增删改查、启停用），无需在系统创建真实账号，
+        用户数据持久化于后端 data/ftp_users.json，每个用户绑定一个 chroot 目录。
+  后端模块：/api/ftpusers（list 列表、create 新增、update 编辑/启停用、delete 删除）。
+  关键状态：items（用户列表）、form/editing（添加/编辑弹窗）、saving/busy（提交中）、
+            confirm（删除二次确认）。
+  删除用户为高风险操作，需输入面板密码（ConfirmDialog）确认。
+  打开方式：桌面「FTP 用户」卡片。
+-->
 <template>
   <div class="ftpusers-window">
     <!-- 顶部：说明 -->
@@ -104,25 +114,30 @@
 </template>
 
 <script setup>
+// 响应式状态（reactive 用于表单对象）
 import { ref, reactive, onMounted } from 'vue'
+// 图标（用户 / 刷新 / 添加）
 import { UserCheck, RefreshCw, Plus } from 'lucide-vue-next'
+// FTP 用户 API：list/create/update/delete
 import { ftpusersApi } from '../../api'
+// 高风险操作「输入面板密码」二次确认弹窗
 import ConfirmDialog from '../ConfirmDialog.vue'
 
-const loading = ref(false)
-const busy = ref(false)
-const items = ref([])
+const loading = ref(false)              // 列表加载中
+const busy = ref(false)                 // 行内操作（启停用/删除）进行中
+const items = ref([])                   // FTP 用户列表
 // 高风险操作二次确认状态（删除 FTP 用户需输入面板密码）
 const confirm = ref({ show: false, target: null })
 
-const formOpen = ref(false)
-const editing = ref(null)
-const saving = ref(false)
-const formError = ref('')
+const formOpen = ref(false)             // 添加/编辑弹窗是否显示
+const editing = ref(null)               // 当前编辑的用户对象（null 表示新增）
+const saving = ref(false)               // 保存请求进行中（防重复提交）
+const formError = ref('')               // 表单校验/提交错误提示
 const form = reactive({
   username: '', password: '', directory: '', enabled: true, description: '',
 })
 
+// 后端返回 ISO 时间串 → 本地可读格式（YYYY-MM-DD HH:mm:ss）
 function fmtTime(iso) {
   if (!iso) return '—'
   const d = new Date(iso)
@@ -131,10 +146,11 @@ function fmtTime(iso) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
+// --- 动作：拉取全部 FTP 用户列表 ---
 async function loadAll() {
   loading.value = true
   try {
-    const r = await ftpusersApi.list()
+    const r = await ftpusersApi.list()   // 调用 /api/ftpusers/list
     items.value = (r && r.users) || []
   } catch (e) {
     alert('加载失败：' + (e.response?.data?.detail || e.message))
@@ -143,6 +159,7 @@ async function loadAll() {
   }
 }
 
+// --- 动作：打开「新增用户」弹窗（清空表单） ---
 function openAdd() {
   editing.value = null
   formError.value = ''
@@ -150,6 +167,7 @@ function openAdd() {
   formOpen.value = true
 }
 
+// --- 动作：打开「编辑用户」弹窗（密码留空表示保持原密码） ---
 function openEdit(u) {
   editing.value = u
   formError.value = ''
@@ -161,8 +179,9 @@ function openEdit(u) {
   formOpen.value = true
 }
 
+// --- 动作：提交新增/编辑表单 ---
 async function saveForm() {
-  if (saving.value) return
+  if (saving.value) return   // 防重复提交
   formError.value = ''
   if (!form.username.trim()) { formError.value = '请填写用户名'; return }
   if (!form.directory.trim()) { formError.value = '请填写目录'; return }
@@ -192,6 +211,7 @@ async function saveForm() {
   }
 }
 
+// --- 动作：启用/停用用户（通过 update 接口传 enabled 反向值） ---
 async function toggleItem(u) {
   busy.value = true
   try {
@@ -213,10 +233,10 @@ function doDelete(u) {
 async function doDeleteConfirmed() {
   const u = confirm.value.target
   confirm.value.show = false
-  if (!u) return
+  if (!u) return   // 无待删除目标则提前返回
   busy.value = true
   try {
-    await ftpusersApi.delete(u.id)
+    await ftpusersApi.delete(u.id)   // 调用 /api/ftpusers/delete
     await loadAll()
   } catch (e) {
     alert('删除失败：' + (e.response?.data?.detail || e.message))

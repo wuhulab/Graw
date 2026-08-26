@@ -1,3 +1,10 @@
+<!--
+  站点增强配置窗口
+  业务：为各站点配置防盗链、gzip 压缩、静态资源缓存过期等 nginx 增强项，可逐站保存或清除。
+  后端模块：/api/sitesopts
+  关键状态：sites（站点及其增强配置）、busy（保存忙态）
+  打开方式：独立「站点配置」入口挂载
+-->
 <template>
   <div class="siteopts-window">
     <div class="toolbar">
@@ -58,9 +65,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { RefreshCw, ShieldCheck } from 'lucide-vue-next'
-import { sitesoptsApi } from '../../api'
+import { ref, onMounted } from 'vue'                          // Composition API：响应式、挂载
+import { RefreshCw, ShieldCheck } from 'lucide-vue-next'       // 图标集合
+import { sitesoptsApi } from '../../api'                       // 站点增强配置后端接口封装
 
 const loading = ref(false)
 const busy = ref(false)
@@ -83,6 +90,7 @@ async function load() {
   }
 }
 
+// --- 动作：保存站点增强配置 ---
 async function apply(s) {
   if (busy.value) return
   busy.value = true

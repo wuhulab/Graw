@@ -1,3 +1,20 @@
+<!--
+  ContainerLogsWindow.vue — 容器日志窗口
+  ==========================================================
+  业务作用：
+    以深色终端样式查看某个 Docker 容器的日志输出。默认每 2 秒自动刷新并
+    跟随滚动到底部；可暂停自动刷新、手动刷新或切换读取行数（100/300/1000/
+    5000）。用户向上滚动查看历史时自动停止跟随。
+  后端模块：
+    /api/docker 的 logs（读取容器末尾 N 行日志）。
+  关键状态：
+    - logs         当前显示的日志文本
+    - tail         读取行数（默认 300）
+    - autoRefresh  自动刷新开关
+    - stickBottom  是否跟随滚动到底部（向上滚动后自动取消）
+  打开方式：
+    由 Docker 管理窗口的容器「日志」按钮打开，props 传入容器 id 与名称。
+-->
 <template>
   <div style="display:flex; flex-direction:column; height:100%; background:#1e1e1e; color:#d4d4d4;">
     <!-- 工具栏 -->
@@ -23,9 +40,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { dockerApi } from '../../api'
+import { ref, onMounted, onBeforeUnmount } from 'vue'   // 状态/挂载启动轮询/卸载清理
+import { useI18n } from 'vue-i18n'   // 翻译函数
+import { dockerApi } from '../../api'   // /api/docker：容器日志接口
 
 const { t } = useI18n()
 
@@ -33,14 +50,15 @@ const { t } = useI18n()
 const props = defineProps({ id: String, name: String })
 const emit = defineEmits(['close'])
 
-const logs = ref(t('containerlogs.fetching'))
-const loading = ref(false)
-const tail = ref(300)
-const autoRefresh = ref(true)
-const logBox = ref(null)
-let timer = null
+const logs = ref(t('containerlogs.fetching'))   // 日志文本（初始为「正在获取」）
+const loading = ref(false)   // 加载中
+const tail = ref(300)   // 读取行数（默认 300）
+const autoRefresh = ref(true)   // 自动刷新开关
+const logBox = ref(null)   // 日志滚动容器 DOM 引用
+let timer = null   // 自动刷新定时器
 let stickBottom = true  // 是否跟随滚动到底部
 
+// --- 读取容器日志（末尾 tail 行） ---
 async function load() {
   loading.value = true
   try {
@@ -50,15 +68,17 @@ async function load() {
     logs.value = t('containerlogs.fetchFailed', { error: e.response?.data?.detail || e.message })
   } finally {
     loading.value = false
-    if (stickBottom) scrollBottom()
+    if (stickBottom) scrollBottom()   // 跟随模式下每次刷新后滚到底
   }
 }
 
+// 滚动容器到最底部
 function scrollBottom() {
   const el = logBox.value
   if (el) el.scrollTop = el.scrollHeight
 }
 
+// 用户滚动时更新跟随状态：距底部 < 30px 视为仍在底部
 function onScroll() {
   const el = logBox.value
   if (!el) return
@@ -66,20 +86,21 @@ function onScroll() {
   stickBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30
 }
 
+// 切换自动刷新：停止旧定时器，开启时按 2 秒间隔重新轮询
 function toggleAuto() {
   if (timer) { clearInterval(timer); timer = null }
   if (autoRefresh.value) {
-    timer = setInterval(load, 2000)
+    timer = setInterval(load, 2000)   // 2 秒轮询一次
   }
 }
 
 onMounted(async () => {
   await load()
-  if (autoRefresh.value) timer = setInterval(load, 2000)
+  if (autoRefresh.value) timer = setInterval(load, 2000)   // 默认开启 2 秒自动刷新
 })
 
 onBeforeUnmount(() => {
-  if (timer) clearInterval(timer)
+  if (timer) clearInterval(timer)   // 关闭窗口时停止轮询，避免泄漏
 })
 </script>
 

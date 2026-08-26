@@ -1,3 +1,11 @@
+<!--
+  WindowFrame.vue — 通用窗口外壳
+  作用：所有功能窗口的「外框」组件。负责标题栏（标题 / 节点徽标 / 最小化·最大化·关闭）、
+        拖拽移动、右下角缩放手柄，内容通过 <slot> 由具体功能组件注入。
+  数据：窗口的位置 / 尺寸 / 激活态来自 desktop 状态；标题可走 i18n（titleKey）或
+        直接文本（title）。统一面板（VIP）下可在标题前显示绑定的子节点名。
+  打开方式：由 WinWindow.vue 按窗口列表逐个渲染。
+-->
 <template>
   <div
     v-show="!window.minimized"
@@ -34,12 +42,12 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { X, Minus, Square } from 'lucide-vue-next'
-import { nodes as nodesStore } from '../store/nodes'
-import { settings } from '../store/settings'
-import { isVip } from '../store/vip'
+import { ref, computed } from 'vue'                                       // Vue 响应式与计算属性
+import { useI18n } from 'vue-i18n'                                        // 国际化（标题可走 i18n）
+import { X, Minus, Square } from 'lucide-vue-next'                        // 标题栏按钮图标
+import { nodes as nodesStore } from '../store/nodes'                      // 子节点列表（统一面板用）
+import { settings } from '../store/settings'                              // 界面 / 统一面板开关
+import { isVip } from '../store/vip'                                      // VIP 付费门控
 
 const props = defineProps({
   window: { type: Object, required: true },
@@ -50,6 +58,7 @@ const emit = defineEmits(['focus', 'close', 'minimize', 'maximize', 'move', 'res
 const { t } = useI18n()
 
 // 「统一面板兼容」下窗口绑定的节点名徽标（如“香港子节点”），提示该窗口操作哪台子机
+// --- 窗口标题与节点徽标 ---
 const nodeLabel = computed(() => {
   const w = props.window
   // 付费门控：未授权（未开通/已过期）时强制不生效，避免残留绑定值绕过锁定
@@ -62,6 +71,7 @@ const nodeLabel = computed(() => {
 // 由 openWindow 直接传给 window.title，不经过 i18n。仅当调用方显式
 // 提供 window.titleKey 时才走 i18n 翻译，避免 `$t(undefined)` 抛「Invalid
 // arguments」导致窗口无法挂载（此前回滚引入的问题）。
+// --- 窗口标题文本 ---
 const titleText = computed(() => {
   const w = props.window
   if (w && w.titleKey) {
@@ -73,9 +83,10 @@ const titleText = computed(() => {
 const dragging = ref(false)
 let dragStart = null
 
+// --- 拖拽移动 ---
 function startDrag(e) {
-  if (props.window.maximized) return
-  if (e.target.tagName === 'BUTTON') return
+  if (props.window.maximized) return                       // 最大化时不响应拖拽
+  if (e.target.tagName === 'BUTTON') return                // 点击最小化/最大化/关闭按钮不触发拖拽
   dragging.value = true
   dragStart = { x: e.clientX, y: e.clientY, ox: props.window.x, oy: props.window.y }
   document.addEventListener('mousemove', onDragMove)
@@ -87,6 +98,7 @@ function onDragMove(e) {
   const dx = e.clientX - dragStart.x
   const dy = e.clientY - dragStart.y
   const nx = Math.max(0, dragStart.ox + dx)
+  // 顶部留白、底部避开 64px 任务栏 + 余量，防止窗口被遮住
   const ny = Math.max(0, Math.min(window.innerHeight - 80, dragStart.oy + dy))
   emit('move', nx, ny)
 }
@@ -97,16 +109,18 @@ function onDragEnd() {
 }
 
 let resizeStart = null
+// --- 右下角缩放 ---
 function startResize(e) {
   resizeStart = { x: e.clientX, y: e.clientY, w: props.window.width, h: props.window.height }
   document.addEventListener('mousemove', onResizeMove)
   document.addEventListener('mouseup', onResizeEnd)
   e.preventDefault()
-  e.stopPropagation()
+  e.stopPropagation()                                       // 阻止冒泡到标题栏触发拖拽
 }
 function onResizeMove(e) {
   const dw = e.clientX - resizeStart.x
   const dh = e.clientY - resizeStart.y
+  // 限制最小窗口尺寸（宽 320 / 高 200），避免缩到不可用
   emit('resize', Math.max(320, resizeStart.w + dw), Math.max(200, resizeStart.h + dh))
 }
 function onResizeEnd() {

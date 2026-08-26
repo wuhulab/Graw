@@ -1,3 +1,18 @@
+<!--
+  ContainerDetailWindow.vue — 容器详情窗口
+  ==========================================================
+  业务作用：
+    展示某个 Docker 容器的运行时详情：CPU/内存/缓存用量与限制、分层与虚拟
+    大小、创建时间，以及基础信息（状态/镜像/PID/重启次数/网络模式/重启策略）、
+    启动命令、挂载卷与环境变量。打开即自动拉取。
+  后端模块：
+    /api/docker 的 inspect（docker inspect 包装）。
+  关键状态：
+    - info  容器 inspect 结果对象
+    - error 拉取失败提示
+  打开方式：
+    由 Docker 管理窗口的容器「详情」按钮打开，props 传入容器 id 与名称。
+-->
 <template>
   <div style="display:flex; flex-direction:column; height:100%;">
     <div class="toolbar">
@@ -88,19 +103,20 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { dockerApi } from '../../api'
+import { ref, onMounted, computed } from 'vue'   // 状态/挂载加载/派生命令文本
+import { useI18n } from 'vue-i18n'   // 翻译函数
+import { dockerApi } from '../../api'   // /api/docker：容器 inspect 接口
 
 const { t } = useI18n()
 
-const props = defineProps({ id: String, name: String })
-const emit = defineEmits(['close'])
+const props = defineProps({ id: String, name: String })   // 容器 id 与显示名称
+const emit = defineEmits(['close'])   // 对外仅暴露 close
 
-const info = ref(null)
-const loading = ref(false)
-const error = ref('')
+const info = ref(null)   // 容器 inspect 结果对象
+const loading = ref(false)   // 加载中
+const error = ref('')   // 加载失败提示
 
+// 启动命令 = entrypoint + cmd 合并展示（两者可能是字符串或数组，统一归一化）
 const cmdText = computed(() => {
   if (!info.value) return ''
   const parts = []
@@ -109,6 +125,7 @@ const cmdText = computed(() => {
   return parts.join(' ') || '—'
 })
 
+// --- 拉取容器详情 ---
 async function load() {
   loading.value = true
   error.value = ''
@@ -121,6 +138,7 @@ async function load() {
   }
 }
 
+// ISO 时间 → "YYYY-MM-DD HH:mm:ss"；无效值原样返回
 function formatTime(t) {
   if (!t) return '—'
   const d = new Date(t)
@@ -129,6 +147,7 @@ function formatTime(t) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
+// 字节数人性化展示；精度随数值量级递减（小数值保留小数位）
 function formatBytes(bytes) {
   if (bytes == null || isNaN(bytes) || bytes === 0) return '—'
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
@@ -138,6 +157,7 @@ function formatBytes(bytes) {
   return v.toFixed(v < 10 && i > 0 ? 2 : v < 100 ? 1 : 0) + ' ' + units[i]
 }
 
+// CPU 使用率配色：≥80% 红 / ≥50% 琥珀 / 其余绿
 function cpuColor(pct) {
   const v = Number(pct) || 0
   if (v >= 80) return '#b91c1c'
@@ -145,7 +165,7 @@ function cpuColor(pct) {
   return '#2a8f3c'
 }
 
-onMounted(load)
+onMounted(load)   // 打开窗口即加载详情
 </script>
 
 <style scoped>

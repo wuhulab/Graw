@@ -1,3 +1,11 @@
+<!-- Graw 桌面环境根组件：类 macOS 的「类桌面操作系统」界面。
+     登录前显示 Login 视图；登录后渲染桌面（动态壁纸 + 快捷方式 + 右侧监控卡片）、
+     窗口系统（独立窗口组件，支持拖拽 / 最小化 / 最大化）、Dock 式任务栏与开始菜单。
+     核心状态：登录态 auth、已打开窗口列表 openWindows、当前聚焦窗口、管理节点（多机）、
+     VIP / 统一面板兼容门控、ShunX 安全入口与网页防篡改告警。
+     窗口按 shortcuts 清单打开各自功能组件；多节点经 X-Graw-Node 透传（见 api.js）。
+     打开 / 聚焦窗口即同步请求目标节点，避免切换主机后首个请求打到旧节点。 -->
+
 <template>
   <Login v-if="!loggedIn" @login="onLoggedIn" />
   <div v-else class="desktop" :style="desktopBgStyle">
@@ -174,8 +182,9 @@ import { startDocker, stopDocker, refresh as refreshDocker } from './store/docke
 import { nodes as nodesStore, refreshNodes } from './store/nodes'
 import { setRequestNode } from './store/requestNode'
 import { tamperState, startTamper, stopTamper } from './store/tamper'
-import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, Archive, BarChart3, FileCode2, History, Stethoscope, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug } from 'lucide-vue-next'
+import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, Archive, BarChart3, FileCode2, History, Stethoscope, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用）
 
+// --- 桌面根状态：登录态、动态壁纸、底栏主机徽标 ---
 const loggedIn = computed(() => !!auth.token)
 
 // 桌面背景样式：与登录页共用同一份界面配置（自定义背景或回退默认 hero.png）
@@ -251,6 +260,7 @@ const isCurrentHostRemote = computed(() => hostBadgeRemote.value)
 const currentHostAgentReady = computed(() =>
   !!(currentHost.value && currentHost.value.type === 'ssh' && currentHost.value.agent_enabled)
 )
+// --- 登录后回调：检查 ShunX 安全入口 + 安装完整性 ---
 function onLoggedIn() {
   // 触发响应式重渲染，并检查是否需要强制设置安全入口
   checkShunxRequired()
@@ -258,6 +268,7 @@ function onLoggedIn() {
   checkInstallCheck()
 }
 
+// --- 桌面快捷方式清单：key/图标/窗口组件/尺寸/权限/远端能力 ---
 const shortcuts = ref([
   // remoteCap：host（缺省）可在远端节点使用；local 为面板自身管理项，远端节点隐藏
   { key: 'sites', label: '网站', titleKey: 'app.shortcut.sites', icon: markRaw(Globe), component: markRaw(SitesWindow), w: 900, h: 560, adminOnly: true, remoteCap: 'local' },
@@ -328,12 +339,14 @@ const shortcuts = ref([
 // 桌面快捷方式：管理员可见全部，普通用户仅可见非管理功能。
 // 远端节点下：未配置 Agent 时隐藏 local 类（面板自身管理项）应用，避免误操作本机；
 // 已配置 Agent 时 local 类经 Agent 代理在子节点可用，正常显示。
+// --- 快捷方式可见性：管理员 / 隐藏 Foxcode / 远端节点 local 类门控 ---
 const visibleShortcuts = computed(() => shortcuts.value.filter(s =>
   (!s.adminOnly || isAdmin()) &&
   !(s.key === 'foxcode' && settings.hideFoxcode) &&
   !(isCurrentHostRemote.value && !currentHostAgentReady.value && s.remoteCap === 'local')
 ))
 
+// --- 窗口系统状态：选中项、已开窗口、聚焦窗口、开始菜单 ---
 const selected = ref(null)
 const openWindows = ref([])
 const activeWindowId = ref(null)
@@ -383,6 +396,7 @@ function onShunxSaved() {
 let windowSeq = 0
 let zSeq = 100
 
+// --- 开始菜单 / 启动器 / 退出登录 ---
 function toggleStartMenu() { startMenuOpen.value = !startMenuOpen.value }
 function openUsers() { openWindow('users') }
 function openChangePwd() { openWindow('changepwd') }
@@ -408,6 +422,7 @@ function onDocClick(e) {
   if (!btn && !menu) startMenuOpen.value = false
 }
 
+// --- 通用窗口打开：含 adminOnly / remoteCap / VIP 三重门控 ---
 function openWindow(key) {
   let def = shortcuts.value.find(s => s.key === key)
   if (!def) {
@@ -977,6 +992,7 @@ function openNetStorageForm(conn = null) {
   activeWindowId.value = id
 }
 
+// --- 窗口生命周期：聚焦 / 关闭 / 最小化 / 最大化 / 移动 / 缩放 ---
 function focusWindow(id) {
   const w = openWindows.value.find(x => x.id === id)
   if (!w) return
@@ -1047,6 +1063,7 @@ function taskClick(id) {
 
 // 系统概览：改由共享的「单条 WS」指标推送驱动（见 store/systemMetrics.js），
 // 这里仅做一块响应式视图，不再各自开 HTTP 轮询。
+// --- 系统概览 + 实时数据（指标 WS / 防篡改 / Docker）启停 ---
 const overview = computed(() => systemState.overview)
 
 // 连接池启动/停止：登录后统一建立共享指标 WS，并预启动 Docker 后台轮询；
@@ -1079,6 +1096,7 @@ function updateClock() {
   clockDate.value = `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`
 }
 
+// --- 挂载 / 卸载生命周期：登录态兜底、加载 UI、启停实时数据 ---
 onMounted(() => {
   // ShunX 保护兜底：本地若残留「待改密」登录态，回到登录页走强制改密流程
   if (auth.user?.must_change_password) {
@@ -1108,6 +1126,7 @@ onMounted(() => {
 // 桌面无窗口时跟随全局 currentId。此函数在窗口打开/聚焦时同步调用（而非仅靠
 // watch 异步触发），避免「切换主机后立刻启动应用」的首个请求仍打到切换前的节点
 // （应用名称已显示新节点、实际连接却还是旧节点）。先定义再供 watch 与 open/focus 复用。
+// --- 统一面板兼容：把聚焦窗口绑定的目标节点写入请求上下文 ---
 function applyActiveRequestNode(id) {
   let node = ''
   if (unifiedPanelOn.value) {

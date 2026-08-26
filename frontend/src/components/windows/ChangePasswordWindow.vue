@@ -1,3 +1,18 @@
+<!--
+  ChangePasswordWindow.vue — 修改密码窗口
+  ==========================================================
+  业务作用：
+    修改当前登录用户的密码：输入旧密码、新密码与确认密码，前端校验长度与
+    一致性后提交。修改成功后同步清除本地登录态里的 must_change_password
+    标记（首次登录强制改密后解除限制）。
+  后端模块：
+    /api/auth 的 changePassword（修改当前用户密码）。
+  关键状态：
+    - oldPassword / newPassword / confirmPassword 三个密码输入框
+    - ok    修改成功提示
+  打开方式：
+    首次登录强制改密时或用户主动打开，无 props。
+-->
 <template>
   <div class="change-pwd">
     <form @submit.prevent="submit">
@@ -23,29 +38,31 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { authApi } from '../../api'
-import { auth, setAuth } from '../../store/auth'
+import { ref } from 'vue'   // 表单输入状态
+import { useI18n } from 'vue-i18n'   // 翻译函数
+import { authApi } from '../../api'   // /api/auth：修改密码接口
+import { auth, setAuth } from '../../store/auth'   // 登录态读写（改密成功后清除强制改密标记）
 
 const { t } = useI18n()
 
-const oldPassword = ref('')
-const newPassword = ref('')
-const confirmPassword = ref('')
-const saving = ref(false)
-const error = ref('')
-const ok = ref(false)
+const oldPassword = ref('')   // 当前密码
+const newPassword = ref('')   // 新密码
+const confirmPassword = ref('')   // 新密码确认
+const saving = ref(false)   // 提交中
+const error = ref('')   // 错误提示
+const ok = ref(false)   // 成功提示
 
+// --- 提交改密：先做前端校验，成功后同步本地登录态 ---
 async function submit() {
-  if (saving.value) return
+  if (saving.value) return   // 防重复提交
   error.value = ''
   ok.value = false
-  if (newPassword.value.length < 6) { error.value = t('changepassword.pwdTooShort'); return }
-  if (newPassword.value !== confirmPassword.value) { error.value = t('changepassword.pwdMismatch'); return }
+  if (newPassword.value.length < 6) { error.value = t('changepassword.pwdTooShort'); return }   // 最短 6 位，与后端策略一致
+  if (newPassword.value !== confirmPassword.value) { error.value = t('changepassword.pwdMismatch'); return }   // 两次输入不一致直接中止
   saving.value = true
   try {
     await authApi.changePassword(oldPassword.value, newPassword.value)
+    // 改密成功：清除首次登录强制改密标记并回写登录态
     if (auth.user) {
       auth.user.must_change_password = false
       setAuth(auth.token, auth.user)

@@ -1,3 +1,14 @@
+<!--
+  登录日志窗口（后端 /api/loginlog 模块）
+  作用：查看面板登录历史（成功/失败/异常，异常指新 IP / 新设备登录），管理员可筛选全部账号日志、
+        开关「异常登录提醒」推送、测试推送并清空全部日志；非管理员仅看自己账号的历史。
+  后端模块：/api/loginlog（status 统计与提醒配置、list 全部日志、mine 当前账号日志、
+            update_config 更新提醒开关、test_alert 测试推送、clear 清空全部）。
+  关键状态：logs（日志列表）、stats（成功/失败/异常统计）、alertEnabled（异常提醒开关）、
+            filterUsername/filterStatus（管理员筛选条件）、confirm（清空二次确认）。
+  打开方式：桌面「登录日志」卡片（也可能内嵌于「日志」中心窗口）。
+  清空日志为高风险操作，需输入面板密码（ConfirmDialog）确认。
+-->
 <template>
   <div class="loginlog-window">
     <!-- 工具栏：统计 / 告警开关 / 操作 -->
@@ -84,24 +95,30 @@
 </template>
 
 <script setup>
+// 响应式状态与生命周期钩子
 import { ref, onMounted } from 'vue'
+// 图标（统计徽标 / 刷新 / 推送）
 import { Fingerprint, RefreshCw, Send } from 'lucide-vue-next'
+// 登录日志 API：status/list/mine/update_config/test_alert/clear
 import { loginlogApi } from '../../api'
+// 权限判断：管理员可看全部日志与清空，普通用户只看自己的
 import { isAdmin } from '../../store/auth'
+// 高风险操作「输入面板密码」二次确认弹窗
 import ConfirmDialog from '../ConfirmDialog.vue'
 
-const loading = ref(false)
-const busy = ref(false)
-const logs = ref([])
-const stats = ref({ total: 0, success: 0, failed: 0, abnormal: 0 })
-const alertEnabled = ref(true)
-const filterUsername = ref('')
-const filterStatus = ref('')
-const msg = ref('')
-const msgType = ref('')
+const loading = ref(false)              // 列表加载中
+const busy = ref(false)                 // 清空/测试推送等操作进行中（防重复点击）
+const logs = ref([])                    // 登录日志列表
+const stats = ref({ total: 0, success: 0, failed: 0, abnormal: 0 })   // 顶部统计（总/成功/失败/异常）
+const alertEnabled = ref(true)          // 异常登录提醒开关（仅管理员可改）
+const filterUsername = ref('')          // 按账号筛选（仅管理员）
+const filterStatus = ref('')            // 按结果筛选（成功/失败，仅管理员）
+const msg = ref('')                     // 操作结果提示
+const msgType = ref('')                 // 提示类型（ok / err）
 // 高风险操作二次确认状态
 const confirm = ref({ show: false })
 
+// --- 动作：拉取登录统计与异常提醒开关状态 ---
 async function loadStats() {
   try {
     stats.value = await loginlogApi.status()
@@ -112,6 +129,7 @@ async function loadStats() {
   }
 }
 
+// --- 动作：加载日志列表（管理员带筛选条件，普通用户固定查自己的） ---
 async function loadAll() {
   loading.value = true
   try {
@@ -122,7 +140,7 @@ async function loadAll() {
       const r = await loginlogApi.list(params)
       logs.value = r.logs || []
     } else {
-      const r = await loginlogApi.mine(200)
+      const r = await loginlogApi.mine(200)   // 非管理员：后端只返回当前账号的历史
       logs.value = r.logs || []
     }
   } catch (e) {
@@ -133,10 +151,12 @@ async function loadAll() {
   }
 }
 
+// --- 动作：同时刷新统计与列表（挂载及清空后复用） ---
 async function refresh() {
   await Promise.all([loadStats(), loadAll()])
 }
 
+// --- 动作：切换异常登录提醒开关并持久化到后端 ---
 async function onToggleAlert() {
   try {
     await loginlogApi.updateConfig(alertEnabled.value)
@@ -149,6 +169,7 @@ async function onToggleAlert() {
   }
 }
 
+// --- 动作：向所有启用渠道发送一条测试推送 ---
 async function doTestAlert() {
   busy.value = true
   msg.value = ''
@@ -169,6 +190,7 @@ function doClear() {
   confirm.value = { show: true }
 }
 
+// --- 动作：密码校验通过后执行清空并刷新 ---
 async function doClearConfirmed() {
   confirm.value.show = false
   busy.value = true

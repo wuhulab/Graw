@@ -1,3 +1,10 @@
+<!--
+  ShunX 安全中心聚合窗口
+  业务：单窗口内切换并聚合多个安全相关子应用——防火墙、应用防火墙(WAF)、网页防篡改、数据库保护、备份中心、通知中心、SSH 密钥。
+  后端模块：/api/shunx、/api/waf、/api/tamper、/api/protected、/api/backup、/api/notify、/api/sshkeys
+  关键状态：mode（当前子视图标签）
+  打开方式：桌面「ShunX 安全」入口挂载
+-->
 <template>
   <div class="shunx-security-window">
     <!-- 视图切换：防火墙 / 应用防火墙 / 防篡改 / 数据库保护 / 备份 / 通知 / SSH密钥 -->
@@ -51,14 +58,14 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import FirewallWindow from './FirewallWindow.vue'
-import WafWindow from './WafWindow.vue'
-import TamperWindow from './TamperWindow.vue'
-import ProtectionWindow from './ProtectionWindow.vue'
-import BackupWindow from './BackupWindow.vue'
-import NotifyWindow from './NotifyWindow.vue'
-import SSHKeysWindow from './SSHKeysWindow.vue'
+import { ref } from 'vue'                        // Composition API：响应式（当前子视图）
+import FirewallWindow from './FirewallWindow.vue' // 子应用：防火墙
+import WafWindow from './WafWindow.vue'           // 子应用：应用防火墙
+import TamperWindow from './TamperWindow.vue'     // 子应用：网页防篡改
+import ProtectionWindow from './ProtectionWindow.vue'   // 子应用：数据库保护
+import BackupWindow from './BackupWindow.vue'     // 子应用：备份中心
+import NotifyWindow from './NotifyWindow.vue'     // 子应用：通知中心
+import SSHKeysWindow from './SSHKeysWindow.vue'   // 子应用：SSH 密钥
 
 // 视图模式：firewall / waf / tamper / protection / backup / notify / sshkeys
 const mode = ref('firewall')

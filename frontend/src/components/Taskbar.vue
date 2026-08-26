@@ -1,3 +1,10 @@
+<!--
+  Taskbar.vue — 底部任务栏
+  作用：仿桌面系统的底部任务栏。左侧「开始」按钮弹出应用菜单；中间列出当前已打开
+        的窗口（点击可在最小化 / 激活间切换）；右侧显示实时时钟。
+  数据：窗口列表来自 desktop 状态单例；时钟由本地定时器每秒刷新。
+  打开方式：由 App.vue 固定在桌面底部渲染，常驻可见。
+-->
 <template>
   <div class="taskbar">
     <div class="taskbar-start" @click.stop="showStart = !showStart">
@@ -29,39 +36,43 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { desktop } from '../store/desktop.js'
-import { LayoutGrid, Container, BarChart3, Folder, Terminal, Package } from 'lucide-vue-next'
+import { ref, onMounted, onBeforeUnmount } from 'vue'                                       // Vue 响应式与生命周期
+import { desktop } from '../store/desktop.js'                                              // 桌面窗口状态单例
+import { LayoutGrid, Container, BarChart3, Folder, Terminal, Package } from 'lucide-vue-next' // 任务栏与菜单图标
 
-const time = ref('')
-const showStart = ref(false)
-let timer = null
+const time = ref('')          // 任务栏时钟文本
+const showStart = ref(false)  // 开始菜单是否展开
+let timer = null              // setInterval 句柄，卸载时清除
 
+// 刷新时钟：中文 24 小时制文本
 function updateTime() {
   const now = new Date()
   time.value = now.toLocaleTimeString('zh-CN', { hour12: false })
 }
 
+// 任务栏项点击：在「激活前台」与「最小化收起」间切换
 function toggleWindow(id) {
   const w = desktop.windows.find(x => x.id === id)
-  if (!w) return
+  if (!w) return                         // 窗口已被关闭则忽略
   if (w.minimized || !w.active) {
-    desktop.activate(id)
+    desktop.activate(id)                // 已最小化或未激活 → 激活并置于前台
   } else {
-    desktop.minimize(id)
+    desktop.minimize(id)                // 已是前台窗口 → 收起到任务栏
   }
 }
 
+// 根据窗口类型映射对应图标
 function iconFor(type) {
   switch (type) {
     case 'docker': return Container
     case 'process': return BarChart3
     case 'file': return Folder
     case 'terminal': return Terminal
-    default: return Package
+    default: return Package             // 未匹配类型时兜底图标
   }
 }
 
+// 从开始菜单打开应用：先收起菜单再派发打开请求
 function openApp(type, title, opts) {
   showStart.value = false
   desktop.open(type, title, opts)
@@ -69,7 +80,8 @@ function openApp(type, title, opts) {
 
 onMounted(() => {
   updateTime()
-  timer = setInterval(updateTime, 1000)
+  timer = setInterval(updateTime, 1000)   // 每秒刷新时钟
+  // 点击页面任意处收起开始菜单（菜单自身 @click.stop 阻止冒泡）
   window.addEventListener('click', () => { showStart.value = false })
 })
 onBeforeUnmount(() => {

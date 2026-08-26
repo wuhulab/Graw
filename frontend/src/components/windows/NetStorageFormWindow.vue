@@ -1,3 +1,10 @@
+<!--
+  网络存储连接表单窗口（新增 / 编辑）
+  业务：配置到远端存储的连接（FTP / FTPS / SMB / WebDAV / S3），供面板统一挂载与备份。
+  后端模块：/api/netstorage
+  关键状态：form（连接字段）、isEdit（是否编辑模式）、saving / testing（保存与测试忙态）
+  打开方式：由 NetStorageWindow 通过「openNetStorageForm」事件弹出；conn 为 null 表示新增，有值表示编辑
+-->
 <template>
   <div class="ns-form">
     <!-- 顶部工具栏：标题 + 关闭（风格同「运行环境」新建窗口） -->
@@ -93,11 +100,11 @@
 </template>
 
 <script setup>
-import { reactive, ref, computed, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { netstorageApi } from '../../api'
-import { notifyNetStorageChanged } from '../../store/netstorage'
-import { Server } from 'lucide-vue-next'
+import { reactive, ref, computed, onMounted } from 'vue'        // Composition API 响应式与生命周期钩子
+import { useI18n } from 'vue-i18n'                              // 国际化：取 t() 生成动态文案
+import { netstorageApi } from '../../api'                       // 网络存储后端接口封装
+import { notifyNetStorageChanged } from '../../store/netstorage'   // 跨窗口通知：连接变更后刷新主列表
+import { Server } from 'lucide-vue-next'                       // 图标：服务器
 
 const { t } = useI18n()
 
@@ -105,7 +112,7 @@ const props = defineProps({
   // 传入连接对象（脱敏）则为编辑模式；null 表示新增
   conn: { type: Object, default: null }
 })
-const emit = defineEmits(['close', 'saved'])
+const emit = defineEmits(['close', 'saved'])   // 向父窗口发出：关闭、已保存（触发主列表刷新）
 
 const isEdit = !!props.conn
 
@@ -153,6 +160,7 @@ onMounted(() => {
   })
 })
 
+// --- 动作：保存连接（新增或更新） ---
 async function save() {
   errorMsg.value = ''
   if (!form.name.trim()) { errorMsg.value = t('netstorage.nameRequired'); return }

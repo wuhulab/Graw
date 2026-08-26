@@ -1,3 +1,12 @@
+<!--
+  Docker 总控窗口（后端 /api/docker + /api/dockervolumes + /api/containeredit 模块）
+  作用：服务器 Docker 管理的统一入口，含多子视图：容器（启停/重启/日志/终端/备份/升级/
+        制作镜像/备注/标星）、镜像（拉取/构建/打标签/删除）、数据卷、网络、compose 编排、引擎配置。
+  后端模块：/api/docker（容器/镜像/网络/compose/配置）、/api/dockervolumes（数据卷）、/api/containeredit（容器资源编辑）。
+  关键状态：view（当前子视图）、containers/status（由共享 docker store 经 watch 回填）、各弹窗与右键菜单状态。
+  打开方式：桌面「Docker」卡片；容器列表走共享 store（多窗口共用一轮询连接，避免重复拉取）。
+  删除容器/镜像/网络/卷均为高风险操作，需输入面板密码（ConfirmDialog）确认。
+-->
 <template>
   <div style="display:flex; flex-direction:column; height:100%;" @click="closeMenus">
     <!-- 工具栏：视图下拉切换 -->
@@ -339,53 +348,58 @@
 </template>
 
 <script setup>
+// 响应式状态、生命周期与计算属性
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+// 图标（拉取/构建按钮）
 import { Download, Hammer } from 'lucide-vue-next'
+// Docker API：容器/镜像/网络/compose/配置/数据卷
 import { dockerApi } from '../../api'
+// 共享 Docker store：多窗口共用一份容器数据与轮询连接（startDocker 启动轮询、refresh 触发刷新）
 import { docker, startDocker, refresh as refreshDockerStore } from '../../store/docker'
+// 高风险操作「输入面板密码」二次确认弹窗
 import ConfirmDialog from '../ConfirmDialog.vue'
 
+// 子窗口事件：打开日志 / 容器内终端 / 详情 / 文件 / 配置编辑器 / 资源图表 / 容器编辑
 const emit = defineEmits(['openLogs', 'openContainerTerminal', 'openContainerDetails', 'openFiles', 'openDockerConfigEditor', 'openContainerStats', 'openContainerEdit'])
 
-// 当前视图：containers / config / compose / images / networks
+// 当前视图：containers / config / compose / images / networks / volumes
 const view = ref('containers')
 const loading = ref(false)
 
-// ---------- 容器 ----------
-const status = ref(null)
-const containers = ref([])
-const ctxMenu = ref({ show: false, x: 0, y: 0, item: null })
-const noteDialog = ref({ show: false, text: '', item: null })
-// 高风险操作二次确认状态（删除容器/镜像/网络）
+// ---------- 容器：Docker 守护状态与容器列表 ----------
+const status = ref(null)        // Docker 引擎状态（可用与否、版本、运行数等）
+const containers = ref([])      // 容器列表（由共享 store 经 watch 回填）
+const ctxMenu = ref({ show: false, x: 0, y: 0, item: null })   // 右键操作菜单
+const noteDialog = ref({ show: false, text: '', item: null })   // 备注笔记弹窗
+// 高风险操作二次确认状态（删除容器/镜像/网络时记录待执行动作）
 const confirm = ref({ show: false, title: '', message: '', action: null })
 
-// ---------- 配置 ----------
+// ---------- 配置：Docker 引擎配置（镜像加速/私有仓库/iptables） ----------
 const config = ref({})
 const configMsg = ref('')
 const configMsgErr = ref(false)
 const form = ref({ mirror_enabled: false, mirrors: '', private_registries: '', iptables: true })
 
-// ---------- 编排 ----------
+// ---------- 编排：compose 项目列表 ----------
 const composeProjects = ref([])
 
-// ---------- 镜像 ----------
+// ---------- 镜像：镜像列表与各管理弹窗 ----------
 const images = ref([])
-// 镜像管理弹窗（拉取 / 打标签 / 构建）
-const busy = ref(false)
-const pullDialog = ref({ show: false, name: '', err: '' })
-const tagDialog = ref({ show: false, id: '', repo: '', tag: 'latest', err: '' })
-const buildDialog = ref({ show: false, name: '', tag: 'latest', context_dir: '', err: '' })
+const busy = ref(false)         // 弹窗内提交进行中（防重复点击）
+const pullDialog = ref({ show: false, name: '', err: '' })     // 拉取镜像
+const tagDialog = ref({ show: false, id: '', repo: '', tag: 'latest', err: '' })   // 打标签
+const buildDialog = ref({ show: false, name: '', tag: 'latest', context_dir: '', err: '' })   // 构建镜像
 
-// ---------- 网络 ----------
+// ---------- 网络：Docker 网络列表 ----------
 const networks = ref([])
-// ---------- 数据卷 ----------
+// ---------- 数据卷：Docker 数据卷列表 ----------
 const volumes = ref([])
 
-// 标星的容器优先显示在最上面
+// 标星的容器优先显示在最上面（提升常用容器的可见性）
 const sortedContainers = computed(() => {
   return [...containers.value].sort((a, b) => {
-    if (a.starred !== b.starred) return a.starred ? -1 : 1
-    return (a.name || '').localeCompare(b.name || '')
+    if (a.starred !== b.starred) return a.starred ? -1 : 1   // 先按是否标星排序
+    return (a.name || '').localeCompare(b.name || '')         // 同组内按名称排序
   })
 })
 
@@ -398,25 +412,28 @@ async function onViewChange() {
     else if (view.value === 'images') await loadImages()
     else if (view.value === 'networks') await loadNetworks()
     else if (view.value === 'volumes') await loadVolumes()
-    else await refreshContainers()
+    else await refreshContainers()    // 默认（containers）视图刷新容器
   } finally {
     loading.value = false
   }
 }
 
+// 当前视图的刷新入口（工具栏「刷新」按钮）
 function refreshCurrent() {
   onViewChange()
 }
 
+// 刷新容器：委托给共享 store，结果经 watch 自动回填，避免重复轮询
 async function refreshContainers() {
-  // 委托给共享 store：触发一次去重刷新，结果经下方 watch 自动回填到本地视图
   await refreshDockerStore()
 }
 
+// --- 动作：加载 Docker 引擎配置（镜像加速/私有仓库/iptables） ---
 async function loadConfig() {
-  config.value = await dockerApi.config()
+  config.value = await dockerApi.config()     // 调用 /api/docker/config
   form.value = {
     mirror_enabled: !!config.value.mirror_enabled,
+    // 数组字段用换行拼接成多行文本框内容
     mirrors: (config.value.mirrors || []).join('\n'),
     private_registries: (config.value.private_registries || []).join('\n'),
     iptables: !!config.value.iptables
@@ -424,14 +441,17 @@ async function loadConfig() {
   configMsg.value = ''
 }
 
+// --- 动作：加载 compose 项目列表 ---
 async function loadCompose() {
   composeProjects.value = await dockerApi.composeProjects()
 }
 
+// --- 动作：加载镜像列表 ---
 async function loadImages() {
   images.value = await dockerApi.images()
 }
 
+// --- 动作：加载网络列表 ---
 async function loadNetworks() {
   networks.value = await dockerApi.networks()
 }
@@ -441,11 +461,12 @@ async function saveConfig() {
   try {
     const body = {
       mirror_enabled: !!form.value.mirror_enabled,
+      // 多行文本框按行拆回数组并去掉空行
       mirrors: form.value.mirrors.split('\n').map(s => s.trim()).filter(Boolean),
       private_registries: form.value.private_registries.split('\n').map(s => s.trim()).filter(Boolean),
       iptables: !!form.value.iptables
     }
-    const r = await dockerApi.saveConfig(body)
+    const r = await dockerApi.saveConfig(body)   // 调用 /api/docker/config（PUT）
     configMsgErr = false
     configMsg.value = `配置已保存 → ${r.config_path}` + (r.iptables_supported ? '' : '（iptables 仅记录，当前引擎不支持）')
   } catch (e) {
@@ -454,7 +475,7 @@ async function saveConfig() {
   }
 }
 
-// 打开 Docker 配置文件（独立编辑器窗口）
+// 打开 Docker 配置文件（独立编辑器窗口），由父窗口接收事件创建
 function openConfigEditor() {
   emit('openDockerConfigEditor')
 }
@@ -462,9 +483,10 @@ function openConfigEditor() {
 // ---------- 编排操作 ----------
 async function composeOp(p, action) {
   const label = { up: '启动', down: '停止', restart: '重启' }[action]
+  // 停止是破坏性操作，先用原生确认框拦截；其余动作直接进入
   if (action === 'down' && !confirm(`确认停止 compose 项目「${p.name}」？`)) return
   try {
-    await dockerApi.composeAction(p.name, action)
+    await dockerApi.composeAction(p.name, action)   // 调用 /api/docker/compose/<name>/action
     alert(`${label}「${p.name}」成功`)
     await loadCompose()
   } catch (e) {
@@ -472,9 +494,9 @@ async function composeOp(p, action) {
   }
 }
 
+// 删除镜像：高风险操作，先弹出密码二次确认框
 function removeImageItem(img) {
   const tag = img.tags.length ? img.tags.join(', ') : img.id
-  // 高风险操作：删除镜像需输入面板密码确认
   confirm.value = {
     show: true,
     title: '删除镜像确认',
@@ -488,8 +510,9 @@ function openPull() {
   pullDialog.value = { show: true, name: '', err: '' }
 }
 
+// --- 动作：拉取镜像（/api/docker/images/pull） ---
 async function doPull() {
-  if (busy.value) return
+  if (busy.value) return   // 防重复提交
   busy.value = true
   pullDialog.value.err = ''
   try {
@@ -508,6 +531,7 @@ function openTag(img) {
   tagDialog.value = { show: true, id: img.id, repo: '', tag: 'latest', err: '' }
 }
 
+// --- 动作：给镜像打标签（/api/docker/images/<id>/tag） ---
 async function doTag() {
   if (busy.value) return
   busy.value = true
@@ -528,6 +552,7 @@ function openBuild() {
   buildDialog.value = { show: true, name: '', tag: 'latest', context_dir: '', err: '' }
 }
 
+// --- 动作：从 Dockerfile 构建镜像（/api/docker/images/build） ---
 async function doBuild() {
   if (busy.value) return
   busy.value = true
@@ -548,6 +573,7 @@ async function doBuild() {
   }
 }
 
+// --- 动作：加载数据卷列表（/api/dockervolumes） ---
 async function loadVolumes() {
   volumes.value = await dockerApi.volumes()
 }
@@ -574,13 +600,14 @@ function removeVolumeItem(v) {
   }
 }
 
+// --- 动作：密码校验通过后真正执行删除（容器/镜像/网络/卷） ---
 async function doConfirmDanger() {
   const a = confirm.value.action
   confirm.value.show = false
-  if (!a) return
+  if (!a) return    // 无待执行动作则提前返回（用户取消）
   try {
     if (a.type === 'image') {
-      await dockerApi.removeImage(a.id)
+      await dockerApi.removeImage(a.id)        // 注意：此处走 removeImage（API 对象方法）
       await loadImages()
     } else if (a.type === 'volume') {
       await dockerApi.removeVolume(a.name)
@@ -598,6 +625,7 @@ async function doConfirmDanger() {
 }
 
 // ---------- 容器操作（右键菜单） ----------
+// 普通容器动作直接执行；删除走密码二次确认分支
 function act(id, action) {
   if (action === 'remove') {
     // 高风险操作：删除容器需输入面板密码确认
@@ -613,9 +641,10 @@ function act(id, action) {
   doAct(id, action)
 }
 
+// --- 动作：对容器执行启停/重启等动作 ---
 async function doAct(id, action) {
   try {
-    await dockerApi.action(id, action)
+    await dockerApi.action(id, action)    // 调用 /api/docker/containers/<id>/action
     await refreshContainers()
   } catch (e) {
     alert('操作失败：' + (e.response?.data?.detail || e.message))
@@ -628,7 +657,7 @@ function closeMenus() {
 
 // 预估右键菜单高度：菜单项约 31px、header 约 34px、分隔线约 9px
 function estimateMenuHeight(running) {
-  const items = 12 + (running ? 1 : 0) // 13(运行) / 12(停止) 个菜单项
+  const items = 12 + (running ? 1 : 0) // 13(运行) / 12(停止) 个菜单项（运行态多一个「停止」）
   return (items * 31) + 34 + (4 * 9) + 8
 }
 
@@ -636,9 +665,10 @@ function estimateMenuHeight(running) {
 const TASKBAR_TOP_OFFSET = 76
 const MENU_SIDE_MARGIN = 10
 
+// --- 动作：弹出右键菜单并据此定位坐标（防超出视口/任务栏） ---
 function onContextMenu(e, c) {
   const menuH = estimateMenuHeight(c.state === 'running')
-  // 横向不超出右缘
+  // 横向不超出右缘（菜单宽约 180px）
   const x = Math.max(MENU_SIDE_MARGIN, Math.min(e.clientX, window.innerWidth - 180 - MENU_SIDE_MARGIN))
   // 纵向：尽量贴近点击位置，但不允许菜单底部戳到下方任务栏（自动上移）
   const maxTop = window.innerHeight - TASKBAR_TOP_OFFSET - menuH - MENU_SIDE_MARGIN
@@ -646,30 +676,35 @@ function onContextMenu(e, c) {
   ctxMenu.value = { show: true, x, y, item: c }
 }
 
+// 打开容器资源编辑窗口（由父窗口接收事件创建）
 function menuEdit() {
   const it = ctxMenu.value.item
   closeMenus()
   if (it) emit('openContainerEdit', { id: it.id, name: it.name })
 }
 
+// 执行右键菜单里的容器动作（start/stop/restart/remove）
 function menuAct(action) {
   const it = ctxMenu.value.item
   closeMenus()
   if (it) act(it.id, action)
 }
 
+// 打开容器日志窗口
 function menuLogs() {
   const it = ctxMenu.value.item
   closeMenus()
   if (it) emit('openLogs', { id: it.id, name: it.name })
 }
 
+// 打开容器资源图表窗口
 function menuStats() {
   const it = ctxMenu.value.item
   closeMenus()
   if (it) emit('openContainerStats', { id: it.id, name: it.name })
 }
 
+// 打开容器内终端（仅运行态可打开）
 function menuOpenTerminal() {
   const it = ctxMenu.value.item
   closeMenus()
@@ -681,12 +716,13 @@ function menuOpenTerminal() {
   emit('openContainerTerminal', { id: it.id, name: it.name })
 }
 
+// 进入容器安装目录（仅应用商店安装的容器能定位 install_dir）
 async function menuEnterDir() {
   const it = ctxMenu.value.item
   closeMenus()
   if (!it) return
   try {
-    const info = await dockerApi.inspect(it.id)
+    const info = await dockerApi.inspect(it.id)   // 取容器详情中的安装目录
     if (info.install_dir) {
       emit('openFiles', { path: info.install_dir })
     } else {
@@ -697,21 +733,24 @@ async function menuEnterDir() {
   }
 }
 
+// 切换标星（菜单项）
 async function menuToggleStar() {
   const it = ctxMenu.value.item
   closeMenus()
   if (it) await toggleStar(it)
 }
 
+// --- 动作：标星/取消标星（持久化到后端） ---
 async function toggleStar(c) {
   try {
-    const r = await dockerApi.toggleStar(c.id)
+    const r = await dockerApi.toggleStar(c.id)   // 调用 /api/docker/containers/<id>/star
     c.starred = r.starred
   } catch (e) {
     alert('操作失败：' + (e.response?.data?.detail || e.message))
   }
 }
 
+// 打开备注笔记编辑弹窗
 function menuEditNotes() {
   const it = ctxMenu.value.item
   closeMenus()
@@ -719,43 +758,47 @@ function menuEditNotes() {
   noteDialog.value = { show: true, text: it.note || '', item: it }
 }
 
+// --- 动作：保存容器备注笔记 ---
 async function saveNotes() {
   const d = noteDialog.value
   try {
-    await dockerApi.saveNotes(d.item.id, d.text)
-    d.item.note = d.text.trim()
+    await dockerApi.saveNotes(d.item.id, d.text)   // 调用 /api/docker/containers/<id>/notes
+    d.item.note = d.text.trim()      // 就地更新列表中的备注，避免重新拉取
     d.show = false
   } catch (e) {
     alert('保存失败：' + (e.response?.data?.detail || e.message))
   }
 }
 
+// 打开容器详细信息窗口
 function menuDetails() {
   const it = ctxMenu.value.item
   closeMenus()
   if (it) emit('openContainerDetails', { id: it.id, name: it.name })
 }
 
+// 备份容器文件系统为 tar 包（高风险，先原生确认）
 async function menuBackup() {
   const it = ctxMenu.value.item
   closeMenus()
   if (!it) return
   if (!confirm(`确认备份容器「${it.name}」？\n将导出其文件系统为 tar 包保存到服务器。`)) return
   try {
-    const r = await dockerApi.backup(it.id)
+    const r = await dockerApi.backup(it.id)   // 调用 /api/docker/containers/<id>/backup
     alert(`备份成功\n保存路径：${r.path}\n大小：${formatBytes(r.size)}`)
   } catch (e) {
     alert('备份失败：' + (e.response?.data?.detail || e.message))
   }
 }
 
+// 升级容器：重新拉取镜像并按原参数重建
 async function menuUpgrade() {
   const it = ctxMenu.value.item
   closeMenus()
   if (!it) return
   if (!confirm(`确认升级容器「${it.name}」？\n将重新拉取镜像并按原参数重建容器（需容器未运行或允许重启）。`)) return
   try {
-    const r = await dockerApi.upgrade(it.id)
+    const r = await dockerApi.upgrade(it.id)   // 调用 /api/docker/containers/<id>/upgrade
     alert(`升级成功\n镜像：${r.image}${r.new_container_id ? '\n新容器：' + r.new_container_id : ''}`)
     await refreshContainers()
   } catch (e) {
@@ -763,6 +806,7 @@ async function menuUpgrade() {
   }
 }
 
+// 制作镜像：把运行中容器提交为新镜像
 async function menuCommit() {
   const it = ctxMenu.value.item
   closeMenus()
@@ -770,7 +814,7 @@ async function menuCommit() {
   const repo = prompt('请输入镜像名称（默认 graw-commit-<容器ID>）：', `graw-commit-${it.name || it.id}`)
   if (repo === null) return
   try {
-    const r = await dockerApi.commit(it.id, repo.trim())
+    const r = await dockerApi.commit(it.id, repo.trim())   // 调用 /api/docker/containers/<id>/commit
     alert(`镜像制作成功\n镜像：${r.image}`)
   } catch (e) {
     alert('制作镜像失败：' + (e.response?.data?.detail || e.message))
@@ -778,17 +822,20 @@ async function menuCommit() {
 }
 
 // ---------- 资源显示辅助 ----------
+// CPU/内存使用率配色：≥80% 红、≥50% 橙、否则绿
 function cpuColor(pct) {
   const v = Number(pct) || 0
-  if (v >= 80) return '#b91c1c'
+  if (v >= 80) return '#b91c1c'    // 高负载用红色警示
   if (v >= 50) return '#b45309'
   return '#2a8f3c'
 }
 
+// 内存条宽度：限制在 0~100%
 function memBarWidth(pct) {
   return Math.min(Number(pct) || 0, 100) + '%'
 }
 
+// 字节数 → 人类可读（B/KB/MB/GB/TB）
 function formatBytes(bytes) {
   if (bytes == null || isNaN(bytes)) return '-'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -798,10 +845,11 @@ function formatBytes(bytes) {
   return v.toFixed(v < 10 && i > 0 ? 2 : v < 100 ? 1 : 0) + ' ' + units[i]
 }
 
+// 时间戳 → 本地可读时间（兼容秒级数字与字符串）
 function formatTime(t) {
   if (!t) return '-'
   let d = t
-  if (typeof t === 'number') d = new Date(t * 1000)
+  if (typeof t === 'number') d = new Date(t * 1000)   // 后端常返回秒级时间戳
   else if (typeof t === 'string') d = new Date(t)
   if (isNaN(d.getTime())) return String(t)
   const pad = n => String(n).padStart(2, '0')
@@ -817,7 +865,7 @@ onMounted(() => {
     containers.value = docker.containers
     loading.value = docker.loading
   }
-  // 2) 订阅共享 store（多窗口共用同一份数据与同一轮询，连接池优化）
+  // 2) 订阅共享 store：多窗口共用同一份数据与同一轮询，避免重复连接
   stopWatch = watch(
     () => ({ s: docker.status, c: docker.containers, loading: docker.loading }),
     (v) => {

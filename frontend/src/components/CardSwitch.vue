@@ -1,3 +1,10 @@
+<!--
+  CardSwitch.vue — 系统信息 / 备忘录切换卡片
+  作用：桌面右侧第三张卡片，提供「系统信息」与「备忘录」两个标签页。系统信息展示
+        主机名/平台/运行时间/内存/磁盘使用；备忘录支持新建、编辑、保存（走 /api/note）。
+  数据：系统信息来自父组件 metrics；备忘录由 /api/note/* 读写。
+  打开方式：作为 Desktop 桌面卡片之一渲染。
+-->
 <template>
   <div class="glass-card info-card">
     <div class="info-header">
@@ -39,22 +46,24 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'                  // Vue 响应式与生命周期
 
-const props = defineProps({ metrics: Object })
-const tab = ref('sys')
-const notes = ref([])
-const editing = ref(false)
-const editId = ref(null)
-const editTitle = ref('')
-const editContent = ref('')
+const props = defineProps({ metrics: Object })       // 父级传入的实时指标（系统信息用）
+const tab = ref('sys')                               // 当前标签页：sys=系统信息 / note=备忘录
+const notes = ref([])                                // 备忘录列表
+const editing = ref(false)                           // 是否处于编辑态
+const editId = ref(null)                             // 正在编辑的备忘录 id（null=新建）
+const editTitle = ref('')                            // 编辑标题
+const editContent = ref('')                          // 编辑内容
 
+// 把秒数拆成「天 / 小时 / 分」
 function fmtUptime(s) {
-  const d = Math.floor(s / 86400)
-  const h = Math.floor((s % 86400) / 3600)
-  const m = Math.floor((s % 3600) / 60)
+  const d = Math.floor(s / 86400)                    // 86400 秒 = 1 天
+  const h = Math.floor((s % 86400) / 3600)           // 3600 秒 = 1 小时
+  const m = Math.floor((s % 3600) / 60)             // 60 秒 = 1 分钟
   return `${d}天 ${h}小时 ${m}分`
 }
+// 字节数按 1024 进制格式化（B/KB/MB/GB/TB）
 function fmtBytes(b) {
   if (!b) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -63,6 +72,7 @@ function fmtBytes(b) {
   return b.toFixed(2) + ' ' + units[i]
 }
 
+// 加载备忘录列表
 async function loadNotes() {
   try {
     const r = await fetch('/api/note/list')
@@ -71,28 +81,30 @@ async function loadNotes() {
 }
 function addNote() {
   editing.value = true
-  editId.value = null
+  editId.value = null                 // 标记为新建
   editTitle.value = ''
   editContent.value = ''
 }
 function editNote(n) {
   editing.value = true
-  editId.value = n.id
+  editId.value = n.id                 // 记录待编辑 id，保存时走 PUT
   editTitle.value = n.title
   editContent.value = n.content
 }
 function cancelEdit() {
-  editing.value = false
+  editing.value = false               // 放弃编辑
 }
 async function saveNote() {
   try {
     if (editId.value) {
+      // 已有 id → 更新（PUT /api/note/:id）
       await fetch(`/api/note/${editId.value}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: editTitle.value, content: editContent.value })
       })
     } else {
+      // 无 id → 新建（POST /api/note/create）
       await fetch('/api/note/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -100,12 +112,12 @@ async function saveNote() {
       })
     }
     editing.value = false
-    await loadNotes()
+    await loadNotes()                  // 保存后刷新列表
   } catch (e) {}
 }
 
 onMounted(() => {
-  loadNotes()
+  loadNotes()                         // 打开即拉取备忘录
 })
 </script>
 

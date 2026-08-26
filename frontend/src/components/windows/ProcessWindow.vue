@@ -1,3 +1,10 @@
+<!--
+  进程管理器窗口
+  业务：实时列出主机进程（按 CPU/内存/PID/名称排序），支持右键结束进程（含强制结束，高危需面板密码二次确认）。
+  后端模块：processApi（后端进程相关接口，随系统指标采集）
+  关键状态：list（进程列表）、filteredList（过滤后视图）、confirm（结束进程高危二次确认）、timer（3 秒轮询）
+  打开方式：独立「进程」入口挂载
+-->
 <template>
   <div style="display:flex; flex-direction:column; height:100%;" @click="closeMenus">
     <div class="toolbar">
@@ -60,10 +67,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { processApi, formatBytes } from '../../api'
-import ConfirmDialog from '../ConfirmDialog.vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'   // 响应式、计算属性、挂载/卸载（清理轮询）
+import { useI18n } from 'vue-i18n'                            // 国际化：取 t() 生成动态文案
+import { processApi, formatBytes } from '../../api'           // 进程接口 + 字节格式化工具
+import ConfirmDialog from '../ConfirmDialog.vue'              // 高危操作二次确认弹窗（输入面板密码）
 
 const { t } = useI18n()
 const list = ref([])
@@ -84,7 +91,7 @@ const filteredList = computed(() => {
 async function refresh() {
   loading.value = true
   try {
-    list.value = await processApi.list(sortBy.value, 300)
+    list.value = await processApi.list(sortBy.value, 300)   // 300 = 单次拉取进程数上限，防止列表过长拖慢渲染
   } catch (e) {
     console.error(e)
   } finally {
@@ -112,6 +119,7 @@ function menuForceKill() {
   if (p) kill(p.pid, true)
 }
 
+// --- 动作：结束进程（普通 / 强制） ---
 function kill(pid, force) {
   // 高风险操作：结束进程需输入面板密码确认
   confirm.value = { show: true, pid, force }
@@ -132,7 +140,7 @@ async function doKill() {
 
 onMounted(() => {
   refresh()
-  timer = setInterval(refresh, 3000)
+  timer = setInterval(refresh, 3000)   // 每 3 秒轮询刷新，兼顾实时性与后端负载
 })
 onUnmounted(() => clearInterval(timer))
 </script>

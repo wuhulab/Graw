@@ -4,10 +4,10 @@
 // 为避免「先展示默认背景、再启用自定义背景」的闪烁：把上次拉取的配置
 // 缓存到 localStorage，模块加载时同步回填，从而在刷新/二次登录时，
 // 有自定义背景即可直接使用（不先闪默认背景）。随后再以服务器配置校准。
-import { reactive } from 'vue'
-import { uiApi } from '../api'
+import { reactive } from 'vue'     // 品牌配置响应式：登录页与桌面读取同一份配置自动更新
+import { uiApi } from '../api'     // 界面品牌配置接口（public 无需登录 / effective 账号级）
 
-const STORAGE_KEY = 'graw_ui_config'
+const STORAGE_KEY = 'graw_ui_config'   // 本地缓存键：存上次拉取的品牌配置，用于刷新/二次登录时防闪烁
 
 /** 读取本地缓存配置（损坏/缺失时回退默认值）。*/
 function readCache() {

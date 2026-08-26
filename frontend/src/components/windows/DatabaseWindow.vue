@@ -1,3 +1,22 @@
+<!--
+  DatabaseWindow.vue — 数据库管理主窗口
+  ==========================================================
+  业务作用：
+    管理已保存的数据库连接（MySQL/PostgreSQL/MongoDB/Redis/SQLite）：
+    测试连接、编辑、删除（需面板密码二次确认），以及进入连接详情管理弹窗
+    （按类型展示库列表/Redis info/SQLite 表，支持执行 SQL、MongoDB 查询、
+    Redis 命令）。新增/编辑连接通过 ConnectionFormWindow 完成。
+  后端模块：
+    /api/databases 的 status / connections / listDBs / query / createDB /
+    deleteDB / deleteConn / test 等。
+  关键状态：
+    - connections 已保存的连接列表
+    - manageConn  当前打开管理弹窗的连接
+    - tab         管理弹窗内标签：dbs（库）/ query（查询）
+    - confirm     高风险操作二次确认（删连接需密码，删库需输入库名）
+  打开方式：
+    由桌面/任务栏打开数据库入口，无 props；由共享信号 dbVersion 触发刷新。
+-->
 <template>
   <div class="db-window">
     <div class="toolbar">
@@ -143,34 +162,34 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { databasesApi } from '../../api'
-import { dbVersion } from '../../store/databases'
-import { Plus } from 'lucide-vue-next'
-import ConfirmDialog from '../ConfirmDialog.vue'
+import { ref, onMounted, watch } from 'vue'   // 状态/挂载加载/共享信号监听
+import { useI18n } from 'vue-i18n'   // 翻译函数
+import { databasesApi } from '../../api'   // /api/databases：数据库管理接口
+import { dbVersion } from '../../store/databases'   // 共享版本信号：连接增改后触发本窗口刷新
+import { Plus } from 'lucide-vue-next'   // 添加连接按钮图标
+import ConfirmDialog from '../ConfirmDialog.vue'   // 高风险操作的二次确认对话框
 
 const { t } = useI18n()
 
-const emit = defineEmits(['openConnectionForm'])
+const emit = defineEmits(['openConnectionForm'])   // 请求父窗口打开新增/编辑连接表单
 
-const connections = ref([])
-const status = ref({})
-const showManage = ref(false)
-const showCreateDB = ref(false)
-const manageConn = ref(null)
-const tab = ref('dbs')
-const dbList = ref([])
-const redisInfo = ref('')
-const sqlText = ref('')
-const redisCmd = ref('')
-const queryResult = ref(null)
-const redisResult = ref(null)
-const mongoCollection = ref('')
-const mongoFilter = ref('')
-const mongoLimit = ref(100)
-const mongoResult = ref(null)
-const newDbName = ref('')
+const connections = ref([])   // 已保存的连接列表
+const status = ref({})   // 各类型客户端库是否可用（顶部提示）
+const showManage = ref(false)   // 管理弹窗是否显示
+const showCreateDB = ref(false)   // 新建库弹窗
+const manageConn = ref(null)   // 当前管理弹窗对应的连接
+const tab = ref('dbs')   // 管理弹窗标签：dbs（库列表）/ query（查询）
+const dbList = ref([])   // MySQL/Pg/Mongo 的库列表
+const redisInfo = ref('')   // Redis info 原文
+const sqlText = ref('')   // SQL 编辑器内容
+const redisCmd = ref('')   // Redis 命令输入
+const queryResult = ref(null)   // SQL 查询结果
+const redisResult = ref(null)   // Redis 命令结果
+const mongoCollection = ref('')   // MongoDB 集合名
+const mongoFilter = ref('')   // MongoDB 过滤 JSON
+const mongoLimit = ref(100)   // MongoDB 查询条数上限（默认 100）
+const mongoResult = ref(null)   // MongoDB 查询结果
+const newDbName = ref('')   // 新建库名称
 // SQLite 库内数据表列表与文件大小（仅 sqlite 连接使用）
 const sqliteTables = ref([])
 const sqliteFileSize = ref(0)
@@ -181,6 +200,7 @@ const confirm = ref({ show: false, mode: 'password', title: '', message: '', req
 const TYPE_LABELS = { mysql: 'MySQL', redis: 'Redis', postgresql: 'PostgreSQL', mongodb: 'MongoDB', sqlite: 'SQLite' }
 function typeLabel(t) { return TYPE_LABELS[t] || t || '' }
 
+// --- 并行加载库状态与连接列表 ---
 async function load() {
   try {
     status.value = await databasesApi.status()
@@ -205,19 +225,21 @@ function removeConn(c) {
   }
 }
 
+// 二次确认通过后按 action.type 分发：删连接或删库
 async function doConfirm() {
   const a = confirm.value.action
   confirm.value.show = false
-  if (!a) return
+  if (!a) return   // 无待执行动作直接返回（防御性）
   if (a.type === 'conn') {
     await databasesApi.deleteConn(a.conn.id)
     await load()
   } else if (a.type === 'db') {
     await databasesApi.deleteDB(manageConn.value.id, a.name)
-    if (manageConn.value) openManage(manageConn.value)
+    if (manageConn.value) openManage(manageConn.value)   // 删除后刷新当前连接的库列表
   }
 }
 
+// --- 测试连接连通性 ---
 async function testConn(c) {
   try {
     await databasesApi.test(c.id)
@@ -227,6 +249,7 @@ async function testConn(c) {
   }
 }
 
+// --- 打开管理弹窗并按连接类型加载对应数据 ---
 async function openManage(c) {
   manageConn.value = c
   tab.value = 'dbs'
@@ -248,30 +271,34 @@ async function openManage(c) {
   }
 }
 
+// --- 执行 SQL（MySQL / PostgreSQL / SQLite） ---
 async function execSql() {
   const data = await databasesApi.query(manageConn.value.id, { sql: sqlText.value })
   queryResult.value = data
 }
 
+// --- 执行 Redis 命令 ---
 async function execRedis() {
   const data = await databasesApi.query(manageConn.value.id, { command: redisCmd.value })
   redisResult.value = data.result
 }
 
+// --- 执行 MongoDB 查询（集合 + 过滤条件 + 条数限制） ---
 async function execMongo() {
   const data = await databasesApi.query(manageConn.value.id, {
     collection: mongoCollection.value,
     filter: mongoFilter.value,
-    limit: Number(mongoLimit.value) || 100
+    limit: Number(mongoLimit.value) || 100   // 非法输入回退默认 100 条
   })
   mongoResult.value = JSON.stringify(data.result, null, 2)
 }
 
+// --- 创建新数据库 ---
 async function doCreateDB() {
   await databasesApi.createDB(manageConn.value.id, newDbName.value)
   showCreateDB.value = false
   newDbName.value = ''
-  if (manageConn.value) openManage(manageConn.value)
+  if (manageConn.value) openManage(manageConn.value)   // 创建后刷新库列表
 }
 
 function dropDB(name) {
@@ -291,7 +318,7 @@ function dropDB(name) {
 // 添加/编辑连接在独立窗口完成后通过共享信号触发刷新
 watch(dbVersion, () => load())
 
-onMounted(load)
+onMounted(load)   // 进入窗口即加载
 </script>
 
 <style scoped>

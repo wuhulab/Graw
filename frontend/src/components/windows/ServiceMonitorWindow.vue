@@ -1,3 +1,10 @@
+<!--
+  服务监控窗口
+  业务：监控 TCP 端口 / 进程 / systemd 服务状态，故障与恢复自动推送通知中心；支持增删改与测试。
+  后端模块：/api/svcmonitor
+  关键状态：items（监控项列表）、confirm（删除高危二次确认）、formOpen（编辑弹窗）
+  打开方式：独立「服务监控」入口挂载
+-->
 <template>
   <div class="svcmonitor-window">
     <!-- 顶部：汇总状态 -->
@@ -121,10 +128,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { Server, RefreshCw, Plus } from 'lucide-vue-next'
-import { svcmonitorApi } from '../../api'
-import ConfirmDialog from '../ConfirmDialog.vue'
+import { ref, reactive, computed, onMounted } from 'vue'   // Composition API：响应式、表单、计算属性、挂载
+import { Server, RefreshCw, Plus } from 'lucide-vue-next'    // 图标集合
+import { svcmonitorApi } from '../../api'                    // 服务监控后端接口封装
+import ConfirmDialog from '../ConfirmDialog.vue'             // 高危操作二次确认弹窗（输入面板密码）
 
 const loading = ref(false)
 const busy = ref(false)

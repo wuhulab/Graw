@@ -1,3 +1,12 @@
+<!--
+  系统体检窗口（后端 /api/healthcheck 模块）
+  作用：以只读方式扫描系统安全隐患（弱密码 / 异常登录 / 危险端口 / 可疑定时任务 / 面板安全配置），
+        给出综合评分与逐项处理建议，不做任何修复操作。
+  后端模块：/api/healthcheck（run：执行扫描并返回体检报告 report）。
+  关键状态：report（体检报告：评分 + 按级别分组的检查项）、flatItems（按高→中→低排序的表格行）、
+            loading（扫描进行中）。
+  打开方式：桌面「系统体检」卡片，点击「开始体检」触发扫描。
+-->
 <template>
   <div class="healthcheck-window">
     <!-- 顶部工具条：说明 + 评分汇总 + 运行按钮（与其它应用一致） -->
@@ -56,12 +65,15 @@
 </template>
 
 <script setup>
+// 响应式状态与计算属性
 import { ref, computed } from 'vue'
+// 图标（体检入口与状态）
 import { RefreshCw, ShieldCheck } from 'lucide-vue-next'
+// 体检 API：封装 /api/healthcheck/run
 import { healthcheckApi } from '../../api'
 
-const loading = ref(false)
-const report = ref(null)
+const loading = ref(false)   // 扫描进行中（防止重复提交）
+const report = ref(null)     // 体检报告（评分 + 检查项），null 表示尚未扫描
 
 // 按 高→中→低 顺序拍平所有体检项，作为表格行
 const flatItems = computed(() => {
@@ -78,15 +90,17 @@ const scoreClass = computed(() => {
   return 'bad'
 })
 
+// 危险级别 → 中文文案
 function levelText(lv) {
   return { high: '高危', medium: '中危', low: '低危' }[lv] || lv
 }
 
+// --- 动作：执行安全体检扫描 ---
 async function run() {
-  if (loading.value) return
+  if (loading.value) return   // 扫描中直接返回，避免并发重复请求
   loading.value = true
   try {
-    const r = await healthcheckApi.run()
+    const r = await healthcheckApi.run()   // 调用 /api/healthcheck/run
     report.value = r
   } catch (e) {
     alert('体检失败：' + (e.response?.data?.detail || e.message))

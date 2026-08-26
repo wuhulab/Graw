@@ -1,3 +1,27 @@
+<!--
+  站点可用性监控窗口（Uptime）
+
+  这个窗口做什么：
+    面板「可用性监控」功能。定期对网站 / 服务做 HTTP 探测，实时统计
+    正常 / 异常数量，异常与恢复会自动推送到通知中心配置的渠道。管理员可以：
+      - 添加 / 编辑监控项：URL、预期状态码、检查间隔、超时、启停；
+      - 对单个监控项立即测试一次；
+      - 删除不再需要的监控项（高风险操作，需输入面板密码）。
+    列表展示每个监控项的最近状态、响应时间、最近检查时间与已宕机时长。
+
+  用到的后端模块：
+    /api/uptime/*（管理员权限）——items 列表、create / update 增改、
+    {id}/test 立即探测、{id} 删除。探测由后端常驻任务执行，本窗口只读结果。
+
+  关键状态：
+    items       监控项列表
+    form / editing   添加 / 编辑表单
+    upCount / downCount   汇总的正常 / 异常数
+    confirm     删除监控项的二次确认（需输入面板密码）
+
+  怎么被打开：
+    桌面「可用性监控」应用。
+-->
 <template>
   <div class="uptime-window">
     <!-- 顶部：汇总状态 -->
@@ -120,14 +144,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { Activity, RefreshCw, Plus } from 'lucide-vue-next'
-import { uptimeApi } from '../../api'
-import ConfirmDialog from '../ConfirmDialog.vue'
+import { ref, reactive, computed, onMounted } from 'vue'   // 响应式状态、表单对象、汇总计数、挂载钩子
+import { Activity, RefreshCw, Plus } from 'lucide-vue-next'   // 状态 / 刷新 / 添加图标
+import { uptimeApi } from '../../api'   // 可用性监控后端能力：/api/uptime/* 的封装
+import ConfirmDialog from '../ConfirmDialog.vue'   // 高风险操作确认框（删除监控项要求输入面板密码）
 
-const loading = ref(false)
-const busy = ref(false)
-const items = ref([])
+const loading = ref(false)   // 列表加载中（首屏与空状态判断）
+const busy = ref(false)      // 行内操作（测试 / 启停 / 删除）进行中，用于禁用按钮
+const items = ref([])        // 监控项列表
 // 高风险操作二次确认状态（删除监控项需输入面板密码）
 const confirm = ref({ show: false, target: null })
 
@@ -150,21 +174,23 @@ function fmtTime(iso) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
+// --- 宕机时长展示：按秒/分钟/小时分级精简成可读文本 ---
 function downSecText(i) {
-  if (i.last_status !== 'down' || !i.down_since) return '—'
+  if (i.last_status !== 'down' || !i.down_since) return '—'   // 不在宕机状态或缺少起始时间就不显示时长
   const since = new Date(i.down_since)
   if (isNaN(since.getTime())) return '—'
-  const sec = Math.floor((Date.now() - since.getTime()) / 1000)
-  if (sec < 60) return `${sec}s`
-  if (sec < 3600) return `${Math.floor(sec / 60)} 分钟`
+  const sec = Math.floor((Date.now() - since.getTime()) / 1000)   // 距宕机起点已过去的秒数
+  if (sec < 60) return `${sec}s`                                    // 60 = 一分钟内直接显示秒
+  if (sec < 3600) return `${Math.floor(sec / 60)} 分钟`             // 3600 = 一小时内显示分钟
   return `${Math.floor(sec / 3600)} 小时`
 }
 
+// --- 拉取监控项列表 ---
 async function loadAll() {
   loading.value = true
   try {
     const r = await uptimeApi.items()
-    items.value = (r && r.items) || []
+    items.value = (r && r.items) || []    // 后端无 items 字段时兜空数组，避免表格报错
   } catch (e) {
     alert('加载失败：' + (e.response?.data?.detail || e.message))
   } finally {
@@ -172,13 +198,15 @@ async function loadAll() {
   }
 }
 
+// --- 打开「添加」弹窗：重置表单到默认值 ---
 function openAdd() {
   editing.value = null
   formError.value = ''
-  Object.assign(form, { name: '', url: '', expect_status: 200, timeout_seconds: 10, interval_seconds: 60, enabled: true })
+  Object.assign(form, { name: '', url: '', expect_status: 200, timeout_seconds: 10, interval_seconds: 60, enabled: true })   // 默认 200 期望码、60 秒间隔、开启
   formOpen.value = true
 }
 
+// --- 打开「编辑」弹窗：把监控项现有值灌回表单 ---
 function openEdit(i) {
   editing.value = i
   formError.value = ''
@@ -191,10 +219,10 @@ function openEdit(i) {
 }
 
 async function saveForm() {
-  if (saving.value) return
+  if (saving.value) return   // 提交进行中直接退出，防止重复保存
   formError.value = ''
-  if (!form.name.trim()) { formError.value = '请填写名称'; return }
-  if (!form.url.trim()) { formError.value = '请填写监控地址'; return }
+  if (!form.name.trim()) { formError.value = '请填写名称'; return }    // 名称必填
+  if (!form.url.trim()) { formError.value = '请填写监控地址'; return }  // URL 必填，否则探测无从发起
   const body = {
     name: form.name.trim(), url: form.url.trim(), expect_status: form.expect_status,
     timeout_seconds: form.timeout_seconds, interval_seconds: form.interval_seconds, enabled: form.enabled,
@@ -204,7 +232,7 @@ async function saveForm() {
     if (editing.value) await uptimeApi.updateItem(editing.value.id, body)
     else await uptimeApi.createItem(body)
     formOpen.value = false
-    await loadAll()
+    await loadAll()   // 保存后刷新列表
   } catch (e) {
     formError.value = e.response?.data?.detail || e.message
   } finally {
@@ -212,6 +240,7 @@ async function saveForm() {
   }
 }
 
+// --- 立即测试单个监控项：调后端实时探测一次并弹窗展示结果 ---
 async function doTest(i) {
   busy.value = true
   try {
@@ -227,6 +256,7 @@ async function doTest(i) {
   }
 }
 
+// --- 启用 / 停用单个监控项：按当前状态取反 ---
 async function toggleItem(i) {
   busy.value = true
   try {
@@ -247,11 +277,11 @@ function doDelete(i) {
 // 面板密码校验通过后执行真正的删除
 async function doDeleteConfirmed() {
   const i = confirm.value.target
-  confirm.value.show = false
-  if (!i) return
+  confirm.value.show = false   // 先收起确认框，避免删除期间重复触发
+  if (!i) return               // 无待删目标（异常触发）时直接退出
   busy.value = true
   try {
-    await uptimeApi.deleteItem(i.id)
+    await uptimeApi.deleteItem(i.id)   // 后端同时清除该监控项及其历史记录
     await loadAll()
   } catch (e) {
     alert('删除失败：' + (e.response?.data?.detail || e.message))
@@ -260,7 +290,7 @@ async function doDeleteConfirmed() {
   }
 }
 
-onMounted(loadAll)
+onMounted(loadAll)   // 打开即拉一次监控项列表
 </script>
 
 <style scoped>

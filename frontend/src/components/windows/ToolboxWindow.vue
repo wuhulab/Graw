@@ -1,3 +1,29 @@
+<!--
+  工具箱窗口（Toolbox）
+
+  这个窗口做什么：
+    面板的实用小工具集合，所有计算都在服务器端执行（经 /api/toolbox/exec）：
+      - Base64 编解码；
+      - 哈希计算（MD5 / SHA1 / SHA256）；
+      - 时间戳与日期时间互转；
+      - 端口扫描（单次最多 200 个端口，仅 TCP 连通性探测）；
+      - Whois 域名查询（依赖服务器上安装的 whois 命令，未安装会提示不可用）。
+    五个页签共用底部同一块结果区，「复制」按钮一键拷贝结果。
+
+  用到的后端模块：
+    /api/toolbox/*（管理员）——exec 统一执行入口，用 tool 名区分各工具。
+    端口上限 200 与合法范围 1-65535 与后端保持一致。
+
+  关键状态：
+    tab          当前页签（base64 / hash / timestamp / portscan / whois）
+    busy         请求进行中（禁用按钮）
+    resultText   结果区文本（所有页签共用）
+    errorText    执行失败提示
+    各页签表单：b64 / hashInput / tsMode / scan / whoisDomain
+
+  怎么被打开：
+    桌面「工具箱」应用图标打开。
+-->
 <template>
   <div class="toolbox-window">
     <!-- 顶部：功能页签切换 -->
@@ -131,12 +157,13 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
-import { Binary, Hash, Clock, Radar, Globe, Copy } from 'lucide-vue-next'
-import { toolboxApi } from '../../api'
+import { ref, reactive } from 'vue'   // 响应式状态、表单对象
+import { Binary, Hash, Clock, Radar, Globe, Copy } from 'lucide-vue-next'   // 各页签与复制按钮图标
+import { toolboxApi } from '../../api'   // 工具箱后端能力：/api/toolbox/* 的封装
 
 // 当前页签
 const tab = ref('base64')
+// 页签定义：key 与后端 exec 的 tool 参数一一对应
 const tabs = [
   { key: 'base64', label: 'Base64', icon: Binary },
   { key: 'hash', label: '哈希', icon: Hash },
@@ -146,9 +173,9 @@ const tabs = [
 ]
 
 // 状态与结果
-const busy = ref(false)
-const resultText = ref('')
-const errorText = ref('')
+const busy = ref(false)         // 请求进行中（禁用执行按钮）
+const resultText = ref('')      // 结果区文本（所有页签共用）
+const errorText = ref('')       // 执行失败提示
 
 // Base64 表单
 const b64 = reactive({ mode: 'encode', input: '' })
@@ -168,9 +195,10 @@ const whoisDomain = ref('')
 function fmtResult(r) {
   if (r == null) return ''
   if (typeof r === 'string') return r
-  return JSON.stringify(r, null, 2)
+  return JSON.stringify(r, null, 2)   // 对象结果按 2 空格缩进，方便人工阅读
 }
 
+// --- 清空上一次的结果与错误，避免新旧内容混在一起 ---
 function resetResult() {
   errorText.value = ''
   resultText.value = ''
@@ -190,16 +218,19 @@ async function exec(tool, args) {
   }
 }
 
+// --- Base64：按当前模式选编码还是解码 ---
 function runBase64() {
   if (!b64.input) { errorText.value = '请输入内容'; return }
   exec(b64.mode === 'encode' ? 'base64_encode' : 'base64_decode', { text: b64.input })
 }
 
+// --- 哈希：按所选算法计算 ---
 function runHash() {
   if (!hashInput.value) { errorText.value = '请输入待计算文本'; return }
   exec('hash', { text: hashInput.value, algo: hashAlgo.value })
 }
 
+// --- 时间戳：按方向调互转接口 ---
 function runTimestamp() {
   if (tsMode.value === 'to-datetime') {
     if (!tsTimestamp.value) { errorText.value = '请输入时间戳'; return }
@@ -210,6 +241,7 @@ function runTimestamp() {
   }
 }
 
+// --- 端口扫描：先做前端校验，再按升序区间扫描 ---
 function runPortScan() {
   if (!scan.host) { errorText.value = '请输入主机地址'; return }
   // 前端校验端口范围，与后端白名单保持一致
@@ -219,20 +251,22 @@ function runPortScan() {
     errorText.value = '端口必须在 1-65535 之间'
     return
   }
-  const lo = Math.min(start, end)
+  const lo = Math.min(start, end)   // 容错：起始大于结束也能正确扫描
   const hi = Math.max(start, end)
-  if (hi - lo + 1 > 200) {
+  if (hi - lo + 1 > 200) {          // 与后端一致的单次扫描上限
     errorText.value = '单次最多扫描 200 个端口'
     return
   }
   exec('port_scan', { host: scan.host, start_port: lo, end_port: hi })
 }
 
+// --- Whois：查询域名注册 / 解析信息 ---
 function runWhois() {
   if (!whoisDomain.value) { errorText.value = '请输入域名'; return }
   exec('whois', { domain: whoisDomain.value })
 }
 
+// --- 复制结果到剪贴板 ---
 async function copyResult() {
   try {
     await navigator.clipboard.writeText(resultText.value)

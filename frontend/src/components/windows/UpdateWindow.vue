@@ -1,3 +1,26 @@
+<!--
+  版本更新窗口（Update）
+
+  这个窗口做什么：
+    面板「更新」应用。展示当前版本与最新版本，检查有无可用更新，
+    并对 docker compose 部署的面板执行一键更新：
+      - 检查更新（GET /api/update/status）：返回当前 / 最新版本、部署模式、检查结果；
+      - 一键更新（POST /api/update/apply）：仅 docker compose 部署可用，
+        触发后后端拉取新镜像并重建面板容器，页面会短暂不可用。
+    非 compose 部署（本机运行）只提示手动升级，不提供一键按钮。
+
+  用到的后端模块：
+    /api/update/*（管理员权限）——status 检查版本、apply 触发更新。
+
+  关键状态：
+    status      版本状态（当前 / 最新版本、deploy_mode、check_error）
+    loading     检查更新进行中
+    applying    应用更新进行中
+    error       操作失败提示
+
+  怎么被打开：
+    「设置」窗口（SettingsWindow）的「更新」页签内嵌。
+-->
 <template>
   <div class="update-window">
     <!-- 顶部工具栏：版本信息 + 操作按钮 -->
@@ -49,9 +72,9 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { RefreshCw, Download, Info, AlertTriangle } from 'lucide-vue-next'
-import { updateApi } from '../../api'
+import { ref, computed } from 'vue'   // 响应式状态、派生文案与「可更新」判断
+import { RefreshCw, Download, Info, AlertTriangle } from 'lucide-vue-next'   // 检查 / 更新 / 提示图标
+import { updateApi } from '../../api'   // 更新后端能力：/api/update/* 的封装
 
 // 版本状态数据（来自 GET /api/update/status）
 const status = ref(null)

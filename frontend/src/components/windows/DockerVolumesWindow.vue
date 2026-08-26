@@ -1,3 +1,11 @@
+<!--
+  Docker 数据卷 / 网络管理窗口（后端 /api/dockervolumes + /api/docker 模块）
+  作用：在一个窗口内切换查看 Docker 数据卷（volume）与网络（network），并支持删除。
+  后端模块：/api/dockervolumes（volumes 列表与删除）、/api/docker（networks 列表与删除）。
+  关键状态：view（当前视图：volumes / networks）、volumes / networks（列表）、confirm（删除二次确认）。
+  删除（卷/网络）属于高风险操作，需输入面板密码（ConfirmDialog 的 password 模式）确认。
+  打开方式：Docker 窗口内的「数据卷」「网络」标签页进入（独立子窗口）。
+-->
 <template>
   <div style="display:flex; flex-direction:column; height:100%;">
     <!-- 工具栏：视图下拉切换（数据卷 / 网络） -->
@@ -85,19 +93,21 @@
 </template>
 
 <script setup>
+// Docker API：volumes / networks 列表与删除
 import { ref, onMounted } from 'vue'
 import { dockerApi } from '../../api'
+// 高风险操作统一的「输入面板密码」二次确认弹窗
 import ConfirmDialog from '../ConfirmDialog.vue'
 
-// 当前视图：volumes / networks
+// 当前视图：volumes（数据卷）/ networks（网络）
 const view = ref('volumes')
 const loading = ref(false)
 
-// ---------- 数据卷 ----------
+// ---------- 数据卷：Docker 卷列表 ----------
 const volumes = ref([])
-// ---------- 网络 ----------
+// ---------- 网络：Docker 网络列表 ----------
 const networks = ref([])
-// 高风险操作二次确认状态（删除数据卷/网络）
+// 高风险操作二次确认状态（删除数据卷/网络时记录待执行动作）
 const confirm = ref({ show: false, title: '', message: '', action: null })
 
 // ---------- 视图切换与数据加载 ----------
@@ -111,16 +121,19 @@ async function onViewChange() {
   }
 }
 
+// --- 动作：加载数据卷列表（/api/dockervolumes） ---
 async function loadVolumes() {
   volumes.value = await dockerApi.volumes()
 }
 
+// --- 动作：加载网络列表（/api/docker/networks） ---
 async function loadNetworks() {
   networks.value = await dockerApi.networks()
 }
 
 // ---------- 删除操作（均走密码二次确认） ----------
 function removeVolumeItem(v) {
+  // 高风险：删除数据卷会丢失卷内数据，先弹出密码确认框
   confirm.value = {
     show: true,
     title: '删除数据卷确认',
@@ -130,6 +143,7 @@ function removeVolumeItem(v) {
 }
 
 function removeNetworkItem(n) {
+  // 高风险：删除网络会断开容器连接，先弹出密码确认框
   confirm.value = {
     show: true,
     title: '删除网络确认',
@@ -138,16 +152,18 @@ function removeNetworkItem(n) {
   }
 }
 
+// --- 动作：密码校验通过后真正执行删除并刷新列表 ---
 async function doConfirmDanger() {
   const a = confirm.value.action
   confirm.value.show = false
+  // 用户取消或无待执行动作则提前返回
   if (!a) return
   try {
     if (a.type === 'volume') {
-      await dockerApi.removeVolume(a.name)
+      await dockerApi.removeVolume(a.name)   // 调用 /api/dockervolumes/<name>/remove
       await loadVolumes()
     } else if (a.type === 'network') {
-      await dockerApi.removeNetwork(a.name)
+      await dockerApi.removeNetwork(a.name)  // 调用 /api/docker/networks/<name>/remove
       await loadNetworks()
     }
   } catch (e) {
@@ -155,11 +171,11 @@ async function doConfirmDanger() {
   }
 }
 
-// ---------- 资源显示辅助 ----------
+// ---------- 资源显示辅助：Unix 时间戳 / 字符串 → 本地可读时间 ----------
 function formatTime(t) {
   if (!t) return '-'
   let d = t
-  if (typeof t === 'number') d = new Date(t * 1000)
+  if (typeof t === 'number') d = new Date(t * 1000)   // 后端常返回秒级时间戳，需 ×1000
   else if (typeof t === 'string') d = new Date(t)
   if (isNaN(d.getTime())) return String(t)
   const pad = n => String(n).padStart(2, '0')
@@ -167,7 +183,7 @@ function formatTime(t) {
 }
 
 onMounted(() => {
-  // 打开即加载当前标签的数据
+  // 打开即加载当前标签的数据（默认 volumes）
   onViewChange()
 })
 </script>

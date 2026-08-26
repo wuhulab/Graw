@@ -19,9 +19,9 @@
 // 用法：
 //   import { systemState, startMetrics, stopMetrics } from '../store/systemMetrics'
 //   模板/计算属性直接读取 reactive 的 systemState 即可获得响应式更新。
-import { reactive, watch } from 'vue'
-import { auth } from './auth'
-import { nodes } from './nodes'
+import { reactive, watch } from 'vue'   // 响应式指标状态 + 监听当前主机切换以重连指标流
+import { auth } from './auth'           // 取 token 拼进 WS 地址（WebSocket 无法带请求头）
+import { nodes } from './nodes'         // 判断当前管理主机是否为已配 Agent 的子节点（决定是否桥接）
 
 // 首页共享的实时指标状态
 export const systemState = reactive({

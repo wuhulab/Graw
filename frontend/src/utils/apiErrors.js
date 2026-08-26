@@ -55,7 +55,7 @@ export function getApiErrorMessage(err, t) {
     /timeout of \d+ms exceeded/i.test(msg) ||
     msg === 'The user aborted a request.'
   if (isTimeout) {
-    const seconds = Math.round((err.config?.timeout || 60000) / 1000)
+    const seconds = Math.round((err.config?.timeout || 60000) / 1000)   // 60000 是 axios 默认超时（毫秒）；换算成秒展示给用户
     return t('files.errTimeout', { seconds })
   }
 

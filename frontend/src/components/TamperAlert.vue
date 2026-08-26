@@ -1,3 +1,12 @@
+<!--
+  TamperAlert.vue — 网页防篡改告警弹窗
+  作用：ShunX 防篡改监控发现站点文件被改动时，对在线面板用户全局弹窗告警，
+        展示被篡改的站点 / 文件 / 根目录 / 时间与后端自动恢复结果；管理员可
+        「临时关闭 10 分钟」（到期自动恢复）或经二次确认后「完全关闭防篡改」。
+  数据：告警队列来自 store/tamper（tamperState.alerts），弹窗始终展示队列最新一条，
+        其余条数在底部提示；操作经 disableForMinutes / disableManual 下发后端。
+  打开方式：由 App.vue 在收到防篡改 WS 告警时渲染，全局遮罩置顶。
+-->
 <template>
   <!-- ShunX 网页防篡改告警弹窗：篡改发生时对在线面板用户弹窗提示 -->
   <div class="tamper-alert-overlay">
@@ -74,29 +83,31 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { ShieldAlert, Clock, Power, OctagonAlert } from 'lucide-vue-next'
-import { tamperState, dismissAlert, disableForMinutes, disableManual, canOperate } from '../store/tamper'
+import { ref, computed } from 'vue'   // Vue 响应式与计算属性
+import { ShieldAlert, Clock, Power, OctagonAlert } from 'lucide-vue-next'   // 告警 / 操作按钮图标
+import { tamperState, dismissAlert, disableForMinutes, disableManual, canOperate } from '../store/tamper'   // 防篡改告警状态与各项操作
 
 const props = defineProps({})
 
 // 当前展示的告警 = 队列最新一条
 const alert = computed(() => tamperState.alerts[0] || {})
-const remaining = computed(() => Math.max(0, tamperState.alerts.length - 1))
+const remaining = computed(() => Math.max(0, tamperState.alerts.length - 1))   // 其余待处理告警条数
 
-const showAdvanced = ref(false)
-const showManualConfirm = ref(false)
-const busy = ref(false)
-const feedback = ref(null)
+const showAdvanced = ref(false)      // 高级操作面板是否展开
+const showManualConfirm = ref(false) // 「完全关闭」二次确认弹窗是否显示
+const busy = ref(false)              // 任一操作请求进行中，期间禁用所有按钮
+const feedback = ref(null)           // 操作结果提示（success / warn / error）
 
+// 把 ISO 时间格式化为本地日期时间文本；无值或非法时间直接原样返回
 function fmtTime(iso) {
-  if (!iso) return '—'
+  if (!iso) return '—'               // 无时间戳时用占位符
   const d = new Date(iso)
-  if (isNaN(d.getTime())) return iso
-  const pad = (n) => String(n).padStart(2, '0')
+  if (isNaN(d.getTime())) return iso // 后端数据异常时保留原始串，避免显示 Invalid Date
+  const pad = (n) => String(n).padStart(2, '0')   // 补零到两位
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
+// 显示操作结果提示，4 秒后自动消失
 function showFeedback(kind, text) {
   feedback.value = { kind, text }
   setTimeout(() => { feedback.value = null }, 4000)
@@ -104,7 +115,7 @@ function showFeedback(kind, text) {
 
 // 10 分钟内关闭防篡改：临时关闭，到期自动恢复
 async function onDisable10m() {
-  if (busy.value) return
+  if (busy.value) return   // 已有操作在跑则忽略，防重复点击
   busy.value = true
   try {
     await disableForMinutes(10)
@@ -120,7 +131,7 @@ async function onDisable10m() {
 
 // 高级：完全关闭防篡改（已确认警告）
 async function onDisableManual() {
-  if (busy.value) return
+  if (busy.value) return   // 已有操作在跑则忽略，防重复点击
   busy.value = true
   try {
     await disableManual()

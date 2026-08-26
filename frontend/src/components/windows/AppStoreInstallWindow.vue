@@ -1,3 +1,22 @@
+<!--
+  AppStoreInstallWindow.vue — 应用商店「确认安装」配置表单窗口
+  ==========================================================
+  业务作用：
+    填写安装某应用（appId）所需的全部参数：应用名称、版本、端口映射、时区、
+    容器名称、重启规则、CPU/内存限制，以及外部放行/拉取镜像等选项。校验通过后
+    把组装好的 request 抛给父窗口，由它打开 AppStoreInstallLogWindow 执行流式
+    安装。同时承载「编辑 compose」入口、版本安全警告与外部放行二次确认弹窗。
+  后端模块：
+    /api/appstore 的 compose 拉取接口（appStoreApi.compose）；
+    实际安装请求由安装日志窗口发出，本窗口只负责组装参数。
+  关键状态：
+    - installForm         安装参数表单（应用名/版本/端口/时区/容器名/资源限制等）
+    - showWarnModal       应用存在 warn 元数据时打开即弹出的安全确认
+    - showNoExposeConfirm 未勾选外部放行时（数据库类除外）的二次确认
+    - appStoreComposeState 跨窗口共享的 compose 编辑内容
+  打开方式：
+    由 AppStoreWindow 点击应用详情上的「安装」打开，props 传入 app 对象。
+-->
 <template>
   <div class="install-window">
     <!-- 顶部工具栏 -->
@@ -144,17 +163,17 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { appStoreApi } from '../../api'
-import { appStoreComposeState } from '../../store/appStoreCompose'
-import { localizedName, localizedPortLabel } from '../../appStoreL10n'
-import { Download, Pencil, CheckCircle2, AlertTriangle } from 'lucide-vue-next'
+import { ref, reactive, computed, onMounted } from 'vue'   // 响应式状态/表单/派生值/挂载钩子
+import { useI18n } from 'vue-i18n'   // 翻译函数与当前语种
+import { appStoreApi } from '../../api'   // 应用商店 API（拉取应用的默认 compose）
+import { appStoreComposeState } from '../../store/appStoreCompose'   // 跨窗口共享的 compose 编辑内容
+import { localizedName, localizedPortLabel } from '../../appStoreL10n'   // 应用名/端口的多语言文案
+import { Download, Pencil, CheckCircle2, AlertTriangle } from 'lucide-vue-next'   // 工具栏/弹窗图标
 
 const { t, locale } = useI18n()
 
-const props = defineProps({ app: Object })
-const emit = defineEmits(['close', 'openComposeEditor', 'openInstallLog'])
+const props = defineProps({ app: Object })   // 选中的应用信息（含版本/端口/分类/warn 等元数据）
+const emit = defineEmits(['close', 'openComposeEditor', 'openInstallLog'])   // close 关窗；openComposeEditor 打开编辑器；openInstallLog 打开安装日志窗口
 
 // 应用显示名称：优先索引内嵌翻译（i18n.<locale>.yml），
 // 其次前端语言包内 appNames 覆盖，最后回退索引默认名称
@@ -162,6 +181,7 @@ const appDisplayName = computed(() =>
   localizedName(props.app, locale.value) || t('appstore.appNames.' + props.app.id, props.app?.name || '')
 )
 
+// 常用时区候选：时区输入框的 datalist 补全列表
 const commonTimezones = [
   'Asia/Shanghai', 'Asia/Hong_Kong', 'Asia/Tokyo', 'Asia/Singapore', 'Asia/Seoul',
   'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'America/New_York', 'America/Los_Angeles',
@@ -174,9 +194,9 @@ function fmtVersion(v) {
   return String(v).startsWith('v') ? String(v) : 'v' + String(v)
 }
 
-const appNameError = ref('')
-const composeLoading = ref(false)
-const composeEdited = ref(false)
+const appNameError = ref('')   // 应用名校验失败时的错误文案
+const composeLoading = ref(false)   // 拉取 compose 的加载态（控制「编辑 compose」按钮文案）
+const composeEdited = ref(false)   // 是否已被 compose 编辑器保存过（显示「已编辑」提示）
 // 版本安全警告居中弹窗：应用存在 warn 元数据时打开即弹出，确认后才可安装
 const showWarnModal = ref(Boolean(props.app?.warn))
 // 未勾选外部放行确认弹窗：非数据库应用、未勾选外部放行时安装前弹出确认
@@ -185,6 +205,7 @@ const showNoExposeConfirm = ref(false)
 // 数据库类应用（分类含「数据库」）不弹外部放行确认：数据库通常仅内网访问
 const isDatabaseApp = computed(() => String(props.app?.category || '').includes('数据库'))
 
+// 应用名合法性约束：与 Docker 容器命名一致（字母数字开头，允许 [A-Za-z0-9_.-]，最长 64）
 const APP_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/
 
 // 随机6位hex
@@ -226,9 +247,10 @@ const exposePortsText = computed(() => {
   return list.length ? list.join(', ') : '—'
 })
 
+// --- 安装前置校验：先验应用名，再决定是否弹外部放行确认 ---
 function doInstall() {
   const name = installForm.app_name
-  if (!name) { appNameError.value = t('appinstall.errNameRequired'); return }
+  if (!name) { appNameError.value = t('appinstall.errNameRequired'); return }   // 必填校验失败直接中止
   if (!APP_NAME_RE.test(name)) {
     appNameError.value = t('appinstall.errNameFormat')
     return
@@ -243,10 +265,12 @@ function doInstall() {
   proceedInstall()
 }
 
+// --- 组装安装请求并转交给安装日志窗口执行 ---
 function proceedInstall() {
   showNoExposeConfirm.value = false
 
   const name = installForm.app_name
+  // 若 compose 编辑器保存过当前应用的内容则优先使用，否则用本窗口内的默认 compose
   const composeContent = (appStoreComposeState.content && appStoreComposeState.appId === props.app.id)
     ? appStoreComposeState.content
     : installForm.compose
@@ -262,7 +286,7 @@ function proceedInstall() {
     version: installForm.version,
     port: effectivePorts[0]?.external ?? null,
     ports: effectivePorts.length ? effectivePorts : null,
-    timezone: installForm.timezone || 'Asia/Shanghai',
+    timezone: installForm.timezone || 'Asia/Shanghai',   // 空时区回退默认值
     container_name: installForm.container_name || null,
     expose_port: installForm.expose_port,
     restart: installForm.restart,
@@ -277,6 +301,7 @@ function proceedInstall() {
   emit('close')
 }
 
+// --- 打开 compose 编辑器：优先共享状态，其次远程拉取 ---
 async function openComposeEditor() {
   composeLoading.value = true
   try {

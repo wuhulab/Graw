@@ -1,3 +1,11 @@
+<!--
+  WinDocker.vue — Docker 容器管理窗口
+  作用：列出本机 Docker 容器（含已停止），展示 ID / 名称 / 镜像 / 运行状态，
+        支持启动、停止、重启、删除；工具栏同时展示容器数与镜像数概览。
+  数据：列表由 /api/docker/containers?all=true 返回，镜像数来自 /api/docker/info；
+        Docker 引擎不可用时统一提示「Docker 不可用」，不抛未捕获异常。
+  打开方式：由桌面 / 任务栏按需打开的功能窗口。
+-->
 <template>
   <div class="docker-wrap">
     <div class="docker-toolbar">
@@ -5,6 +13,7 @@
       <span class="docker-stats">容器: {{ containers.length }} | 镜像: {{ imageCount }}</span>
     </div>
     <div class="docker-table-wrap">
+      <!-- 容器列表：启动/停止按钮按运行状态互斥禁用 -->
       <table class="docker-table">
         <thead>
           <tr>
@@ -38,43 +47,48 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'   // Vue 响应式与生命周期
 
-const containers = ref([])
-const imageCount = ref(0)
-const error = ref('')
+const containers = ref([])   // 容器列表（含已停止，来自后端全部容器）
+const imageCount = ref(0)    // 镜像数量（工具栏概览展示）
+const error = ref('')        // 加载失败提示（Docker 不可用）
 
+// 拉取容器列表与镜像数；任一接口失败都归为「Docker 不可用」
 async function loadContainers() {
   error.value = ''
   try {
     const r = await fetch('/api/docker/containers?all=true')
-    if (!r.ok) { error.value = 'Docker 不可用'; return }
+    if (!r.ok) { error.value = 'Docker 不可用'; return }   // 接口异常即判定引擎不可用，不继续解析
     containers.value = await r.json()
     const ir = await fetch('/api/docker/info')
     if (ir.ok) {
       const info = await ir.json()
       imageCount.value = info.images
     }
-  } catch (e) { error.value = 'Docker 不可用' }
+  } catch (e) { error.value = 'Docker 不可用' }   // 网络/连接异常同样按不可用处理
 }
+// 启动容器
 async function startC(id) {
   await fetch(`/api/docker/containers/${id}/start`, { method: 'POST' })
-  await loadContainers()
+  await loadContainers()   // 操作后刷新列表，反映最新运行状态
 }
+// 停止容器
 async function stopC(id) {
   await fetch(`/api/docker/containers/${id}/stop`, { method: 'POST' })
   await loadContainers()
 }
+// 重启容器
 async function restartC(id) {
   await fetch(`/api/docker/containers/${id}/restart`, { method: 'POST' })
   await loadContainers()
 }
+// 删除容器（不可逆，需谨慎）
 async function removeC(id) {
   await fetch(`/api/docker/containers/${id}`, { method: 'DELETE' })
   await loadContainers()
 }
 
-onMounted(loadContainers)
+onMounted(loadContainers)   // 打开窗口即加载一次容器列表
 </script>
 
 <style scoped>

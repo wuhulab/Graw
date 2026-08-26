@@ -1,3 +1,10 @@
+<!--
+  面板配置备份窗口
+  业务：导出 / 导入面板 data/ 下全部配置（用户、JWT 密钥、各模块配置），用于迁移与容灾；导入前自动备份当前配置以便回滚。
+  后端模块：/api/panelbackup
+  关键状态：archives（归档列表）、confirm（删除/导入高危二次确认）、msg（操作结果）
+  打开方式：设置或独立「面板备份」入口挂载
+-->
 <template>
   <div class="panelbackup-window">
     <div class="toolbar">
@@ -73,10 +80,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { Archive, Download, Upload, RefreshCw, OctagonAlert } from 'lucide-vue-next'
-import { panelbackupApi, formatBytes } from '../../api'
-import ConfirmDialog from '../ConfirmDialog.vue'
+import { ref, onMounted } from 'vue'                                       // Composition API：响应式、挂载
+import { Archive, Download, Upload, RefreshCw, OctagonAlert } from 'lucide-vue-next'   // 图标集合
+import { panelbackupApi, formatBytes } from '../../api'                      // 面板备份接口 + 字节格式化工具
+import ConfirmDialog from '../ConfirmDialog.vue'                             // 高危操作二次确认弹窗（输入面板密码）
 
 const loading = ref(false)
 const busy = ref(false)

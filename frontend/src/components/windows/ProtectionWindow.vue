@@ -1,3 +1,10 @@
+<!--
+  Graw 数据库保护机制窗口
+  业务：扫描 Docker 容器持久化风险与未备份的数据库文件（SQLite/目录），支持一键映射数据卷、加入/批量加入自动备份、临时或永久忽略风险项、删除备份（高危需密码）。
+  后端模块：/api/protected
+  关键状态：dockerWarnings / allDbFiles / backups / ignoredList（扫描结果）、confirm（删除备份二次确认）、ctxMenu（右键菜单）
+  打开方式：ShunX 安全中心「数据库保护」标签页聚合
+-->
 <template>
   <div class="prot-window" @click="closeMenus">
     <!-- 顶部工具栏：标签页 + 状态摘要 -->
@@ -227,17 +234,17 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { protectionApi } from '../../api'
+import { ref, computed, onMounted } from 'vue'   // Composition API：响应式、计算属性、挂载
+import { useI18n } from 'vue-i18n'                // 国际化：取 t() 生成动态文案
+import { protectionApi } from '../../api'         // 数据库保护后端接口封装
 import {
   HardDrive, DatabaseBackup, BellRing, ShieldCheck, OctagonAlert, FolderOpen
-} from 'lucide-vue-next'
-import ConfirmDialog from '../ConfirmDialog.vue'
+} from 'lucide-vue-next'                         // 图标集合
+import ConfirmDialog from '../ConfirmDialog.vue'  // 高危操作二次确认弹窗（输入面板密码）
 
 const { t } = useI18n()
 const emit = defineEmits(['openFiles'])
-const ignoreDays = 7
+const ignoreDays = 7   // 临时忽略有效期（天），与界面提示中的 {days} 保持一致
 
 const tab = ref('docker')
 const loading = ref(false)

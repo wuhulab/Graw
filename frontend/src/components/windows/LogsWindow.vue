@@ -1,3 +1,13 @@
+<!--
+  日志中心窗口（后端 /api/logs 模块）
+  作用：浏览 / 清空服务器日志文件，支持自定义添加日志源（名称 + 路径），并把「登录日志」「审计日志」
+        两个独立应用合并为标签页在此统一展示。
+  后端模块：/api/logs（list 日志源列表、read 读取末尾内容、clear 清空、add 添加自定义日志源）。
+  关键状态：mode（logs/login/audit 视图）、logs（日志源）、current/lines（当前查看的日志内容）、
+            confirm（清空二次确认）。
+  清空日志为高风险操作，需输入面板密码（ConfirmDialog）确认。
+  打开方式：桌面「日志」卡片；登录 / 审计视图内嵌 LoginLogWindow / AuditLogWindow 子组件。
+-->
 <template>
   <div class="logs-window">
     <div class="toolbar">
@@ -72,29 +82,36 @@
 </template>
 
 <script setup>
+// 响应式状态、计算属性与生命周期钩子
 import { ref, computed, onMounted } from 'vue'
+// 国际化
 import { useI18n } from 'vue-i18n'
+// 日志 API：list/read/clear/add
 import { logsApi } from '../../api'
+// 高风险操作「输入面板密码」二次确认弹窗
 import ConfirmDialog from '../ConfirmDialog.vue'
+// 合并进来的子窗口：登录日志（/api/loginlog）与审计日志（/api/logs audit）的完整实现
 import LoginLogWindow from './LoginLogWindow.vue'
 import AuditLogWindow from './AuditLogWindow.vue'
 
 const { t } = useI18n()
-const logs = ref([])
-const currentId = ref(null)
-const current = ref(null)
-const lines = ref([])
-const showAdd = ref(false)
-const addForm = ref({ name: '', path: '' })
+const logs = ref([])         // 日志源列表（内置 + 自定义）
+const currentId = ref(null)  // 当前选中的日志源 id
+const current = ref(null)    // 当前选中的日志源对象
+const lines = ref([])        // 当前日志文件读出的内容行
+const showAdd = ref(false)   // 「添加日志源」弹窗显隐
+const addForm = ref({ name: '', path: '' })   // 新日志源表单（名称 + 路径）
 // 高风险操作二次确认状态
 const confirm = ref({ show: false, path: '' })
 // 视图模式：'logs' 系统日志 / 'login' 登录日志 / 'audit' 审计日志
 const mode = ref('logs')
 
+// --- 动作：切换视图标签（系统/登录/审计） ---
 function switchMode(m) {
   mode.value = m
 }
 
+// 内容视图：把多行数组直接拼成文本供 <pre> 显示
 const contentText = computed(() => lines.value.join(''))
 
 // 内置日志的 desc（如“面板日志”）由后端返回中文名，这里按 id 走 i18n 翻译；
@@ -109,42 +126,48 @@ function logName(log) {
   return log ? log.name : ''
 }
 
+// --- 动作：拉取日志源列表 ---
 async function refresh() {
-  const data = await logsApi.list()
+  const data = await logsApi.list()   // 调用 /api/logs/list
   logs.value = data.logs || []
 }
 
+// --- 动作：选中日志源（存在则加载内容） ---
 function select(log) {
   currentId.value = log.id
   current.value = log
-  if (log.exists) loadLog(log.path)
+  if (log.exists) loadLog(log.path)   // 文件存在才读取，避免对缺失文件报错
 }
 
+// --- 动作：读取日志文件末尾 500 行 ---
 async function loadLog(path) {
   const data = await logsApi.read(path, 500)
   lines.value = data.lines || []
 }
 
+// 清空日志：高风险操作，先弹密码确认框
 function clearLog(path) {
   // 高风险操作：清空日志需输入面板密码确认
   confirm.value = { show: true, path }
 }
 
+// --- 动作：密码校验通过后真正清空并重读 ---
 async function doClearLog() {
   const path = confirm.value.path
   confirm.value.show = false
-  if (!path) return
-  await logsApi.clear(path)
+  if (!path) return   // 无目标路径则提前返回
+  await logsApi.clear(path)   // 调用 /api/logs/clear
   await loadLog(path)
 }
 
+// --- 动作：添加自定义日志源并刷新列表 ---
 async function doAdd() {
-  await logsApi.add({ name: addForm.value.name, path: addForm.value.path })
+  await logsApi.add({ name: addForm.value.name, path: addForm.value.path })   // 调用 /api/logs/add
   showAdd.value = false
   await refresh()
 }
 
-onMounted(refresh)
+onMounted(refresh)   // 打开即加载日志源列表
 </script>
 
 <style scoped>

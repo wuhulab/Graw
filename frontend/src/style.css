@@ -1,3 +1,10 @@
+/* Graw 前端主样式表（macOS 26 风格桌面 UI，旧版入口）。
+   定义顺序：CSS 变量（字体 / 颜色 / 圆角 / 阴影）→ 基础 reset → 滚动条 →
+   遗留 .win7-* 窗口 / 标题栏 / 红黄绿按钮 → 通用 .glass-card → 底栏 .taskbar（Dock）→
+   快捷方式 .shortcut-*。
+   注：新版窗口 / 桌面样式主要在 src/assets/style.css；本文件保留以兼容旧组件。
+   仅以块注释作主要分区标注，不对每条规则过度注释。 */
+
 /* macOS 26 inspired base */
 :root {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;

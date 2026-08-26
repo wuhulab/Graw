@@ -1,3 +1,10 @@
+<!--
+  运行环境创建向导窗口
+  业务：按模板（Python/Java/Node/Go/.NET/PHP/HTML/其他）创建运行时容器，填写项目目录、端口、环境变量、挂载、主机映射等。
+  后端模块：/api/runtime
+  关键状态：form（创建表单）、templates（模板）、advOpen（高级配置展开）、saving（保存忙态）
+  打开方式：由 RuntimeWindow 点击「创建」经「openRuntimeCreate」事件弹出，按 type 预选模板
+-->
 <template>
   <div class="rt-create">
     <!-- 顶部工具栏 -->
@@ -172,14 +179,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { runtimeApi } from '../../api'
-import { Box, ChevronDown, X, Loader2, AlertTriangle } from 'lucide-vue-next'
+import { ref, reactive, computed, onMounted } from 'vue'   // 响应式、表单对象、计算属性、挂载
+import { useI18n } from 'vue-i18n'                        // 国际化：取 t() 生成动态文案
+import { runtimeApi } from '../../api'                   // 运行时容器后端接口封装
+import { Box, ChevronDown, X, Loader2, AlertTriangle } from 'lucide-vue-next'   // 图标集合
 
 const { t } = useI18n()
 const props = defineProps({ type: { type: String, default: 'python' } })
-const emit = defineEmits(['close', 'created'])
+const emit = defineEmits(['close', 'created'])   // 向父窗口发出：关闭、已创建（触发主列表刷新）
 
 const selectedType = computed(() => props.type)
 const templates = ref([])
@@ -246,6 +253,7 @@ function isAbs(p) {
   return /^[A-Za-z]:[\\/]/.test(p) || /^[\\/]/.test(p)
 }
 
+// --- 动作：创建并启动运行时容器 ---
 async function save() {
   err.value = ''
   // 表单校验

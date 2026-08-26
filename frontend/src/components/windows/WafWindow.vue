@@ -1,3 +1,34 @@
+<!--
+  WAF 防火墙窗口（Web 应用防火墙）
+
+  这个窗口做什么：
+    面板「WAF」功能。为选中的站点配置 Web 应用防火墙策略，支持：
+      - 全局总开关（对所有已启用的站点生效）；
+      - 频率限制（访问 / 攻击 / 404 三类，按 URL 或全局维度）；
+      - 防御规则开关（SQL 注入 / 木马 / XSS 等 10 项）；
+      - 自定义（上传大小上限、CDN 开关）、其他（蜘蛛 IP 池、恶意 IP 组）；
+      - 黑白名单（IP / URL / UA）、拦截分布地图、地区访问限制、
+        自定义 ACL、拦截日志、等候厅。
+    策略保存后生成 nginx include 片段，「全局应用」统一写盘生效。
+    清空拦截日志属于高风险操作，需输入面板密码。
+
+  用到的后端模块：
+    /api/waf/*（管理员权限）——status 全局开关、sites 站点列表、
+    {site} 读写策略、preview 预览 nginx 片段、apply 全局写盘、
+    logs / clearLogs 拦截日志、blockmap 拦截分布。
+
+  关键状态：
+    sites / currentSite   站点列表与当前编辑的站点
+    cfg                 当前站点的 WAF 策略（响应式对象）
+    activeTab           当前页签（0-10）
+    logs / logFilter    拦截日志与筛选
+    blockmap / blockDays   拦截分布与统计天数
+    aclEditor           自定义 ACL 编辑弹窗
+    confirm             清空日志的二次确认（需输入面板密码）
+
+  怎么被打开：
+    「网站」窗口的「WAF」入口。
+-->
 <template>
   <div class="waf-window">
     <!-- 顶部工具栏：全局开关 + 站点选择 + 操作按钮 -->
@@ -302,9 +333,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { wafApi } from '../../api'
-import ConfirmDialog from '../ConfirmDialog.vue'
+import { ref, reactive, computed, onMounted } from 'vue'   // 响应式状态、表单对象、派生值、挂载钩子
+import { wafApi } from '../../api'   // WAF 后端能力：/api/waf/* 的封装
+import ConfirmDialog from '../ConfirmDialog.vue'   // 高风险操作确认框（清空日志要求输入面板密码）
 
 // 高风险操作二次确认状态（清空拦截日志需输入面板密码）
 const confirm = ref({ show: false, action: null })
@@ -371,16 +402,17 @@ const newCountry = ref('')
 // ACL 编辑器
 const aclEditor = ref(null)
 
+// --- 空策略模板：新站点 / 后端缺字段时的兜底默认值 ---
 function emptyCfg() {
   return {
     site: '', enabled: false,
     frequency: {
-      access: { mode: 'url', period: 60, count: 100, ban: 600 },
-      attack: { mode: 'url', period: 60, count: 30, ban: 600 },
-      notfound: { mode: 'url', period: 60, count: 10, ban: 600 },
+      access: { mode: 'url', period: 60, count: 100, ban: 600 },   // 访问频率默认 60 秒内 100 次封 600 秒
+      attack: { mode: 'url', period: 60, count: 30, ban: 600 },    // 攻击频率默认 60 秒内 30 次
+      notfound: { mode: 'url', period: 60, count: 10, ban: 600 },  // 404 频率默认 60 秒内 10 次
     },
     defense: { sql: true, webshell: true, directory: true, xss: true, param: true,
-      ua: true, header: true, cookie: true, http: true, url: true },
+      ua: true, header: true, cookie: true, http: true, url: true },   // 防御规则默认全开
     custom: { upload_limit_mb: 20, cdn: false },
     other: { malicious_ip_groups: [], spider_pool: true },
     blackwhite: { ip_whitelist: [], ip_blacklist: [], url_whitelist: [], url_blacklist: [],
@@ -391,12 +423,14 @@ function emptyCfg() {
   }
 }
 
+// --- 加载站点策略：与默认模板合并，避免后端缺字段时界面报错 ---
 function applyCfg(data) {
   const base = emptyCfg()
   cfg.value = mergeDeep(base, data)
-  maliciousGroupsText.value = (data.other && data.other.malicious_ip_groups || []).join(' ')
+  maliciousGroupsText.value = (data.other && data.other.malicious_ip_groups || []).join(' ')   // 数组转空格分隔文本给编辑框
 }
 
+// --- 递归深合并：只把后端返回的字段盖到模板上，数组整份替换 ---
 function mergeDeep(target, src) {
   const out = Array.isArray(src) ? [...src] : { ...target }
   for (const k in src) {
@@ -411,6 +445,7 @@ function mergeDeep(target, src) {
 }
 
 // ---- 生命周期 ----
+// --- 读取全局 WAF 总开关状态 ---
 async function loadStatus() {
   try {
     const st = await wafApi.status()
@@ -418,16 +453,18 @@ async function loadStatus() {
   } catch (e) { /* 忽略 */ }
 }
 
+// --- 读取可配置的站点列表 ---
 async function loadSites() {
   try {
     const r = await wafApi.sites()
     sites.value = r.sites || []
-    if (!r.global_enabled) globalEnabled.value = false
+    if (!r.global_enabled) globalEnabled.value = false   // 后端未开启总开关时，前端开关同步为关
   } catch (e) { /* 忽略 */ }
 }
 
+// --- 读取当前选中站点的策略到表单 ---
 async function loadSite() {
-  if (!currentSite.value) return
+  if (!currentSite.value) return   // 未选站点不发请求
   try {
     const d = await wafApi.get(currentSite.value)
     applyCfg(d)
@@ -439,7 +476,7 @@ function init() {
   loadSites()
 }
 
-onMounted(init)
+onMounted(init)   // 打开即拉全局开关与站点列表
 
 // ---- 操作 ----
 async function toggleGlobal() {
@@ -571,7 +608,7 @@ function enabledCount(obj) {
 
 function barWidth(count) {
   if (!blockmap.total) return 0
-  return Math.round((count / Math.max(1, blockmap.data[0].count)) * 100)
+  return Math.round((count / Math.max(1, blockmap.data[0].count)) * 100)   // 以最高拦截数为基准算百分比，柱长不失真
 }
 
 const matchLabels = { uri: 'URL', ip: 'IP', ua: 'User-Agent', args: '参数', method: '方法' }

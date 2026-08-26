@@ -1,3 +1,22 @@
+<!--
+  AppStoreWindow.vue — 应用商店主窗口
+  ==========================================================
+  业务作用：
+    应用商店的浏览与入口页：加载远程/本地应用索引（index），展示应用卡片网格，
+    支持按分类筛选与关键词搜索；卡片上可打开应用官网/源码、查看 README、发起
+    安装。同时承载索引地址配置弹窗与首次进入的免责声明弹窗。
+  后端模块：
+    /api/appstore 的 index（拉取应用列表）、config / saveConfig（索引地址
+    读写）。安装与 README 分别由 AppStoreInstallWindow / AppStoreReadmeWindow
+    继续消费。
+  关键状态：
+    - apps           索引中的应用列表
+    - indexState     索引来源（远程/本地）、更新时间、错误信息
+    - filteredApps   按分类 + 搜索过滤后的展示列表
+    - showDisclaimer 首次进入的免责声明弹窗（已同意写入 localStorage 不再弹出）
+  打开方式：
+    由桌面/任务栏打开应用商店入口，无 props 传入。
+-->
 <template>
   <div class="store-window" @click="closePopovers">
     <!-- 顶部工具栏 -->
@@ -126,14 +145,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { appStoreApi } from '../../api'
-import { localizedName, localizedDescription } from '../../appStoreL10n'
-import { Store, Settings2, Globe, Github, Container, AlertTriangle, Loader2, BookOpen, Search, ShieldAlert } from 'lucide-vue-next'
+import { ref, reactive, computed, onMounted } from 'vue'   // 状态/表单/派生值/挂载钩子
+import { useI18n } from 'vue-i18n'   // 翻译函数与当前语种
+import { appStoreApi } from '../../api'   // 应用商店 API（索引/配置）
+import { localizedName, localizedDescription } from '../../appStoreL10n'   // 应用名/描述的多语言文案
+import { Store, Settings2, Globe, Github, Container, AlertTriangle, Loader2, BookOpen, Search, ShieldAlert } from 'lucide-vue-next'   // 工具栏/卡片/弹窗图标
 
 const { t, locale } = useI18n()
-const emit = defineEmits(['openAppInstall', 'openReadme', 'close'])
+const emit = defineEmits(['openAppInstall', 'openReadme', 'close'])   // openAppInstall 打开安装表单；openReadme 打开 README；close 关窗
 
 // 应用显示名称：优先索引内嵌翻译（i18n.<locale>.yml），
 // 其次前端语言包内 appNames 覆盖，最后回退索引默认名称
@@ -160,9 +179,9 @@ function tagClass(t) {
   return ''
 }
 
-const apps = ref([])
-const loading = ref(false)
-const indexState = reactive({ source: '', updated_at: '', error: '' })
+const apps = ref([])   // 索引中的应用列表
+const loading = ref(false)   // 索引加载中（禁用刷新按钮）
+const indexState = reactive({ source: '', updated_at: '', error: '' })   // 索引来源（远程/本地）、更新时间、错误信息
 
 // 分类筛选 + 搜索
 const selectedCategory = ref('')       // 空 = 全部分类
@@ -279,6 +298,7 @@ function acceptDisclaimer() {
   showDisclaimer.value = false
 }
 
+// 时间展示：把 ISO 时间串去掉 T 与毫秒，变成 "YYYY-MM-DD HH:mm:ss"
 function fmtTime(t) {
   if (!t) return ''
   return String(t).replace('T', ' ').replace(/\.\d+.*$/, '')
@@ -290,6 +310,7 @@ function fmtVersion(v) {
   return String(v).startsWith('v') ? String(v) : 'v' + String(v)
 }
 
+// --- 加载应用索引：refresh=true 时强制后端重新拉取 ---
 async function loadIndex(refresh) {
   loading.value = true
   try {
@@ -299,6 +320,7 @@ async function loadIndex(refresh) {
     indexState.updated_at = r.updated_at || ''
     indexState.error = r.error || ''
   } catch (e) {
+    // 拉取失败：保留错误信息给界面提示，并清空列表走空状态
     indexState.error = e.response?.data?.detail || e.message
     apps.value = []
   } finally {
@@ -308,6 +330,7 @@ async function loadIndex(refresh) {
 
 function closePopovers() { /* 预留：点击空白收起下拉 */ }
 
+// --- 保存索引地址并强制刷新 ---
 async function saveConfig() {
   savingConfig.value = true
   try {

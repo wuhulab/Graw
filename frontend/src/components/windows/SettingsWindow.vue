@@ -1,3 +1,10 @@
+<!--
+  综合设置中心窗口
+  业务：聚合面板级设置——用户管理、VIP 状态、ShunX 安全入口、多节点（SSH/Agent）管理、Web 引擎模式、两步验证、界面偏好、语言、版本更新。
+  后端模块：/api/ui、/api/vip、/api/nodes、/api/agent、/api/webmode、/api/auth（2FA）、/api/update、/api/shunx、/api/health
+  关键状态：节点/Web模式/2FA/更新/版本等多区块响应式数据；dangerConfirm（删除节点/清除入口高危二次确认）
+  打开方式：桌面「设置」入口挂载
+-->
 <template>
   <div style="display:flex; flex-direction:column; height:100%; background:#f5f5f7;">
     <div style="flex:1; overflow:auto; padding:16px; display:flex; flex-direction:column; gap:14px;">
@@ -373,15 +380,15 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { settings } from '../../store/settings'
-import { isAdmin } from '../../store/auth'
-import { vip as vipStore, refreshVip, isVip } from '../../store/vip'
-import { nodesApi, shunxApi, panelApi, updateApi, webmodeApi, authApi, agentApi } from '../../api'
-import { nodes as nodesStore, refreshNodes, setCurrentNode } from '../../store/nodes'
-import { LANGUAGES, setLocale } from '../../locales'
-import ConfirmDialog from '../ConfirmDialog.vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'   // 响应式、计算属性、挂载、监听 VIP 变化
+import { useI18n } from 'vue-i18n'                               // 国际化：取 t() 生成动态文案
+import { settings } from '../../store/settings'                 // 全局界面设置（任务栏/语言等）
+import { isAdmin } from '../../store/auth'                      // 管理员门控：限定敏感区块
+import { vip as vipStore, refreshVip, isVip } from '../../store/vip'   // VIP 状态：解锁付费功能
+import { nodesApi, shunxApi, panelApi, updateApi, webmodeApi, authApi, agentApi } from '../../api'   // 各设置区块后端接口
+import { nodes as nodesStore, refreshNodes, setCurrentNode } from '../../store/nodes'   // 多节点状态与当前节点切换
+import { LANGUAGES, setLocale } from '../../locales'            // 语言清单与切换函数
+import ConfirmDialog from '../ConfirmDialog.vue'                // 高危操作二次确认弹窗（输入面板密码）
 
 const { t } = useI18n()
 // 声明父组件（App.vue 窗口插槽）统一绑定的监听事件。本组件模板为双根
@@ -755,6 +762,7 @@ async function otpDisable() {
 // ---- 关于：项目与社区链接 ----
 // nameKey 为多语言键，url 为固定外链；集中在此便于维护与扩展
 const aboutLinks = [
+  { key: 'donate', nameKey: 'Graw Web', url: 'https://graw.shunx.top/' },
   { key: 'donate', nameKey: 'settings.about.donate', url: 'https://ifdian.net/a/shunianssy' },
   { key: 'github', nameKey: 'settings.about.githubSource', url: 'https://github.com/wuhulab/Graw' },
   { key: 'docker', nameKey: 'settings.about.docker', url: 'https://hub.docker.com/repository/docker/shunx/graw/general' },

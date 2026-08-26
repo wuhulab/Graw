@@ -1,3 +1,8 @@
+/* ru.js — 俄语（Русский）界面文案翻译表。
+
+  与 zh-CN.js 同构的扁平 key map：key 是业务含义（组件里 $t('xxx') 使用），
+  value 是俄语文案。缺失的 key 由 vue-i18n 自动回退到 zh-CN。
+  本文件只维护文案，请勿改动会破坏各语言之间 key 对齐的结构。 */
 // Русский
 export default {
   common: {

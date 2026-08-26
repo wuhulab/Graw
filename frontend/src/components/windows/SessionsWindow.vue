@@ -1,3 +1,10 @@
+<!--
+  在线会话管理窗口
+  业务：展示当前登录会话，支持踢出单个设备（强制下线）或管理员强制该账号全部设备下线。
+  后端模块：/api/auth（会话相关接口）
+  关键状态：sessions（会话列表）、busy（操作忙态）
+  打开方式：独立「会话」入口挂载；普通用户仅见自己的会话，管理员可全部下线
+-->
 <template>
   <div class="sessions-window">
     <div class="toolbar">
@@ -46,10 +53,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { RefreshCw, MonitorSmartphone } from 'lucide-vue-next'
-import { authApi } from '../../api'
-import { auth, isAdmin } from '../../store/auth'
+import { ref, onMounted } from 'vue'                          // Composition API：响应式、挂载
+import { RefreshCw, MonitorSmartphone } from 'lucide-vue-next' // 图标集合
+import { authApi } from '../../api'                            // 认证后端接口（会话管理）
+import { auth, isAdmin } from '../../store/auth'               // 当前登录态 + 是否管理员门控
 
 const loading = ref(false)
 const busy = ref(false)

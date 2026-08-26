@@ -1,3 +1,10 @@
+/* Graw 前端主样式表（macOS 26 风格桌面 UI）。
+   定义顺序：CSS 变量（字体 / 颜色 / 圆角 / 阴影）→ 基础 reset → 滚动条 →
+   窗口 .window / 标题栏 / 按钮 → 通用卡片 → 底栏 .taskbar（Dock）→
+   快捷方式 → 右侧监控卡片 → 开始菜单 .start-menu → 表格 / 按钮 / 工具条 →
+   移动端响应式（<=768px 宫格化、窗口全屏化）。
+   本文件与 src/style.css 并存：新代码用本文件，旧组件兼容用 src/style.css。 */
+
 * {
   box-sizing: border-box;
   margin: 0;

@@ -10,9 +10,9 @@
 // 用法：
 //   import { tamperState, startTamper, stopTamper } from '../store/tamper'
 //   模板中直接读取 reactive 的 tamperState 即可获得响应式更新。
-import { reactive } from 'vue'
-import { auth, isAdmin } from './auth'
-import { tamperApi } from '../api'
+import { reactive } from 'vue'                 // 告警队列 / 防护开关响应式，驱动弹窗与状态展示
+import { auth, isAdmin } from './auth'         // token 拼 WS 鉴权；isAdmin 决定能否执行关闭/启用操作
+import { tamperApi } from '../api'             // 防篡改开关 / 状态查询的封装接口
 
 // 防篡改全局共享状态
 export const tamperState = reactive({

@@ -1,3 +1,11 @@
+<!--
+  MetricsFallback.vue — 监控指标降级提示
+  作用：当当前管理节点不可达或指标数据过期时，在监控类卡片上叠加半透明警示层，
+        明确告知监控数据缺失，避免卡片白屏让人误以为功能损坏。
+  数据：完全由共享 systemState（store/systemMetrics）的 unavailable / stale 标志驱动，
+        无 props、无接口调用，状态就绪前不渲染任何内容。
+  打开方式：由各监控卡片（RingCard / MonitorCard / InfoNotesCard）内部按需引入渲染。
+-->
 <template>
   <div v-if="show" class="metrics-fallback">
     <!-- 半透明遮罩：图表保留可见，同时醒目提示监控数据缺失 -->
@@ -10,9 +18,9 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { systemState } from '../../store/systemMetrics'
-import { useI18n } from 'vue-i18n'
+import { computed } from 'vue'                    // Vue 计算属性
+import { systemState } from '../../store/systemMetrics'   // 共享系统指标状态（含不可用/过期标志）
+import { useI18n } from 'vue-i18n'                // 国际化
 
 const { t } = useI18n()
 

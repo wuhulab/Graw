@@ -1,5 +1,17 @@
+<!--
+  防火墙窗口（后端 /api/firewall 模块）
+  作用：启停系统防火墙，管理端口 / IP 的放行与拒绝规则，并提供「屏蔽未开放端口」批量保护。
+        规则分三组展示：未开放端口屏蔽（NOLP）、端口规则、IP 规则。
+  后端模块：/api/firewall（status 状态、rules 规则列表、add_port/add_ip、del_port/del_ip、
+            toggle 启停、block_unopened 屏蔽未开放端口、clear 清空全部）。
+  关键状态：enabled/platform（防火墙状态）、portRules/ipRules/nolpRules（规则列表）、
+            portForm/ipForm（新增规则表单）、blockUnopenedMsg（批量屏蔽结果）、confirm（二次确认）。
+  删除 / 清空 / 批量屏蔽等破坏性操作需输入面板密码（ConfirmDialog）确认。
+  打开方式：桌面「防火墙」卡片（内嵌于 ShunX 保护聚合窗口时外边距由父容器统一提供）。
+-->
 <template>
   <div class="fw-window">
+    <!-- 工具栏：状态徽标 + 启停 + 新增规则 + 清空 -->
     <div class="toolbar">
       <span class="badge" :class="enabled ? 'ok' : 'off'">{{ $t('firewall.title') }} {{ $t(enabled ? 'firewall.enabled' : 'firewall.disabled') }}</span>
       <button class="btn" @click="toggle">{{ $t(enabled ? 'firewall.disable' : 'firewall.enable') }}</button>
@@ -9,6 +21,7 @@
       <span class="hint">{{ $t('firewall.platform', { platform }) }}</span>
     </div>
 
+    <!-- ===== 未开放端口屏蔽（NOLP）规则表 ===== -->
     <h4>{{ $t('firewall.nolpRules') }}</h4>
     <div class="table-wrap">
       <table>
@@ -28,6 +41,7 @@
       </div>
     </div>
 
+    <!-- ===== 端口规则表 ===== -->
     <h4>{{ $t('firewall.portRules') }}</h4>
     <div class="table-wrap">
       <table>
@@ -43,6 +57,7 @@
       </table>
     </div>
 
+    <!-- ===== IP 规则表 ===== -->
     <h4>{{ $t('firewall.ipRules') }}</h4>
     <div class="table-wrap">
       <table>
@@ -58,6 +73,7 @@
       </table>
     </div>
 
+    <!-- 新增端口规则弹窗 -->
     <div v-if="showPortModal" class="modal-overlay" @click.self="showPortModal=false">
       <div class="modal">
         <h3>{{ $t('firewall.addPortRule') }}</h3>
@@ -76,6 +92,7 @@
       </div>
     </div>
 
+    <!-- 新增 IP 规则弹窗 -->
     <div v-if="showIpModal" class="modal-overlay" @click.self="showIpModal=false">
       <div class="modal">
         <h3>{{ $t('firewall.addIpRule') }}</h3>
@@ -108,37 +125,45 @@
 </template>
 
 <script setup>
+// 响应式状态与生命周期钩子
 import { ref, onMounted } from 'vue'
+// 国际化
 import { useI18n } from 'vue-i18n'
+// 防火墙 API：status/rules/add_port/add_ip/del_port/del_ip/toggle/block_unopened/clear
 import { firewallApi } from '../../api'
+// 图标（删除规则按钮）
 import { Trash2 } from 'lucide-vue-next'
+// 高风险操作「输入面板密码」二次确认弹窗
 import ConfirmDialog from '../ConfirmDialog.vue'
 
 const { t } = useI18n()
 
-const enabled = ref(true)
-const platform = ref('')
-const portRules = ref([])
-const ipRules = ref([])
-const nolpRules = ref([])
-const blockUnopenedMsg = ref('')
-const showPortModal = ref(false)
-const showIpModal = ref(false)
+const enabled = ref(true)                 // 防火墙是否启用
+const platform = ref('')                  // 底层平台（如 nftables/iptables/win）
+const portRules = ref([])                 // 端口规则（放行/拒绝）
+const ipRules = ref([])                   // IP 规则（CIDR + 动作）
+const nolpRules = ref([])                 // 未开放端口屏蔽规则（即 action=deny 的端口规则子集）
+const blockUnopenedMsg = ref('')          // 「屏蔽未开放端口」操作结果提示
+const showPortModal = ref(false)          // 新增端口规则弹窗显隐
+const showIpModal = ref(false)            // 新增 IP 规则弹窗显隐
 const portForm = ref({ port: 80, protocol: 'tcp', action: 'allow', comment: '' })
 const ipForm = ref({ ip: '', action: 'allow', comment: '' })
 // 高风险操作二次确认状态
 const confirm = ref({ show: false, title: '', message: '', action: null })
 
+// --- 动作：拉取防火墙状态与全部规则 ---
 async function load() {
-  const s = await firewallApi.status()
+  const s = await firewallApi.status()   // 调用 /api/firewall/status
   enabled.value = s.enabled
   platform.value = s.platform
-  const r = await firewallApi.rules()
+  const r = await firewallApi.rules()    // 调用 /api/firewall/rules
   portRules.value = r.port_rules || []
   ipRules.value = r.ip_rules || []
+  // NOLP 即端口规则中 action=deny 的部分，专门展示「屏蔽未开放端口」结果
   nolpRules.value = (r.port_rules || []).filter(x => x.action === 'deny')
 }
 
+// --- 动作：批量屏蔽未开放端口（破坏性操作，先弹密码确认框） ---
 async function doBlockUnopened() {
   // 高风险操作：批量屏蔽未放行端口需输入面板密码确认
   confirm.value = {
@@ -149,9 +174,10 @@ async function doBlockUnopened() {
   }
 }
 
+// --- 动作：密码校验通过后真正执行屏蔽并提示结果 ---
 async function execBlockUnopened() {
   try {
-    const d = await firewallApi.blockUnopened()
+    const d = await firewallApi.blockUnopened()   // 调用 /api/firewall/block_unopened
     if (d.created > 0) {
       blockUnopenedMsg.value = t('firewall.blockUnopenedDone', { count: d.created, ports: d.ports.join(', ') })
     } else {
@@ -166,17 +192,20 @@ async function execBlockUnopened() {
   await load()
 }
 
+// --- 动作：启用/停用防火墙 ---
 async function toggle() {
-  const data = await firewallApi.toggle(!enabled.value)
+  const data = await firewallApi.toggle(!enabled.value)   // 调用 /api/firewall/toggle
   enabled.value = data.enabled
 }
 
+// --- 动作：新增端口规则并刷新列表 ---
 async function addPort() {
-  await firewallApi.addPort(portForm.value)
+  await firewallApi.addPort(portForm.value)   // 调用 /api/firewall/add_port
   showPortModal.value = false
   await load()
 }
 
+// 删除端口规则：高风险操作，先弹密码确认框
 function delPort(id) {
   const rule = portRules.value.find(r => r.id === id)
   // 高风险操作：删除端口规则需输入面板密码确认
@@ -188,10 +217,11 @@ function delPort(id) {
   }
 }
 
+// --- 动作：密码校验通过后按 action 类型执行对应删除/清空/屏蔽 ---
 async function doConfirm() {
   const a = confirm.value.action
   confirm.value.show = false
-  if (!a) return
+  if (!a) return   // 无待执行动作则提前返回
   if (a.type === 'port') {
     await firewallApi.delPort(a.id)
   } else if (a.type === 'ip') {
@@ -204,6 +234,7 @@ async function doConfirm() {
   await load()
 }
 
+// 清空全部规则：高风险操作，先弹密码确认框
 function doClear() {
   // 高风险操作：清空全部防火墙规则需输入面板密码确认
   confirm.value = {
@@ -214,12 +245,14 @@ function doClear() {
   }
 }
 
+// --- 动作：新增 IP 规则并刷新列表 ---
 async function addIp() {
-  await firewallApi.addIp(ipForm.value)
+  await firewallApi.addIp(ipForm.value)   // 调用 /api/firewall/add_ip
   showIpModal.value = false
   await load()
 }
 
+// 删除 IP 规则：高风险操作，先弹密码确认框
 function delIp(id) {
   const rule = ipRules.value.find(r => r.id === id)
   // 高风险操作：删除 IP 规则需输入面板密码确认
@@ -231,7 +264,7 @@ function delIp(id) {
   }
 }
 
-onMounted(load)
+onMounted(load)   // 打开即加载防火墙状态与规则
 </script>
 
 <style scoped>

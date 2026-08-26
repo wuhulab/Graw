@@ -1,3 +1,11 @@
+<!--
+  InstallCheckAlert.vue — 安装环境不完整提醒弹窗
+  作用：面板启动时后端检测宿主环境，若未按「完整宿主机模式」安装（如缺 Docker /
+        权限不足），对在线用户全屏弹窗提示缺失项，引导按 README 重新安装后再使用。
+  数据：missing 为后端 /system/install-check 返回的缺失项 key 数组；
+        全部文案走 i18n（installCheck.*），逐项翻译缺失能力名与详情。
+  打开方式：由 App.vue 在检测到缺失项时渲染，点「知道了」关闭。
+-->
 <template>
   <!-- 安装环境不完整提醒：未按 README 要求的「完整宿主机模式」安装时弹出 -->
   <div class="install-alert-overlay">
@@ -35,13 +43,13 @@
 </template>
 
 <script setup>
-import { OctagonAlert } from 'lucide-vue-next'
+import { OctagonAlert } from 'lucide-vue-next'   // 警示图标
 
 // 缺失项 key 列表（来自后端 /system/install-check）
 defineProps({
-  missing: { type: Array, default: () => [] }
+  missing: { type: Array, default: () => [] }   // 缺失能力清单，逐项翻译展示
 })
-defineEmits(['close'])
+defineEmits(['close'])   // 「知道了」按钮 → 通知父组件隐藏弹窗
 </script>
 
 <style scoped>

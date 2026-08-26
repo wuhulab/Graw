@@ -1,3 +1,10 @@
+<!--
+  监控中心窗口（后端 /api/uptime + /api/svcmonitor 模块）
+  作用：把「站点监控」与「服务监控」两个独立应用合并为一个窗口，顶部标签切换视图。
+  后端模块：/api/uptime（站点可用性）、/api/svcmonitor（服务监控）。
+  关键状态：mode（当前视图：uptime 站点监控 / svcmonitor 服务监控）。
+  打开方式：桌面「监控」卡片；实际内容由内嵌子组件 UptimeWindow / ServiceMonitorWindow 承担。
+-->
 <template>
   <div class="monitoring-window">
     <!-- 视图切换：站点监控 / 服务监控 -->
@@ -21,13 +28,16 @@
 </template>
 
 <script setup>
+// 响应式状态
 import { ref } from 'vue'
+// 合并进来的子窗口：站点监控（/api/uptime）与服务监控（/api/svcmonitor）的完整实现
 import UptimeWindow from './UptimeWindow.vue'
 import ServiceMonitorWindow from './ServiceMonitorWindow.vue'
 
 // 视图模式：'uptime' 站点监控 / 'svcmonitor' 服务监控
 const mode = ref('uptime')
 
+// --- 动作：切换标签，仅切换本地状态（子组件按需挂载渲染） ---
 function switchMode(m) {
   mode.value = m
 }

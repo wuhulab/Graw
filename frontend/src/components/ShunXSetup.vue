@@ -1,3 +1,12 @@
+<!--
+  ShunXSetup.vue — ShunX 安全入口强制设置界面
+  作用：登录后若后端判定尚未配置安全入口，则全屏强制展示此页。管理员必须先设置
+        「安全入口路径」才能进入面板；非管理员只能看到提示并退出登录。
+        安全入口是额外的一道 URL 门禁（shunx 中间件）：陌生设备必须访问
+        <站点源>/<入口路径> 才会渲染登录页，路径未知一律拒绝，故建议使用随机长串。
+  数据：path 为管理员输入的入口路径；保存走 shunxApi.update，成功后 emit('saved')。
+  打开方式：由 App.vue 根据后端安全入口状态决定渲染。
+-->
 <template>
   <!-- ShunX 安全入口强制设置界面（登录后未配置入口时全屏展示） -->
   <div class="shunx-overlay">
@@ -47,20 +56,21 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { shunxApi } from '../api'
-import { clearAuth, isAdmin } from '../store/auth'
+import { ref, computed } from 'vue'                       // Vue 响应式与计算属性
+import { shunxApi } from '../api'                         // ShunX 安全入口 API
+import { clearAuth, isAdmin } from '../store/auth'        // 登出清态 / 管理员判定
 
-const emit = defineEmits(['saved'])
+const emit = defineEmits(['saved'])   // 保存成功后通知 App 刷新安全入口状态
 
-const origin = computed(() => window.location.origin)
-const path = ref('')
-const saving = ref(false)
-const error = ref('')
-const success = ref('')
+const origin = computed(() => window.location.origin)   // 当前站点源（用于拼接展示完整入口 URL）
+const path = ref('')          // 管理员输入的安全入口路径
+const saving = ref(false)     // 保存请求进行中，禁用按钮
+const error = ref('')         // 保存失败提示
+const success = ref('')       // 保存成功提示
 
+// 保存安全入口路径到后端，成功后通知上层刷新安全入口状态
 async function save() {
-  if (saving.value || !path.value) return
+  if (saving.value || !path.value) return   // 路径为空或请求进行中不重复提交
   error.value = ''
   success.value = ''
   saving.value = true
@@ -75,6 +85,7 @@ async function save() {
   }
 }
 
+// 非管理员无设置权限：清空登录态并回到首页
 function logout() {
   clearAuth()
   window.location.href = '/'

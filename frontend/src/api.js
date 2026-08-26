@@ -1,6 +1,14 @@
-import axios from 'axios'
-import { auth, clearAuth } from './store/auth'
-import { getRequestNode } from './store/requestNode'
+/* Graw 前端统一 API 层：基于 Axios 封装全部 /api/* 后端调用。
+   关键职责：
+   - 创建默认实例 api 与 dockerHttp（Docker 大文件流 / 长超时专用）；
+   - 请求拦截自动注入 Bearer 令牌与 X-Graw-Node（统一面板兼容的多节点目标）；
+   - 响应拦截处理 401（token 失效登出）与 403（强制改密登出）；
+   - 按业务模块导出 authApi / systemApi / dockerApi …… 等大对象，供组件 / store 调用，
+     组件不直接写 axios。后端路由前缀与鉴权见 AGENTS.md 第 3、5.1 节。 */
+
+import axios from 'axios'                               // HTTP 客户端：封装请求 / 响应拦截器
+import { auth, clearAuth } from './store/auth'          // 登录态单例：读取 token、清除登录
+import { getRequestNode } from './store/requestNode'    // 当前请求级目标节点（统一面板兼容）
 
 const api = axios.create({
   baseURL: '/api',
@@ -70,7 +78,7 @@ dockerHttp.interceptors.response.use(r => r, on401)
 api.interceptors.response.use(r => r, onDefaultPassword403)
 dockerHttp.interceptors.response.use(r => r, onDefaultPassword403)
 
-export default api
+export default api                                     // 默认导出通用实例（含 token / 节点拦截），供各模块复用
 
 // 面板基础信息（公开接口，无需登录）：状态 + 版本号，供「设置-关于」展示
 export const panelApi = {

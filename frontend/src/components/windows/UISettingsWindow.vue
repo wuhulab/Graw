@@ -1,3 +1,28 @@
+<!--
+  界面设置窗口（UI Settings）
+
+  这个窗口做什么：
+    面板「设置 → 界面」页。管理员在这里自定义桌面观感：
+      - 网站名、欢迎语、Logo（上传后以 data URL 存入后端配置）；
+      - 动态壁纸：图片轮播（背景列表 + 切换间隔）或视频壁纸，
+        每项都支持「仅用于这个账号」（否则走全局配置）；
+      - 系统概览环形统计图的配色与阈值报警开关。
+    保存后重新加载，保证表单始终对齐「账号级 > 全局 > 默认」的读取优先级。
+
+  用到的后端模块：
+    /api/ui/*（端点内自行鉴权）——config 读取、update 保存。
+    媒体文件以 data URL 直接存进 JSON 配置，没有单独上传接口；
+    大小限制（Logo 2MB / 背景 8MB / 视频 50MB、最多 12 张背景）与后端保持一致。
+
+  关键状态：
+    form       表单（站点名 / 欢迎语 / Logo / 背景列表 / 视频 / 模式 / 间隔 / 环形配色）
+    wallpaperPersonal / ringPersonal   「仅用于这个账号」开关
+    logoPreview / videoPreview         上传后的即时预览
+    msg / msgType                      保存结果提示
+
+  怎么被打开：
+    「设置」窗口（SettingsWindow）的「界面」页签内嵌。
+-->
 <template>
   <div style="display:flex; flex-direction:column; height:100%; background:#f5f5f7;">
     <div style="flex:1; overflow:auto; padding:16px; display:flex; flex-direction:column; gap:14px;">
@@ -129,9 +154,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { uiApi } from '../../api'
+import { ref, reactive, computed, watch, onMounted } from 'vue'   // 响应式状态、取色器联动、挂载钩子
+import { useI18n } from 'vue-i18n'   // 取 t()，界面文案跟随面板语言
+import { uiApi } from '../../api'   // 界面设置后端能力：/api/ui/* 的封装
 
 const { t } = useI18n()
 
@@ -188,10 +213,10 @@ watch(ringColorText, (v) => {
 })
 
 // 各媒体字段的允许大小（与后端保持一致）
-const LOGO_LIMIT = 2 * 1024 * 1024
-const BG_LIMIT = 8 * 1024 * 1024
-const VIDEO_LIMIT = 50 * 1024 * 1024
-const MAX_BACKGROUNDS = 12
+const LOGO_LIMIT = 2 * 1024 * 1024      // Logo 上限 2MB
+const BG_LIMIT = 8 * 1024 * 1024        // 背景图上限 8MB
+const VIDEO_LIMIT = 50 * 1024 * 1024    // 视频壁纸上限 50MB
+const MAX_BACKGROUNDS = 12              // 轮播背景最多 12 张
 
 /** 封装 FileReader 读取为 data URL。 */
 function readAsDataURL(file) {
@@ -206,15 +231,15 @@ function readAsDataURL(file) {
 /** 上传 Logo：读为 data URL。 */
 async function onLogoChange(e) {
   const file = e.target.files && e.target.files[0]
-  e.target.value = ''
-  if (!file) return
-  if (file.size > LOGO_LIMIT) { logoError.value = t('ui.logoTooLarge'); return }
-  if (!/^image\//.test(file.type)) { logoError.value = t('ui.logoTypeErr'); return }
+  e.target.value = ''   // 清空 input，保证连续选同一文件也能重新触发 change
+  if (!file) return   // 取消选择时 file 为空，直接退出
+  if (file.size > LOGO_LIMIT) { logoError.value = t('ui.logoTooLarge'); return }   // 超限直接拒绝，避免大图写进配置
+  if (!/^image\//.test(file.type)) { logoError.value = t('ui.logoTypeErr'); return }   // 只收图片 MIME 类型
   logoError.value = ''
   try {
     const dataUrl = await readAsDataURL(file)
-    form.logo = dataUrl
-    logoPreview.value = dataUrl
+    form.logo = dataUrl      // data URL 直接进表单，随保存提交
+    logoPreview.value = dataUrl   // 同步预览
   } catch (err) {
     logoError.value = t('ui.logoReadErr')
     console.error('[ui] 读取 Logo 失败:', err)
@@ -240,7 +265,7 @@ async function onBackgroundImage(e) {
     const dataUrl = await readAsDataURL(file)
     if (form.backgrounds.length >= MAX_BACKGROUNDS) {
       bgError.value = t('ui.bgListHint', { n: MAX_BACKGROUNDS })
-      return
+      return   // 已达上限不再追加，避免配置无限膨胀
     }
     form.backgrounds.push(dataUrl)
   } catch (err) {
@@ -262,7 +287,7 @@ async function onVideoChange(e) {
   if (file.size > VIDEO_LIMIT) { videoError.value = t('ui.videoTooLarge'); return }
   if (!/^video\/(mp4|webm|ogg)$/.test(file.type)) {
     videoError.value = t('ui.videoTypeErr')
-    return
+    return   // 只收浏览器原生能播放的三种视频容器格式
   }
   videoError.value = ''
   try {
@@ -336,7 +361,7 @@ async function save() {
       backgrounds: form.backgrounds || [],
       wallpaper_video: form.wallpaper_video || '',
       background_mode: form.background_mode === 'video' ? 'video' : 'image',
-      background_interval: Math.max(3, Math.min(120, Number(form.background_interval) || 8)),
+      background_interval: Math.max(3, Math.min(120, Number(form.background_interval) || 8)),   // 间隔限在 3-120 秒，越界值收敛到边界
       ring_color: color,
       ring_alarm: form.ring_alarm,
       // 「仅用于这个账号」：勾选则写入当前账号，否则写入全局
@@ -355,7 +380,7 @@ async function save() {
   }
 }
 
-onMounted(load)
+onMounted(load)   // 打开即读取当前界面配置
 </script>
 
 <style scoped>

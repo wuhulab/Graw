@@ -1,3 +1,19 @@
+<!--
+  ContainerStatsWindow.vue — 容器资源监控图表窗口
+  ==========================================================
+  业务作用：
+    以 Canvas 折线图实时展示某个容器的 CPU / 内存使用率。默认每 1 秒采样
+    一次，保留最近 240 个采样点（约 4 分钟），可暂停/继续采集或清空数据。
+    容器停止或引擎不可用时会自动暂停采集。
+  后端模块：
+    /api/docker 的 containerStats（读取容器实时资源占用）。
+  关键状态：
+    - running  是否正在采集
+    - points   采样点数组 [{cpu, mem, t}]（最多 240 个）
+    - cpuNow / memNow 当前值（数字图例）
+  打开方式：
+    由 Docker 管理窗口的容器「监控」按钮打开，props 传入容器 id 与名称。
+-->
 <template>
   <div class="cstats-window">
     <div class="toolbar">
@@ -27,24 +43,25 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-import { Activity } from 'lucide-vue-next'
-import { dockerApi } from '../../api'
+import { ref, onMounted, onUnmounted } from 'vue'   // 状态/挂载启动采集/卸载停止
+import { Activity } from 'lucide-vue-next'   // 标题图标
+import { dockerApi } from '../../api'   // /api/docker：容器实时资源接口
 
 const props = defineProps({
-  id: { type: String, default: '' },
-  name: { type: String, default: '' },
+  id: { type: String, default: '' },   // 容器 id
+  name: { type: String, default: '' },   // 容器显示名称
 })
 
-const chart = ref(null)
-const running = ref(false)
-const points = ref([])          // [{cpu, mem, t}]
-const MAX_POINTS = 240          // 保留最近 240 个采样点（4 分钟）
-let timer = null
-let ctx = null
-const cpuNow = ref(0)
-const memNow = ref(0)
+const chart = ref(null)   // Canvas DOM 引用
+const running = ref(false)   // 是否正在采集
+const points = ref([])          // [{cpu, mem, t}] 采样点序列
+const MAX_POINTS = 240          // 保留最近 240 个采样点（4 分钟，按 1s/次）
+let timer = null   // 定时采样句柄
+let ctx = null   // Canvas 2D 上下文（缓存复用）
+const cpuNow = ref(0)   // 当前 CPU 使用率（顶部数字）
+const memNow = ref(0)   // 当前内存使用率（顶部数字）
 
+// --- 单次采样：拉取容器资源并追加采样点 ---
 async function tick() {
   try {
     const s = await dockerApi.containerStats(props.id)
@@ -53,7 +70,7 @@ async function tick() {
     cpuNow.value = Number(cpu).toFixed(1)
     memNow.value = Number(mem).toFixed(1)
     points.value.push({ cpu: Number(cpu) || 0, mem: Number(mem) || 0, t: Date.now() })
-    if (points.value.length > MAX_POINTS) points.value.shift()
+    if (points.value.length > MAX_POINTS) points.value.shift()   // 超出上限丢最旧采样点
     draw()
   } catch (e) {
     // 容器停止/引擎不可用 → 暂停采集并提示
@@ -61,18 +78,21 @@ async function tick() {
   }
 }
 
+// 开始采集：立即采一次，随后按 1 秒间隔轮询
 function start() {
-  if (running.value) return
+  if (running.value) return   // 已在运行则忽略
   running.value = true
   tick()  // 立即采一次
   timer = setInterval(tick, 1000)
 }
 
+// 停止采集并清理定时器
 function stop() {
   running.value = false
   if (timer) { clearInterval(timer); timer = null }
 }
 
+// 清空已采集的数据并重绘
 function clearData() {
   points.value = []
   cpuNow.value = 0
@@ -80,15 +100,17 @@ function clearData() {
   draw()
 }
 
+// --- 绘制折线图：网格 + 刻度 + CPU/内存两条曲线 ---
 function draw() {
   const c = chart.value
   if (!c) return
   ctx = c.getContext('2d')
   const W = c.width, H = c.height
   ctx.clearRect(0, 0, W, H)
-  const PAD = 6
+  const PAD = 6   // 图表四周留白
   const n = points.value.length
   if (n < 2) {
+    // 采样点不足 2 个时不画曲线，显示等待提示
     ctx.fillStyle = '#9ca3af'
     ctx.font = '12px sans-serif'
     ctx.textAlign = 'center'
@@ -110,8 +132,8 @@ function draw() {
     const y = PAD + (H - 2 * PAD) * (i / 4)
     ctx.fillText(`${100 - i * 25}%`, 4, y - 3)
   }
-  const xStep = (W - 2 * PAD) / (n - 1)
-  const toY = v => PAD + (H - 2 * PAD) * (1 - Math.min(100, Math.max(0, v)) / 100)
+  const xStep = (W - 2 * PAD) / (n - 1)   // 采样点横向间距（首尾贴边）
+  const toY = v => PAD + (H - 2 * PAD) * (1 - Math.min(100, Math.max(0, v)) / 100)   // 百分比 → 画布 y（值钳制在 0~100）
   // CPU 曲线（蓝）
   ctx.strokeStyle = '#0a84ff'
   ctx.lineWidth = 2
@@ -133,8 +155,8 @@ function draw() {
   ctx.stroke()
 }
 
-onMounted(start)
-onUnmounted(stop)
+onMounted(start)   // 打开窗口即开始采集
+onUnmounted(stop)   // 关闭窗口停止采集，避免定时器泄漏
 </script>
 
 <style scoped>

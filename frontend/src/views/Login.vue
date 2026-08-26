@@ -1,3 +1,11 @@
+<!-- Login.vue — 登录 / 强制改密 / 安全入口门禁 页面。
+
+  业务背景：这是面板的「大门」。除登录表单外，还承担三类前置状态：
+    1. ShunX 安全入口：已配置入口且当前路径不匹配时，先显示门禁提示而不是登录表单；
+    2. 强制改密：默认密码 / 重置 / 首次登录的账号必须先在本地改密，成功后才写入登录态；
+    3. 两步验证（2FA）：密码通过后需输入 6 位动态验证码。
+  登录成功通过 emit('login') 通知 App.vue 切换进入桌面。
+-->
 <template>
   <!-- 登录页背景：优先动态壁纸（视频/轮播），否则自定义单图，再回退内置 hero.png -->
   <div class="login-page" :style="bgStyle">
@@ -102,14 +110,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { authApi, shunxApi } from '../api'
-import { setAuth } from '../store/auth'
-import { uiState, loadUi } from '../store/ui'
+import { ref, computed, onMounted } from 'vue'      // 表单状态 / 背景样式 / 挂载后初始化
+import { useI18n } from 'vue-i18n'                  // $t：错误与提示文案走多语言
+import { authApi, shunxApi } from '../api'          // 登录/改密接口 + ShunX 安全入口状态接口
+import { setAuth } from '../store/auth'             // 登录成功/改密成功后把身份写入全局并落盘
+import { uiState, loadUi } from '../store/ui'       // 登录页品牌配置（网站名/欢迎语/Logo/背景）
 
 const { t } = useI18n()
-const emit = defineEmits(['login'])
+const emit = defineEmits(['login'])   // 登录/改密成功后通知 App.vue 收起登录页、进入桌面
 
 // 界面品牌配置（共享 store）：自定义网站名 / 欢迎语 / Logo / 背景
 const ui = uiState
@@ -138,12 +146,12 @@ const loginCarouselImages = computed(() =>
 const loginCarouselIndex = ref(0)
 let loginCarouselTimer = null
 function startLoginCarousel() {
-  stopLoginCarousel()
-  if (loginCarouselImages.value.length <= 1) return
-  const interval = Math.max(3, Number(uiState.background_interval) || 8) * 1000
+  stopLoginCarousel()   // 先停掉可能残留的旧定时器，保证只跑一个
+  if (loginCarouselImages.value.length <= 1) return   // 少于两张图没有轮播意义，直接不启动
+  const interval = Math.max(3, Number(uiState.background_interval) || 8) * 1000   // 间隔至少 3 秒，避免配置过小导致疯狂切换
   loginCarouselTimer = setInterval(() => {
-    if (loginCarouselImages.value.length <= 1) return
-    loginCarouselIndex.value = (loginCarouselIndex.value + 1) % loginCarouselImages.value.length
+    if (loginCarouselImages.value.length <= 1) return   // 运行中配置被清空时安全退出
+    loginCarouselIndex.value = (loginCarouselIndex.value + 1) % loginCarouselImages.value.length   // 取模循环切到下一张
   }, interval)
 }
 function stopLoginCarousel() {
@@ -153,10 +161,10 @@ function stopLoginCarousel() {
   }
 }
 
-const username = ref('admin')
+const username = ref('admin')   // 默认填 admin（常见管理员账号），减少输入
 const password = ref('')
-const loading = ref(false)
-const error = ref('')
+const loading = ref(false)      // 提交中标记：防重复提交 + 按钮转「登录中…」
+const error = ref('')           // 表单顶部错误提示文案
 
 // 两步验证（2FA）：密码校验通过后等待验证码
 const otpRequired = ref(false)
@@ -175,6 +183,7 @@ const confirmPassword = ref('')
 const shunxChecked = ref(false)
 const shunx = ref({ enabled: false, matched: false })
 
+// 挂载后并行初始化：品牌配置 + ShunX 安全入口状态
 onMounted(async () => {
   // 加载界面品牌配置（网站名 / 欢迎语 / Logo / 背景）并更新浏览器标签标题
   try {
@@ -200,8 +209,9 @@ onMounted(async () => {
   }
 })
 
+// --- 动作说明：提交登录表单（含 2FA 二段与强制改密分支） ---
 async function handleLogin() {
-  if (loading.value) return
+  if (loading.value) return   // 防连点：请求进行中直接忽略
   error.value = ''
   loading.value = true
   try {
@@ -211,30 +221,31 @@ async function handleLogin() {
     if (data.otp_required) {
       // 密码已通过，但该账号开启了 2FA——显示验证码输入框，等待用户输入后再次提交
       otpRequired.value = true
-      otpCode.value = ''
+      otpCode.value = ''     // 清空旧验证码，让用户重新输入
       error.value = ''
-      return
+      return                 // 不写登录态，等下一轮带验证码的提交
     }
     if (data.user?.must_change_password) {
       // 强制改密：先不写入登录态（否则 App 会立即切换到桌面），改密成功后再进入
       pendingToken.value = data.token
       pendingUser.value = data.user
-      oldPassword.value = password.value
-      password.value = ''
+      oldPassword.value = password.value   // 原密码预填，用户只需填新密码
+      password.value = ''                  // 清空主表单密码，防止泄漏到屏幕上
       forceChange.value = true
       // 区分「默认密码」与「重置/首登」，展示不同提示
       forceChangeReason.value = data.user?.default_password ? 'default' : 'reset'
       return
     }
-    setAuth(data.token, data.user)
+    setAuth(data.token, data.user)   // 正常登录：写入身份（含 localStorage），全站请求开始带 token
     emit('login', data.user)
   } catch (e) {
-    error.value = e?.response?.data?.detail || '登录失败'
+    error.value = e?.response?.data?.detail || '登录失败'   // 优先展示后端 detail，拿不到时用兜底文案
   } finally {
     loading.value = false
   }
 }
 
+// --- 动作说明：强制改密表单提交（成功后才把暂存的身份写入登录态） ---
 async function handleChangePassword() {
   if (loading.value) return
   if (newPassword.value.length < 8) {
@@ -252,9 +263,9 @@ async function handleChangePassword() {
     // 改密成功：写入登录态并进入面板
     const user = pendingUser.value
     if (user) {
-      user.must_change_password = false
+      user.must_change_password = false   // 本地同步清除「待改密」标记，避免下次又强制改密
       user.default_password = false
-      setAuth(pendingToken.value, user)
+      setAuth(pendingToken.value, user)   // 此时才真正登录：刷新页面也会保持在线
     }
     forceChange.value = false
     forceChangeReason.value = ''

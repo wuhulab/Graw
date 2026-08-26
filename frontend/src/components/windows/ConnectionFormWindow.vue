@@ -1,3 +1,21 @@
+<!--
+  ConnectionFormWindow.vue — 数据库连接的新增/编辑表单窗口
+  ==========================================================
+  业务作用：
+    新增或编辑一个数据库连接（MySQL/PostgreSQL/MongoDB/Redis/SQLite）：
+    按类型动态切换字段（SQLite 只填文件路径，Redis 无用户名/数据库概念），
+    切换类型时自动套用该类型的默认端口/用户名/数据库。保存后通知数据库主
+    窗口刷新连接列表。
+  后端模块：
+    /api/databases 的 createConn / updateConn（新增/更新连接）。
+  关键状态：
+    - form      连接表单（name/db_type/host/port/username/password/database）
+    - isEdit    是否为编辑模式（由 props.conn 判断）
+    - suppressAuto 初始化期间抑制类型切换的默认值自动套用
+  打开方式：
+    由 DatabaseWindow 的「新增连接」/「编辑」按钮打开，props 传入 conn
+    （编辑时）；保存成功后 emit saved/close。
+-->
 <template>
   <div class="conn-form">
     <h3>{{ isEdit ? $t('connectionform.editTitle', { name: form.name }) : $t('connectionform.addTitle') }}</h3>
@@ -53,10 +71,10 @@
 </template>
 
 <script setup>
-import { reactive, ref, computed, watch, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { databasesApi } from '../../api'
-import { notifyDatabasesChanged } from '../../store/databases'
+import { reactive, ref, computed, watch, onMounted } from 'vue'   // 表单/状态/派生文案/类型切换监听/挂载初始化
+import { useI18n } from 'vue-i18n'   // 翻译函数
+import { databasesApi } from '../../api'   // /api/databases：连接增改接口
+import { notifyDatabasesChanged } from '../../store/databases'   // 保存后通知数据库主窗口刷新连接列表
 
 const { t } = useI18n()
 
@@ -64,7 +82,7 @@ const props = defineProps({
   // 传入连接对象则为编辑模式；为 null 表示新增
   conn: { type: Object, default: null }
 })
-const emit = defineEmits(['close', 'saved'])
+const emit = defineEmits(['close', 'saved'])   // close 关窗；saved 通知父窗口保存成功
 
 const isEdit = !!props.conn
 
@@ -86,9 +104,9 @@ const DB_LABELS = {
   sqlite: { labelKey: '', phKey: '' }
 }
 
-const form = reactive({ name: '', db_type: 'mysql', host: '127.0.0.1', port: 3306, username: 'root', password: '', database: '' })
-const saving = ref(false)
-const errorMsg = ref('')
+const form = reactive({ name: '', db_type: 'mysql', host: '127.0.0.1', port: 3306, username: 'root', password: '', database: '' })   // 连接表单，默认 MySQL
+const saving = ref(false)   // 保存中
+const errorMsg = ref('')   // 表单错误提示
 // 初始化过程中抑制类型切换的默认值自动套用（避免覆盖编辑态已保存的端口等）
 const suppressAuto = ref(false)
 
@@ -124,8 +142,9 @@ watch(
   }
 )
 
+// --- 挂载初始化：编辑模式回填表单（密码不回填，留空即保持原密码） ---
 onMounted(() => {
-  suppressAuto.value = true
+  suppressAuto.value = true   // 回填期间禁止默认值自动套用，防止覆盖编辑态已保存的端口等
   if (isEdit) {
     const d = DEFAULTS[props.conn.db_type] || DEFAULTS.mysql
     Object.assign(form, {
@@ -142,6 +161,7 @@ onMounted(() => {
   suppressAuto.value = false
 })
 
+// --- 保存连接：校验名称后提交到后端，成功后通知主窗口刷新 ---
 async function save() {
   if (!form.name.trim()) {
     errorMsg.value = t('connectionform.nameRequired')

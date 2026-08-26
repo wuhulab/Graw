@@ -1,3 +1,22 @@
+<!--
+  AppStoreReadmeWindow.vue — 应用商店 README 阅读窗口
+  ==========================================================
+  业务作用：
+    展示某个应用的 README（GitHub 风格 Markdown 渲染）：加载 README 原文后，
+    用 markdown-it + DOMPurify 渲染成安全 HTML；把相对图片/链接补全为 GitHub
+    绝对地址，并对外链做协议白名单校验（防止 javascript: 注入）。
+  后端模块：
+    /api/appstore 的 readme 接口（appStoreApi.readme），返回 readme 原文、
+    仓库信息与源码地址。
+  关键状态：
+    - loading   首次加载中
+    - errorMsg  拉取失败原因
+    - raw       README 原文（Markdown）
+    - repoCtx   GitHub 仓库上下文，用于相对链接/图片拼接
+    - safeSource 经过协议白名单校验的源码外链（Vue 不会自动过滤危险协议）
+  打开方式：
+    由 AppStoreWindow 应用卡片上的「查看 README」打开，props 传入 app 对象。
+-->
 <template>
   <div class="readme-window">
     <!-- 顶部工具栏 -->
@@ -21,26 +40,26 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import MarkdownIt from 'markdown-it'
-import taskLists from 'markdown-it-task-lists'
-import DOMPurify from 'dompurify'
-import { appStoreApi } from '../../api'
-import { localizedName } from '../../appStoreL10n'
-import { BookOpen, AlertTriangle, Loader2 } from 'lucide-vue-next'
+import { ref, computed, onMounted } from 'vue'   // 状态/派生值/挂载后加载 README
+import { useI18n } from 'vue-i18n'   // 翻译函数与当前语种
+import MarkdownIt from 'markdown-it'   // Markdown 渲染引擎
+import taskLists from 'markdown-it-task-lists'   // 渲染 GitHub 任务列表（- [ ] / - [x]）
+import DOMPurify from 'dompurify'   // 渲染结果白名单清理，移除 script/on* 等危险内容
+import { appStoreApi } from '../../api'   // 应用商店 API（拉取 README）
+import { localizedName } from '../../appStoreL10n'   // 应用名的多语言文案
+import { BookOpen, AlertTriangle, Loader2 } from 'lucide-vue-next'   // 工具栏/加载/错误图标
 
 const { t, locale } = useI18n()
 
-const props = defineProps({ app: Object })
-const emit = defineEmits(['close'])
+const props = defineProps({ app: Object })   // 要展示 README 的应用信息
+const emit = defineEmits(['close'])   // 对外仅暴露 close：通知桌面关闭本窗口
 
-const name = ref('')
-const repo = ref('')
-const source = ref('')
-const raw = ref('')
-const loading = ref(true)
-const errorMsg = ref('')
+const name = ref('')   // 标题展示的应用名称
+const repo = ref('')   // 仓库标识 owner/name，用于相对链接拼接
+const source = ref('')   // 源码外链地址（需白名单校验）
+const raw = ref('')   // README 原文（Markdown 源文本）
+const loading = ref(true)   // 首次加载中
+const errorMsg = ref('')   // 拉取失败原因
 
 // ---------- 完整 Markdown 渲染（GitHub 兼容） ----------
 // markdown-it 默认 preset 已支持：标题 / 表格 / 删除线(~~) / 自动链接 /
@@ -90,6 +109,7 @@ md.renderer.rules.link_open = function (tokens, idx, options, env, self) {
 // Vue 3 的 :href 绑定不会自动过滤 javascript: 等危险协议，必须显式校验
 const safeSource = computed(() => (/^https?:\/\//i.test(source.value || '') ? source.value : ''))
 
+// --- 渲染 README：每次刷新仓库上下文后经 DOMPurify 净化输出 ---
 const html = computed(() => {
   if (!raw.value) return `<p class="md-empty">${t('appreadme.noContent')}</p>`
   // 每次渲染前刷新仓库上下文，保证相对链接正确拼接
@@ -106,6 +126,7 @@ const html = computed(() => {
   })
 })
 
+// --- 挂载后拉取该应用的 README 与仓库信息 ---
 onMounted(async () => {
   try {
     const r = await appStoreApi.readme(props.app.id)

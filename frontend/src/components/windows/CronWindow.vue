@@ -1,3 +1,22 @@
+<!--
+  CronWindow.vue — 计划任务管理窗口
+  ==========================================================
+  业务作用：
+    管理服务器上的计划任务（cron）。支持两种创建方式：常规记录（直接填 cron
+    表达式 + 命令）和标准记录（按周期/周几/每月几日 + 时间自动生成 cron 表达式，
+    提供 shell 命令、备份容器、访问 URL、清理日志、同步时间五类任务）。列表
+    可执行、启停、删除任务，删除为高风险操作需面板密码二次确认。
+  后端模块：
+    /api/cron 的 list / create / update / run / delete。
+  关键状态：
+    - tasks      任务列表
+    - platform   宿主平台（决定 cron 支持范围提示）
+    - form       常规记录表单（cron 表达式 + 命令）
+    - std        标准记录表单（周期/时间/任务类型）
+    - confirm    删除任务的密码二次确认
+  打开方式：
+    由桌面/任务栏（或「任务」聚合窗口）打开，无 props。
+-->
 <template>
   <div class="cron-window">
     <div class="toolbar">
@@ -140,26 +159,27 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { cronApi } from '../../api'
-import { Plus, Play, Power, Trash2, ChevronDown } from 'lucide-vue-next'
-import ConfirmDialog from '../ConfirmDialog.vue'
+import { ref, onMounted, computed } from 'vue'   // 状态/挂载加载/星期文案
+import { useI18n } from 'vue-i18n'   // 翻译函数
+import { cronApi } from '../../api'   // /api/cron：计划任务接口
+import { Plus, Play, Power, Trash2, ChevronDown } from 'lucide-vue-next'   // 工具栏/行操作图标
+import ConfirmDialog from '../ConfirmDialog.vue'   // 删除任务的密码二次确认对话框
 
 const { t } = useI18n()
 
-const tasks = ref([])
-const platform = ref('')
+const tasks = ref([])   // 计划任务列表
+const platform = ref('')   // 宿主平台（提示 cron 支持范围）
 // 高风险操作二次确认状态（删除计划任务需输入面板密码）
 const confirm = ref({ show: false, target: null })
-const showMenu = ref(false)
-const showRegular = ref(false)
-const showStandard = ref(false)
+const showMenu = ref(false)   // 添加任务下拉菜单
+const showRegular = ref(false)   // 常规记录弹窗
+const showStandard = ref(false)   // 标准记录弹窗
 
 // 常规记录表单
 const form = ref({ name: '', schedule: '0 3 * * *', command: '' })
 // 标准记录表单
 const std = ref(defaultStd())
+// 星期下拉文案（顺序与 Date.getDay() 一致，0=周日）
 const weekdays = computed(() => [
   t('cron.weekdays.sun'), t('cron.weekdays.mon'), t('cron.weekdays.tue'),
   t('cron.weekdays.wed'), t('cron.weekdays.thu'), t('cron.weekdays.fri'), t('cron.weekdays.sat')
@@ -179,7 +199,7 @@ function typeText(type) {
   return key ? t(key) : (type || t('cron.shell'))
 }
 
-// 标准记录表单默认值
+// 标准记录表单默认值：默认分组「默认」、每天 02:30 执行
 function defaultStd() {
   return {
     name: '',
@@ -194,6 +214,7 @@ function defaultStd() {
   }
 }
 
+// --- 加载任务列表与平台信息 ---
 async function load() {
   try {
     const data = await cronApi.list()
@@ -209,19 +230,21 @@ function toggleMenu() {
   showMenu.value = !showMenu.value
 }
 
+// 打开常规记录弹窗：重置表单并关闭下拉
 function openRegular() {
   showMenu.value = false
   form.value = { name: '', schedule: '0 3 * * *', command: '' }
   showRegular.value = true
 }
 
+// 打开标准记录弹窗：重置表单并关闭下拉
 function openStandard() {
   showMenu.value = false
   std.value = defaultStd()
   showStandard.value = true
 }
 
-// 将周期 + 时间转换为 cron 表达式
+// 将周期 + 时间转换为 cron 表达式（周几/每月几日分别落到对应字段）
 function stdSchedule() {
   const [h, m] = std.value.time ? std.value.time.split(':') : ['0', '0']
   const hh = h || '0'
@@ -231,6 +254,7 @@ function stdSchedule() {
   return `${mm} ${hh} * * *`
 }
 
+// --- 保存常规记录 ---
 async function saveRegular() {
   if (!form.value.name.trim() || !form.value.command.trim()) {
     alert(t('cron.nameContentRequired'))
@@ -250,12 +274,13 @@ async function saveRegular() {
   }
 }
 
+// --- 保存标准记录（任务类型 + 自动生成的 cron 表达式） ---
 async function saveStandard() {
   if (!std.value.name.trim()) {
     alert(t('cron.nameRequired'))
     return
   }
-  if (std.value.taskType !== 'sync_time' && !std.value.content.trim()) {
+  if (std.value.taskType !== 'sync_time' && !std.value.content.trim()) {   // 同步时间类无需内容
     alert(t('cron.contentRequired'))
     return
   }
@@ -276,6 +301,7 @@ async function saveStandard() {
   }
 }
 
+// --- 立即执行一次任务 ---
 async function runNow(task) {
   try {
     await cronApi.run(task.id)
@@ -286,6 +312,7 @@ async function runNow(task) {
   }
 }
 
+// --- 启停任务 ---
 async function toggleEnable(task) {
   try {
     await cronApi.update(task.id, { enabled: !task.enabled })
@@ -305,7 +332,7 @@ function remove(task) {
 async function doRemove() {
   const task = confirm.value.target
   confirm.value.show = false
-  if (!task) return
+  if (!task) return   // 无目标任务直接返回（防御性）
   try {
     await cronApi.delete(task.id)
     await load()
@@ -315,7 +342,7 @@ async function doRemove() {
   }
 }
 
-onMounted(load)
+onMounted(load)   // 进入窗口即加载任务列表
 </script>
 
 <style scoped>

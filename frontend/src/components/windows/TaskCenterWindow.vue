@@ -1,3 +1,28 @@
+<!--
+  任务中心窗口（Task Center）
+
+  这个窗口做什么：
+    面板「任务中心」应用。应用商店发起的安装 / 卸载任务在这里集中展示
+    实时进度：左侧是任务卡片列表（进行中 / 成功 / 失败），右侧是当前选中
+    任务的实时日志。日志每 2 秒轮询刷新，运行中的任务会自动滚动跟随底部。
+    result 类型的日志行会被解析成「安装成功 / 失败」摘要（含应用名、
+    容器名、版本、端口），其余日志原样显示。
+
+  用到的后端模块：
+    /api/tasks/*（管理员权限）——list 任务列表、{id}/log 任务日志。
+    任务本身由后端异步执行，本窗口只负责查看进度与删除历史记录。
+
+  关键状态：
+    tasks      任务列表，左侧卡片数据源
+    selected   当前选中的任务（右侧日志面板跟随它）
+    logLines   选中任务的日志行
+    timer      2 秒一次的轮询定时器（退出窗口时清理）
+    confirm    删除任务的二次确认（需输入面板密码）
+
+  怎么被打开：
+    桌面「任务中心」应用，或「计划任务 / 任务中心」聚合窗口（TasksWindow）
+    的「任务中心」页签内嵌。
+-->
 <template>
   <div class="tasks-window">
     <!-- 顶部工具栏 -->
@@ -74,30 +99,32 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted, onUnmounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { tasksApi } from '../../api'
-import { ListChecks, Trash2, RefreshCw } from 'lucide-vue-next'
-import ConfirmDialog from '../ConfirmDialog.vue'
+import { ref, nextTick, onMounted, onUnmounted } from 'vue'   // 响应式状态、DOM 更新后回调、轮询定时器的启停钩子
+import { useI18n } from 'vue-i18n'   // 取 t()，任务状态文案跟随面板语言
+import { tasksApi } from '../../api'   // 任务中心后端能力：/api/tasks/* 的封装
+import { ListChecks, Trash2, RefreshCw } from 'lucide-vue-next'   // 标题 / 删除 / 刷新图标
+import ConfirmDialog from '../ConfirmDialog.vue'   // 高风险操作确认框（删除任务要求输入面板密码）
 
 const { t } = useI18n()
 
-const tasks = ref([])
-const selected = ref(null)
-const logLines = ref([])
-const logBox = ref(null)
-const loading = ref(false)
+const tasks = ref([])        // 任务列表，左侧卡片数据源
+const selected = ref(null)   // 当前选中的任务对象
+const logLines = ref([])     // 选中任务的日志行（右侧面板数据源）
+const logBox = ref(null)     // 日志滚动容器 DOM 引用，用于自动滚到底部
+const loading = ref(false)   // 手动刷新时的旋转态
 // 高风险操作二次确认状态（删除任务需输入面板密码）
 const confirm = ref({ show: false, mode: 'password', title: '', message: '', requiredText: '', inputLabel: '', placeholder: '', action: null })
 
-let timer = null
+let timer = null   // 2 秒轮询的定时器句柄，卸载窗口时清掉
 
+// --- 任务状态 → 界面文案（进行中 / 失败 / 已完成） ---
 function statusText(task) {
   if (task.status === 'running') return t('taskcenter.statusRunning')
   if (task.status === 'error') return t('taskcenter.statusFailed')
   return t('taskcenter.statusCompleted')
 }
 
+// --- 时间精简：去掉「T」与毫秒小数，只留到秒 ---
 function fmtTime(t) {
   if (!t) return ''
   return String(t).replace('T', ' ').replace(/\.\d+.*$/, '').slice(0, 19)
@@ -138,6 +165,7 @@ function lineClass(l) {
   return l.type || 'log'
 }
 
+// --- 拉取任务列表，并让选中项始终跟随列表里同名任务的最新状态 ---
 async function refreshList() {
   try {
     const r = await tasksApi.list()
@@ -145,16 +173,17 @@ async function refreshList() {
     // 保持选中的任务对象同步最新状态
     if (selected.value) {
       const cur = tasks.value.find(t => t.id === selected.value.id)
-      selected.value = cur || null
+      selected.value = cur || null    // 任务已从列表消失（被删）时清空选中
     }
   } catch (e) { /* 忽略轮询错误 */ }
 }
 
+// --- 拉取选中任务的日志：运行中强制滚到底，否则仅在原本就在底部时跟随 ---
 async function refreshLog() {
   if (!selected.value) return
   try {
     const wasAtBottom = logBox.value &&
-      (logBox.value.scrollHeight - logBox.value.scrollTop - logBox.value.clientHeight) < 40
+      (logBox.value.scrollHeight - logBox.value.scrollTop - logBox.value.clientHeight) < 40   // 距底部 40px 内视为已在底部
     const r = await tasksApi.log(selected.value.id)
     logLines.value = r.lines || []
     // 任务运行中强制跟随底部，否则仅在原位于底部时跟随
@@ -164,6 +193,7 @@ async function refreshLog() {
   } catch (e) { /* 忽略轮询错误 */ }
 }
 
+// --- 全量刷新：列表 + 日志一次拉齐 ---
 async function refreshAll() {
   loading.value = true
   await refreshList()
@@ -171,14 +201,15 @@ async function refreshAll() {
   loading.value = false
 }
 
+// --- 点击任务卡片：切换选中项并立即拉一次日志 ---
 function select(t) {
   selected.value = t
-  logLines.value = []
+  logLines.value = []    // 先清空旧日志，避免新任务短暂显示上一个任务的残留行
   refreshLog()
 }
 
 function removeSelected() {
-  if (!selected.value) return
+  if (!selected.value) return   // 未选中任何任务时按钮本身已禁用，这里是兜底
   // 高风险操作：删除任务需输入面板密码确认后才真正执行（title 硬编码中文，缺失 i18n 键的回退先例）
   confirm.value = {
     show: true,
@@ -196,7 +227,7 @@ function removeSelected() {
 async function doConfirm() {
   const a = confirm.value.action
   confirm.value.show = false
-  if (!a) return
+  if (!a) return   // 无待删除任务（异常触发）时直接退出
   try {
     await tasksApi.remove(a.id)
     selected.value = null
@@ -213,11 +244,11 @@ onMounted(async () => {
     const running = tasks.value.find(t => t.status === 'running') || tasks.value[0]
     select(running)
   }
-  timer = setInterval(refreshAll, 2000)
+  timer = setInterval(refreshAll, 2000)   // 每 2 秒轮询一次列表与日志，保持任务进度实时
 })
 
 onUnmounted(() => {
-  if (timer) clearInterval(timer)
+  if (timer) clearInterval(timer)   // 窗口关闭后停止轮询，避免后台请求泄漏
 })
 </script>
 

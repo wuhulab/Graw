@@ -1,3 +1,11 @@
+<!--
+  文件管理器窗口（后端 /api/files 模块）
+  作用：浏览/上传/下载/编辑/压缩/解压/改权限/复制/重命名/删除服务器文件，支持拖拽上传与右键菜单。
+  后端模块：/api/files（list/read/write/delete/mkdir/rename/chmod/copy/compress/extract/upload/download）。
+  关键状态：items（当前目录条目）、parent（上级目录）、path（当前路径）、uploadingFiles（批量上传进度）、contextMenu（右键菜单）。
+  打开方式：桌面「文件」卡片；双击图片/视频走 MediaWindow，文本文件走 EditorWindow，右键可开终端。
+  下载必须带 Bearer 头（window.open 无法携带），故用 fetch+blob 触发下载（见 download）。
+-->
 <template>
   <div style="display:flex; flex-direction:column; height:100%;" @click="closeMenus"
     @dragover.prevent="onDragOver"
@@ -72,31 +80,40 @@
 </template>
 
 <script setup>
+// 响应式状态与生命周期钩子
 import { ref, onMounted } from 'vue'
+// 国际化
 import { useI18n } from 'vue-i18n'
+// 文件管理 API 与字节格式化工具
 import { filesApi, formatBytes } from '../../api'
+// 统一的后端错误消息提取（读取 detail 或 i18n 兜底）
 import { getApiErrorMessage } from '../../utils/apiErrors'
+// 登录态 store：下载接口需带 Bearer token
 import { auth } from '../../store/auth'
+// 图标（返回上级 / 目录 / 文本 / 图片 / 视频 / 上传）
 import { ArrowUp, Folder, FileText, Image as ImageIcon, Film, Upload } from 'lucide-vue-next'
 
 const { t } = useI18n()
-const items = ref([])
-const parent = ref(null)
-const path = ref('')
-const pathInput = ref('')
-const newMenuOpen = ref(false)
-const contextMenu = ref({ show: false, x: 0, y: 0, item: null })
+const items = ref([])            // 当前目录条目列表
+const parent = ref(null)         // 上级目录路径（null 表示已到根）
+const path = ref('')             // 当前路径
+const pathInput = ref('')        // 地址栏输入值
+const newMenuOpen = ref(false)   // 「新建」下拉菜单显隐
+const contextMenu = ref({ show: false, x: 0, y: 0, item: null })   // 右键菜单
 // 拖拽上传状态
-const dragOver = ref(false)
-const uploadingFiles = ref([])
-const uploadIdx = ref(0)
+const dragOver = ref(false)      // 是否显示拖拽上传遮罩
+const uploadingFiles = ref([])   // 待批量上传的文件列表（驱动进度条）
+const uploadIdx = ref(0)         // 当前正在上传的文件序号（进度条用）
 
+// 子窗口事件：打开终端 / 编辑器 / 媒体预览（由父窗口接收创建）
 const emit = defineEmits(['openTerminal', 'openEditor', 'openMedia'])
+// 父窗口传入：初始目录路径
 const props = defineProps({ path: String })
 
+// --- 动作：加载指定目录的文件列表 ---
 async function load(p) {
   try {
-    const r = await filesApi.list(p)
+    const r = await filesApi.list(p)   // 调用 /api/files/list
     items.value = r.items
     parent.value = r.parent
     path.value = r.path
@@ -106,58 +123,66 @@ async function load(p) {
   }
 }
 
+// --- 动作：刷新 / 跳转 / 返回上级（三个导航入口） ---
 function refresh() { load(path.value) }
 function go() { load(pathInput.value || '') }
 function goUp() { if (parent.value) load(parent.value) }
 
+// 按扩展名判断是否图片（用于选择图标与媒体预览）
 function isImage(name) {
   const ext = name.split('.').pop().toLowerCase()
   return ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg'].includes(ext)
 }
 
+// 按扩展名判断是否视频
 function isVideo(name) {
   const ext = name.split('.').pop().toLowerCase()
   return ['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext)
 }
 
+// --- 动作：双击条目按类型打开（目录进入、图片/视频媒体预览、小文本文件走编辑器） ---
 function openItem(it) {
   if (it.is_dir) load(it.path)
   else if (isImage(it.name)) emit('openMedia', { path: it.path, name: it.name, type: 'image' })
   else if (isVideo(it.name)) emit('openMedia', { path: it.path, name: it.name, type: 'video' })
-  else if (it.size < 2 * 1024 * 1024) openEditorWindow(it)
+  else if (it.size < 2 * 1024 * 1024) openEditorWindow(it)   // 超过 2MB 不自动编辑，避免一次拉取过大内容
 }
 
+// --- 动作：读取文本内容并打开编辑窗口 ---
 async function openEditorWindow(it) {
   try {
-    const r = await filesApi.read(it.path)
+    const r = await filesApi.read(it.path)   // 调用 /api/files/read
     emit('openEditor', { path: r.path, content: r.content })
   } catch (e) {
     alert(t('files.readFailed', { error: getApiErrorMessage(e, t) }))
   }
 }
 
+// --- 动作：删除文件（先原生确认） ---
 async function remove(it) {
   if (!confirm(t('files.confirmDelete', { name: it.name }))) return
   try {
-    await filesApi.remove(it.path)
+    await filesApi.remove(it.path)   // 调用 /api/files/delete
     refresh()
   } catch (e) {
     alert(t('files.deleteFailed', { error: getApiErrorMessage(e, t) }))
   }
 }
 
+// --- 动作：重命名文件（替换路径最后一段，保留原分隔符） ---
 async function renameItem(it) {
   const name = prompt(t('files.renamePrompt'), it.name)
   if (!name || name === it.name) return
   const dst = it.path.replace(/[\\/][^\\/]+$/, m => m[0] + name)
   try {
-    await filesApi.rename(it.path, dst)
+    await filesApi.rename(it.path, dst)   // 调用 /api/files/rename
     refresh()
   } catch (e) {
     alert(t('files.renameFailed', { error: getApiErrorMessage(e, t) }))
   }
 }
 
+// --- 动作：新建文件夹（沿用当前路径的分隔符风格拼出新路径） ---
 async function createFolder() {
   newMenuOpen.value = false
   const name = prompt(t('files.newFolderPrompt'))
@@ -165,13 +190,14 @@ async function createFolder() {
   const sep = path.value.includes('\\') ? '\\' : '/'
   const newPath = path.value.replace(/[\\/]$/, '') + sep + name
   try {
-    await filesApi.mkdir(newPath)
+    await filesApi.mkdir(newPath)   // 调用 /api/files/mkdir
     refresh()
   } catch (e) {
     alert(t('files.createFailed', { error: getApiErrorMessage(e, t) }))
   }
 }
 
+// --- 动作：新建空文件 ---
 async function createFile() {
   newMenuOpen.value = false
   const name = prompt(t('files.newFilePrompt'))
@@ -179,7 +205,7 @@ async function createFile() {
   const sep = path.value.includes('\\') ? '\\' : '/'
   const newPath = path.value.replace(/[\\/]$/, '') + sep + name
   try {
-    await filesApi.write(newPath, '')
+    await filesApi.write(newPath, '')   // 调用 /api/files/write 写空内容创建
     refresh()
   } catch (e) {
     alert(t('files.createFailed', { error: getApiErrorMessage(e, t) }))
@@ -214,15 +240,18 @@ function formatTime(t) {
   return new Date(t * 1000).toLocaleString()
 }
 
+// --- 动作：关闭所有弹出菜单（点击窗口空白处/选择菜单项后调用） ---
 function closeMenus() {
   newMenuOpen.value = false
   contextMenu.value.show = false
 }
 
+// 记录右键位置与目标条目，弹出上下文菜单
 function onContextMenu(e, it) {
   contextMenu.value = { show: true, x: e.clientX, y: e.clientY, item: it }
 }
 
+// ---------- 右键菜单动作：取出目标条目后分发到对应操作 ----------
 function menuRename() {
   const it = contextMenu.value.item
   closeMenus()
@@ -235,11 +264,13 @@ function menuDelete() {
   if (it) remove(it)
 }
 
+// 在当前目录打开终端
 function menuOpenTerminal() {
   closeMenus()
   if (path.value) emit('openTerminal', path.value)
 }
 
+// 右键「打开编辑」：目录不可编辑，图片/视频走媒体预览，其余走文本编辑器
 function menuEdit() {
   const it = contextMenu.value.item
   closeMenus()
@@ -249,6 +280,7 @@ function menuEdit() {
   else openEditorWindow(it)
 }
 
+// 按扩展名判断是否压缩包（决定右键菜单是否显示「解压」）
 function isArchive(name) {
   const ext = name.split('.').pop().toLowerCase()
   return ['zip', 'tar', 'gz', 'tgz', 'bz2', 'xz', '7z', 'rar'].includes(ext) || name.endsWith('.tar.gz')
@@ -260,6 +292,7 @@ function menuDownload() {
   if (it && !it.is_dir) download(it)
 }
 
+// --- 动作：复制到新路径（默认原名加 _copy 后缀） ---
 async function menuCopy() {
   const it = contextMenu.value.item
   closeMenus()
@@ -269,6 +302,7 @@ async function menuCopy() {
   try { await filesApi.copy(it.path, dst); refresh() } catch (e) { alert(t('files.copyFailed', { error: getApiErrorMessage(e, t) })) }
 }
 
+// --- 动作：压缩为 zip / tar.gz（zip 走 .zip，其余格式统一 .tar.gz） ---
 async function menuCompress() {
   const it = contextMenu.value.item
   closeMenus()
@@ -280,6 +314,7 @@ async function menuCompress() {
   try { await filesApi.compress([it.path], archive, fmt); refresh() } catch (e) { alert(t('files.compressFailed', { error: getApiErrorMessage(e, t) })) }
 }
 
+// --- 动作：解压到指定目录（默认当前目录） ---
 async function menuExtract() {
   const it = contextMenu.value.item
   closeMenus()
@@ -289,17 +324,19 @@ async function menuExtract() {
   try { await filesApi.extract(it.path, dest); refresh() } catch (e) { alert(t('files.extractFailed', { error: getApiErrorMessage(e, t) })) }
 }
 
+// --- 动作：修改权限（八进制 mode，如 755） ---
 async function menuChmod() {
   const it = contextMenu.value.item
   closeMenus()
   if (!it) return
   const modeStr = prompt(t('files.permissionPrompt'), '755')
   if (!modeStr) return
-  const mode = parseInt(modeStr, 8)
+  const mode = parseInt(modeStr, 8)   // 权限值按八进制解析（0755 语义）
   if (isNaN(mode)) { alert(t('files.permissionInvalid')); return }
   try { await filesApi.chmod(it.path, mode); refresh() } catch (e) { alert(t('files.permissionFailed', { error: getApiErrorMessage(e, t) })) }
 }
 
+// --- 动作：工具栏选择文件上传到当前目录 ---
 async function onUpload(e) {
   const file = e.target.files[0]
   if (!file) return
@@ -307,7 +344,7 @@ async function onUpload(e) {
     const fd = new FormData()
     fd.append('path', path.value)
     fd.append('file', file)
-    await filesApi.upload(fd)
+    await filesApi.upload(fd)   // 调用 /api/files/upload
     refresh()
   } catch (e) {
     alert(t('files.uploadFailed', { error: getApiErrorMessage(e, t) }))
@@ -324,6 +361,7 @@ function onDragLeave(e) {
   if (e.relatedTarget === null) dragOver.value = false
 }
 
+// --- 动作：把拖入的文件逐个上传到当前目录并更新进度条 ---
 async function onDrop(e) {
   dragOver.value = false
   const files = Array.from(e.dataTransfer?.files || [])
@@ -347,7 +385,7 @@ async function onDrop(e) {
 }
 
 onMounted(async () => {
-  await load(props.path || '')
+  await load(props.path || '')   // 挂载后进入父窗口指定的初始目录
 })
 </script>
 

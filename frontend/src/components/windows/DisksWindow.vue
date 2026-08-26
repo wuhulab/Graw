@@ -1,6 +1,14 @@
+<!--
+  磁盘管理窗口（后端 /api/disks 模块）
+  作用：列出本机块设备与分区（容量 / 使用率 / 挂载点 / 文件系统），并允许对未挂载的
+        非系统盘分区执行挂载（挂载到指定目录）。
+  后端模块：/api/disks（list 取块设备与分区信息、mount 挂载到指定目录）。
+  关键状态：disks（原始磁盘列表）、partitions（平铺后的分区视图）、mountDlg（挂载弹窗）、5s 轮询刷新。
+  打开方式：桌面「磁盘」卡片或侧边栏入口；系统盘分区标记 system，禁止挂载操作。
+-->
 <template>
   <div style="display:flex; flex-direction:column; height:100%;">
-    <!-- 顶部工具栏 -->
+    <!-- 顶部工具栏：刷新 + 分区计数 -->
     <div class="toolbar">
       <button class="btn" @click="refresh">{{ $t('disks.refresh') }}</button>
       <span v-if="loading" style="margin-left:auto;color:#888;">{{ $t('common.loading') }}</span>
@@ -84,18 +92,24 @@
 </template>
 
 <script setup>
+// 引入响应式状态与生命周期钩子
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+// 国际化：界面文案统一走 i18n key
 import { useI18n } from 'vue-i18n'
+// 磁盘管理 API：封装 /api/disks 请求（list / mount）
 import { disksApi, formatBytes } from '../../api'
 
 const { t } = useI18n()
-// 磁盘列表（内含分区），加载状态与挂载弹窗状态
+// 磁盘列表（后端返回的原始结构，含每块磁盘的分区）
 const disks = ref([])
+// 是否正在加载
 const loading = ref(false)
+// 挂载弹窗状态：show 控制显隐，device/mountpoint 为挂载参数，msg/err/busy 控制提示与提交中
 const mountDlg = ref({ show: false, name: '', device: '', mountpoint: '/mnt/', msg: '', err: false, busy: false })
+// 轮询定时器句柄，卸载时清理
 let timer = null
 
-// 把所有磁盘的分区平铺成单层列表，便于直接展示
+// --- 派生视图：把每块磁盘的分区平铺成单层列表，便于表格直接渲染 ---
 const partitions = computed(() => {
   const out = []
   for (const d of disks.value) {
@@ -106,12 +120,12 @@ const partitions = computed(() => {
   return out
 })
 
-// 刷新磁盘与分区信息
+// --- 动作：拉取磁盘与分区信息 ---
 async function refresh() {
   loading.value = true
   try {
-    const data = await disksApi.list()
-    disks.value = data.disks || []
+    const data = await disksApi.list()          // 调用 /api/disks/list 获取块设备与分区
+    disks.value = data.disks || []              // 保存原始磁盘列表（computed 会拍平成分区行）
   } catch (e) {
     console.error(e)
     alert(t('disks.loadFailed', { error: e.response?.data?.detail || e.message }))
@@ -120,14 +134,15 @@ async function refresh() {
   }
 }
 
-// 打开挂载弹窗
+// --- 动作：打开挂载弹窗并预填设备路径 ---
 function openMount(p) {
   mountDlg.value = { show: true, name: p.name, device: p.device, mountpoint: '/mnt/' + p.name, msg: '', err: false, busy: false }
 }
 
-// 执行挂载
+// --- 动作：调用后端执行挂载 ---
 async function doMount() {
   const d = mountDlg.value
+  // 挂载点不能为空：没有目标目录挂载无意义
   if (!d.mountpoint.trim()) {
     d.msg = t('disks.mountPointRequired')
     d.err = true
@@ -136,12 +151,12 @@ async function doMount() {
   d.busy = true
   d.msg = ''
   try {
-    const res = await disksApi.mount(d.device, d.mountpoint.trim())
+    const res = await disksApi.mount(d.device, d.mountpoint.trim())   // 调用 /api/disks/mount
     if (res.ok) {
       d.msg = res.message
       d.err = false
       await refresh()
-      setTimeout(() => { d.show = false }, 800)
+      setTimeout(() => { d.show = false }, 800)     // 稍候再关弹窗，让用户看到成功提示
     } else {
       d.msg = res.message || t('disks.mountFailedFallback')
       d.err = true
@@ -154,11 +169,12 @@ async function doMount() {
   }
 }
 
+// 打开即加载数据，并每 5 秒轮询刷新（贴近实时监控磁盘使用率）
 onMounted(() => {
   refresh()
-  timer = setInterval(refresh, 5000)
+  timer = setInterval(refresh, 5000)   // 5s 轮询：磁盘状态变化需及时反映
 })
-onUnmounted(() => clearInterval(timer))
+onUnmounted(() => clearInterval(timer))   // 窗口关闭时清理定时器，避免内存/请求泄漏
 </script>
 
 <style scoped>

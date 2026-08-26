@@ -1,3 +1,7 @@
+<!-- Graw 单页应用（SPA）入口 HTML 外壳。
+     浏览器加载后仅含一个 #app 挂载点；Vue 经 /src/main.js 模块脚本启动并渲染整个桌面界面。
+     后端 API 经 Vite 代理（开发期）或同源托管（生产）提供，本页不含任何业务 HTML。 -->
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -7,6 +11,7 @@
   </head>
   <body>
     <div id="app"></div>
+    <!-- 入口模块：Vite 以 ES Module 方式加载并启动 Vue 应用 -->
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

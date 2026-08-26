@@ -1,3 +1,28 @@
+<!--
+  网站统计窗口（Web Stats）
+
+  这个窗口做什么：
+    面板「网站统计」功能。直接解析服务器上的 nginx 访问日志，
+    统计 PV / UV / 独立 IP / 疑似爬虫数，并用 ECharts 绘制：
+      - PV / UV 走势折线；
+      - 状态码分布饼图；
+      - 热门页面 / 热门 IP / 来源站点 Top10 横向条形图。
+    工具栏可选日志路径（留空自动探测）、统计天数、按域名过滤。
+    日志过大时后端会截断尾部并返回 truncated 标记，界面给出提示。
+
+  用到的后端模块：
+    /api/webstats/*（管理员权限）——logs 探测可用日志路径、
+    analyze 解析统计（传 log_path / days / domain）。
+
+  关键状态：
+    logFiles / logPath   可用日志路径与当前选择
+    days / domain        统计天数与域名过滤
+    stats                后端返回的统计结果（卡片 + 图表数据源）
+    trendChart 等五个 ECharts 实例   各图表实例（卸载时统一 dispose）
+
+  怎么被打开：
+    桌面「网站统计」应用。
+-->
 <template>
   <div class="webstats-window">
     <!-- 工具栏：日志路径 / 统计天数 / 域名过滤 / 刷新 -->
@@ -74,18 +99,18 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
-import * as echarts from 'echarts'
-import { BarChart3, RefreshCw } from 'lucide-vue-next'
-import { webstatsApi } from '../../api'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'   // 响应式状态、图表生命周期钩子
+import * as echarts from 'echarts'   // ECharts 图表库
+import { BarChart3, RefreshCw } from 'lucide-vue-next'   // 空状态 / 刷新图标
+import { webstatsApi } from '../../api'   // 网站统计后端能力：/api/webstats/* 的封装
 
-const logFiles = ref([])
-const logPath = ref('')
-const days = ref(7)
-const domain = ref('')
-const loading = ref(false)
-const err = ref('')
-const stats = ref(null)
+const logFiles = ref([])   // 后端探测到的可用日志路径列表
+const logPath = ref('')    // 当前选中的日志路径（空 = 自动探测）
+const days = ref(7)        // 统计天数范围
+const domain = ref('')     // 按域名过滤（空 = 不过滤）
+const loading = ref(false) // 分析请求进行中
+const err = ref('')        // 分析失败提示
+const stats = ref(null)    // 统计结果（卡片与图表的数据源）
 
 // 各图表容器与实例（内存释放：统一 dispose）
 const trendRef = ref(null)
@@ -102,9 +127,10 @@ let refererChart = null
 // 千分位格式化
 function fmt(n) {
   if (n == null) return '0'
-  return Number(n).toLocaleString()
+  return Number(n).toLocaleString()   // 大数字加千分位，如 12345 → 12,345
 }
 
+// --- 探测可用的 nginx 日志路径（供下拉选择） ---
 async function loadLogs() {
   try {
     const r = await webstatsApi.logs()
@@ -115,6 +141,7 @@ async function loadLogs() {
   }
 }
 
+// --- 触发分析：拿回统计结果后等 DOM 挂载图表容器再渲染 ---
 async function load() {
   loading.value = true
   err.value = ''
@@ -187,14 +214,14 @@ function renderStatus() {
 function renderBar(el, chart, labels, values) {
   if (!el) return null
   if (!chart) chart = echarts.init(el, null, { renderer: 'canvas' })
-  const data = (labels || []).map((l, i) => ({ name: String(l), value: values[i] })).slice(0, 10)
+  const data = (labels || []).map((l, i) => ({ name: String(l), value: values[i] })).slice(0, 10)   // 只画 Top10
   chart.setOption({
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
     grid: { left: 8, right: 48, top: 8, bottom: 8, containLabel: true },
     xAxis: { type: 'value', axisLabel: { fontSize: 10 } },
     yAxis: {
       type: 'category',
-      data: data.map(d => d.name).reverse(),
+      data: data.map(d => d.name).reverse(),   // 倒序排列：ECharts 分类轴从下往上画，倒序让最高的一根落在顶部
       axisLabel: { fontSize: 10, width: 120, overflow: 'truncate' }
     },
     series: [{ type: 'bar', data: data.map(d => d.value).reverse(), itemStyle: { color: '#0a84ff' }, barMaxWidth: 16 }]
@@ -202,19 +229,20 @@ function renderBar(el, chart, labels, values) {
   return chart
 }
 
+// --- 窗口缩放时同步重绘所有图表，避免拉伸变形 ---
 function onResize() {
   ;[trendChart, statusChart, pagesChart, ipsChart, refererChart].forEach(c => c && c.resize())
 }
 
 onMounted(async () => {
-  await loadLogs()
-  await load()
+  await loadLogs()   // 先探测日志路径
+  await load()       // 再做首次分析
   window.addEventListener('resize', onResize)
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', onResize)
-  ;[trendChart, statusChart, pagesChart, ipsChart, refererChart].forEach(c => c && c.dispose())
+  ;[trendChart, statusChart, pagesChart, ipsChart, refererChart].forEach(c => c && c.dispose())   // 释放 ECharts 资源
   trendChart = statusChart = pagesChart = ipsChart = refererChart = null
 })
 </script>

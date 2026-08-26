@@ -1,3 +1,10 @@
+<!--
+  WinProcess.vue — 进程管理器窗口
+  作用：实时查看服务器进程列表（PID/名称/用户/状态/CPU%/MEM%），支持按名称搜索，
+        并对选中进程执行 KILL（强制终止）或 TERM（优雅终止）。
+  数据：列表由 /api/process/list 返回，KILL/TERM 经对应接口下发到后端。
+  打开方式：桌面快捷方式或开始菜单的「进程管理」。
+-->
 <template>
   <div class="proc-wrap">
     <div class="proc-toolbar">
@@ -38,27 +45,30 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'                  // Vue 响应式与生命周期
 
-const search = ref('')
-const processes = ref([])
+const search = ref('')            // 进程名搜索关键字
+const processes = ref([])         // 当前进程列表
 
+// 拉取进程列表（按关键字过滤）
 async function loadProcesses() {
   try {
     const r = await fetch('/api/process/list?search=' + encodeURIComponent(search.value))
     processes.value = await r.json()
-  } catch (e) {}
+  } catch (e) {}                  // 拉取失败静默，保留上一次列表
 }
+// 强制终止（SIGKILL）：不可被进程捕获，立即结束
 async function killProcess(pid) {
   await fetch(`/api/process/${pid}/kill`, { method: 'POST' })
-  await loadProcesses()
+  await loadProcesses()           // 操作后刷新列表
 }
+// 优雅终止（SIGTERM）：通知进程自行清理后退出
 async function terminateProcess(pid) {
   await fetch(`/api/process/${pid}/terminate`, { method: 'POST' })
   await loadProcesses()
 }
 
-onMounted(loadProcesses)
+onMounted(loadProcesses)          // 打开窗口即加载进程列表
 </script>
 
 <style scoped>

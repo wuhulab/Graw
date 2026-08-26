@@ -1,3 +1,25 @@
+<!--
+  VIP 授权窗口（VIP）
+
+  这个窗口做什么：
+    面板的 VIP 授权页。展示当前授权状态（是否已激活、套餐年 / 月、
+    到期时间），未激活时提供授权码输入框用于激活 / 续费。
+    授权码通过后端向固定授权服务校验，服务地址由后端决定、前端不可改。
+    激活成功后卡片刷新为已激活状态；购买入口跳转爱发电商品页。
+
+  用到的后端模块：
+    /api/vip/*（端点内自行鉴权）——状态读取与激活校验均封装在
+    全局 store/vip（refreshVip / activateVip）里，本窗口只消费状态。
+
+  关键状态：
+    vip          全局 VIP 状态（来自 store/vip，含 vip / vip_until / plan）
+    code         授权码输入框
+    activating   激活请求进行中
+    msg / msgType   操作结果提示
+
+  怎么被打开：
+    「设置」窗口（SettingsWindow）的「VIP」页签内嵌。
+-->
 <template>
   <div class="vip">
     <div class="block">
@@ -41,20 +63,21 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { vip as vipStore, refreshVip, activateVip } from '../../store/vip'
+import { ref, computed, onMounted } from 'vue'   // 响应式状态、派生到期文案、挂载钩子
+import { useI18n } from 'vue-i18n'   // 取 t()，界面文案跟随面板语言
+import { vip as vipStore, refreshVip, activateVip } from '../../store/vip'   // 全局 VIP 状态与激活 / 刷新动作
 
 const { t } = useI18n()
 
-const code = ref('')
-const activating = ref(false)
-const msg = ref('')
-const msgType = ref('')
+const code = ref('')          // 授权码输入框内容
+const activating = ref(false) // 激活请求进行中（禁用按钮）
+const msg = ref('')           // 操作结果提示
+const msgType = ref('')       // 提示类型（ok / err），决定配色
 
 // 授权码购买 / 下单地址（爱发电商品页）
 const PURCHASE_URL = 'https://ifdian.net/item/24342f98a05111f1b9445254001e7c00'
 
+// --- 到期时间格式化：Unix 时间戳 → 本地时间串（异常时回退原文） ---
 const expireText = computed(() => {
   if (!vipStore.vip_until) return '-'
   try {
@@ -68,15 +91,15 @@ const vip = computed(() => vipStore)
 
 // 激活/续费授权码
 async function activate() {
-  if (activating.value) return
+  if (activating.value) return   // 请求进行中直接退出，防止重复提交
   msg.value = ''
-  if (!code.value.trim()) { msg.value = t('vip.codeRequired'); msgType.value = 'err'; return }
+  if (!code.value.trim()) { msg.value = t('vip.codeRequired'); msgType.value = 'err'; return }   // 空授权码直接拦截
   activating.value = true
   try {
-    await activateVip(code.value.trim())
+    await activateVip(code.value.trim())   // 后端校验授权码并写入 VIP 状态
     msg.value = t('vip.activateSuccess')
     msgType.value = 'ok'
-    code.value = ''
+    code.value = ''   // 成功后清空输入框，避免误重复提交
   } catch (e) {
     msg.value = e?.response?.data?.detail || t('vip.activateFailed')
     msgType.value = 'err'
@@ -86,7 +109,7 @@ async function activate() {
 }
 
 onMounted(() => {
-  refreshVip()
+  refreshVip()   // 打开即拉取最新 VIP 状态
 })
 </script>
 

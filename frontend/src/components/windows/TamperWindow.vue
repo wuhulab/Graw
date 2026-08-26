@@ -1,3 +1,33 @@
+<!--
+  网页防篡改窗口（Tamper / 防篡改）
+
+  这个窗口做什么：
+    面板的「网页防篡改」功能。它持续监听站点根目录下受保护文件的哈希，
+    文件被非法修改或删除时自动从备份还原，并把事件推送到告警中心。
+    管理员可以：
+      - 全局开关：开启防护、临时停用 10 分钟、完全关闭；
+      - 为网站添加 / 编辑防篡改任务：配置受保护文件、忽略规则、备份与扫描间隔；
+      - 对单个站点立即备份 / 扫描、启用 / 停用；
+      - 切到「篡改记录」页签查看历史事件与还原结果。
+
+  用到的后端模块：
+    /api/tamper/*（端点内自行鉴权）——sites 站点与候选列表、history 篡改记录、
+    {site_id} 增删改、{site_id}/backup 立即备份、{site_id}/scan 立即扫描。
+    全局开关状态放在全局 store/tamper（含 WS 实时告警推送），
+    界面的全局状态徽标与「剩余临时停用分钟」都读它。
+
+  关键状态：
+    tab          当前页签（sites 防护站点 / history 篡改记录）
+    protections  已配置防篡改的站点列表
+    candidates   尚未配置防护、可添加的候选站点
+    history      篡改记录列表
+    tamperState  全局防篡改状态（来自 store/tamper，含 WS 实时更新）
+    form / editing   添加 / 编辑表单
+    confirm      删除任务的二次确认（需输入面板密码）
+
+  怎么被打开：
+    桌面「防篡改」应用图标打开。
+-->
 <template>
   <div class="tamper-window" @click="closeMenus">
     <!-- 顶部：全局状态 + 全局开关 -->
@@ -231,21 +261,21 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { ShieldAlert, ShieldCheck, History, Power, OctagonAlert } from 'lucide-vue-next'
-import { tamperApi } from '../../api'
-import { tamperState, refreshTamperStatus, enableProtection, disableForMinutes, disableManual } from '../../store/tamper'
-import ConfirmDialog from '../ConfirmDialog.vue'
+import { ref, reactive, computed, onMounted } from 'vue'   // 响应式状态、表单对象、派生文案、挂载钩子
+import { useI18n } from 'vue-i18n'   // 取 t()，界面文案跟随面板语言
+import { ShieldAlert, ShieldCheck, History, Power, OctagonAlert } from 'lucide-vue-next'   // 页签 / 全局开关 / 危险确认的图标
+import { tamperApi } from '../../api'   // 防篡改后端能力：/api/tamper/* 的封装
+import { tamperState, refreshTamperStatus, enableProtection, disableForMinutes, disableManual } from '../../store/tamper'   // 全局防篡改状态与操作（含 WS 告警）
+import ConfirmDialog from '../ConfirmDialog.vue'   // 高风险操作确认框（删除任务要求输入面板密码）
 
 const { t } = useI18n()
 
-const tab = ref('sites')
-const loading = ref(false)
-const busy = ref(false)
-const protections = ref([])
-const candidates = ref([])
-const history = ref([])
+const tab = ref('sites')      // 当前页签：'sites' 防护站点 / 'history' 篡改记录
+const loading = ref(false)    // 列表加载中（首屏与空状态判断）
+const busy = ref(false)       // 行内操作进行中（启停 / 备份 / 扫描等），用于禁用按钮
+const protections = ref([])   // 已配置防篡改的站点列表
+const candidates = ref([])    // 可添加防护的候选站点（未防护）
+const history = ref([])       // 篡改记录列表
 // 内置默认忽略规则（由后端返回；后端不可用时的兜底展示列表）
 const DEFAULT_IGNORE_PATTERNS = [
   '**/*.log', '**/*.db', '**/*.sqlite', '**/*.sqlite3', '**/*.sqlitedb',
@@ -269,7 +299,7 @@ const disabledRemainMin = computed(() => {
   if (!tamperState.disabledUntil) return 0
   const d = new Date(tamperState.disabledUntil)
   if (isNaN(d.getTime())) return 0
-  return Math.max(0, Math.ceil((d.getTime() - Date.now()) / 60000))
+  return Math.max(0, Math.ceil((d.getTime() - Date.now()) / 60000))   // 60000 = 每分钟毫秒数，不足 1 分钟向上取整
 })
 
 // 表单
@@ -306,10 +336,11 @@ function fmtTime(iso) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
+// --- 拉取全局状态 + 防护站点 + 候选站点，并同步后端默认忽略规则 ---
 async function loadAll() {
   loading.value = true
   try {
-    const [st, sites] = await Promise.all([refreshTamperStatus(), tamperApi.sites()])
+    const [st, sites] = await Promise.all([refreshTamperStatus(), tamperApi.sites()])   // 状态与站点并发拉取，减少等待
     protections.value = (sites && sites.protections) || []
     candidates.value = (sites && sites.candidates) || []
     // 以后端返回的内置默认忽略规则为准（保持一致，避免前端硬编码过期）
@@ -324,13 +355,14 @@ async function loadAll() {
   }
 }
 
+// --- 拉取篡改记录（页签「篡改记录」的数据源） ---
 async function loadHistory() {
   loading.value = true
   try {
     const r = await tamperApi.history()
-    history.value = (r && r.history) || []
+    history.value = (r && r.history) || []    // 后端无 history 字段时兜空数组
   } catch (e) {
-    history.value = []
+    history.value = []    // 拉取失败按空列表展示，避免残留旧数据误导
   } finally {
     loading.value = false
   }
@@ -340,7 +372,7 @@ async function loadHistory() {
 async function doEnable() {
   busy.value = true
   try {
-    await enableProtection()
+    await enableProtection()   // 写入后端全局开关并立即开始监控
   } catch (e) {
     alert(t('tamper.opFailed', { error: e.response?.data?.detail || e.message }))
   } finally {
@@ -349,10 +381,10 @@ async function doEnable() {
 }
 
 async function doDisable10m() {
-  if (!window.confirm(t('tamper.confirmDisable10m'))) return
+  if (!window.confirm(t('tamper.confirmDisable10m'))) return   // 临时停用会短暂暴露风险，先跟管理员确认
   busy.value = true
   try {
-    await disableForMinutes(10)
+    await disableForMinutes(10)   // 后端按分钟临时停用，到期自动恢复防护
   } catch (e) {
     alert(t('tamper.opFailed', { error: e.response?.data?.detail || e.message }))
   } finally {
@@ -367,7 +399,7 @@ function confirmDisableAll() {
 async function doDisableAll() {
   busy.value = true
   try {
-    await disableManual()
+    await disableManual()   // 后端彻底关闭全局防护（非定时，需手动再开启）
     showDisableConfirm.value = false
   } catch (e) {
     alert(t('tamper.opFailed', { error: e.response?.data?.detail || e.message }))
@@ -380,7 +412,7 @@ async function doDisableAll() {
 async function toggleSite(p) {
   busy.value = true
   try {
-    await tamperApi.update(p.site_id, { enabled: !p.enabled })
+    await tamperApi.update(p.site_id, { enabled: !p.enabled })   // 单站点启停：按当前状态取反
     await loadAll()
   } catch (e) {
     alert(t('tamper.opFailed', { error: e.response?.data?.detail || e.message }))
@@ -392,7 +424,7 @@ async function toggleSite(p) {
 async function doBackupNow(p) {
   busy.value = true
   try {
-    await tamperApi.backupNow(p.site_id)
+    await tamperApi.backupNow(p.site_id)   // 后端立即对受保护目录做一次全量备份
     alert(t('tamper.backupNowDone'))
     await loadAll()
   } catch (e) {
@@ -405,7 +437,7 @@ async function doBackupNow(p) {
 async function doScanNow(p) {
   busy.value = true
   try {
-    const r = await tamperApi.scanNow(p.site_id)
+    const r = await tamperApi.scanNow(p.site_id)   // 后端立即对比文件哈希，返回被篡改数量
     alert(t('tamper.scanNowResult', { count: r.tampered_count || 0 }))
     await loadAll()
   } catch (e) {
@@ -429,7 +461,7 @@ function doDelete(p) {
 async function doConfirm() {
   const a = confirm.value.action
   confirm.value.show = false
-  if (!a) return
+  if (!a) return   // 无待执行动作（异常触发）时直接退出
   busy.value = true
   try {
     await tamperApi.remove(a.site_id)
@@ -443,7 +475,7 @@ async function doConfirm() {
 
 // ---------- 添加 / 编辑表单 ----------
 function openAdd() {
-  editing.value = null
+  editing.value = null   // 置空编辑态，表单按「新增」渲染
   formError.value = ''
   Object.assign(form, {
     site_id: '',
@@ -451,8 +483,8 @@ function openAdd() {
     root: '',
     protected_files: '',
     ignore_patterns: '',
-    backup_interval_minutes: 60,
-    scan_interval_seconds: 15,
+    backup_interval_minutes: 60,   // 默认 60 分钟做一次快照
+    scan_interval_seconds: 15,     // 默认 15 秒扫一次哈希
   })
   formOpen.value = true
 }
@@ -464,7 +496,7 @@ function openEdit(p) {
     site_id: p.site_id,
     site_name: p.site_name || p.site_id,
     root: p.root || '',
-    protected_files: (p.protected_files || []).join('\n'),
+    protected_files: (p.protected_files || []).join('\n'),   // 数组拼回换行符，弹窗文本域按行展示
     ignore_patterns: (p.ignore_patterns || []).join('\n'),
     backup_interval_minutes: p.backup_interval_minutes,
     scan_interval_seconds: p.scan_interval_seconds,
@@ -472,6 +504,7 @@ function openEdit(p) {
   formOpen.value = true
 }
 
+// --- 选了候选站点后自动带出站点名与根目录，省去手填 ---
 function onSiteChange() {
   const c = candidates.value.find((x) => x.site_id === form.site_id)
   if (!c) return
@@ -480,22 +513,22 @@ function onSiteChange() {
 }
 
 async function saveForm() {
-  if (saving.value) return
+  if (saving.value) return   // 提交进行中直接退出，防止重复保存
   formError.value = ''
   const body = {
     site_id: form.site_id,
     site_name: form.site_name || form.site_id,
     root: form.root,
-    protected_files: (form.protected_files || '').split('\n').map((s) => s.trim()).filter(Boolean),
+    protected_files: (form.protected_files || '').split('\n').map((s) => s.trim()).filter(Boolean),   // 文本域按行拆回数组
     ignore_patterns: (form.ignore_patterns || '').split('\n').map((s) => s.trim()).filter(Boolean),
     backup_interval_minutes: form.backup_interval_minutes,
     scan_interval_seconds: form.scan_interval_seconds,
   }
-  if (!body.root) { formError.value = t('tamper.rootRequired'); return }
-  if (body.protected_files.length === 0) { formError.value = t('tamper.protectedRequired'); return }
+  if (!body.root) { formError.value = t('tamper.rootRequired'); return }                    // 根目录必填，否则无从监听
+  if (body.protected_files.length === 0) { formError.value = t('tamper.protectedRequired'); return }   // 至少一个受保护文件才有意义
   if (editing.value) {
     if (!editing.value.site_id) { formError.value = t('tamper.siteRequired'); return }
-    body.site_id = editing.value.site_id
+    body.site_id = editing.value.site_id   // 编辑态沿用原站点 id，站点本身不可改
   } else if (!body.site_id) {
     formError.value = t('tamper.siteRequired')
     return
@@ -514,11 +547,12 @@ async function saveForm() {
 }
 
 // ---------- 右键菜单 ----------
+// 点击窗口空白处收起右键菜单（模板根节点绑定了 closeMenus）
 function closeMenus() { ctxMenu.value.show = false }
 
 onMounted(() => {
-  loadAll()
-  loadHistory()
+  loadAll()        // 打开即拉取全局状态与防护站点
+  loadHistory()    // 同时预拉篡改记录，切页签时无需再等
 })
 </script>
 

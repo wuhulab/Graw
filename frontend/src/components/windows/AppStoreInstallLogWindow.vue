@@ -1,3 +1,22 @@
+<!--
+  AppStoreInstallLogWindow.vue — 应用商店安装/升级的流式日志窗口
+  ==========================================================
+  业务作用：
+    以流式方式展示某个应用的安装（或升级）全过程输出：阶段状态、逐步日志、
+    最终结果（访问地址/容器名/项目目录）或错误信息。窗口打开即向后端发起
+    流式安装请求，接收 SSE 事件驱动界面更新。
+  后端模块：
+    /api/appstore 的流式安装接口（appStoreApi.installStream）。
+  关键状态：
+    - phase    运行阶段：running（安装中）/ done（完成）/ error（失败）
+    - lines    日志行数组，每行带类型（log/status/error）决定图标与颜色
+    - result   安装成功后的结果信息（应用名、容器名、版本、端口、项目目录、告警）
+    - errorMsg 失败原因
+    - taskId   后端返回的任务 ID（可跳转任务中心查看）
+  打开方式：
+    由 AppStoreWindow（安装确认流程）以 props 传入 app（应用信息）与
+    request（安装请求参数）打开；关闭窗口时中断流式请求。
+-->
 <template>
   <div class="log-window">
     <!-- 顶部工具栏 -->
@@ -43,19 +62,19 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { appStoreApi } from '../../api'
-import { localizedName } from '../../appStoreL10n'
-import { Terminal, AlertTriangle, ListChecks } from 'lucide-vue-next'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'   // 状态/派生值/渲染后滚动/生命周期钩子
+import { useI18n } from 'vue-i18n'   // 取当前语种与翻译函数
+import { appStoreApi } from '../../api'   // 应用商店 API：发起流式安装
+import { localizedName } from '../../appStoreL10n'   // 应用索引内嵌翻译（多语言应用名）
+import { Terminal, AlertTriangle, ListChecks } from 'lucide-vue-next'   // 工具栏/结果框图标
 
 const { t, locale } = useI18n()
 
 const props = defineProps({
-  app: Object,
-  request: Object
+  app: Object,   // 要安装的应用信息（名称用于标题展示）
+  request: Object   // 安装请求参数（应用 ID、版本、端口等），直接透传给后端
 })
-const emit = defineEmits(['close', 'openTaskCenter'])
+const emit = defineEmits(['close', 'openTaskCenter'])   // close 关窗；openTaskCenter 跳转任务中心
 
 // 应用显示名称：优先索引内嵌翻译（i18n.<locale>.yml），
 // 其次前端语言包内 appNames 覆盖，最后回退索引默认名称
@@ -64,16 +83,17 @@ const appDisplayName = computed(() =>
 )
 
 const phase = ref('running') // running | done | error
-const lines = ref([])
-const result = ref(null)
-const errorMsg = ref('')
-const logBox = ref(null)
-const copied = ref(false)
-const taskId = ref('')
+const lines = ref([])   // 已接收的日志行（每行 {type, text}）
+const result = ref(null)   // 安装成功后的结果对象
+const errorMsg = ref('')   // 安装失败时的错误文本
+const logBox = ref(null)   // 日志滚动容器 DOM 引用
+const copied = ref(false)  // 「已复制」提示开关
+const taskId = ref('')     // 后端下发的任务 ID（可跳转任务中心追踪）
 
-let controller = null
-let copiedTimer = null
+let controller = null   // 可中断的流式请求句柄（关闭窗口时 abort）
+let copiedTimer = null  // 「已复制」提示的自动复位定时器
 
+// 根据运行阶段派生徽章文案与颜色（running 琥珀 / error 红 / done 绿）
 const phaseText = computed(() => {
   if (phase.value === 'running') return t('appinstalllog.installing')
   if (phase.value === 'error') return t('appinstalllog.installFailed')
@@ -85,29 +105,33 @@ const phaseClass = computed(() => {
   return 'ok'
 })
 
+// --- 追加一行日志并自动滚到底部 ---
 function push(type, text) {
   lines.value.push({ type, text })
   scrollBottom()
 }
 
+// 等 DOM 更新后再滚动，确保新行已渲染出来
 function scrollBottom() {
   nextTick(() => {
     if (logBox.value) logBox.value.scrollTop = logBox.value.scrollHeight
   })
 }
 
+// --- 处理流式事件：按类型分发到日志/结果/错误 ---
 function onEvent(evt) {
   if (evt.type === 'task_id') {
     taskId.value = evt.task_id
   } else if (evt.type === 'status') {
-    push('status', evt.message)
+    push('status', evt.message)   // 阶段状态行（蓝色加粗）
   } else if (evt.type === 'log') {
-    push('log', evt.line)
+    push('log', evt.line)   // 普通输出行
   } else if (evt.type === 'result') {
-    result.value = evt.data
+    result.value = evt.data   // 安装成功：记录结果信息并切换到 done
     push('status', t('appinstalllog.installSuccess'))
     phase.value = 'done'
   } else if (evt.type === 'error') {
+    // 安装失败：记录错误文本并切换到 error（带未知错误兜底文案）
     errorMsg.value = evt.message || t('appinstalllog.unknownError')
     push('error', evt.message || t('appinstalllog.unknownError'))
     phase.value = 'error'

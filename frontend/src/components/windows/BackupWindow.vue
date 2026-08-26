@@ -1,3 +1,24 @@
+<!--
+  BackupWindow.vue — 备份中心窗口
+  ==========================================================
+  业务作用：
+    管理服务器目录/文件的备份：新建/编辑/删除备份任务（支持 cron 计划与
+    保留策略），查看备份记录并支持恢复/删除，管理 WebDAV 远程备份目标（可
+    绑定到任务，备份完成后自动上传）。高风险操作（删除任务/远程目标/备份
+    文件）需输入面板密码二次确认。
+  后端模块：
+    /api/backup 的 status / tasks / records / createTask / updateTask /
+    deleteTask / run / restore / testRemote / createRemote / updateRemote /
+    deleteRemote / deleteRecord 等。
+  关键状态：
+    - tab      当前标签页：tasks（备份任务）/ records（备份记录）/ remotes（远程目标）
+    - tasks    备份任务列表
+    - records  备份记录列表
+    - remotes  WebDAV 远程目标列表
+    - confirm  高风险操作二次确认（需输入面板密码）
+  打开方式：
+    由桌面/任务栏打开备份中心入口，无 props。
+-->
 <template>
   <div class="backup-window">
     <!-- 顶部：全局状态 -->
@@ -311,18 +332,18 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { DatabaseBackup, RefreshCw, Plus, ListChecks, History, Archive, RotateCcw, CloudUpload } from 'lucide-vue-next'
-import { backupApi, formatBytes } from '../../api'
-import ConfirmDialog from '../ConfirmDialog.vue'
+import { ref, reactive, computed, onMounted } from 'vue'   // 状态/表单/派生值/挂载钩子
+import { DatabaseBackup, RefreshCw, Plus, ListChecks, History, Archive, RotateCcw, CloudUpload } from 'lucide-vue-next'   // 工具栏/标签页/弹窗图标
+import { backupApi, formatBytes } from '../../api'   // /api/backup 接口 + 字节数格式化工具
+import ConfirmDialog from '../ConfirmDialog.vue'   // 高风险操作的密码二次确认对话框
 
-const tab = ref('tasks')
-const loading = ref(false)
-const busy = ref(false)
-const tasks = ref([])
-const records = ref([])
-const remotes = ref([])
-const status = reactive({ backup_dir: '', task_count: 0, file_count: 0, total_size: 0 })
+const tab = ref('tasks')   // 当前标签页：tasks / records / remotes
+const loading = ref(false)   // 列表加载中
+const busy = ref(false)   // 单个动作进行中（禁用按钮防重复提交）
+const tasks = ref([])   // 备份任务列表
+const records = ref([])   // 备份记录列表
+const remotes = ref([])   // WebDAV 远程目标列表
+const status = reactive({ backup_dir: '', task_count: 0, file_count: 0, total_size: 0 })   // 顶部全局状态（备份目录/任务数/文件数/总大小）
 // 高风险操作二次确认状态
 const confirm = ref({ show: false, title: '', message: '', action: null })
 
@@ -356,12 +377,14 @@ const restoreFile = ref('')
 const restoreTarget = ref('')
 const restoreError = ref('')
 
+// 恢复默认目标目录：取任务源路径去掉最后一级文件名后的目录部分
 const defaultRestoreTarget = computed(() => {
   if (!restoreTask.value) return ''
   const s = restoreTask.value.source || ''
   return s.split(/[\\/]/).slice(0, -1).join('/') || '/'
 })
 
+// ISO 时间 → "YYYY-MM-DD HH:mm:ss"；无效值原样返回
 function fmtTime(iso) {
   if (!iso) return '—'
   const d = new Date(iso)
@@ -370,6 +393,7 @@ function fmtTime(iso) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
+// 保留策略展示：份数 + 天数组合，两者都未设置显示「不限」
 function keepText(t) {
   const parts = []
   if (t.keep_count > 0) parts.push(`${t.keep_count} 份`)
@@ -377,16 +401,19 @@ function keepText(t) {
   return parts.join(' / ') || '不限'
 }
 
+// 远程目标显示名：按 id 查找，目标已被删除时兜底「（已删除）」
 function remoteName(id) {
   if (!id) return ''
   const r = remotes.value.find((x) => x.id === id)
   return r ? r.name : '（已删除）'
 }
 
+// 统计绑定到指定远程目标的任务数（删除目标时的提示 + 列表展示）
 function boundCount(id) {
   return tasks.value.filter((t) => t.remote_id === id).length
 }
 
+// --- 并行加载全部数据：状态 + 任务 + 记录 ---
 async function loadAll() {
   loading.value = true
   try {
@@ -394,7 +421,7 @@ async function loadAll() {
     Object.assign(status, st || {})
     tasks.value = (t && t.tasks) || []
     remotes.value = (t && t.remotes) || []
-    if (t && t.backup_dir && !status.backup_dir) status.backup_dir = t.backup_dir
+    if (t && t.backup_dir && !status.backup_dir) status.backup_dir = t.backup_dir   // 兼容旧接口：status 缺失时用 tasks 返回的备份目录
     records.value = (rec && rec.records) || []
   } catch (e) {
     alert('加载失败：' + (e.response?.data?.detail || e.message))
@@ -403,12 +430,14 @@ async function loadAll() {
   }
 }
 
+// --- 切换标签页并重新加载 ---
 async function switchTab(k) {
   tab.value = k
   await loadAll()
 }
 
 // ---------- 任务操作 ----------
+// 新建：重置表单为默认值（保留 10 份，不限天数，默认启用计划）
 function openAdd() {
   editing.value = null
   formError.value = ''
@@ -416,6 +445,7 @@ function openAdd() {
   formOpen.value = true
 }
 
+// 编辑：把任务字段回填到表单（enabled 用 !== false 兼容历史缺省值）
 function openEdit(t) {
   editing.value = t
   formError.value = ''
@@ -432,8 +462,9 @@ function openEdit(t) {
   formOpen.value = true
 }
 
+// --- 保存任务表单（新建或更新） ---
 async function saveForm() {
-  if (saving.value) return
+  if (saving.value) return   // 防重复提交
   formError.value = ''
   if (!form.name.trim()) { formError.value = '请填写任务名称'; return }
   if (!form.source.trim()) { formError.value = '请填写源路径'; return }
@@ -460,6 +491,7 @@ async function saveForm() {
   }
 }
 
+// --- 立即执行备份：同步等待完成并展示结果（含远程上传状态） ---
 async function doRun(t) {
   if (!confirm(`立即备份「${t.name}」？`)) return
   busy.value = true
@@ -485,10 +517,11 @@ function doDelete(t) {
   }
 }
 
+// 密码确认通过后按 action.type 分发到对应删除接口
 async function doDeleteConfirmed() {
   const a = confirm.value.action
   confirm.value.show = false
-  if (!a) return
+  if (!a) return   // 无待执行动作直接返回（防御性）
   busy.value = true
   try {
     if (a.type === 'task') {
@@ -507,6 +540,7 @@ async function doDeleteConfirmed() {
 }
 
 // ---------- 远程目标操作 ----------
+// 添加远程目标：重置表单（密码留空）
 function openRemoteAdd() {
   remoteEditing.value = null
   remoteFormError.value = ''
@@ -514,6 +548,7 @@ function openRemoteAdd() {
   remoteFormOpen.value = true
 }
 
+// 编辑远程目标：回填字段；密码留空表示后端保持原值
 function openRemoteEdit(r) {
   remoteEditing.value = r
   remoteFormError.value = ''
@@ -526,8 +561,9 @@ function openRemoteEdit(r) {
   remoteFormOpen.value = true
 }
 
+// --- 保存远程目标（新建或更新） ---
 async function saveRemoteForm() {
-  if (remoteSaving.value) return
+  if (remoteSaving.value) return   // 防重复提交
   remoteFormError.value = ''
   if (!remoteForm.name.trim()) { remoteFormError.value = '请填写名称'; return }
   if (!remoteForm.base.trim()) { remoteFormError.value = '请填写 WebDAV 地址'; return }
@@ -550,6 +586,7 @@ async function saveRemoteForm() {
   }
 }
 
+// --- 测试远程目标连通性 ---
 async function doTestRemote(r) {
   busy.value = true
   try {
@@ -575,6 +612,7 @@ function doDeleteRemote(r) {
 }
 
 // ---------- 记录操作 ----------
+// 打开恢复确认：定位所属任务、预填备份文件名与默认目标目录
 function openRestore(r) {
   restoreTask.value = tasks.value.find((t) => t.id === r.task_id) || null
   restoreFile.value = r.name
@@ -583,6 +621,7 @@ function openRestore(r) {
   restoreOpen.value = true
 }
 
+// --- 执行恢复：目标目录留空时回退到任务源路径所在目录 ---
 async function doRestore() {
   if (busy.value) return
   if (!restoreTask.value) return
@@ -611,7 +650,7 @@ function doDeleteRecord(r) {
   }
 }
 
-onMounted(loadAll)
+onMounted(loadAll)   // 进入窗口即加载全部数据
 </script>
 
 <style scoped>

@@ -1,3 +1,19 @@
+<!--
+  CertWindow.vue — 证书到期提醒窗口
+  ==========================================================
+  业务作用：
+    展示面板已管理的全部 SSL 证书及其到期状态（正常/临期/已过期/无法解析），
+    提供证书到期提醒的总开关、立即检查一次，以及提醒阈值（剩余天数档位）配置。
+  后端模块：
+    /api/certcheck 的 status（开关与汇总）、certs（证书列表）、test（立即
+    检查）、updateConfig（保存开关与阈值）。
+  关键状态：
+    - status     提醒开关、证书总数/临期数/过期数、提醒阈值档位
+    - certs      证书列表（域名、到期时间、剩余天数、状态）
+    - remindDaysText 提醒阈值输入框文本（逗号分隔的剩余天数档位）
+  打开方式：
+    由桌面/任务栏（或安全中心聚合窗口）打开，无 props。
+-->
 <template>
   <div class="certcheck-window">
     <!-- 顶部：开关 + 汇总 -->
@@ -65,25 +81,26 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { Lock, RefreshCw } from 'lucide-vue-next'
-import { certcheckApi } from '../../api'
+import { ref, reactive, computed, onMounted } from 'vue'   // 响应式状态/表单/派生值/挂载钩子
+import { Lock, RefreshCw } from 'lucide-vue-next'   // 空状态/刷新按钮图标
+import { certcheckApi } from '../../api'   // /api/certcheck：证书到期检查
 
-const loading = ref(false)
-const busy = ref(false)
-const certs = ref([])
-const status = reactive({ enabled: false, cert_count: 0, warn_count: 0, expired_count: 0, remind_days: [30, 7] })
-const remindDaysText = ref('30,7')
-const configMsg = ref('')
-const configMsgType = ref('')
+const loading = ref(false)   // 列表加载中
+const busy = ref(false)   // 操作进行中（禁用按钮防重复提交）
+const certs = ref([])   // 证书列表
+const status = reactive({ enabled: false, cert_count: 0, warn_count: 0, expired_count: 0, remind_days: [30, 7] })   // 开关/汇总/提醒阈值
+const remindDaysText = ref('30,7')   // 提醒阈值输入框文本（默认 30,7 与后端一致）
+const configMsg = ref('')   // 底部操作反馈文案
+const configMsgType = ref('')   // 反馈文案类型：ok 绿 / err 红
 
+// --- 并行加载状态与证书列表 ---
 async function loadAll() {
   loading.value = true
   try {
     const [st, cs] = await Promise.all([certcheckApi.status(), certcheckApi.certs()])
     Object.assign(status, st || {})
     certs.value = (cs && cs.certs) || []
-    remindDaysText.value = (st && st.remind_days && st.remind_days.length ? st.remind_days : [30, 7]).join(',')
+    remindDaysText.value = (st && st.remind_days && st.remind_days.length ? st.remind_days : [30, 7]).join(',')   // 空档位回退默认 30,7
   } catch (e) {
     alert('加载失败：' + (e.response?.data?.detail || e.message))
   } finally {
@@ -91,6 +108,7 @@ async function loadAll() {
   }
 }
 
+// --- 切换提醒总开关 ---
 async function toggleEnabled() {
   busy.value = true
   try {
@@ -103,6 +121,7 @@ async function toggleEnabled() {
   }
 }
 
+// --- 立即执行一次到期检查（会触发符合条件的提醒） ---
 async function doCheck() {
   busy.value = true
   configMsg.value = ''
@@ -119,11 +138,12 @@ async function doCheck() {
   }
 }
 
+// --- 保存提醒阈值：解析逗号/全角逗号/空格分隔的天数档位 ---
 async function saveConfig() {
   busy.value = true
   configMsg.value = ''
   const days = (remindDaysText.value || '').split(/[,，\s]+/).map((s) => parseInt(s, 10)).filter((n) => !isNaN(n) && n > 0)
-  if (days.length === 0) { configMsg.value = '请填写有效的提醒天数'; configMsgType.value = 'err'; busy.value = false; return }
+  if (days.length === 0) { configMsg.value = '请填写有效的提醒天数'; configMsgType.value = 'err'; busy.value = false; return }   // 无有效档位直接中止
   try {
     const r = await certcheckApi.updateConfig({ remind_days: days })
     configMsg.value = '配置已保存'
@@ -136,7 +156,7 @@ async function saveConfig() {
   }
 }
 
-onMounted(loadAll)
+onMounted(loadAll)   // 进入窗口即加载状态与证书列表
 </script>
 
 <style scoped>

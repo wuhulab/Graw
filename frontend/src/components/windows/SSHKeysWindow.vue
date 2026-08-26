@@ -1,3 +1,27 @@
+<!--
+  SSH 密钥窗口（SSH Keys）
+
+  这个窗口做什么：
+    面板「设置」里的 SSH 密钥管理页。它负责生成 / 导入 SSH 密钥对，
+    并把公钥一键部署到已配置的 SSH 节点上（配合「设置-多机管理」的密钥认证
+    实现免密登录）；同时支持查看公钥内容、删除密钥。删除属于高风险操作，
+    需输入面板密码二次确认。
+
+  用到的后端模块：
+    /api/sshkeys/*（管理员权限）——list 密钥列表、create 生成密钥对、
+    import 导入私钥、{id}/public 取公钥、{id}/deploy 部署到节点、
+    nodes 取可部署的节点列表、{id} 删除密钥。
+
+  关键状态：
+    keys         密钥列表，表格数据源
+    createForm / importForm   生成 / 导入表单
+    pubOpen / publicKey       公钥查看弹窗
+    deployOpen / deployNode / sshNodes   部署弹窗与目标节点
+    confirm      删除密钥的二次确认（需输入面板密码）
+
+  怎么被打开：
+    从「设置」窗口（SettingsWindow）内嵌挂载，不是桌面独立应用。
+-->
 <template>
   <div class="sshkeys-window">
     <!-- 工具栏 -->
@@ -160,53 +184,56 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { KeyRound, FileUp, FileKey, Send, RefreshCw } from 'lucide-vue-next'
-import { sshkeysApi } from '../../api'
-import ConfirmDialog from '../ConfirmDialog.vue'
+import { ref, computed, onMounted } from 'vue'   // 响应式状态、派生布尔（是否有 SSH 节点）、挂载钩子
+import { KeyRound, FileUp, FileKey, Send, RefreshCw } from 'lucide-vue-next'   // 工具栏 / 各弹窗用到的图标
+import { sshkeysApi } from '../../api'   // SSH 密钥后端能力：/api/sshkeys/* 的封装
+import ConfirmDialog from '../ConfirmDialog.vue'   // 高风险操作确认框（删除密钥要求输入面板密码）
 
-const loading = ref(false)
-const busy = ref(false)
-const saving = ref(false)
-const keys = ref([])
-const formError = ref('')
+const loading = ref(false)   // 列表加载中（首屏加载与空状态判断）
+const busy = ref(false)      // 行内操作（查看公钥 / 部署 / 删除）进行中，用于禁用按钮
+const saving = ref(false)    // 生成 / 导入请求提交中
+const keys = ref([])         // 密钥列表，表格数据源
+const formError = ref('')    // 弹窗内表单校验 / 接口错误提示
 
 // 高风险操作二次确认状态（删除密钥需输入面板密码）
 const confirm = ref({ show: false, target: null })
 
 // 生成 / 导入表单
-const createOpen = ref(false)
-const createForm = ref({ name: '', key_type: 'ed25519', comment: '' })
-const importOpen = ref(false)
-const importForm = ref({ name: '', private_key: '', passphrase: '' })
+const createOpen = ref(false)   // 生成密钥弹窗是否展开
+const createForm = ref({ name: '', key_type: 'ed25519', comment: '' })   // 生成表单；ed25519 为默认算法（更快更安全）
+const importOpen = ref(false)   // 导入私钥弹窗是否展开
+const importForm = ref({ name: '', private_key: '', passphrase: '' })    // 导入表单；passphrase 仅加密私钥需要填
 
 // 公钥查看
-const pubOpen = ref(false)
-const publicKey = ref('')
-const pubFingerprint = ref('')
+const pubOpen = ref(false)        // 公钥查看弹窗是否展开
+const publicKey = ref('')         // 公钥内容（authorized_keys 格式）
+const pubFingerprint = ref('')    // 公钥指纹，用于人工核验
 
 // 部署
-const deployOpen = ref(false)
-const deployKey = ref(null)
-const deployNode = ref('')
-const sshNodes = ref([])
-const hasSshNode = computed(() => sshNodes.value.some(n => n.type === 'ssh'))
+const deployOpen = ref(false)                                // 部署弹窗是否展开
+const deployKey = ref(null)                                  // 要部署的公钥对应的密钥记录
+const deployNode = ref('')                                   // 弹窗里选中的目标节点 id
+const sshNodes = ref([])                                     // 可部署的节点列表（含本机与 SSH 节点）
+const hasSshNode = computed(() => sshNodes.value.some(n => n.type === 'ssh'))   // 是否存在真正的 SSH 节点，用于空态提示
 
+// --- 把后端密钥类型码翻译成界面显示名（未收录的类型原样展示） ---
 const typeLabel = (t) => ({ ed25519: 'Ed25519', rsa: 'RSA', ecdsa: 'ECDSA', unknown: '未知' }[t] || t)
 
+// --- 时间格式化：ISO 时间串 → yyyy-MM-dd HH:mm（非法值原样返回） ---
 function fmtTime(iso) {
-  if (!iso) return '—'
+  if (!iso) return '—'                    // 空值显示占位符
   const d = new Date(iso)
-  if (isNaN(d.getTime())) return iso
-  const p = (n) => String(n).padStart(2, '0')
+  if (isNaN(d.getTime())) return iso      // 解析失败直接返回原文，避免显示 NaN
+  const p = (n) => String(n).padStart(2, '0')    // 月/日/时/分补零到两位数
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
+// --- 拉取密钥列表 ---
 async function loadAll() {
   loading.value = true
   try {
     const r = await sshkeysApi.list()
-    keys.value = (r && r.keys) || []
+    keys.value = (r && r.keys) || []    // 后端无 keys 字段时兜空数组，避免表格渲染报错
   } catch (e) {
     alert('加载密钥失败：' + (e.response?.data?.detail || e.message))
   } finally {
@@ -214,6 +241,7 @@ async function loadAll() {
   }
 }
 
+// --- 拉取可部署的节点列表（部署弹窗的数据源） ---
 async function loadNodes() {
   try {
     const r = await sshkeysApi.nodes()
@@ -231,13 +259,13 @@ async function loadNodes() {
 
 // ---- 生成 ----
 function openCreate() {
-  createForm.value = { name: '', key_type: 'ed25519', comment: '' }
+  createForm.value = { name: '', key_type: 'ed25519', comment: '' }   // 每次打开重置表单，避免残留上次输入
   formError.value = ''
   createOpen.value = true
 }
 
 async function doCreate() {
-  if (saving.value) return
+  if (saving.value) return   // 提交进行中直接退出，防止重复生成
   saving.value = true
   formError.value = ''
   try {
@@ -257,20 +285,20 @@ async function doCreate() {
 
 // ---- 导入 ----
 function openImport() {
-  importForm.value = { name: '', private_key: '', passphrase: '' }
+  importForm.value = { name: '', private_key: '', passphrase: '' }   // 每次打开重置导入表单
   formError.value = ''
   importOpen.value = true
 }
 
 async function doImport() {
-  if (saving.value) return
+  if (saving.value) return   // 提交进行中直接退出，防止重复导入
   saving.value = true
   formError.value = ''
   try {
     await sshkeysApi.importKey({
       name: importForm.value.name.trim(),
       private_key: importForm.value.private_key,
-      passphrase: importForm.value.passphrase || undefined
+      passphrase: importForm.value.passphrase || undefined    // 未加密私钥不传 passphrase，交由后端按无密码处理
     })
     importOpen.value = false
     await loadAll()
@@ -288,7 +316,7 @@ async function showPublic(k) {
     const r = await sshkeysApi.publicKey(k.id)
     publicKey.value = r.public_key
     pubFingerprint.value = r.fingerprint
-    pubOpen.value = true
+    pubOpen.value = true   // 数据取回后才开弹窗，避免先弹出空白框
   } catch (e) {
     alert('获取公钥失败：' + (e.response?.data?.detail || e.message))
   } finally {
@@ -296,10 +324,12 @@ async function showPublic(k) {
   }
 }
 
+// --- 点击公钥框时全选文本，方便一键复制 ---
 function selectText(e) {
   e.target && e.target.select()
 }
 
+// --- 复制公钥到剪贴板（浏览器受限时引导手动选择） ---
 async function copyPublic() {
   try {
     await navigator.clipboard.writeText(publicKey.value)
@@ -312,7 +342,7 @@ async function copyPublic() {
 // ---- 部署 ----
 async function openDeploy(k) {
   deployKey.value = k
-  deployNode.value = ''
+  deployNode.value = ''    // 清空上次选中的节点，避免误部署到旧目标
   formError.value = ''
   // 每次打开都重新拉取节点，确保能弹出最新已配置的节点（避免首次为空后不再刷新）
   await loadNodes()
@@ -320,11 +350,11 @@ async function openDeploy(k) {
 }
 
 async function doDeploy() {
-  if (busy.value || !deployNode.value || !deployKey.value) return
+  if (busy.value || !deployNode.value || !deployKey.value) return   // 未选目标节点或请求进行中则不发请求
   busy.value = true
   formError.value = ''
   try {
-    const r = await sshkeysApi.deploy(deployKey.value.id, deployNode.value)
+    const r = await sshkeysApi.deploy(deployKey.value.id, deployNode.value)   // 后端把公钥追加到目标 authorized_keys（幂等）
     alert(`已部署到节点「${r.node_name}」`)
     deployOpen.value = false
   } catch (e) {
@@ -339,13 +369,14 @@ function doDelete(k) {
   confirm.value = { show: true, target: k }
 }
 
+// --- 删除密钥第二步：面板密码校验通过后真正下发删除 ---
 async function doDeleteConfirmed() {
   const k = confirm.value.target
-  confirm.value.show = false
-  if (!k) return
+  confirm.value.show = false   // 先收起确认框，避免删除期间重复触发
+  if (!k) return               // 无待删目标（异常触发）时直接退出
   busy.value = true
   try {
-    await sshkeysApi.delete(k.id)
+    await sshkeysApi.delete(k.id)   // 后端同时移除本地私钥 / 公钥文件
     await loadAll()
   } catch (e) {
     alert('删除失败：' + (e.response?.data?.detail || e.message))
@@ -354,7 +385,7 @@ async function doDeleteConfirmed() {
   }
 }
 
-onMounted(loadAll)
+onMounted(loadAll)   // 窗口一打开就拉一次密钥列表
 </script>
 
 <style scoped>

@@ -1,3 +1,12 @@
+<!--
+  ConfirmDialog.vue — 高风险操作二次确认对话框
+  作用：对不可逆的高风险操作（如删除站点 / 容器）强制二次确认。两种确认模式：
+        text     —— 输入必须与 requiredText 完全一致（忽略大小写与首尾空格）才可执行；
+        password —— 输入当前登录用户的面板密码，由后端校验通过才放行。
+  数据：全部为调用方传入的 props（show / mode / title / message / requiredText…）；
+        结果经 confirm（携带输入内容）/ cancel 事件上抛，本组件不直接调用业务接口。
+  打开方式：由调用方 v-model:show 控制显隐，执行危险操作前展示。
+-->
 <template>
   <!-- 高风险操作二次确认对话框
        mode='text'    ：要求输入与 requiredText 完全一致的文本（如站点名/DELETE）才可执行
@@ -36,9 +45,9 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick, computed } from 'vue'
-import { AlertTriangle } from 'lucide-vue-next'
-import { authApi } from '../api'
+import { ref, watch, nextTick, computed } from 'vue'   // Vue 响应式 / 计算属性 / nextTick 聚焦
+import { AlertTriangle } from 'lucide-vue-next'        // 警告三角图标
+import { authApi } from '../api'                        // 鉴权 API（password 模式校验当前用户密码）
 
 const props = defineProps({
   show: { type: Boolean, default: false },
@@ -56,12 +65,12 @@ const props = defineProps({
   busyLabel: { type: String, default: '验证中…' }
 })
 
-const emit = defineEmits(['confirm', 'cancel'])
+const emit = defineEmits(['confirm', 'cancel'])  // 确认（携带输入内容）/ 取消事件
 
-const input = ref('')
-const err = ref('')
-const busy = ref(false)
-const inputRef = ref(null)
+const input = ref('')         // 用户输入内容（待匹配文本或面板密码）
+const err = ref('')           // 错误提示文案（password 模式校验失败时显示）
+const busy = ref(false)       // 密码验证请求进行中，期间禁用提交与关闭
+const inputRef = ref(null)    // 输入框 DOM 引用，打开时自动聚焦
 
 // text 模式：输入与要求文本一致（忽略大小写与首尾空格）才可提交
 const canSubmit = computed(() => {
@@ -81,13 +90,15 @@ watch(() => props.show, (v) => {
   }
 })
 
+// 关闭对话框并通知父组件取消
 function close() {
-  if (busy.value) return
+  if (busy.value) return   // 验证进行中禁止关闭，防止绕过二次确认
   emit('cancel')
 }
 
+// 提交确认：text 模式直接放行，password 模式先经后端校验当前用户密码
 async function submit() {
-  if (busy.value || !canSubmit.value) return
+  if (busy.value || !canSubmit.value) return   // 输入不满足条件或请求进行中则不触发
   if (props.mode === 'text') {
     // 文本匹配已通过校验，直接交由调用方执行
     emit('confirm', input.value)

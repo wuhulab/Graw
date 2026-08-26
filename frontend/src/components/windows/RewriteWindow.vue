@@ -1,3 +1,10 @@
+<!--
+  伪静态规则窗口
+  业务：为静态/子网站一键应用常见框架（WordPress/ThinkPHP/Laravel 等）的 nginx 伪静态规则，规则由面板白名单模板生成。
+  后端模块：/api/rewrite
+  关键状态：sites（站点列表）、templates（规则模板）、previewText（nginx 片段预览）、selSite / selTemplate（选择）
+  打开方式：独立「伪静态」入口挂载
+-->
 <template>
   <div class="rewrite-window">
     <!-- 顶部说明 -->
@@ -74,9 +81,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { FileCode2, Layers, CheckCircle, XCircle, List } from 'lucide-vue-next'
-import { rewriteApi } from '../../api'
+import { ref, onMounted } from 'vue'                                       // Composition API：响应式、挂载
+import { FileCode2, Layers, CheckCircle, XCircle, List } from 'lucide-vue-next'   // 图标集合
+import { rewriteApi } from '../../api'                                       // 伪静态规则后端接口封装
 
 const sites = ref([])
 const templates = ref([])
@@ -111,6 +118,7 @@ async function loadAll() {
   }
 }
 
+// --- 动作：应用伪静态规则到站点 ---
 async function doApply() {
   if (!selSite.value || !selTemplate.value) return
   busy.value = true

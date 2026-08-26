@@ -1,3 +1,10 @@
+<!--
+  通知中心窗口
+  业务：管理告警渠道（Webhook/Telegram/钉钉/企业微信/Server酱/SMTP）、告警规则（资源阈值）与历史告警记录。
+  后端模块：/api/notify
+  关键状态：channels / rules / logs（三标签页数据）、cfg（全局开关与间隔）、confirm（删除/清空高危二次确认）
+  打开方式：ShunX 安全中心「通知」标签页聚合，或独立「通知中心」入口挂载
+-->
 <template>
   <div class="notify-window">
     <!-- 顶部：总开关 + 配置 -->
@@ -236,11 +243,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { BellRing, Gauge, History, RefreshCw, Plus } from 'lucide-vue-next'
-import { notifyApi } from '../../api'
-import ConfirmDialog from '../ConfirmDialog.vue'
+import { ref, reactive, computed, onMounted } from 'vue'     // Composition API 响应式与生命周期钩子
+import { useI18n } from 'vue-i18n'                           // 国际化：取 t() 生成动态文案
+import { BellRing, Gauge, History, RefreshCw, Plus } from 'lucide-vue-next'   // 图标集合
+import { notifyApi } from '../../api'                       // 通知中心后端接口封装
+import ConfirmDialog from '../ConfirmDialog.vue'            // 高危操作二次确认弹窗（输入面板密码）
 
 const { t } = useI18n()
 

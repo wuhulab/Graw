@@ -1,3 +1,24 @@
+<!--
+  ContainerEditWindow.vue — 容器编辑/重建窗口
+  ==========================================================
+  业务作用：
+    修改一个 Docker 容器的运行配置，分四个区块：
+    1) CPU/内存限制（立即生效，经 docker update）；
+    2) 环境变量编辑（需重建生效）；
+    3) 端口映射编辑（需重建生效）；
+    4) 按新配置重建容器（高风险操作，需输入面板密码二次确认）。
+  后端模块：
+    /api/docker 的 containers（容器列表，供选择器）；
+    /api/containeredit 的 info / updateLimits / rebuild。
+  关键状态：
+    - containerId 当前编辑的容器（优先 props.id，否则手动选择）
+    - info        容器当前配置
+    - envRows / portRows 环境变量与端口映射的行编辑器
+    - confirm     重建容器的密码二次确认
+  打开方式：
+    由 Docker 管理窗口的容器「编辑」按钮打开（props 传入 id/name）；
+    也可从桌面快捷方式进入后手动选择容器。
+-->
 <template>
   <div class="containeredit-window">
     <!-- 容器选择（未通过 props 指定容器时，从桌面快捷方式进入需要手动选择） -->
@@ -124,44 +145,45 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { RefreshCw, Plus, Trash2 } from 'lucide-vue-next'
-import { dockerApi, containereditApi } from '../../api'
-import ConfirmDialog from '../ConfirmDialog.vue'
+import { ref, reactive, computed, onMounted } from 'vue'   // 状态/表单/派生徽标/挂载初始化
+import { useI18n } from 'vue-i18n'   // 翻译函数
+import { RefreshCw, Plus, Trash2 } from 'lucide-vue-next'   // 工具栏/行编辑图标
+import { dockerApi, containereditApi } from '../../api'   // /api/docker 容器列表 + /api/containeredit 编辑接口
+import ConfirmDialog from '../ConfirmDialog.vue'   // 重建容器的密码二次确认对话框
 
 const { t } = useI18n()
 
 const props = defineProps({
-  id: { type: String, default: '' },
-  name: { type: String, default: '' },
+  id: { type: String, default: '' },   // 从 Docker 管理窗口进入时传入的容器 id
+  name: { type: String, default: '' },   // 容器显示名称
 })
 
-const loading = ref(false)
-const loadErr = ref('')
-const info = ref(null)
-const containers = ref([])
+const loading = ref(false)   // 配置加载中
+const loadErr = ref('')   // 加载失败提示
+const info = ref(null)   // 容器当前配置
+const containers = ref([])   // 容器列表（仅未传 id 时用于选择器）
 
 // 当前编辑的容器（优先 props.id，其次手动选择）
 const containerId = ref(props.id || '')
 const containerName = ref(props.name || '')
 
 // Section 1 状态
-const savingLimits = ref(false)
-const limitsMsg = ref('')
-const limitsMsgErr = ref(false)
-const limits = reactive({ cpus: 0, memory_mb: 0, memory_unlimited: true })
+const savingLimits = ref(false)   // 限制保存中
+const limitsMsg = ref('')   // 保存结果反馈
+const limitsMsgErr = ref(false)   // 反馈是否为错误
+const limits = reactive({ cpus: 0, memory_mb: 0, memory_unlimited: true })   // 资源限制表单（勾选不限制时 memory_mb 提交为 0）
 
 // Section 2 / 3 状态
-const envRows = ref([])
-const portRows = ref([])
+const envRows = ref([])   // 环境变量行编辑器
+const portRows = ref([])   // 端口映射行编辑器
 
 // Section 4 状态
-const rebuilding = ref(false)
-const rebuildMsg = ref('')
-const rebuildMsgErr = ref(false)
-const confirm = ref({ show: false })
+const rebuilding = ref(false)   // 重建进行中
+const rebuildMsg = ref('')   // 重建结果反馈
+const rebuildMsgErr = ref(false)   // 反馈是否为错误
+const confirm = ref({ show: false })   // 密码二次确认弹窗
 
+// 状态徽标配色：running 绿 / exited、stopped 红 / 其余灰
 const stateClass = computed(() => {
   const s = info.value?.state || ''
   if (s === 'running') return 'running'
@@ -178,6 +200,7 @@ async function loadContainers() {
   }
 }
 
+// 手动选择容器后加载其配置
 function onSelectContainer() {
   const c = containers.value.find((x) => x.id === containerId.value)
   containerName.value = c?.name || ''
@@ -187,7 +210,7 @@ function onSelectContainer() {
 
 // ---------- 加载编辑配置 ----------
 async function loadInfo() {
-  if (!containerId.value) return
+  if (!containerId.value) return   // 未选容器直接返回
   loading.value = true
   loadErr.value = ''
   try {
@@ -212,17 +235,17 @@ async function loadInfo() {
 
 // ---------- Section 1：保存资源限制 ----------
 async function saveLimits() {
-  if (savingLimits.value || !containerId.value) return
+  if (savingLimits.value || !containerId.value) return   // 防重复提交
   limitsMsg.value = ''
   limitsMsgErr.value = false
   const cpus = Number(limits.cpus)
-  const memory_mb = limits.memory_unlimited ? 0 : Number(limits.memory_mb)
-  if (!(cpus >= 0.1 && cpus <= 64)) {
+  const memory_mb = limits.memory_unlimited ? 0 : Number(limits.memory_mb)   // 勾选不限制时提交 0
+  if (!(cpus >= 0.1 && cpus <= 64)) {   // CPU 核数范围校验（0.1~64）
     limitsMsgErr.value = true
     limitsMsg.value = t('containeredit.cpuInvalid')
     return
   }
-  if (memory_mb !== 0 && !(memory_mb >= 32 && memory_mb <= 262144)) {
+  if (memory_mb !== 0 && !(memory_mb >= 32 && memory_mb <= 262144)) {   // 内存范围校验（32MB~256GB）
     limitsMsgErr.value = true
     limitsMsg.value = t('containeredit.memoryInvalid')
     return
@@ -253,9 +276,10 @@ function addPortRow() {
 // ---------- Section 4：重建容器 ----------
 function confirmRebuild() {
   if (!containerId.value) return
-  confirm.value = { show: true }
+  confirm.value = { show: true }   // 弹密码确认框
 }
 
+// --- 按新环境变量/端口配置重建容器（需密码确认通过） ---
 async function doRebuild() {
   confirm.value.show = false
   rebuilding.value = true
@@ -263,6 +287,7 @@ async function doRebuild() {
   rebuildMsgErr.value = false
   try {
     const body = {
+      // 只提交 key 非空的环境变量行；端口行要求宿主与容器端口都填写
       env: envRows.value.filter((r) => r.key && r.key.trim()).map((r) => ({ key: r.key.trim(), value: r.value })),
       ports: portRows.value
         .filter((r) => r.host_port && r.container_port)
@@ -285,9 +310,9 @@ async function doRebuild() {
 
 onMounted(() => {
   if (props.id) {
-    loadInfo()
+    loadInfo()   // 有传入容器：直接加载
   } else {
-    loadContainers()
+    loadContainers()   // 无传入容器：先加载列表供选择
   }
 })
 </script>

@@ -1,3 +1,10 @@
+<!--
+  PHP 版本管理窗口
+  业务：检测服务器上已安装的 PHP 版本（含 SAPI 与 FPM socket），并管理各站点与 PHP 版本的关联。
+  后端模块：/api/phpversions
+  关键状态：status（检测状态与版本列表）、sites（站点及当前 PHP 版本）、busy（设置忙态）
+  打开方式：独立「PHP 版本」入口挂载
+-->
 <template>
   <div class="phpversions-window">
     <!-- 顶部：功能状态 -->
@@ -85,9 +92,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { ServerCog, RefreshCw } from 'lucide-vue-next'
-import { phpversionsApi } from '../../api'
+import { ref, computed, onMounted } from 'vue'   // Composition API：响应式、计算属性、挂载
+import { ServerCog, RefreshCw } from 'lucide-vue-next'   // 图标：齿轮服务器 / 刷新
+import { phpversionsApi } from '../../api'               // PHP 版本检测与站点关联后端接口
 
 const loading = ref(false)
 const siteLoading = ref(false)
@@ -107,6 +114,7 @@ function typeLabel(type) {
   return type || '—'
 }
 
+// --- 动作：加载 PHP 检测状态与站点列表 ---
 async function loadStatus() {
   loading.value = true
   try {

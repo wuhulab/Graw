@@ -1,3 +1,13 @@
+<!--
+  监控历史窗口（后端 /api/system 模块）
+  作用：查询面板持续落盘的历史监控数据（CPU/负载、内存/磁盘、网络流量、磁盘 IO），
+        以四张 ECharts 曲线图展示，支持时间范围切换、30s 自动刷新与清空历史。
+  后端模块：/api/system（metrics/history 按时间范围+聚合桶查询历史点、metrics/status 采样状态、
+            metrics/clear 清空全部历史，清空需管理员权限）。
+  关键状态：rangeKey（时间范围）、series（查询结果点）、四张图表实例（cpu/mem/net/io）、
+            autoRefresh（自动刷新开关）。
+  打开方式：桌面「监控历史」卡片；后端常驻采集每 2 秒采样一次并落盘。
+-->
 <template>
   <div class="metrics-history-window">
     <!-- 工具栏：时间范围预设 / 自动刷新 / 清空历史 -->
@@ -53,10 +63,15 @@
 </template>
 
 <script setup>
+// 响应式状态与生命周期钩子
 import { ref, onMounted, onUnmounted } from 'vue'
+// ECharts：直接按需初始化曲线图（未使用 vue-echarts 封装）
 import * as echarts from 'echarts'
+// 图标（刷新 / 清空 / 空状态）
 import { RefreshCw, Trash2, LineChart } from 'lucide-vue-next'
+// 系统监控 API：metricsHistory / metricsStatus / metricsClear
 import { systemApi } from '../../api'
+// 速率格式化（B/s 级显示，用于网络/磁盘 IO 坐标轴与提示框）
 import { formatSpeed } from '../../api'
 
 // 时间范围预设：label / 秒数 / 聚合桶大小（保证输出约 300 点以内）
@@ -68,15 +83,15 @@ const ranges = [
   { key: '7d', label: '近 7 天', seconds: 604800, bucket: 1800 }
 ]
 
-const rangeKey = ref('24h')
-const autoRefresh = ref(true)
-const loading = ref(false)
-const busy = ref(false)
-const err = ref('')
-const points = ref(0)
-const earliest = ref(null)
-const latest = ref(null)
-const hasData = ref(false)
+const rangeKey = ref('24h')    // 当前时间范围（默认近 24 小时）
+const autoRefresh = ref(true)  // 每 30s 自动刷新开关
+const loading = ref(false)     // 查询进行中
+const busy = ref(false)        // 清空历史进行中
+const err = ref('')            // 查询失败提示
+const points = ref(0)          // 原始采样点数量（后端返回的 raw）
+const earliest = ref(null)     // 历史最早采样时间戳
+const latest = ref(null)       // 历史最新采样时间戳
+const hasData = ref(false)     // 当前范围是否有数据（决定空状态/图表）
 
 // 当前查询到的数据
 let series = []
@@ -112,14 +127,14 @@ async function load() {
     const r = ranges.find(x => x.key === rangeKey.value)
     const end = Date.now() / 1000
     const start = end - r.seconds
-    const res = await systemApi.metricsHistory({
+    const res = await systemApi.metricsHistory({   // 调用 /api/system/metrics/history
       start: Math.floor(start),
       end: Math.floor(end),
       bucket: r.bucket
     })
     series = (res && res.points) || []
     points.value = (res && res.raw) || 0
-    const st = await systemApi.metricsStatus()
+    const st = await systemApi.metricsStatus()   // 调用 /api/system/metrics/status 取采样范围
     earliest.value = st.earliest
     latest.value = st.latest
     hasData.value = series.length > 0
@@ -237,7 +252,7 @@ async function doClear() {
   if (!window.confirm('确定清空全部历史监控数据吗？此操作不可恢复。')) return
   busy.value = true
   try {
-    await systemApi.metricsClear()
+    await systemApi.metricsClear()   // 调用 /api/system/metrics/clear
     await load()
   } catch (e) {
     err.value = e.response?.data?.detail || e.message
@@ -246,6 +261,7 @@ async function doClear() {
   }
 }
 
+// 窗口尺寸变化时同步缩放四张图表
 function onResize() {
   ;[cpuChart, memChart, netChart, ioChart].forEach(c => c && c.resize())
 }
@@ -256,6 +272,7 @@ onMounted(async () => {
   startTimer()
 })
 
+// 窗口关闭时清理定时器与图表实例，避免内存泄漏
 onUnmounted(() => {
   stopTimer()
   window.removeEventListener('resize', onResize)

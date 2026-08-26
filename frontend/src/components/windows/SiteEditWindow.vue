@@ -1,3 +1,10 @@
+<!--
+  站点新建 / 编辑窗口
+  业务：创建或编辑网站（静态/子网站/反向代理/TCP-UDP 代理），维护域名、根目录、端口、代理目标等。
+  后端模块：/api/sites
+  关键状态：form（站点表单，按 type 显示不同字段）、domainsText（域名文本）、mode（create|edit）
+  打开方式：站点列表窗口点击新建/编辑时弹出
+-->
 <template>
   <div class="site-edit-window">
     <form class="form" @submit.prevent="save">
@@ -60,17 +67,17 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { sitesApi } from '../../api'
-import { bumpSites } from '../../store/siteBus'
+import { ref, onMounted } from 'vue'        // Composition API：响应式、挂载
+import { useI18n } from 'vue-i18n'          // 国际化：取 t() 生成动态文案
+import { sitesApi } from '../../api'        // 站点（Nginx/OpenResty）后端接口封装
+import { bumpSites } from '../../store/siteBus'   // 站点变更信号：保存后通知站点列表刷新
 
 const props = defineProps({
   mode: { type: String, default: 'create' }, // create | edit
   type: { type: String, default: 'static' }, // 仅新建时需要
   site: { type: Object, default: null }      // 仅编辑时需要
 })
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close'])   // 向父窗口发出：关闭窗口（保存后触发）
 const { t } = useI18n()
 
 const emptyForm = (type) => ({
@@ -78,7 +85,7 @@ const emptyForm = (type) => ({
   type,
   domains: [],
   root: '',
-  port: type === 'tcpudp' ? 443 : 80,
+  port: type === 'tcpudp' ? 443 : 80,   // 默认端口：TCP/UDP 代理常走 TLS 故用 443，其余用 80
   reverse_proxy: '',
   protocol: 'tcp',
   upstream: '',
@@ -117,6 +124,7 @@ onMounted(() => {
   }
 })
 
+// --- 动作：新建或更新站点 ---
 async function save() {
   err.value = ''
   const payload = {

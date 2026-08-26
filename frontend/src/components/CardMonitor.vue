@@ -1,3 +1,10 @@
+<!--
+  CardMonitor.vue — 实时监控曲线卡片
+  作用：在桌面右侧展示系统实时曲线，可在「流量」与「磁盘IO」两个标签页间切换，
+        分别绘制发送/接收（或读取/写入）双序列面积图。
+  数据：由父组件传入的 metrics 响应式对象驱动（后端 WebSocket 推送刷新）。
+  打开方式：作为 Desktop 桌面卡片之一渲染。
+-->
 <template>
   <div class="glass-card monitor-card">
     <div class="monitor-header">
@@ -12,19 +19,20 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
-import * as echarts from 'echarts'
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'   // Vue 核心 API
+import * as echarts from 'echarts'                              // ECharts 图表库
 
-const props = defineProps({ metrics: Object })
-const mode = ref('net')
-const chartRef = ref(null)
-let chart = null
+const props = defineProps({ metrics: Object })   // 父级传入的实时指标对象
+const mode = ref('net')                          // 当前标签页：net=流量 / disk=磁盘IO
+const chartRef = ref(null)                       // 图表挂载容器
+let chart = null                                 // ECharts 实例
 
-const maxPoints = 60
-const data1 = []
-const data2 = []
-const times = []
+const maxPoints = 60                             // 仅保留最近 60 个采样点（滚动窗口）
+const data1 = []                                 // 序列一缓冲（流量=发送 / 磁盘=读取）
+const data2 = []                                 // 序列二缓冲（流量=接收 / 磁盘=写入）
+const times = []                                 // 时间轴缓冲
 
+// 追加一个采样点，超出窗口则丢弃最旧点
 function pushData(t, v1, v2) {
   times.push(t)
   data1.push(v1)
@@ -34,12 +42,14 @@ function pushData(t, v1, v2) {
   }
 }
 
+// --- 图表初始化 ---
 function initChart() {
   if (!chartRef.value) return
   chart = echarts.init(chartRef.value, null, { renderer: 'canvas' })
   chart.setOption({
     grid: { left: 40, right: 20, top: 10, bottom: 20 },
     xAxis: { type: 'category', data: times, axisLine: { lineStyle: { color: '#fff' } }, axisLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 10 } },
+    // Y 轴按字节速率格式化（如 1.2M/s）
     yAxis: { type: 'value', splitLine: { lineStyle: { color: 'rgba(255,255,255,0.15)' } }, axisLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 10, formatter: v => formatBytes(v) + '/s' } },
     tooltip: { trigger: 'axis' },
     series: [
@@ -50,19 +60,20 @@ function initChart() {
 }
 
 function formatBytes(b) {
-  if (b > 1e9) return (b/1e9).toFixed(1) + 'G'
-  if (b > 1e6) return (b/1e6).toFixed(1) + 'M'
-  if (b > 1e3) return (b/1e3).toFixed(1) + 'K'
+  if (b > 1e9) return (b/1e9).toFixed(1) + 'G'   // 1e9 字节 ≈ 1 GB
+  if (b > 1e6) return (b/1e6).toFixed(1) + 'M'   // 1e6 ≈ 1 MB
+  if (b > 1e3) return (b/1e3).toFixed(1) + 'K'   // 1e3 ≈ 1 KB
   return b + 'B'
 }
 
+// 指标变化即追加采样点并重绘（net=发送/接收，disk=读取/写入）
 watch(() => props.metrics, (m) => {
   if (!chart) return
   const t = new Date().toLocaleTimeString('zh-CN', { hour12: false })
   if (mode.value === 'net') {
-    pushData(t, m.netSent, m.netRecv)
+    pushData(t, m.netSent, m.netRecv)             // 流量：发送 / 接收
   } else {
-    pushData(t, m.dioRead, m.dioWrite)
+    pushData(t, m.dioRead, m.dioWrite)            // 磁盘IO：读取 / 写入
   }
   chart.setOption({
     xAxis: { data: times },
@@ -73,6 +84,7 @@ watch(() => props.metrics, (m) => {
   })
 }, { deep: true })
 
+// 切换标签时清空缓冲，避免流量与磁盘IO 数据混在同一张图
 watch(mode, () => {
   data1.length = 0; data2.length = 0; times.length = 0
   if (chart) chart.setOption({ xAxis: { data: [] }, series: [{ data: [] }, { data: [] }] })

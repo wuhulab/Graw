@@ -1,3 +1,14 @@
+<!--
+  内网穿透（FRP）窗口（后端 /api/frp 模块）
+  作用：配置并管理 FRP 服务端 / 客户端（frps/frpc）：切换运行模式、编辑 toml 配置、
+        维护客户端代理规则（tcp/udp/http/https）、启动 / 停止 / 重启 FRP 进程。
+  后端模块：/api/frp（status 状态、config 读写配置、save 保存、switch_mode 切换模式、
+            preview 生成 toml 预览、start/stop/restart 进程控制、proxies 增删改）。
+  关键状态：mode（server/client）、server/client（配置表单）、proxies（代理列表）、
+            bins（frps/frpc 可执行文件路径）、running/installed（进程与安装状态）。
+  删除代理为高风险操作，代码预留面板密码二次确认流程（delProxy → doDeleteProxy）。
+  打开方式：桌面「内网穿透」卡片。
+-->
 <template>
   <div class="frp-window">
     <!-- 顶部工具条：模式切换 + 状态 + 进程控制 -->
@@ -142,9 +153,13 @@
 </template>
 
 <script setup>
+// 响应式状态、计算属性与生命周期钩子
 import { ref, computed, onMounted } from 'vue'
+// 国际化
 import { useI18n } from 'vue-i18n'
+// FRP API：status/config/save/switch_mode/preview/start/stop/restart + 代理增删改
 import { frpApi } from '../../api'
+// 图标（刷新/播放/停止/添加/删除/编辑/开关）
 import { RotateCw, Play, Square, Plus, Trash2, Pencil, Power } from 'lucide-vue-next'
 
 const { t } = useI18n()
@@ -152,34 +167,38 @@ const { t } = useI18n()
 // tcp/udp 代理使用远程端口，http/https 使用自定义域名
 const isPortType = computed(() => proxyForm.value.type === 'tcp' || proxyForm.value.type === 'udp')
 
-const mode = ref('server')
-const installed = ref(false)
-const running = ref(false)
-const cfgPath = ref('')
-const statusMsg = ref('')
-const bins = ref({ serverBin: '', clientBin: '' })
+const mode = ref('server')       // 运行模式：server（服务端）/ client（客户端）
+const installed = ref(false)     // FRP 是否已安装（有无可用二进制）
+const running = ref(false)       // FRP 进程是否运行中
+const cfgPath = ref('')          // 当前使用的配置文件路径
+const statusMsg = ref('')        // 顶部状态提示（加载/保存/进程操作结果）
+const bins = ref({ serverBin: '', clientBin: '' })   // frps / frpc 可执行文件路径
 const server = ref({ bindAddr: '0.0.0.0', bindPort: 7000, token: '', configPath: '', dashboardAddr: '127.0.0.1', dashboardPort: 0, dashboardUser: 'admin', dashboardPwd: '', logLevel: 'info' })
 const client = ref({ serverAddr: '', serverPort: 7000, token: '', configPath: '', loginFailExit: true, logLevel: 'info' })
-const proxies = ref([])
-const logLevels = ['trace', 'debug', 'info', 'warn', 'error']
-const proxyTypes = ['tcp', 'udp', 'http', 'https']
+const proxies = ref([])          // 客户端代理规则列表
+const logLevels = ['trace', 'debug', 'info', 'warn', 'error']   // 日志级别可选项
+const proxyTypes = ['tcp', 'udp', 'http', 'https']              // 代理类型可选项
 
-const showPreview = ref(false)
-const previewText = ref('')
-const showProxyModal = ref(false)
-const proxyForm = ref(newProxy())
+const showPreview = ref(false)   // 配置预览弹窗显隐
+const previewText = ref('')      // 预览的 toml 文本
+const showProxyModal = ref(false)   // 代理编辑弹窗显隐
+const proxyForm = ref(newProxy())   // 代理表单（新增/编辑共用）
 
+// 生成一个空白代理表单（编辑时用目标代理覆盖之）
 function newProxy() {
   return { id: '', name: '', type: 'tcp', localIp: '127.0.0.1', localPort: 80, remotePort: 8080, customDomains: '', useEncryption: false, useCompression: false, enabled: true, remark: '' }
 }
 
+// 把后端返回的服务端配置合并进本地表单
 function applyServer(d) {
   server.value = { ...server.value, ...(d.server || {}) }
 }
+// 把后端返回的客户端配置与代理列表合并进本地表单
 function applyClient(d) {
   client.value = { ...client.value, ...(d.client || {}) }
   proxies.value = (d.client && d.client.proxies) || []
 }
+// 把后端返回的整体配置（模式/二进制路径/双方配置）一次性应用到本地
 function applyAll(d) {
   mode.value = d.mode || 'server'
   bins.value.serverBin = d.serverBin || ''
@@ -188,20 +207,22 @@ function applyAll(d) {
   applyClient(d)
 }
 
+// --- 动作：加载 FRP 状态与完整配置 ---
 async function load() {
   statusMsg.value = ''
   try {
-    const s = await frpApi.status()
+    const s = await frpApi.status()   // 调用 /api/frp/status
     installed.value = s.installed
     running.value = s.running
     cfgPath.value = s.configPath || ''
-    const cfg = await frpApi.config()
+    const cfg = await frpApi.config()   // 调用 /api/frp/config
     applyAll(cfg)
   } catch (e) {
     statusMsg.value = (e?.response?.data?.detail) || e.message || t('common.error')
   }
 }
 
+// --- 动作：把本地表单整体保存到后端 ---
 async function save() {
   try {
     const payload = {
@@ -211,7 +232,7 @@ async function save() {
       server: server.value,
       client: { ...client.value, proxies: proxies.value }
     }
-    const d = await frpApi.save(payload)
+    const d = await frpApi.save(payload)   // 调用 /api/frp/save
     applyAll(d)
     statusMsg.value = t('frp.saved')
   } catch (e) {
@@ -219,9 +240,10 @@ async function save() {
   }
 }
 
+// --- 动作：切换 server/client 模式并同步后端 ---
 async function onModeChange() {
   try {
-    const d = await frpApi.switchMode(mode.value)
+    const d = await frpApi.switchMode(mode.value)   // 调用 /api/frp/switch_mode
     applyAll(d)
     await load()
   } catch (e) {
@@ -229,6 +251,7 @@ async function onModeChange() {
   }
 }
 
+// --- 动作：启动/停止/重启 FRP 进程（按 action 名调用对应接口） ---
 async function proc(action) {
   statusMsg.value = ''
   try {
@@ -241,9 +264,10 @@ async function proc(action) {
   }
 }
 
+// --- 动作：生成并预览当前配置对应的 toml 文本 ---
 async function preview() {
   try {
-    const p = await frpApi.preview()
+    const p = await frpApi.preview()   // 调用 /api/frp/preview
     previewText.value = p.toml
     showPreview.value = true
   } catch (e) {
@@ -251,11 +275,13 @@ async function preview() {
   }
 }
 
+// --- 动作：打开代理弹窗（p 为空则新增，否则编辑该代理） ---
 function openProxyModal(p) {
   proxyForm.value = p ? { ...p } : newProxy()
   showProxyModal.value = true
 }
 
+// --- 动作：保存代理（有 id 走更新，否则走新增） ---
 async function saveProxy() {
   try {
     const payload = {
@@ -284,6 +310,7 @@ async function saveProxy() {
   }
 }
 
+// --- 动作：启用/停用代理（向后端传反向状态） ---
 async function toggleProxy(p) {
   try {
     await frpApi.toggleProxy(p.id, !p.enabled)
@@ -303,9 +330,9 @@ function delProxy(p) {
 async function doDeleteProxy() {
   const p = confirm.value.target
   confirm.value.show = false
-  if (!p) return
+  if (!p) return   // 无待删除目标则提前返回
   try {
-    await frpApi.deleteProxy(p.id)
+    await frpApi.deleteProxy(p.id)   // 调用 /api/frp 代理删除接口
     const cfg = await frpApi.config()
     applyAll(cfg)
   } catch (e) {

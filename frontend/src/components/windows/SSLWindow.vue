@@ -1,10 +1,38 @@
+<!--
+  SSL 证书窗口（SSL Certificates）
+
+  这个窗口做什么：
+    网站 SSL 证书的管理页。列出服务器上已存在的证书，管理员可以：
+      - 上传已有证书（cert 与 key 两个文件）；
+      - 通过 Let's Encrypt 为域名签发新证书；
+      - 删除不再使用的证书。
+    顶部还会显示 certbot 是否已安装——没装就不能走自动签发。
+    它同时被「网站」窗口（SitesWindow）的「SSL证书」页签内嵌复用，
+    管理员配好站点后在同一窗口里就能签发 / 上传证书。
+
+  用到的后端模块：
+    /api/ssl/*（管理员权限）——list 证书列表、upload 上传证书、
+    letsencrypt 用 certbot 自动签发、{id} 删除证书。
+
+  关键状态：
+    certs       证书列表，表格数据源
+    certbot     服务器上 certbot 是否可用（决定自动签发入口提示）
+    showUpload / upForm   上传证书弹窗与表单
+    showLE / leForm       Let's Encrypt 签发弹窗与表单
+    confirm     删除证书的二次确认状态
+
+  怎么被打开：
+    桌面「SSL 证书」应用，或「网站」窗口内的「SSL证书」页签。
+-->
 <template>
   <div class="ssl-window">
+    <!-- 工具栏：上传证书 / Let's Encrypt 签发 / certbot 安装状态 -->
     <div class="toolbar">
       <button class="btn primary" @click="showUpload=true">{{ $t('ssl.upload') }}</button>
       <button class="btn primary" @click="showLE=true">{{ $t('ssl.letsEncrypt') }}</button>
       <span class="hint">{{ $t('ssl.certbot', { status: $t(certbot ? 'database.installed' : 'database.notInstalled') }) }}</span>
     </div>
+    <!-- 证书列表：一行一张证书，右侧垃圾桶即删除入口 -->
     <div class="table-wrap">
       <table>
         <thead><tr><th>{{ $t('ssl.name') }}</th><th>{{ $t('ssl.domains') }}</th><th>{{ $t('ssl.type') }}</th><th>{{ $t('ssl.path') }}</th><th>{{ $t('common.action') }}</th></tr></thead>
@@ -21,6 +49,7 @@
       </table>
     </div>
 
+    <!-- 上传证书弹窗：cert / key 两个文件一起提交 -->
     <div v-if="showUpload" class="modal-overlay" @click.self="showUpload=false">
       <div class="modal">
         <h3>{{ $t('ssl.uploadTitle') }}</h3>
@@ -37,6 +66,7 @@
       </div>
     </div>
 
+    <!-- Let's Encrypt 签发弹窗：填域名（逗号分隔）与注册邮箱 -->
     <div v-if="showLE" class="modal-overlay" @click.self="showLE=false">
       <div class="modal">
         <h3>{{ $t('ssl.leTitle') }}</h3>
@@ -54,26 +84,28 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { sslApi } from '../../api'
-import { Trash2 } from 'lucide-vue-next'
+import { ref, onMounted } from 'vue'         // 响应式状态、挂载钩子
+import { useI18n } from 'vue-i18n'           // 取 t()，所有界面文案跟随面板语言
+import { sslApi } from '../../api'           // SSL 证书后端能力：/api/ssl/* 的封装
+import { Trash2 } from 'lucide-vue-next'     // 表格里删除证书的垃圾桶图标
 
 const { t } = useI18n()
 
-const certs = ref([])
-const certbot = ref(false)
-const showUpload = ref(false)
-const showLE = ref(false)
-const upForm = ref({ name: '', domains: '', cert: null, key: null })
-const leForm = ref({ domains: '', email: '' })
+const certs = ref([])                 // 证书列表，表格数据源
+const certbot = ref(false)            // 服务器上是否装了 certbot（false 时 Let's Encrypt 签发不可用）
+const showUpload = ref(false)         // 上传证书弹窗是否展开
+const showLE = ref(false)             // Let's Encrypt 签发弹窗是否展开
+const upForm = ref({ name: '', domains: '', cert: null, key: null })    // 上传表单；cert/key 是所选文件对象
+const leForm = ref({ domains: '', email: '' })                          // 签发表单：逗号分隔的域名 + 注册邮箱
 
+// --- 拉取证书列表与 certbot 状态 ---
 async function load() {
   const data = await sslApi.list()
-  certs.value = data.certs || []
+  certs.value = data.certs || []    // 后端无 certs 字段时兜空数组，避免表格报错
   certbot.value = data.certbot
 }
 
+// --- 上传已有证书（cert/key 两个文件走 multipart） ---
 async function doUpload() {
   const fd = new FormData()
   fd.append('name', upForm.value.name)
@@ -82,14 +114,15 @@ async function doUpload() {
   fd.append('key', upForm.value.key)
   await sslApi.upload(fd)
   showUpload.value = false
-  await load()
+  await load()    // 上传成功后刷新列表
 }
 
+// --- Let's Encrypt 签发：把逗号分隔的域名拆成数组再提交 ---
 async function doLE() {
-  const domains = leForm.value.domains.split(',').map(d=>d.trim()).filter(Boolean)
+  const domains = leForm.value.domains.split(',').map(d=>d.trim()).filter(Boolean)   // 去空白、去空项，避免把空串当域名
   await sslApi.letsencrypt({ domains, email: leForm.value.email })
   showLE.value = false
-  await load()
+  await load()    // 签发成功后刷新列表
 }
 
 // 删除证书：高风险操作，先弹出密码二次确认框
@@ -100,8 +133,8 @@ function remove(c) {
 // 面板密码校验通过后真正执行删除
 async function doRemove() {
   const c = confirm.value.target
-  confirm.value.show = false
-  if (!c) return
+  confirm.value.show = false   // 先收起确认框，避免删除期间重复触发
+  if (!c) return               // 无待删目标（异常触发）时直接退出
   try {
     await sslApi.delete(c.id)
     await load()
@@ -110,7 +143,7 @@ async function doRemove() {
   }
 }
 
-onMounted(load)
+onMounted(load)   // 窗口一打开就拉一次证书列表
 </script>
 
 <style scoped>

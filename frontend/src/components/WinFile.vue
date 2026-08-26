@@ -1,3 +1,10 @@
+<!--
+  WinFile.vue — 文件管理器窗口
+  作用：浏览/操作服务器文件系统。支持上级目录跳转、新建文件夹、上传/下载、
+        重命名、删除。所有操作经 /api/file/* 落到后端（宿主机经 hostfs 适配层读写）。
+  数据：当前目录列表由 /api/file/list 返回（items / current 路径），根目录仅记一次。
+  打开方式：桌面快捷方式或开始菜单的「文件管理」。
+-->
 <template>
   <div class="file-wrap">
     <div class="file-toolbar">
@@ -36,36 +43,39 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { ArrowUp, Folder, FileText } from 'lucide-vue-next'
+import { ref, onMounted } from 'vue'                                     // Vue 响应式与生命周期
+import { ArrowUp, Folder, FileText } from 'lucide-vue-next'               // 文件管理图标
 
-const items = ref([])
-const current = ref('')
-const msg = ref('')
-const uploadInput = ref(null)
-let root = ''
+const items = ref([])             // 当前目录下的文件/文件夹列表
+const current = ref('')           // 当前所在路径（界面展示）
+const msg = ref('')               // 错误/状态提示
+const uploadInput = ref(null)     // 隐藏的文件选择 <input> 引用
+let root = ''                     // 首次进入记录的根目录，作回退基准
 
+// 列出某路径下的内容
 async function load(path) {
-  msg.value = ''
+  msg.value = ''                       // 每次加载先清空旧提示
   try {
     const r = await fetch('/api/file/list?path=' + encodeURIComponent(path || ''))
     const data = await r.json()
     items.value = data.items
     current.value = data.current
-    if (!root) root = data.current
+    if (!root) root = data.current     // 首次加载时记下根目录
   } catch (e) { msg.value = '加载失败' }
 }
+// 返回上级目录
 function goUp() {
+  // 同时按 Windows(\) 与 Unix(/) 分隔符拆分，兼容两种路径
   const parts = current.value.replace(/\\$/, '').split(/[\\/]/)
-  parts.pop()
+  parts.pop()                          // 去掉最后一段即回到上级
   const up = parts.join('/') || ''
   load(up)
 }
 function enter(f) {
-  if (f.is_dir) load(f.path)
+  if (f.is_dir) load(f.path)          // 仅文件夹可进入
 }
 function triggerUpload() {
-  uploadInput.value.click()
+  uploadInput.value.click()           // 触发隐藏 input 打开系统选择框
 }
 async function onUpload(e) {
   const file = e.target.files[0]
@@ -73,17 +83,18 @@ async function onUpload(e) {
   const fd = new FormData()
   fd.append('file', file)
   await fetch('/api/file/upload?path=' + encodeURIComponent(current.value), { method: 'POST', body: fd })
-  uploadInput.value.value = ''
+  uploadInput.value.value = ''        // 清空选择，便于重复上传同名文件
   load(current.value)
 }
 async function deleteFile(path) {
-  if (!confirm('确认删除?')) return
+  if (!confirm('确认删除?')) return    // 删除前二次确认
   await fetch('/api/file/delete?path=' + encodeURIComponent(path), { method: 'DELETE' })
   load(current.value)
 }
 async function renameFile(f) {
   const name = prompt('新名称:', f.name)
   if (!name || name === f.name) return
+  // 拼接新路径，兼容当前路径已带或不带末尾分隔符
   const newPath = current.value + (current.value.endsWith('/') || current.value.endsWith('\\') ? '' : '/') + name
   await fetch('/api/file/rename?old=' + encodeURIComponent(f.path) + '&new=' + encodeURIComponent(newPath), { method: 'PUT' })
   load(current.value)
@@ -99,19 +110,19 @@ function downloadFile(path) {
   const a = document.createElement('a')
   a.href = '/api/file/download?path=' + encodeURIComponent(path)
   a.download = ''
-  a.click()
+  a.click()                           // 借锚点触发浏览器下载
 }
 function fmtSize(b) {
-  if (b > 1e9) return (b/1e9).toFixed(2) + ' GB'
-  if (b > 1e6) return (b/1e6).toFixed(2) + ' MB'
-  if (b > 1e3) return (b/1e3).toFixed(1) + ' KB'
+  if (b > 1e9) return (b/1e9).toFixed(2) + ' GB'   // 1e9 字节 ≈ 1 GB
+  if (b > 1e6) return (b/1e6).toFixed(2) + ' MB'   // 1e6 ≈ 1 MB
+  if (b > 1e3) return (b/1e3).toFixed(1) + ' KB'   // 1e3 ≈ 1 KB
   return b + ' B'
 }
 function fmtTime(t) {
-  return new Date(t * 1000).toLocaleString('zh-CN')
+  return new Date(t * 1000).toLocaleString('zh-CN')  // 后端给的是秒级时间戳，×1000 转毫秒
 }
 
-onMounted(() => load(''))
+onMounted(() => load(''))           // 打开窗口即载入根目录
 </script>
 
 <style scoped>

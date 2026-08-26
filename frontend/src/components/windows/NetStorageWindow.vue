@@ -1,3 +1,10 @@
+<!--
+  网络存储管理主窗口
+  业务：列出已配置的网络存储连接，支持新增、编辑、测试连通性、删除（高危，需面板密码二次确认），并打开文件浏览。
+  后端模块：/api/netstorage
+  关键状态：conns（连接列表）、confirm（删除二次确认）、testResult（测试结果）
+  打开方式：桌面/任务栏「网络存储」入口挂载；新增/编辑弹出独立 NetStorageFormWindow
+-->
 <template>
   <div style="display:flex; flex-direction:column; height:100%;">
     <!-- 工具栏：新增打开独立表单窗口 -->
@@ -56,12 +63,12 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { netstorageApi } from '../../api'
-import { nsVersion } from '../../store/netstorage'
-import { Server, Database, Folder, Cloud } from 'lucide-vue-next'
-import ConfirmDialog from '../ConfirmDialog.vue'
+import { ref, watch, onMounted } from 'vue'                  // Composition API：响应式、监听、挂载
+import { useI18n } from 'vue-i18n'                            // 国际化：取 t() 生成动态文案
+import { netstorageApi } from '../../api'                     // 网络存储后端接口封装
+import { nsVersion } from '../../store/netstorage'            // 跨窗口版本信号：新增/编辑/删除后触发刷新
+import { Server, Database, Folder, Cloud } from 'lucide-vue-next'   // 图标：按协议类型展示
+import ConfirmDialog from '../ConfirmDialog.vue'              // 高危操作二次确认弹窗（输入面板密码）
 
 const { t } = useI18n()
 
@@ -73,7 +80,7 @@ const testingId = ref(null)
 const confirm = ref({ show: false, mode: 'password', title: '', message: '', requiredText: '', inputLabel: '', placeholder: '', action: null })
 
 // 发射给 App.vue：打开「添加/编辑储存」独立窗口（conn 为空则新增）
-const emit = defineEmits(['openNetStorageForm', 'openNetStorageBrowse'])
+const emit = defineEmits(['openNetStorageForm', 'openNetStorageBrowse'])   // 向桌面发出：打开表单窗口、打开文件浏览
 
 async function load() {
   loading.value = true
