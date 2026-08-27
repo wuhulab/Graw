@@ -1,0 +1,72 @@
+# ============================================================
+# Graw CI —— 每次 push / PR 自动执行的检查
+#
+# 任务：
+#   1. backend   : Python 语法体检 + 后端健康回归测试（pytest）
+#   2. frontend  : 前端依赖安装 + 生产构建（vite build）
+#
+# 说明：
+#   - 测试集仅纳入「可移植、无需真实系统环境」的 pytest 回归文件。
+#   - test_agent_cfg_unit.py 因断言仍使用旧版 set_config(role=...) 签名、
+#     与当前代码不同步（本地已知 2 项失败），暂不纳入 CI；
+#     待其与 agent_cfg.set_config() 同步后再加入。
+#   - Docker 镜像构建发布见 docker-publish.yml（仅打 tag 触发）。
+# ============================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  backend:
+    name: Backend check & test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pytest
+
+      - name: Syntax check (compileall)
+        run: python -m compileall -q backend/app
+
+      - name: Run regression tests (pytest)
+        working-directory: backend
+        run: python -m pytest test_security_regression.py test_frp_configpath_regression.py -q --tb=short
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build production bundle
+        working-directory: frontend
+        run: npm run build

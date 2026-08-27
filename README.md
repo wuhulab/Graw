@@ -202,8 +202,18 @@ server: {
 
 ## 贡献
 
-欢迎提交 Issue 或 Pull Request。
+欢迎提交 Issue 或 Pull Request，参与方式请先阅读：
+
+- [贡献指南](CONTRIBUTING.md) —— 开发环境、代码约定、测试与提交流程
+- [行为准则](CODE_OF_CONDUCT.md) —— 社区参与者共同遵守的准则
+- [安全政策](SECURITY.md) —— 发现安全漏洞请按此私有报告，勿在公开渠道披露
+- [更新日志](CHANGELOG.md) —— 各版本功能与修复记录
 
 ## License
 
-Graw Custom Open Source License Version & AGPLv3
+Graw 采用 AGPLv3 为基础并结合 ShunX 定制条款的「Graw Custom Open Source License Version 1.0」：
+
+- 标准 AGPL-3.0 全文见 [LICENSE](LICENSE)
+- 含定制条款的完整许可证见 [license.txt](license.txt)
+
+核心承诺：永远开源、永不闭源、无付费专有版本；未经书面授权禁止商用。
