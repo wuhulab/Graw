@@ -1,31 +1,40 @@
-# 感谢你为 Graw 提交 PR！请填写以下信息（不适用项可删除）。
+# Pull Request 描述
 
-## 关联 Issue
+> 提交 PR 前请自查 [CONTRIBUTING.md](../CONTRIBUTING.md)。
+> 保持 PR 聚焦：一次 PR 解决一个问题。
 
-- 修复 / 实现：`#issue编号`（没有可留空）
+## 变更类型
 
-## 变更内容
+- [ ] 新功能 (feat)
+- [ ] 修复 (fix)
+- [ ] 文档 (docs)
+- [ ] 样式 / 重构 (style / refactor)
+- [ ] 测试 (test)
+- [ ] 杂项 / 构建 (chore / build)
 
-<!-- 简要说明本次改了哪些功能 / 修了什么 bug，以及为什么 -->
+## 变更说明
 
--
+<!-- 简述这个 PR 做了什么、为什么这样做 -->
 
-## 改动范围
+## 关联 Issues
 
-- [ ] 后端（`backend/`）
-- [ ] 前端（`frontend/`）
-- [ ] 文档 / 其它
+<!-- 关闭关联 Issue: Fixes #123 -->
 
-## 验证方式
+## 测试情况
 
-<!-- 本地如何验证：运行了哪些命令 / 测试，是否贴图 -->
+- [ ] 后端相关改动：`backend` 无语法错误，相关单测通过
+      （`cd backend && python -m pytest test_xxx.py -q`）
+- [ ] 前端相关改动：`npm run build` 通过
+- [ ] 已补充/更新测试用例（如有）
+- [ ] 手动验证过的场景与结果
 
-- [ ] 后端语法体检通过（`python -m compileall -q backend/app`）
-- [ ] 相关测试通过（如 `cd backend && python -m pytest test_security_regression.py -q`）
-- [ ] 前端构建通过（`cd frontend && npm run build`）
+## 自查清单
 
-## 注意事项
+- [ ] 已通读 `AGENTS.md`，改动符合鉴权 / 持久化 / 多节点约定
+- [ ] 新增后端接口已在 `main.py` 注册，且鉴权依赖（`PROTECTED`/`ADMIN`）选择正确
+- [ ] 前端界面文案走 `src/locales/` i18n，无硬编码
+- [ ] 未提交任何敏感信息（`backend/data/`、密码、token）
 
-- [ ] 若涉及子节点 Agent 功能，已确认是否需要同步子节点代码
-- [ ] 若涉及接口 / 数据结构变更，已同步更新相关文档
-- [ ] README / CHANGELOG 是否需要更新（如补充功能或修复说明）
+## 截图（可选）
+
+<!-- UI 变更请附截图，便于 review -->
