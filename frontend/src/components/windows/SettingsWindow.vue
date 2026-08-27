@@ -320,6 +320,33 @@
         </div>
       </div>
 
+      <!-- 回收站设置（仅管理员）：删除的文件是否进入回收站、到期自动清理天数 -->
+      <div class="block" v-if="isAdmin()">
+        <div class="block-title">{{ $t('recycle.settingsTitle') }}</div>
+        <div class="row" style="justify-content:space-between; padding:4px 0;">
+          <label class="switch-label">
+            <input type="checkbox" v-model="rcForm.enabled" />
+            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('recycle.enabled') }}</span>
+          </label>
+        </div>
+        <div style="font-size:11px;color:#8e8e93;line-height:1.6;">{{ $t('recycle.enabledHint') }}</div>
+        <div class="row" style="justify-content:space-between; padding:4px 0;">
+          <label class="switch-label" :style="rcForm.enabled ? {} : { opacity: 0.5 }">
+            <input type="checkbox" v-model="rcForm.autoDelete" :disabled="!rcForm.enabled" />
+            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('recycle.autoDelete') }}</span>
+          </label>
+        </div>
+        <div style="font-size:11px;color:#8e8e93;line-height:1.6;">{{ $t('recycle.autoDeleteHint') }}</div>
+        <div class="row" style="gap:8px; padding:6px 0 10px;">
+          <span style="font-size:12px;color:#1d1d1f;">{{ $t('recycle.days') }}</span>
+          <input v-model.number="rcForm.days" type="number" min="1" max="365" style="width:90px;" :disabled="!rcForm.enabled || !rcForm.autoDelete" />
+          <button class="btn" :disabled="rcSaving" @click="saveRecycle">
+            {{ rcSaving ? $t('settings.saveSaving') : $t('recycle.save') }}
+          </button>
+          <span v-if="rcMsg" :class="['msg', rcMsgType]">{{ rcMsg }}</span>
+        </div>
+      </div>
+
       <!-- 界面语言 -->
       <div class="block">
         <div class="block-title">{{ $t('settings.language') }}</div>
@@ -385,7 +412,7 @@ import { useI18n } from 'vue-i18n'                               // 国际化：
 import { settings } from '../../store/settings'                 // 全局界面设置（任务栏/语言等）
 import { isAdmin } from '../../store/auth'                      // 管理员门控：限定敏感区块
 import { vip as vipStore, refreshVip, isVip } from '../../store/vip'   // VIP 状态：解锁付费功能
-import { nodesApi, shunxApi, panelApi, updateApi, webmodeApi, authApi, agentApi } from '../../api'   // 各设置区块后端接口
+import { nodesApi, shunxApi, panelApi, updateApi, webmodeApi, authApi, agentApi, recycleApi } from '../../api'   // 各设置区块后端接口
 import { nodes as nodesStore, refreshNodes, setCurrentNode } from '../../store/nodes'   // 多节点状态与当前节点切换
 import { LANGUAGES, setLocale } from '../../locales'            // 语言清单与切换函数
 import ConfirmDialog from '../ConfirmDialog.vue'                // 高危操作二次确认弹窗（输入面板密码）
@@ -759,6 +786,47 @@ async function otpDisable() {
   }
 }
 
+// ---- 回收站设置（仅管理员） ----
+const rcForm = reactive({ enabled: true, autoDelete: true, days: 30 })
+const rcSaving = ref(false)
+const rcMsg = ref('')
+const rcMsgType = ref('')
+
+async function loadRecycle() {
+  try {
+    const cfg = await recycleApi.config()
+    rcForm.enabled = !!cfg.enabled
+    rcForm.autoDelete = !!cfg.auto_delete
+    rcForm.days = cfg.auto_delete_days || 30
+  } catch (e) {
+    // 接口异常时静默，不阻塞设置窗口其它功能
+  }
+}
+
+async function saveRecycle() {
+  if (rcSaving.value) return
+  // 表单校验：保留天数限制 1-365
+  const days = rcForm.days
+  if (!days || days < 1 || days > 365 || !Number.isInteger(days)) {
+    rcMsg.value = t('recycle.daysInvalid')
+    rcMsgType.value = 'err'
+    return
+  }
+  rcSaving.value = true
+  rcMsg.value = ''
+  try {
+    await recycleApi.saveConfig({ enabled: !!rcForm.enabled, auto_delete: !!rcForm.autoDelete, auto_delete_days: days })
+    rcMsg.value = t('recycle.saved')
+    rcMsgType.value = 'ok'
+  } catch (e) {
+    const d = e?.response?.data?.detail
+    rcMsg.value = (typeof d === 'string' && d) ? d : t('recycle.saveFailed', { error: e?.message || '' })
+    rcMsgType.value = 'err'
+  } finally {
+    rcSaving.value = false
+  }
+}
+
 // ---- 关于：项目与社区链接 ----
 // nameKey 为多语言键，url 为固定外链；集中在此便于维护与扩展
 const aboutLinks = [
@@ -1010,6 +1078,7 @@ onMounted(() => {
   if (isAdmin()) loadNodes()
   if (isAdmin()) loadWebMode()
   if (isAdmin()) loadAgentCfg()
+  if (isAdmin()) loadRecycle()
   // 付费功能：刷新当前账号 VIP 状态（决定「统一面板兼容」是否可解锁）
   refreshVip()
 })

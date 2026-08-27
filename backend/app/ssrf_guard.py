@@ -34,7 +34,7 @@ Graw 中多处功能接受「用户提供的 URL」并发起到该地址的服�
   5. 调用方应在「每次实际发起请求前」重新校验（而非仅创建时），以缓解
      DNS rebinding 的 TOCTOU 窗口；重定向应禁用或逐跳复用本校验。
 """
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 import re
 import socket
 import ipaddress
@@ -158,6 +158,44 @@ def _assert_resolved_host(hostname: str, *, allow_private: bool, strict_dns: boo
         except ValueError as exc:
             raise ValueError(f"非法 IP 地址: {addr}（SSRF 防护）") from exc
         _assert_ip(ip, hostname, allow_private, allow_loopback)
+
+
+def pin_http_url(url: str, *, allow_private: bool = False):
+    """HTTP URL 主机固定：把 host 替换为已通过校验的解析 IP。
+
+    安全修复（第十四轮审计，Medium）：此前「ssrf_guard 校验」与「requests
+    实际连接」各自解析一次 DNS，攻击者可在两次解析之间切换记录（DNS
+    rebinding TOCTOU）——校验时解析到公网 IP 放行，实际连接时解析到
+    169.254.169.254 / 内网 IP。固定 IP 后校验与实际连接使用同一解析结果，
+    TOCTOU 窗口被消除。
+
+    - 仅 http:// 需要固定（https 的证书/SNI 绑定使 rebinding 到无证书的
+      内网地址必然握手失败，天然免疫此变体）。
+    - 返回 (pinned_url, host_header)：host_header 非 None 时调用方必须在
+      请求头中显式设置 Host（否则服务器按 IP 虚拟主机解析）。
+    - 解析失败时返回原 URL（fail-safe：连接阶段自然失败，无 SSRF 风险）。
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != "http" or not parsed.hostname:
+        return url, None
+    _assert_resolved_host(parsed.hostname, allow_private=allow_private, strict_dns=True)
+    try:
+        ip = socket.gethostbyname(parsed.hostname)
+    except OSError:
+        return url, None  # 解析失败由连接阶段兜底（连不上即无风险）
+    host_header = parsed.hostname
+    if parsed.port:
+        host_header = f"{parsed.hostname}:{parsed.port}"
+    ip_host = f"[{ip}]" if ":" in ip else ip
+    netloc = ip_host
+    if parsed.port:
+        netloc = f"{ip_host}:{parsed.port}"
+    if parsed.username:
+        netloc = f"{parsed.username}:{parsed.password or ''}@{netloc}" if parsed.password else f"{parsed.username}@{netloc}"
+    pinned = urlunparse(
+        (parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment)
+    )
+    return pinned, host_header
 
 
 def _assert_ip(ip, hostname: str, allow_private: bool, allow_loopback: bool = False) -> None:

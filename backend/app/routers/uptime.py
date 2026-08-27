@@ -122,16 +122,20 @@ def _probe_url(url: str, timeout_seconds: int) -> dict:
 
     timeout = max(1, min(int(timeout_seconds or 10), 60))
     start = time.time()
-    # 每次探测重新校验目标（缓解 DNS rebinding 的 TOCTOU 窗口）；
-    # 不跟随重定向，避免经 30x 跳转到受保护内网地址绕过主机校验。
+    # 每次探测重新校验目标 + 主机固定（第十四轮审计修复）：
+    # 此前「校验解析」与「requests 实连解析」各自 DNS 解析一次，存在 DNS
+    # rebinding TOCTOU 窗口（校验到公网 IP、实连解析到内网）。pin_http_url
+    # 把 http URL 的 host 替换为已校验的解析 IP，校验与实际连接同源。
     allow_private = os.environ.get("GRAW_UPTIME_ALLOW_PRIVATE_NET") == "1"
     try:
-        assert_safe_http_url(url, allow_private=allow_private)
+        from app.ssrf_guard import pin_http_url
+        url, host_hdr = pin_http_url(url, allow_private=allow_private)
     except ValueError as e:
         return {"status": "down", "code": None, "latency_ms": None, "error": str(e)[:200]}
+    headers = {"Host": host_hdr} if host_hdr else None
     for method in ("HEAD", "GET"):
         try:
-            r = requests.request(method, url, timeout=timeout, allow_redirects=False)
+            r = requests.request(method, url, timeout=timeout, allow_redirects=False, headers=headers)
             latency = round((time.time() - start) * 1000, 1)
             return {"status": "ok", "code": r.status_code, "latency_ms": latency, "error": None}
         except requests.exceptions.Timeout:

@@ -206,4 +206,4 @@ server: {
 
 ## License
 
-AGPLv3
+Graw Custom Open Source License Version & AGPLv3

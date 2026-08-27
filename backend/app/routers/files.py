@@ -12,6 +12,7 @@ from fastapi import Depends, Request
 from pydantic import BaseModel
 import os
 import logging
+import time
 import shutil
 import shlex
 import posixpath
@@ -20,6 +21,7 @@ import subprocess
 from typing import Optional
 
 from app import node_manager
+from app import trash
 from app.auth import get_current_user, get_client_ip
 from app import auditlog
 
@@ -150,9 +152,18 @@ async def list_dir(path: Optional[str] = None):
         logger.warning("列出目录失败 %s: %s", sp, e)
         raise _files_error(e, "列出目录失败")
     base = real if real.endswith("/") else real + "/"
+    # 回收站目录对文件管理隐藏：仅过滤顶层同名条目（trash_root 实际路径归一化比较）
+    trash_real = None
+    try:
+        trash_real = os.path.normpath(node_manager.host_path(trash.trash_root()))
+    except Exception:
+        trash_real = None
     items = []
     for en in entries:
         full = base + en["name"]
+        # 跳过回收站目录本身（其内容也不应出现在文件管理中）
+        if trash_real is not None and os.path.normpath(full) == trash_real:
+            continue
         items.append({
             "name": en["name"],
             "path": unhost_path(full),
@@ -242,9 +253,20 @@ async def delete_path(
     if not node_manager.exists(safe):
         raise HTTPException(status_code=404, detail="Not found")
     try:
-        node_manager.remove(safe)
-        auditlog.record("删除", user["username"], get_client_ip(request), safe)
+        # 回收站已启用时，删除 = 移入回收站（可恢复）；回收站目录内的文件
+        # 直接物理删除（防递归回收）。移入失败时宁可报错，绝不静默物理删除。
+        if trash.is_enabled() and not trash.path_in_trash(safe):
+            item = trash.move_to_trash(safe, user["username"])
+            auditlog.record(
+                "删除(回收站)", user["username"], get_client_ip(request),
+                f"{safe} -> {item['trash']}",
+            )
+        else:
+            node_manager.remove(safe)
+            auditlog.record("删除", user["username"], get_client_ip(request), safe)
         return {"ok": True}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.warning("删除失败 %s: %s", safe, e)
         raise _files_error(e, "删除失败")
@@ -324,6 +346,7 @@ async def upload(
     user: dict = Depends(get_current_user),
     path: str = Form(...),
     file: UploadFile = File(...),
+    relpath: str = Form(""),
 ):
     target_dir = host_path(_safe_path(path))
     if not os.path.isdir(target_dir):
@@ -333,8 +356,24 @@ async def upload(
     safe_name = os.path.basename(raw_name).strip()
     if not safe_name or safe_name in (".", ".."):
         raise HTTPException(status_code=400, detail="非法文件名")
-    target = os.path.join(target_dir, safe_name)
+    # relpath：拖拽文件夹递归上传时携带相对路径（如 "子目录/文件名.txt"）。
+    # 逐段校验，拒绝空段 / "." / ".."（防穿越），再在目标目录下逐层建目录。
+    rel = (relpath or "").strip().replace("\\", "/").strip("/")
+    rel_dirs = []
+    if rel:
+        # 去掉末段（文件名），只取子目录层级
+        parts = rel.split("/")
+        parts = parts[:-1] if len(parts) > 1 else []
+        for seg in parts:
+            if seg in ("", ".", ".."):
+                raise HTTPException(status_code=400, detail="非法路径")
+            rel_dirs.append(seg)
+    target = target_dir
     try:
+        if rel_dirs:
+            target = os.path.join(target_dir, *rel_dirs)
+            os.makedirs(target, exist_ok=True)
+        target = os.path.join(target, safe_name)
         with open(target, "wb") as f:
             shutil.copyfileobj(file.file, f)
         auditlog.record("上传文件", user["username"], get_client_ip(request), unhost_path(target))
@@ -373,6 +412,18 @@ class CopyRequest(BaseModel):
     dst: str
 
 
+def _unique_dst(dst: str) -> str:
+    """目标已存在时自动生成不冲突的新目标（Windows 式「名称 (2).ext」）。"""
+    if not os.path.exists(dst):
+        return dst
+    stem, ext = os.path.splitext(dst)
+    for i in range(2, 1000):
+        cand = f"{stem} ({i}){ext}"
+        if not os.path.exists(cand):
+            return cand
+    return f"{stem}-{int(time.time())}{ext}"
+
+
 @router.post("/copy")
 async def copy_path(
     req: CopyRequest,
@@ -383,13 +434,20 @@ async def copy_path(
     dst = host_path(_safe_path(req.dst))
     if not os.path.exists(src):
         raise HTTPException(status_code=404, detail="Source not found")
+    # 防止把目录复制进自身（Windows 同样禁止：复制到子目录会无限递归）
+    if os.path.isdir(src):
+        src_abs = os.path.abspath(src)
+        dst_abs = os.path.abspath(dst)
+        if dst_abs == src_abs or dst_abs.startswith(src_abs + os.sep):
+            raise HTTPException(status_code=400, detail="不能把目录复制到其自身内部")
     try:
+        dst = _unique_dst(dst)
         if os.path.isdir(src):
             shutil.copytree(src, dst)
         else:
             shutil.copy2(src, dst)
-        auditlog.record("复制", user["username"], get_client_ip(request), f"{req.src} -> {req.dst}")
-        return {"ok": True}
+        auditlog.record("复制", user["username"], get_client_ip(request), f"{req.src} -> {dst}")
+        return {"ok": True, "dst": _safe_path(dst)}
     except Exception as e:
         logger.warning("复制失败 %s -> %s: %s", req.src, req.dst, e)
         raise _files_error(e, "复制失败")

@@ -594,6 +594,28 @@ async def get_current_user_ws_checked(
     return user
 
 
+def ws_session_still_valid(websocket: WebSocket) -> bool:
+    """复检已建立的 WebSocket 会话是否仍有效（第十四轮审计修复，Medium）。
+
+    此前 WS 仅在握手时校验一次 token；改密（bump_token_version）/踢出设备
+    （revoke_session）后，已建立的终端/监控长连接不会被中断——被盗令牌
+    场景下管理员改密止损对终端无效。各长连接消息循环应周期性调用本函数，
+    失效即主动断开。握手参数中的 token 与校验逻辑与 get_current_user_ws 一致。
+    """
+    try:
+        token = (websocket.query_params or {}).get("token", "")
+        payload = decode_token(token)
+        if payload is None:
+            return False
+        if not verify_token_version(payload):
+            return False
+        if not session_active(payload.get("sid", "")):
+            return False
+        return True
+    except Exception:
+        return False
+
+
 # 可信代理链长度：直接部署（无反代）为 0；反代部署时应设置为代理层数，
 # 并确保上游代理剥离/覆盖 X-Forwarded-For（由部署方保证，不可由客户端注入）。
 TRUSTED_PROXY_DEPTH = int(os.environ.get("TRUSTED_PROXY_DEPTH", "0"))

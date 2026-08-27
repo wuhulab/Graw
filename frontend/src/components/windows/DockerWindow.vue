@@ -467,10 +467,10 @@ async function saveConfig() {
       iptables: !!form.value.iptables
     }
     const r = await dockerApi.saveConfig(body)   // 调用 /api/docker/config（PUT）
-    configMsgErr = false
+    configMsgErr.value = false
     configMsg.value = `配置已保存 → ${r.config_path}` + (r.iptables_supported ? '' : '（iptables 仅记录，当前引擎不支持）')
   } catch (e) {
-    configMsgErr = true
+    configMsgErr.value = true
     configMsg.value = '保存失败：' + (e.response?.data?.detail || e.message)
   }
 }

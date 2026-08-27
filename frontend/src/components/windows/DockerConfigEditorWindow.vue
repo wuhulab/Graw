@@ -37,7 +37,7 @@ const emit = defineEmits(['close'])
 const content = ref('')        // 编辑区文本（daemon.json 原始内容）
 const configPath = ref('')    // 配置文件在宿主机的绝对路径（仅展示）
 const msg = ref('')            // 保存结果提示
-const msgErr = ref(false)      // 保存是否失败（注意：此处为 ref 但被当作值直接赋值，见 save 内）
+const msgErr = ref(false)      // 保存是否失败（ref 赋值需用 .value）
 const error = ref('')          // 加载失败提示
 
 // --- 动作：读取 Docker 引擎配置文件原始内容 ---
@@ -58,10 +58,10 @@ async function save() {
   msg.value = ''
   try {
     const r = await dockerApi.saveConfigRaw(content.value)   // 调用 /api/docker/config/raw
-    msgErr = false
+    msgErr.value = false
     msg.value = t('dockerconfig.saved', { path: r.config_path })
   } catch (e) {
-    msgErr = true
+    msgErr.value = true
     msg.value = t('dockerconfig.saveFailed', { error: e.response?.data?.detail || e.message })
   }
 }

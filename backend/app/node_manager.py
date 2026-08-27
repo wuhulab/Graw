@@ -26,6 +26,7 @@ import shutil
 import socket
 import subprocess
 import threading
+import contextvars
 import logging
 from typing import Optional
 
@@ -91,19 +92,28 @@ _paramiko_pool_lock = threading.Lock()
 _paramiko_pool_MAX = 16
 
 # 请求级节点上下文（「统一面板兼容」用）：中间件按请求头 X-Graw-Node 临时覆盖
-# 全局当前节点，使不同窗口可并行访问不同子节点。thread-local 保证每个 HTTP
-# 请求线程隔离，覆盖立即在当前线程生效、请求处理完后由中间件复位。
-_req_ctx = threading.local()
+# 全局当前节点，使不同窗口可并行访问不同子节点。
+#
+# 安全修复（第十四轮审计，Medium）：此前用 threading.local()——asyncio 单线程
+# 事件循环下所有协程共享同一线程，thread-local 退化为「进程级」共享：
+#   - terminal_ws 长驻会话 set 的节点，会被任何并发 HTTP 请求中间件的
+#     finally 复位覆盖 → 终端会话期间 is_remote()/get_current_node() 读到
+#     他人请求的节点，终端连错节点；
+#   - 并发 HTTP 请求之间也会相互污染（中间件 set 后 await 期间被他人复位）。
+# 改用 contextvars.ContextVar：asyncio 原生按 Task 隔离上下文，中间件/WS
+# 各在自己的 task 上下文内 set/复位，互不干扰，也天然支持 BaseHTTPMiddleware
+# 的 copy_context 传播到子 task（路由）。
+_req_ctx = contextvars.ContextVar("graw_request_node", default=None)
 
 
 def set_request_node(node_id: Optional[str]) -> None:
-    """设置当前线程的请求级节点（None 表示清除覆盖）。"""
-    _req_ctx.node_id = node_id or None
+    """设置当前请求上下文的请求级节点（None 表示清除覆盖）。"""
+    _req_ctx.set(node_id or None)
 
 
 def _req_ctx_node() -> Optional[str]:
-    """读取当前线程的请求级节点（无覆盖返回 None）。"""
-    return getattr(_req_ctx, "node_id", None)
+    """读取当前请求上下文的请求级节点（无覆盖返回 None）。"""
+    return _req_ctx.get()
 
 
 # ------------------------------------------------------------
@@ -198,8 +208,9 @@ def get_current_node() -> dict:
     """返回当前生效的节点（始终存在）。
 
     优先级：「统一面板兼容」下请求级节点（由中间件按 X-Graw-Node 设置）
-    > 全局选中的当前节点。请求级上下文用 thread-local，随每个 HTTP 请求线程
-    干净隔离；无覆盖时行为与改造前完全一致。
+    > 全局选中的当前节点。请求级上下文用 contextvars（asyncio Task 隔离，
+    第十四轮审计修复——原 threading.local 在单线程事件循环下为进程级共享，
+    会与长驻 WS 终端会话相互污染）。
     """
     req_id = _req_ctx_node()
     store = _get_store()

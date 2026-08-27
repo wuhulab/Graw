@@ -6,7 +6,7 @@ import re
 import threading
 import subprocess
 
-from app.auth import get_current_user, get_current_user_ws_admin
+from app.auth import get_current_user, get_current_user_ws_admin, ws_session_still_valid
 from app.hostfs import get_host_root
 from app import node_manager
 from app import auditlog
@@ -395,6 +395,9 @@ async def _try_paramiko_interactive(websocket: WebSocket, node: dict) -> str:
         try:
             while True:
                 data = await websocket.receive_text()
+                # 会话复检（第十四轮审计修复）：改密/踢出后立即中断终端
+                if not ws_session_still_valid(websocket):
+                    break
                 if data.startswith("\x1bRESIZE:"):
                     try:
                         _, dims = data.split(":", 1)
@@ -469,6 +472,9 @@ async def _windows_pipe_command_terminal(websocket: WebSocket, argv: list):
     try:
         while True:
             data = await websocket.receive_text()
+            # 会话复检（第十四轮审计修复）：改密/踢出后立即中断终端
+            if not ws_session_still_valid(websocket):
+                break
             if data.startswith("\x1bRESIZE:"):
                 continue
             if proc.poll() is not None:
@@ -538,6 +544,9 @@ async def _windows_conpty_terminal(websocket: WebSocket, shell: str):
     try:
         while True:
             data = await websocket.receive_text()
+            # 会话复检（第十四轮审计修复）：改密/踢出后立即中断终端
+            if not ws_session_still_valid(websocket):
+                break
             if data.startswith("\x1bRESIZE:"):
                 try:
                     _, dims = data.split(":", 1)
@@ -600,6 +609,9 @@ async def _windows_pipe_terminal(websocket: WebSocket, shell: str):
     try:
         while True:
             data = await websocket.receive_text()
+            # 会话复检（第十四轮审计修复）：改密/踢出后立即中断终端
+            if not ws_session_still_valid(websocket):
+                break
             if data.startswith("\x1bRESIZE:"):
                 continue
             if proc.poll() is not None:
@@ -693,6 +705,9 @@ async def _interactive_tty(websocket: WebSocket, fd, pid):
     try:
         while True:
             msg = await websocket.receive_text()
+            # 会话复检（第十四轮审计修复）：改密/踢出后立即中断终端
+            if not ws_session_still_valid(websocket):
+                break
             if msg.startswith("\x1bRESIZE:"):
                 try:
                     _, dims = msg.split(":", 1)

@@ -24,6 +24,9 @@ import os
 import re
 import uuid
 import logging
+import asyncio
+import threading
+import queue
 from io import BytesIO
 from typing import Optional, Generator
 
@@ -53,6 +56,36 @@ _PROTO_LABEL = {
     "webdav": "WebDAV",
     "s3": "对象存储",
 }
+
+
+async def _run_blocking(fn, *args, **kwargs):
+    """把同步阻塞调用移出事件循环（线程池执行）。
+
+    安全修复（第十四轮审计，Medium）：此前各 async 端点直接在事件循环内
+    执行 requests/FTP/paramiko 等阻塞网络 I/O（超时 15-30s，上传为全程），
+    连接 tarpit 远端或慢速大文件时整个面板对所有用户冻结（单事件循环 DoS）。
+    """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: fn(*args, **kwargs))
+
+
+def _read_limited(iter_chunks, max_bytes: int = None) -> bytes:
+    """流式读取并限制累计大小：超过 max_bytes 立即抛 413（防 OOM）。
+
+    安全修复（第十四轮审计，Medium）：此前 read 先整读进内存再校验 2MB，
+    恶意/超大响应可在返回 413 前把面板 OOM。改为分块累计，超限即中断。
+    """
+    limit = max_bytes if max_bytes is not None else MAX_READ_BYTES
+    buf = BytesIO()
+    total = 0
+    for chunk in iter_chunks:
+        if not chunk:
+            continue
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(413, "文件过大（>2MB），请下载查看")
+        buf.write(chunk)
+    return buf.getvalue()
 
 # 输入白名单（对齐本项目安全规范，防注入 / 控制字符）
 _NAME_RE = re.compile(r"^[A-Za-z0-9_\-\u4e00-\u9fff\u3400-\u4dbf ]{1,64}$")
@@ -291,20 +324,26 @@ class FTPAdapter(BaseAdapter):
                 pass
 
     def read(self, lpath: str) -> str:
-        import io
-        buf = io.BytesIO()
+        # 流式限长（第十四轮审计修复）：retrbinary 回调内累计字节数，
+        # 超过 2MB 立即抛 413 中断传输，避免整读超大文件导致 OOM
+        total = {"n": 0}
+        buf = BytesIO()
+
+        def _cb(data):
+            total["n"] += len(data)
+            if total["n"] > MAX_READ_BYTES:
+                raise HTTPException(413, "文件过大（>2MB），请下载查看")
+            buf.write(data)
+
         ftp = self._connect()
         try:
-            ftp.retrbinary("RETR " + self._full(lpath), buf.write)
+            ftp.retrbinary("RETR " + self._full(lpath), _cb)
         finally:
             try:
                 ftp.quit()
             except Exception:
                 pass
-        data = buf.getvalue()
-        if len(data) > MAX_READ_BYTES:
-            raise HTTPException(413, "文件过大（>2MB），请下载查看")
-        return data.decode("utf-8", errors="replace")
+        return buf.getvalue().decode("utf-8", errors="replace")
 
     def write(self, lpath: str, content: str) -> None:
         import io
@@ -382,17 +421,42 @@ class FTPAdapter(BaseAdapter):
                 pass
 
     def download(self, lpath: str):
-        import io
-        buf = io.BytesIO()
-        ftp = self._connect()
-        try:
-            ftp.retrbinary("RETR " + self._full(lpath), buf.write)
-        finally:
+        """流式下载：后台线程执行 retrbinary，经队列逐块 yield。
+
+        安全修复（第十四轮审计修复）：此前整读进 BytesIO 再一次性 yield，
+        大文件会整份驻留内存（OOM）。改为队列流式，内存占用恒定。
+        """
+        q = queue.Queue(maxsize=8)
+        done = threading.Event()
+        err = []
+
+        def _cb(data):
+            q.put(data)
+
+        def _run():
             try:
-                ftp.quit()
-            except Exception:
-                pass
-        yield buf.getvalue()
+                ftp = self._connect()
+                try:
+                    ftp.retrbinary("RETR " + self._full(lpath), _cb)
+                finally:
+                    try:
+                        ftp.quit()
+                    except Exception:
+                        pass
+            except Exception as e:  # noqa: BLE001
+                err.append(e)
+            finally:
+                done.set()
+
+        threading.Thread(target=_run, daemon=True).start()
+        while not done.is_set() or not q.empty():
+            try:
+                chunk = q.get(timeout=1)
+                yield chunk
+            except queue.Empty:
+                continue
+        if err:
+            raise err[0]
 
 
 def _ftp_ts(s: str) -> float:
@@ -462,13 +526,21 @@ class SMBAdapter(BaseAdapter):
         return dict(path=lpath or "/", parent=_lp_parent(lpath), items=items)
 
     def read(self, lpath: str) -> str:
+        # 流式限长（第十四轮审计修复）：分块累计字节数，超 2MB 即中断
         self._register()
         smbclient = __import__("smbclient")
-        with smbclient.open_file(self._full(lpath), "r") as f:
-            data = f.read()
-        if len(data.encode("utf-8")) > MAX_READ_BYTES:
-            raise HTTPException(413, "文件过大（>2MB），请下载查看")
-        return data
+        total = 0
+        parts = []
+        with smbclient.open_file(self._full(lpath), "rb") as f:
+            while True:
+                chunk = f.read(1 << 16)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_READ_BYTES:
+                    raise HTTPException(413, "文件过大（>2MB），请下载查看")
+                parts.append(chunk)
+        return b"".join(parts).decode("utf-8", errors="replace")
 
     def write(self, lpath: str, content: str) -> None:
         self._register()
@@ -536,6 +608,23 @@ def _safe_err(e: Exception) -> str:
     return (str(e)[:160] or e.__class__.__name__).replace("\n", " ")
 
 
+def _url_authority(url: str) -> str:
+    """URL 的权威部分（scheme://host:port）：用于判断「目标服务器」是否变更。
+
+    第十四轮审计（凭据转发防护）：仅 authority 变化（换服务器）才要求显式
+    提供新密码；同服务器路径变化不影响凭据语义。
+    """
+    from urllib.parse import urlparse
+    try:
+        p = urlparse(url or "")
+        if not p.hostname:
+            return ""
+        port = p.port or (443 if p.scheme == "https" else 80 if p.scheme == "http" else "")
+        return f"{p.scheme.lower()}://{p.hostname.lower()}:{port}"
+    except Exception:
+        return ""
+
+
 class WebDAVAdapter(BaseAdapter):
     """WebDAV：直接基于 requests 的 HTTP 方法（无需额外库）。"""
 
@@ -568,6 +657,16 @@ class WebDAVAdapter(BaseAdapter):
         base = self.base if self.base.startswith("http") else "http://" + self.base
         return _lu_join(base, lpath)
 
+    def _pin(self, url: str) -> tuple:
+        """SSRF 主机固定：http URL 的 host 替换为已校验的解析 IP。
+
+        第十四轮审计修复（Medium）：校验与实际连接共用同一 DNS 解析结果，
+        消除 DNS rebinding TOCTOU 窗口。返回 (pinned_url, host_header)。
+        """
+        from app.ssrf_guard import pin_http_url
+
+        return pin_http_url(url, allow_private=True)
+
     def _req(self, method, url, **kw):
         import requests
         # SSRF 防护（第八轮审计修复，High）：禁止跟随 30x 重定向。
@@ -575,8 +674,13 @@ class WebDAVAdapter(BaseAdapter):
         # 不再经过任何校验——攻击者可配置一个公网 WebDAV 地址，其服务器 302
         # 跳转到 http://169.254.169.254/（云元数据 IAM 凭据）或任意内网服务。
         # WebDAV 操作本就不应依赖重定向，遇 3xx 一律按异常拒绝。
+        # 第十四轮审计：主机固定（DNS rebinding TOCTOU 缓解）。
+        url, host_hdr = self._pin(url)
+        headers = self._headers()
+        if host_hdr:
+            headers.setdefault("Host", host_hdr)
         r = requests.request(
-            method, url, headers=self._headers(), timeout=30,
+            method, url, headers=headers, timeout=30,
             allow_redirects=False, **kw,
         )
         if r.status_code in (301, 302, 303, 307, 308):
@@ -592,9 +696,12 @@ class WebDAVAdapter(BaseAdapter):
         body = ('<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop>'
                 '<d:resourcetype/><d:getcontentlength/><d:getlastmodified/>'
                 '</d:prop></d:propfind>')
+        url, host_hdr = self._pin(url)  # DNS rebinding 缓解（第十四轮审计）
+        headers = {**self._headers(), "Depth": "1", "Content-Type": "application/xml"}
+        if host_hdr:
+            headers.setdefault("Host", host_hdr)
         r = requests.request(
-            "PROPFIND", url, headers={**self._headers(), "Depth": "1",
-                                     "Content-Type": 'application/xml'},
+            "PROPFIND", url, headers=headers,
             data=body, timeout=30, allow_redirects=False,
         )
         if r.status_code in (301, 302, 303, 307, 308):
@@ -618,10 +725,12 @@ class WebDAVAdapter(BaseAdapter):
         return dict(path=lpath or "/", parent=_lp_parent(lpath), items=items)
 
     def read(self, lpath: str) -> str:
+        # 流式限长（第十四轮审计修复）：iter_content 分块累计，超 2MB 即中断
         r = self._req("GET", self._url(lpath), stream=True)
-        data = r.content
-        if len(data) > MAX_READ_BYTES:
-            raise HTTPException(413, "文件过大（>2MB），请下载查看")
+        try:
+            data = _read_limited(r.iter_content(1 << 16))
+        finally:
+            r.close()
         return data.decode("utf-8", errors="replace")
 
     def write(self, lpath: str, content: str) -> None:
@@ -629,8 +738,11 @@ class WebDAVAdapter(BaseAdapter):
 
     def mkdir(self, lpath: str) -> None:
         import requests
-        url = self._url(lpath)
-        r = requests.request("MKCOL", url, headers=self._headers(), timeout=30,
+        url, host_hdr = self._pin(self._url(lpath))  # DNS rebinding 缓解（第十四轮审计）
+        headers = self._headers()
+        if host_hdr:
+            headers.setdefault("Host", host_hdr)
+        r = requests.request("MKCOL", url, headers=headers, timeout=30,
                              allow_redirects=False)
         if r.status_code in (301, 302, 303, 307, 308):
             raise HTTPException(400, "检测到重定向跳转，已拒绝（SSRF 防护）")
@@ -641,8 +753,11 @@ class WebDAVAdapter(BaseAdapter):
 
     def delete(self, lpath: str) -> None:
         import requests
-        url = self._url(lpath)
-        r = requests.request("DELETE", url, headers=self._headers(), timeout=30,
+        url, host_hdr = self._pin(self._url(lpath))  # DNS rebinding 缓解（第十四轮审计）
+        headers = self._headers()
+        if host_hdr:
+            headers.setdefault("Host", host_hdr)
+        r = requests.request("DELETE", url, headers=headers, timeout=30,
                              allow_redirects=False)
         if r.status_code in (301, 302, 303, 307, 308):
             raise HTTPException(400, "检测到重定向跳转，已拒绝（SSRF 防护）")
@@ -653,9 +768,17 @@ class WebDAVAdapter(BaseAdapter):
 
     def rename(self, src: str, dst: str) -> None:
         import requests
+        # DNS rebinding 缓解（第十四轮审计）：请求 URL 固定 IP。
+        # Destination 头为目标路径的绝对 URL（host 与请求 host 相同，
+        # 均为已通过 SSRF 校验的 base 主机），保持原样即可。
+        src_url, src_hdr = self._pin(self._url(src))
+        headers = self._headers()
+        if src_hdr:
+            headers.setdefault("Host", src_hdr)
+        headers["Destination"] = self._url(dst)
         r = requests.request(
-            "MOVE", self._url(src),
-            headers={**self._headers(), "Destination": self._url(dst)}, timeout=30,
+            "MOVE", src_url,
+            headers=headers, timeout=30,
             allow_redirects=False,
         )
         if r.status_code in (301, 302, 303, 307, 308):
@@ -811,11 +934,17 @@ class S3Adapter(BaseAdapter):
     def read(self, lpath: str) -> str:
         client = self._client()
         try:
-            data = b"".join(client.get_object(self.bucket, self._obj_key(lpath)))
+            # 流式限长（第十四轮审计修复）：resp.stream 分块累计，超 2MB 即中断
+            resp = client.get_object(self.bucket, self._obj_key(lpath))
+            try:
+                data = _read_limited(resp.stream(1 << 16))
+            finally:
+                resp.close()
+                resp.release_conn()
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(400, "读取对象失败: %s" % _safe_err(e))
-        if len(data) > MAX_READ_BYTES:
-            raise HTTPException(413, "文件过大（>2MB），请下载查看")
         return data.decode("utf-8", errors="replace")
 
     def write(self, lpath: str, content: str) -> None:
@@ -1058,13 +1187,28 @@ async def update_connection(
     if not target:
         raise HTTPException(404, "连接不存在")
     old = target.get("password") or ""
+    new_host = payload.host.strip()
+    new_base = (payload.base or "").strip() or None
+    # 安全修复（第十四轮审计，Medium）：目标服务器（host/port/base 的
+    # authority）变化而密码留空时，旧密码会被静默发往新服务器（凭据转发
+    # 泄露）。端点变更必须显式提供新密码；仅名称/路径变化时留空保持原密码。
+    endpoint_changed = (
+        new_host != (target.get("host") or "")
+        or payload.port != target.get("port")
+        or _url_authority(new_base or "") != _url_authority(target.get("base") or "")
+    )
+    if endpoint_changed and not payload.password:
+        raise HTTPException(
+            status_code=400,
+            detail="连接地址已变更，请显式提供新密码（密码留空不再沿用旧密码，避免凭据泄露到新服务器）",
+        )
     target.update({
         "name": payload.name.strip(),
         "type": payload.type,
-        "host": payload.host.strip(),
+        "host": new_host,
         "port": payload.port,
         "username": payload.username.strip(),
-        "base": (payload.base or "").strip() or None,
+        "base": new_base,
         "params": payload.params or {},
     })
     # 留空则保留原密码，否则覆盖
@@ -1101,7 +1245,7 @@ async def test_connection(cid: str, user: dict = Depends(get_current_user)):
     conn = _get_conn(cid)
     adapter = _make_adapter(conn)
     try:
-        adapter.list("/")
+        await _run_blocking(adapter.list, "/")
         return {"ok": True, "message": "连接成功"}
     except HTTPException as e:
         return {"ok": False, "message": e.detail}
@@ -1125,7 +1269,7 @@ async def ns_list(cid: str, path: Optional[str] = None, user: dict = Depends(get
     conn, adapter = _get_adapter_for(cid)
     lp = _validate_lpath(path)
     try:
-        result = adapter.list(lp)
+        result = await _run_blocking(adapter.list, lp)
         result["protocol"] = conn.get("type")
         result["label"] = _proto_label(conn.get("type"))
         return result
@@ -1143,7 +1287,7 @@ async def ns_read(cid: str, path: str, user: dict = Depends(get_current_user)):
     conn, adapter = _get_adapter_for(cid)
     lp = _validate_lpath(path)
     try:
-        return {"path": lp, "content": adapter.read(lp)}
+        return {"path": lp, "content": await _run_blocking(adapter.read, lp)}
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -1163,7 +1307,7 @@ async def ns_write(cid: str, req: ContentReq, user: dict = Depends(get_current_u
     conn, adapter = _get_adapter_for(cid)
     lp = _validate_lpath(req.path)
     try:
-        adapter.write(lp, req.content)
+        await _run_blocking(adapter.write, lp, req.content)
         return {"ok": True}
     except HTTPException:
         raise
@@ -1182,7 +1326,7 @@ async def ns_mkdir(cid: str, req: PathReq, user: dict = Depends(get_current_user
     conn, adapter = _get_adapter_for(cid)
     lp = _validate_lpath(req.path)
     try:
-        adapter.mkdir(lp)
+        await _run_blocking(adapter.mkdir, lp)
         return {"ok": True}
     except HTTPException:
         raise
@@ -1199,7 +1343,7 @@ async def ns_delete(cid: str, req: PathReq, user: dict = Depends(get_current_use
     if lp == "/":
         raise HTTPException(400, "不能删除根目录")
     try:
-        adapter.delete(lp)
+        await _run_blocking(adapter.delete, lp)
         return {"ok": True}
     except HTTPException:
         raise
@@ -1220,7 +1364,7 @@ async def ns_rename(cid: str, req: RenameReq, user: dict = Depends(get_current_u
     src = _validate_lpath(req.src)
     dst = _validate_lpath(req.dst)
     try:
-        adapter.rename(src, dst)
+        await _run_blocking(adapter.rename, src, dst)
         return {"ok": True}
     except HTTPException:
         raise
@@ -1248,7 +1392,7 @@ async def ns_upload(
         raise HTTPException(400, "文件名包含非法字符")
     target = _join_l(dirp, raw_name)
     try:
-        adapter.upload(target, file)
+        await _run_blocking(adapter.upload, target, file)
         auditlog.record("网络储存上传", user["username"], get_client_ip(request),
                         "%s:%s" % (conn.get("name"), target))
         return {"ok": True, "path": target}

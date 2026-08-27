@@ -51,6 +51,7 @@ from app.routers import (
     ftpusers,
     toolbox,
     phpversions,
+    recycle,
     vip,
 )
 from app.auth import (
@@ -63,6 +64,7 @@ from app import remote_cap
 from app import agent_auth
 from app import node_manager
 from app import agent_client
+from app import trash
 
 # 权限分级：
 #   PROTECTED - 仅需登录（只读信息类接口，如系统概览/备忘录，供桌面展示）
@@ -111,6 +113,8 @@ async def lifespan(app: FastAPI):
     await certcheck.start_monitor()
     # 启动服务/端口后台监控（自定义监控项：端口/进程/systemd 服务状态检测）
     await svcmonitor.start_monitor()
+    # 启动回收站后台自动清理（按小时清理所有节点过期回收站条目）
+    await trash.start_auto_purge()
     yield
     # 关闭后台采集协程
     await system.stop_metrics_producer()
@@ -119,6 +123,7 @@ async def lifespan(app: FastAPI):
     await uptime.stop_monitor()
     await certcheck.stop_monitor()
     await svcmonitor.stop_monitor()
+    await trash.stop_auto_purge()
 
 
 # 安全：默认关闭交互式 API 文档（/docs、/redoc、/openapi.json）。
@@ -129,7 +134,7 @@ _ENABLE_DOCS = os.environ.get("GRAW_ENABLE_DOCS", "").strip() == "1"
 
 # 面板版本号：用于 /api/health（前端「设置-关于」板块展示）。
 # 升级版本时仅需同步修改此处，FastAPI 应用信息与此保持一致。
-APP_VERSION = "1.4.3"
+APP_VERSION = "1.5.1"
 
 app = FastAPI(
     title="Graw Server Panel",
@@ -419,6 +424,7 @@ app.include_router(
     process.router, prefix="/api/process", tags=["process"], dependencies=ADMIN
 )
 app.include_router(files.router, prefix="/api/files", tags=["files"], dependencies=ADMIN)
+app.include_router(recycle.router, prefix="/api/recycle", tags=["recycle"], dependencies=ADMIN)
 # 终端为 WebSocket，Bearer 头无法在浏览器 WS 中设置，故在处理函数内
 # 通过 ?token= 查询参数鉴权 + 强制管理员校验（见 routers/terminal.py）。
 app.include_router(terminal.router, prefix="/api/terminal", tags=["terminal"])

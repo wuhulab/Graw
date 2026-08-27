@@ -125,6 +125,7 @@ import WindowFrame from './components/WindowFrame.vue'
 import DockerWindow from './components/windows/DockerWindow.vue'
 import ProcessWindow from './components/windows/ProcessWindow.vue'
 import FilesWindow from './components/windows/FilesWindow.vue'
+import RecycleBinWindow from './components/windows/RecycleBinWindow.vue'
 import TerminalWindow from './components/windows/TerminalWindow.vue'
 import SitesWindow from './components/windows/SitesWindow.vue'
 import SiteEditWindow from './components/windows/SiteEditWindow.vue'
@@ -182,7 +183,7 @@ import { startDocker, stopDocker, refresh as refreshDocker } from './store/docke
 import { nodes as nodesStore, refreshNodes } from './store/nodes'
 import { setRequestNode } from './store/requestNode'
 import { tamperState, startTamper, stopTamper } from './store/tamper'
-import { Container, Settings, Folder, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, Archive, BarChart3, FileCode2, History, Stethoscope, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用）
+import { Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, Archive, BarChart3, FileCode2, History, Stethoscope, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用）
 
 // --- 桌面根状态：登录态、动态壁纸、底栏主机徽标 ---
 const loggedIn = computed(() => !!auth.token)
@@ -301,6 +302,7 @@ const shortcuts = ref([
   { key: 'runtime', label: '运行环境', titleKey: 'app.shortcut.runtime', icon: markRaw(Cpu), component: markRaw(RuntimeWindow), w: 900, h: 560, adminOnly: true, remoteCap: 'local' },
   { key: 'process', label: '进程管理', titleKey: 'app.shortcut.process', icon: markRaw(Settings), component: markRaw(ProcessWindow), w: 780, h: 520, adminOnly: true },
   { key: 'files', label: '文件管理', titleKey: 'app.shortcut.files', icon: markRaw(Folder), component: markRaw(FilesWindow), w: 820, h: 540, adminOnly: true },
+  { key: 'recycle', label: '回收站', titleKey: 'app.shortcut.recycle', icon: markRaw(Trash2), component: markRaw(RecycleBinWindow), w: 760, h: 480, adminOnly: true },
   { key: 'netstorage', label: '网络储存', titleKey: 'app.shortcut.netstorage', icon: markRaw(Cloud), component: markRaw(NetStorageWindow), w: 860, h: 540, adminOnly: true, remoteCap: 'local' },
   { key: 'uisettings', label: '界面设置', titleKey: 'app.shortcut.uisettings', icon: markRaw(Palette), component: markRaw(UISettingsWindow), w: 520, h: 540, adminOnly: true, remoteCap: 'local', vip: true },
   { key: 'disks', label: '磁盘管理', titleKey: 'app.shortcut.disks', icon: markRaw(HardDrive), component: markRaw(DisksWindow), w: 900, h: 560, adminOnly: true },

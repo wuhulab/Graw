@@ -273,7 +273,13 @@ def _webdav_request(method: str, remote: dict, path: str, headers_extra: dict = 
     import requests
 
     url = _webdav_url(remote, path)
+    # DNS rebinding 缓解（第十四轮审计）：校验与实际连接共用同一解析结果
+    from app.ssrf_guard import pin_http_url
+
+    url, host_hdr = pin_http_url(url, allow_private=True)
     headers = _remote_auth_header(remote)
+    if host_hdr:
+        headers.setdefault("Host", host_hdr)
     if headers_extra:
         headers.update(headers_extra)
     try:
@@ -296,9 +302,16 @@ def _remote_ensure_dir(remote: dict, path: str) -> None:
         return
     import requests
 
+    url = _webdav_url(remote, path)
+    # DNS rebinding 缓解（第十四轮审计）
+    from app.ssrf_guard import pin_http_url
+
+    url, host_hdr = pin_http_url(url, allow_private=True)
+    headers = _remote_auth_header(remote)
+    if host_hdr:
+        headers.setdefault("Host", host_hdr)
     try:
-        r = requests.request("MKCOL", _webdav_url(remote, path),
-                             headers=_remote_auth_header(remote), timeout=30,
+        r = requests.request("MKCOL", url, headers=headers, timeout=30,
                              allow_redirects=False)
     except requests.RequestException:
         return  # 网络问题静默，由后续 PUT 步骤最终报错
@@ -315,9 +328,16 @@ def _remote_upload(remote: dict, local_path: str, remote_dir: str, filename: str
 
     _remote_ensure_dir(remote, remote_dir)
     url = _webdav_url(remote, f"{remote_dir}/{filename}")
+    # DNS rebinding 缓解（第十四轮审计）
+    from app.ssrf_guard import pin_http_url
+
+    url, host_hdr = pin_http_url(url, allow_private=True)
+    headers = _remote_auth_header(remote)
+    if host_hdr:
+        headers.setdefault("Host", host_hdr)
     try:
         with open(local_path, "rb") as f:
-            r = requests.request("PUT", url, headers=_remote_auth_header(remote),
+            r = requests.request("PUT", url, headers=headers,
                                  data=f, timeout=600, allow_redirects=False)
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"读取本地备份文件失败：{e}")
@@ -928,11 +948,21 @@ async def run_task(task_id: str):
     data = _load_backup()
     task = _find_task(data.get("tasks", []), task_id)
     result = await asyncio.to_thread(_do_backup_sync, data, task)
-    # 更新任务最近备份状态
-    task["last_backup_at"] = datetime.now().isoformat()
-    task["last_status"] = "ok" if result.get("ok") else "error"
-    task["last_error"] = ""
-    _save_backup(data)
+    # 安全修复（第十四轮审计，Medium）：此前持有备份开始时的旧 data 快照，
+    # 结束时整体 _save_backup(data) 回写——备份期间（WebDAV 上传可达 30s+）
+    # 其他请求对 tasks/remotes 的增删改会被旧快照覆盖回滚（丢失更新，
+    # 已删除的凭据/任务"复活"）。改为合并式更新：重读最新数据，只写入
+    # 目标任务的状态字段，绝不整体回写旧快照。
+    try:
+        latest = _load_backup()
+        t = _find_task(latest.get("tasks", []), task_id)
+        if t is not None:
+            t["last_backup_at"] = datetime.now().isoformat()
+            t["last_status"] = "ok" if result.get("ok") else "error"
+            t["last_error"] = ""
+            _save_backup(latest)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("更新任务最近状态失败: %s", e)
     return result
 
 
@@ -1027,6 +1057,19 @@ async def create_remote(req: RemoteRequest):
     return _mask_remote(remote)
 
 
+def _url_authority(url: str) -> str:
+    """URL 的权威部分（scheme://host:port）：仅用于判断「目标服务器」是否变更。"""
+    from urllib.parse import urlparse
+    try:
+        p = urlparse(url or "")
+        if not p.hostname:
+            return ""
+        port = p.port or (443 if p.scheme == "https" else 80 if p.scheme == "http" else "")
+        return f"{p.scheme.lower()}://{p.hostname.lower()}:{port}"
+    except Exception:
+        return ""
+
+
 @router.put("/remotes/{remote_id}")
 async def update_remote(remote_id: str, req: RemoteRequest):
     """更新远程备份目标（密码留空表示保持原密码）。"""
@@ -1037,10 +1080,18 @@ async def update_remote(remote_id: str, req: RemoteRequest):
     base = (req.base or "").strip().rstrip("/")
     if not base.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="WebDAV 地址必须为 http/https URL")
+    # 安全修复（第十四轮审计，Medium）：目标服务器（authority=scheme://host:port）
+    # 变化而密码留空时，旧密码会被静默发往新服务器（凭据转发泄露）。
+    # 仅路径变化（同服务器不同目录）时留空保持原密码是安全且合理的。
+    if _url_authority(base) != _url_authority(remote.get("base") or "") and not req.password:
+        raise HTTPException(
+            status_code=400,
+            detail="服务器地址已变更，请显式提供新密码（密码留空不再沿用旧密码，避免凭据泄露到新服务器）",
+        )
     remote["name"] = (req.name or "").strip()
     remote["base"] = base
     remote["username"] = (req.username or "").strip()
-    # 密码留空 = 保持原密码
+    # 密码留空 = 保持原密码（仅当服务器地址未变时允许）
     if req.password:
         remote["password"] = req.password
     _save_backup(data)

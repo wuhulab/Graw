@@ -204,6 +204,16 @@ export const filesApi = {
   upload: (formData) => api.post('/files/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: FILES_TIMEOUT }).then(r => r.data)
 }
 
+// 回收站（recycle 路由）：删除的文件进入回收站，可恢复/彻底删除/自动清理
+export const recycleApi = {
+  config: () => api.get('/recycle/config').then(r => r.data),
+  saveConfig: (body) => api.post('/recycle/config', body).then(r => r.data),
+  list: () => api.get('/recycle/list', { timeout: FILES_TIMEOUT }).then(r => r.data),
+  restore: (path) => api.post('/recycle/restore', { path }).then(r => r.data),
+  remove: (path) => api.post('/recycle/delete', { path }).then(r => r.data),
+  empty: () => api.post('/recycle/empty').then(r => r.data)
+}
+
 export const notesApi = {
   get: () => api.get('/notes/').then(r => r.data),
   save: (content) => api.post('/notes/', { content }).then(r => r.data)
