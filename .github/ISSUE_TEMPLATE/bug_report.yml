@@ -1,0 +1,70 @@
+---
+name: Bug 反馈
+description: 报告一个可复现的问题
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！请先搜索 [已有 Issues](https://github.com/wuhulab/Graw/issues) 确认没有重复。
+        如果问题涉及**安全漏洞**，请勿在此提交，改用 [私有漏洞报告](https://github.com/wuhulab/Graw/security/advisories/new)。
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 简要描述发生了什么
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 尽量给出完整的最小复现步骤（打开的窗口、点击的操作、提交的参数等）
+      placeholder: |
+        1. 打开 …
+        2. 点击 …
+        3. 观察 …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+      description: 期望的正确结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 实际发生的结果（附报错信息、截图、浏览器控制台输出更好）
+  - type: input
+    id: version
+    attributes:
+      label: Graw 版本
+      description: 展示在「关于」或 `GET /api/health` 的版本号
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: 部署方式
+      multiple: false
+      options:
+        - Docker 容器（完整宿主机模式）
+        - 本地源码运行（python uvicorn + vite dev）
+        - 其它
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      description: 操作系统（含是否 Windows/Linux/macOS 及版本）、浏览器及版本、是否为多节点/子节点 Agent 场景
+      placeholder: 例如：Linux (Ubuntu 22.04) / Chrome 120 / 单节点
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志
+      description: 后端日志、相关请求/响应内容（注意脱敏：去掉 token、密码等敏感信息）
