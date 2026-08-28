@@ -342,4 +342,5 @@ async def test_alert(request: Request, _: dict = Depends(require_admin)):
         return {"ok": True, "sent": sent, "failed": failed}
     except Exception as e:
         logger.warning("测试异常登录提醒推送失败: %s", e)
-        return {"ok": False, "sent": 0, "failed": 0, "error": str(e)}
+        # 安全：错误详情仅记日志，不回传（code-scanning py/stack-trace-exposure）
+        return {"ok": False, "sent": 0, "failed": 0, "error": "推送失败"}

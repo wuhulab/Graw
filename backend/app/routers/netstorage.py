@@ -1251,7 +1251,8 @@ async def test_connection(cid: str, user: dict = Depends(get_current_user)):
         return {"ok": False, "message": e.detail}
     except Exception as e:
         logger.warning("连接测试失败 %s: %s", conn.get("name"), _safe_err(e))
-        return {"ok": False, "message": "连接失败: %s" % _safe_err(e)}
+        # 安全（code-scanning py/stack-trace-exposure）：详情已记日志，不回传
+        return {"ok": False, "message": "连接失败"}
 
 
 # ---------------------------------------------------------------------------

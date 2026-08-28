@@ -34,7 +34,8 @@ def _make_cert(path: str, days_valid: int):
     from cryptography.hazmat.primitives.asymmetric import rsa
     from cryptography.x509.oid import NameOID
 
-    key = rsa.generate_private_key(public_exponent=65537, key_size=1024)
+    # 安全：RSA 至少 2048 位（1024 位已认为可被破解，code-scanning 告警）
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "example.com")])
     now = datetime.datetime.now(datetime.timezone.utc)
     # 生效时间固定为 30 天前，保证 days_valid 为负（已过期证书）时

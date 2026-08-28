@@ -325,7 +325,14 @@ async def _agent_proxy_request(request: Request) -> Response:
             agent_client.agent_proxy, node, request.method, full_path, headers, raw_body
         )
     except Exception as e:  # noqa: BLE001 - 代理失败给可读错误
-        return JSONResponse(status_code=502, content={"detail": f"Agent 代理失败: {str(e)[:300]}"})
+        # 安全（code-scanning py/stack-trace-exposure）：不把异常详情原样回传
+        #（可能含内部路径/凭据），仅记录日志供排查
+        import logging
+        logging.getLogger("graw.main").warning(
+            "Agent 代理失败（node=%s %s %s）: %s",
+            (node or {}).get("name", ""), request.method, request.url.path, e,
+        )
+        return JSONResponse(status_code=502, content={"detail": "Agent 代理失败，请检查子节点 Agent 状态"})
     status = result.get("status") or 500
     body = result.get("body") or b""
     ctype = (result.get("headers") or {}).get("content-type", "text/plain")

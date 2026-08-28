@@ -520,7 +520,11 @@ async def waf_site_save(site_id: str, body: dict):
     try:
         write_result = _write_nginx_fragment(cfg)
     except OSError as e:
-        write_result = {"written": False, "error": str(e)}
+        # 安全（code-scanning py/stack-trace-exposure）：错误详情仅记日志，
+        # 不把内部路径/原因回传给前端
+        import logging
+        logging.getLogger("graw.waf").warning("写入 WAF nginx 片段失败: %s", e)
+        write_result = {"written": False, "error": "写入 nginx 配置失败"}
     return {"saved": True, "config": cfg, "write": write_result}
 
 

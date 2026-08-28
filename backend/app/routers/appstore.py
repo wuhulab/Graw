@@ -286,7 +286,11 @@ async def get_app_icon(app_id: str):
     """返回应用的官方图标（本地 app-store/apps/<id>/icon.png 或 icon.svg）。
 
     优先 PNG，其次 SVG；统一由本地静态服务提供，不依赖外部 CDN。
+    安全（code-scanning py/path-injection）：app_id 必须是普通标识符，
+    拒绝 / \\ .. 等字符，防止穿越读取任意目录文件。
     """
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._\\-]{0,63}", app_id or ""):
+        raise HTTPException(status_code=400, detail="非法应用 ID")
     safe = os.path.basename(app_id)
     app_dir = os.path.join(LOCAL_APPS_DIR, safe)
     for fname, mime in (("icon.png", "image/png"), ("icon.svg", "image/svg+xml")):

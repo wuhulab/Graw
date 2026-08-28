@@ -159,7 +159,12 @@ def _deploy(args: argparse.Namespace) -> None:
 
     log.info("连接 %s@%s:%d ...", user, host, port)
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    # 安全（code-scanning py/paramiko-missing-host-key-validation）：
+    # 1) 先加载系统 known_hosts，目标主机 key 若已记录则强制校验一致性；
+    # 2) 对首次部署的未知主机使用 WarningPolicy——连接但打印告警，
+    #    不会像 AutoAddPolicy 那样静默改写 known_hosts，降低中间人风险。
+    client.load_system_host_keys()
+    client.set_missing_host_key_policy(paramiko.WarningPolicy())
     try:
         client.connect(host, port=port, username=user, password=password or None,
                        timeout=15, look_for_keys=False, allow_agent=False)

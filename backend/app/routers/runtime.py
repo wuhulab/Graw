@@ -134,6 +134,10 @@ MOUNT_MODES = ("rw", "ro")
 # 容器名校验：Docker/Podman 容器名仅允许字母数字及 _ . -，且不能以 - 开头
 _CONTAINER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
+# 镜像名白名单：仅允许常见 registry/repo:tag 形态。注意必须以字母/数字开头，
+# 防止以 `-` 开头的镜像名被 podman/docker 解析成 run 的选项（选项注入）。
+_IMAGE_RE = re.compile(r"^[a-z0-9][a-z0-9](?:[a-z0-9._/-]*[a-z0-9_])?(?::[A-Za-z0-9][A-Za-z0-9._-]{0,127})?$")
+
 # ---------------------------------------------------------------------------
 # 宿主路径挂载安全校验（第十二轮审计修复，Low）
 #
@@ -396,6 +400,11 @@ def _create_container(cfg: dict) -> dict:
         final_name = f"{base_name}-{suffix}"
 
     image = _build_image(cfg)
+    # 安全（code-scanning py/command-line-injection）：镜像名直接作为
+    # `docker/podman run` 的位置参数，必须以合法镜像名白名单校验，
+    # 防止以 `-` 开头被解析为 run 选项（选项注入）。
+    if not _IMAGE_RE.match(image) or image.startswith("-"):
+        raise HTTPException(status_code=400, detail=f"镜像名不合法: {image}")
     command = _default_command(cfg)
     # 「其他项目」若填写了环境安装命令，需用 shell 依次执行安装命令与启动命令
     script = _build_entry_script(command, cfg.get("install_command"))

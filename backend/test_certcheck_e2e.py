@@ -71,7 +71,8 @@ def _make_expiring_cert(path, days_valid=15):
     from cryptography.hazmat.primitives.asymmetric import rsa
     from cryptography.x509.oid import NameOID
 
-    key = rsa.generate_private_key(public_exponent=65537, key_size=1024)
+    # 安全：RSA 至少 2048 位（1024 位已认为可被破解，code-scanning 告警）
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "expire.test")])
     now = datetime.datetime.now(datetime.timezone.utc)
     cert = (

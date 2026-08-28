@@ -636,17 +636,19 @@ async function loadAgentCfg() {
 // 生成随机成对密钥并将「启用」打开，方便快速接入
 function genAgentKey() {
   const rand = (chars) => {
+    // 安全：成对密钥 / secret 属安全上下文，必须用加密安全的随机源。
+    // 现代浏览器均支持 Web Crypto（getRandomValues），不再回退 Math.random。
     const bytes = new Uint8Array(chars)
-    if (window.crypto && window.crypto.getRandomValues) {
+    try {
       window.crypto.getRandomValues(bytes)
-      // 转 URL-safe 字符：每字节扩成 base64url 片段，保证无特殊符号
-      return Array.from(bytes, (b) =>
-        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'[b % 64]
-      ).join('')
+    } catch (e) {
+      // 理论上不会发生（非 HTTPS 环境 Web Crypto 仍可用），仅兜底阻止崩溃
+      return ''
     }
-    // 旧浏览器兜底：用 Math.random 拼串
-    const pool = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
-    return Array.from({ length: chars }, () => pool[Math.floor(Math.random() * pool.length)]).join('')
+    // 转 URL-safe 字符：每字节扩成 base64url 片段，保证无特殊符号
+    return Array.from(bytes, (b) =>
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'[b % 64]
+    ).join('')
   }
   agentForm.key = rand(16)
   agentForm.secret = rand(32)

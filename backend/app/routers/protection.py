@@ -1160,7 +1160,8 @@ async def batch_add_backup(req: BatchBackupRequest):
             results.append({"path": path, "ok": True, "already": False, "task_id": task.get("id", "")})
         except Exception as e:
             logger.error("批量备份中创建 %s 失败: %s", path, e)
-            results.append({"path": path, "ok": False, "error": str(e)})
+            # 安全（code-scanning py/stack-trace-exposure）：错误详情仅记日志
+            results.append({"path": path, "ok": False, "error": "加入备份失败"})
     logger.info("批量加入备份完成：%s 项", len(results))
     return {"results": results}
 

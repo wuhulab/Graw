@@ -11,9 +11,10 @@
 // 建议纳入每次前端构建前的检查流程。
 import fs from 'node:fs'
 import path from 'node:path'
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
 import { fileURLToPath } from 'node:url'
+
+// ESM 导入具有提升语义，但为满足 lint / 静态扫描，import 统一置于文件顶部
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const root = path.resolve(__dirname, '..')
 const src = path.join(root, 'src')

@@ -306,10 +306,22 @@ def _render(data: dict) -> str:
 
 
 def _config_path(data: dict) -> str:
-    """返回当前模式对应的配置文件路径（未设置则取默认）。"""
+    """返回当前模式对应的配置文件路径（未设置则取默认）。
+
+    安全（code-scanning py/path-injection）：configPath 由管理员填写，
+    但它会直接作为「任意文件写」目标，这里约束为绝对路径且以
+    .toml / .ini 结尾，防止误配导致覆盖系统文件。
+    """
     if data.get("mode") == "client":
-        return (data.get("client", {}).get("configPath") or "").strip() or DEFAULT_CLIENT_CONFIG
-    return (data.get("server", {}).get("configPath") or "").strip() or DEFAULT_SERVER_CONFIG
+        p = (data.get("client", {}).get("configPath") or "").strip() or DEFAULT_CLIENT_CONFIG
+    else:
+        p = (data.get("server", {}).get("configPath") or "").strip() or DEFAULT_SERVER_CONFIG
+    is_abs = os.path.isabs(p) or (IS_WIN and bool(os.path.splitdrive(p)[0]))
+    if not is_abs:
+        raise HTTPException(status_code=400, detail="frp 配置路径必须是绝对路径")
+    if not (p.endswith(".toml") or p.endswith(".ini")):
+        raise HTTPException(status_code=400, detail="frp 配置路径必须以 .toml 或 .ini 结尾")
+    return p
 
 
 def _bin_for(data: dict) -> str:
