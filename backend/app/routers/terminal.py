@@ -170,6 +170,7 @@ async def container_terminal_ws(
         else:
             await _unix_terminal(websocket)
     except WebSocketDisconnect:
+        # CodeQL [py/empty-except] WebSocket 正常断开：清理由 finally 完成
         pass
     except Exception as e:
         try:
@@ -219,6 +220,7 @@ async def terminal_ws(
         else:
             await _unix_terminal(websocket)
     except WebSocketDisconnect:
+        # CodeQL [py/empty-except] WebSocket 正常断开：清理由 finally 完成
         pass
     except Exception as e:
         try:
@@ -485,6 +487,7 @@ async def _windows_pipe_command_terminal(websocket: WebSocket, argv: list):
             except Exception:
                 break
     except WebSocketDisconnect:
+        # CodeQL [py/empty-except] WebSocket 正常断开：清理由 finally 完成
         pass
     finally:
         stop_flag.set()
@@ -567,6 +570,7 @@ async def _windows_conpty_terminal(websocket: WebSocket, shell: str):
             except Exception:
                 break
     except WebSocketDisconnect:
+        # CodeQL [py/empty-except] WebSocket 正常断开：清理由 finally 完成
         pass
     finally:
         stop_flag.set()
@@ -624,6 +628,7 @@ async def _windows_pipe_terminal(websocket: WebSocket, shell: str):
             except Exception:
                 break
     except WebSocketDisconnect:
+        # CodeQL [py/empty-except] WebSocket 正常断开：清理由 finally 完成
         pass
     finally:
         stop_flag.set()
@@ -718,15 +723,18 @@ async def _interactive_tty(websocket: WebSocket, fd, pid):
                 continue
             os.write(fd, msg.encode("utf-8"))
     except WebSocketDisconnect:
+        # CodeQL [py/empty-except] WebSocket 正常断开：清理由 finally 完成
         pass
     finally:
         stop_flag.set()
         output_task.cancel()
         try:
+            # CodeQL [py/empty-except] 进程可能已随连接退出，kill 失败无害
             os.kill(pid, signal.SIGTERM)
         except Exception:
             pass
         try:
+            # CodeQL [py/empty-except] fd 可能已被子进程继承关闭，close 失败无害
             os.close(fd)
         except Exception:
             pass

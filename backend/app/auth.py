@@ -74,6 +74,8 @@ def _get_secret() -> str:
                 s = f.read().strip()
                 if s:
                     return s
+        # CodeQL [py/empty-except] 既有签名密钥不可读/损坏时视为不存在，
+        # 走下方重建路径
         except Exception:
             pass
     secret = secrets.token_urlsafe(48)

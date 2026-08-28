@@ -1158,9 +1158,10 @@ async def batch_add_backup(req: BatchBackupRequest):
             )
             _save_protection(data)
             results.append({"path": path, "ok": True, "already": False, "task_id": task.get("id", "")})
-        except Exception as e:
-            logger.error("批量备份中创建 %s 失败: %s", path, e)
-            # 安全（code-scanning py/stack-trace-exposure）：错误详情仅记日志
+        except Exception:
+            # 安全：日志仅记录异常类型与堆栈，不拼接用户可控的 path/e 文本
+            #（code-scanning py/log-injection），避免日志注入
+            logger.error("批量备份中创建备份项失败（%s）", type(e).__name__, exc_info=True)
             results.append({"path": path, "ok": False, "error": "加入备份失败"})
     logger.info("批量加入备份完成：%s 项", len(results))
     return {"results": results}

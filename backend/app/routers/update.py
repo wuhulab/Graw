@@ -180,6 +180,8 @@ def _compose_mounts(working_dir: str, config_files: List[str]):
                     args += ["-f", rel]
                     continue
             except ValueError:
+                # CodeQL [py/empty-except] 跨盘/不同根时 relpath 抛异常，
+                # 视为越界回退到原路径分支继续加入挂载参数
                 pass
         args += ["-f", f]
     return volumes, args

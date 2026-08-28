@@ -507,6 +507,8 @@ def _extract_worker(archive: str, dest: str) -> None:
                 # 越界链接、设备文件），作为第二道防线；旧版本忽略该参数
                 tf.extractall(dest, filter="data")
             except TypeError:
+                # CodeQL [py/tarslip] 老 Python 降级路径：安全性已由上方对每个
+                # member 的显式校验（越界路径/越界链接/设备文件）保证
                 tf.extractall(dest)
 
 

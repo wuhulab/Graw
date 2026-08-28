@@ -15,7 +15,6 @@ healthcheck.py - 一键系统体检路由
   - 输出统一结构：{ score, summary, items: [{level, title, detail, advice}] }
   - 前端 HealthCheckWindow.vue 渲染报告并按 level 分级着色。
 """
-import json
 import logging
 import os
 import asyncio

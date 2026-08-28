@@ -432,6 +432,7 @@ async def stop_auto_purge():
         _purge_task.cancel()
         try:
             await _purge_task
+        # CodeQL [py/empty-except] 取消后台任务触发 CancelledError，正常退出
         except asyncio.CancelledError:
             pass
         _purge_task = None

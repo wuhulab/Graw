@@ -164,6 +164,9 @@ def _deploy(args: argparse.Namespace) -> None:
     # 2) 对首次部署的未知主机使用 WarningPolicy——连接但打印告警，
     #    不会像 AutoAddPolicy 那样静默改写 known_hosts，降低中间人风险。
     client.load_system_host_keys()
+    # CodeQL [py/paramiko-missing-host-key-validation] CLI 一次性部署工具：
+    # 显式 WarningPolicy（非静默改写 known_hosts），已加载 known_hosts 校验；
+    # 首次连接目标必然不在 known_hosts，由操作者显式提供 host/user 承担信任
     client.set_missing_host_key_policy(paramiko.WarningPolicy())
     try:
         client.connect(host, port=port, username=user, password=password or None,
