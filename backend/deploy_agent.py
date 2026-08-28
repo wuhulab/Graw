@@ -218,6 +218,7 @@ def _deploy(args: argparse.Namespace) -> None:
         print("请在母面板该节点配置以下 Agent 参数：")
         print(f"  agent_port = {agent_port}")
         print(f"  agent_key  = {key}")
+        # CodeQL [py/clear-text-logging-sensitive-data] CLI 配置输出：同 guest 模式
         print(f"  agent_secret = {secret}")
         print(f"  agent_role = {role}（子节点 GRAW_AGENT_ROLE）")
         print("=" * 60)

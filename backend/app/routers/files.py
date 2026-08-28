@@ -362,6 +362,7 @@ async def upload(
     file: UploadFile = File(...),
     relpath: str = Form(""),
 ):
+    # CodeQL [py/path-injection] 同上：目录路径经 _safe_path 校验后使用
     target_dir = host_path(_safe_path(path))
     if not os.path.isdir(target_dir):
         raise HTTPException(status_code=400, detail="Target directory not found")

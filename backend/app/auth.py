@@ -77,6 +77,9 @@ def _get_secret() -> str:
         except Exception:
             pass
     secret = secrets.token_urlsafe(48)
+    # CodeQL [py/clear-text-storage-sensitive-data] 签名密钥必须明文持久化
+    # 才能跨重启校验 JWT（加密密钥无法加密存储——自举问题），
+    # 已配套 0600 权限 + data 目录 0700 收紧
     with open(SECRET_FILE, "w", encoding="utf-8") as f:
         f.write(secret)
     # 限制签名密钥文件权限（仅本进程/用户可读），Linux 上避免同机低权用户读取

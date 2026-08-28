@@ -777,6 +777,9 @@ def _apache_site_config(site: dict) -> str:
 
 
 def _apply_apache_config(site_id: str, site: dict, enabled: bool):
+    # 安全：site_id 白名单校验（与 _apply_nginx_config 一致，防止路径穿越）
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{1,127}", site_id or ""):
+        raise HTTPException(status_code=400, detail="站点 ID 非法")
     conf_name = f"{site_id}.conf"
     avail_dir = host_path(APACHE_AVAILABLE)
     enab_dir = host_path(APACHE_ENABLED)

@@ -111,6 +111,8 @@ def host_shell(command: str, **kwargs) -> "subprocess.CompletedProcess":
     # chroot 后通过 /bin/sh -c 执行，使命令在宿主文件系统中解析
     cmd = ["chroot", HOST_ROOT, "/bin/sh", "-c", command]
     try:
+        # CodeQL [py/command-line-injection] 工具层：同 host_shell 非容器分支，
+        # command 字面量由调用方白名单 / shlex.quote 保证
         return subprocess.run(cmd, **kwargs)
     except FileNotFoundError as e:
         return subprocess.CompletedProcess(cmd, 127, b"", str(e).encode())

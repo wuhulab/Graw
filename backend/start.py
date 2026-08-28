@@ -166,6 +166,8 @@ def _self_test() -> int:
 
     # 端口探测：本机随机取一个临时端口，验证 wait_port_free 在空闲端口上返回 True
     probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # CodeQL [py/bind-socket-all-network-interfaces] 临时端口探测（bind 0 由系统
+    # 分配随机空闲端口），只用于测试 wait_port_free，非对外服务
     probe.bind(("0.0.0.0", 0))
     free_port = probe.getsockname()[1]
     probe.close()
