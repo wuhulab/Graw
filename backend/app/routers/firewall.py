@@ -1,6 +1,7 @@
 import ipaddress
 import json
 import os
+import asyncio
 import platform
 import subprocess
 import uuid
@@ -246,7 +247,8 @@ async def add_port_rule(req: PortRule):
         "comment": req.comment or "",
         "created_at": datetime.now().isoformat(),
     }
-    _add_port_rule(rule)
+    # iptables/netsh 为阻塞 subprocess，放线程池避免卡事件循环
+    await asyncio.to_thread(_add_port_rule, rule)
     data["port_rules"].append(rule)
     _save_fw(data)
     return rule
@@ -258,7 +260,8 @@ async def delete_port_rule(rule_id: str):
     rule = next((r for r in data.get("port_rules", []) if r["id"] == rule_id), None)
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
-    _del_port_rule(rule)
+    # iptables/netsh 为阻塞 subprocess，放线程池避免卡事件循环
+    await asyncio.to_thread(_del_port_rule, rule)
     data["port_rules"] = [r for r in data["port_rules"] if r["id"] != rule_id]
     _save_fw(data)
     return {"ok": True}
@@ -276,7 +279,8 @@ async def add_ip_rule(req: IpRule):
         "comment": req.comment or "",
         "created_at": datetime.now().isoformat(),
     }
-    _add_ip_rule(rule)
+    # iptables/netsh 为阻塞 subprocess，放线程池避免卡事件循环
+    await asyncio.to_thread(_add_ip_rule, rule)
     data["ip_rules"].append(rule)
     _save_fw(data)
     return rule
@@ -288,7 +292,8 @@ async def delete_ip_rule(rule_id: str):
     rule = next((r for r in data.get("ip_rules", []) if r["id"] == rule_id), None)
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
-    _del_ip_rule(rule)
+    # iptables/netsh 为阻塞 subprocess，放线程池避免卡事件循环
+    await asyncio.to_thread(_del_ip_rule, rule)
     data["ip_rules"] = [r for r in data["ip_rules"] if r["id"] != rule_id]
     _save_fw(data)
     return {"ok": True}
@@ -302,7 +307,9 @@ async def toggle_firewall(body: dict):
     _save_fw(data)
     if IS_WIN:
         action = "on" if enabled else "off"
-        host_cmd(
+        # netsh 为阻塞 subprocess，放线程池避免卡事件循环
+        await asyncio.to_thread(
+            host_cmd,
             ["netsh", "advfirewall", "set", "allprofiles", "state", action],
             capture_output=True,
             timeout=10,
@@ -321,11 +328,12 @@ async def clear_firewall():
     """
     data = _load_fw()
     removed = 0
+    # iptables/netsh 为阻塞 subprocess，放线程池避免卡事件循环
     for rule in data.get("port_rules", []):
-        _del_port_rule(rule)
+        await asyncio.to_thread(_del_port_rule, rule)
         removed += 1
     for rule in data.get("ip_rules", []):
-        _del_ip_rule(rule)
+        await asyncio.to_thread(_del_ip_rule, rule)
         removed += 1
     data["port_rules"] = []
     data["ip_rules"] = []
@@ -341,7 +349,8 @@ async def reconcile_firewall():
     发布端口的屏蔽/放行立即生效。调用后无需重复保存，规则已写入 iptables。
     """
     data = _load_fw()
-    applied = _apply_all_rules(data)
+    # 重放规则为阻塞 subprocess（逐条 iptables/netsh），放线程池避免卡事件循环
+    applied = await asyncio.to_thread(_apply_all_rules, data)
     return {"ok": True, "applied": applied}
 
 
@@ -350,7 +359,8 @@ async def list_listening_ports():
     """返回当前监听中的 TCP 端口及其放行/重要标记，供前端展示「未放行端口」。"""
     data = _load_fw()
     allowed = {r["port"] for r in data.get("port_rules", []) if r.get("action") == "allow"}
-    ports = _listening_tcp_ports()
+    # ss/netstat 为阻塞 subprocess，放线程池避免卡事件循环
+    ports = await asyncio.to_thread(_listening_tcp_ports)
     items = [
         {"port": p, "allowed": p in allowed, "protected": p in BLOCK_PROTECTED_PORTS}
         for p in sorted(ports)
@@ -368,7 +378,8 @@ async def block_unopened():
     data = _load_fw()
     existing_allow = {r["port"] for r in data.get("port_rules", []) if r.get("action") == "allow"}
     existing_deny = {r["port"] for r in data.get("port_rules", []) if r.get("action") == "deny"}
-    listening = _listening_tcp_ports()
+    # ss/netstat 为阻塞 subprocess，放线程池避免卡事件循环
+    listening = await asyncio.to_thread(_listening_tcp_ports)
 
     targets = sorted(
         p for p in listening
@@ -384,7 +395,7 @@ async def block_unopened():
             "comment": "默认屏蔽未放行端口",
             "created_at": datetime.now().isoformat(),
         }
-        _add_port_rule(rule)
+        await asyncio.to_thread(_add_port_rule, rule)
         data["port_rules"].append(rule)
         created.append(rule)
     _save_fw(data)

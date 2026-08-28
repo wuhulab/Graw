@@ -1,5 +1,6 @@
 import json
 import os
+import asyncio
 import platform
 import subprocess
 from datetime import datetime
@@ -132,6 +133,12 @@ def _reject_control_chars(value: str, field: str) -> str:
 
 @router.get("/list")
 async def list_logs():
+    # 远端节点每个 isfile 都是一次 SSH 阻塞调用，整体放线程池避免卡事件循环
+    items = await asyncio.to_thread(_list_logs_sync)
+    return {"logs": items}
+
+
+def _list_logs_sync() -> list:
     custom = _load_custom()
     items = []
     for key, meta in PREDEFINED.items():
@@ -156,11 +163,16 @@ async def list_logs():
                 "builtin": False,
             }
         )
-    return {"logs": items}
+    return items
 
 
 @router.get("/read")
 async def read_log(path: str = Query(...), tail: int = Query(200, ge=1, le=5000)):
+    # 远程 tail / 本地大文件读取均为阻塞 IO，放线程池避免卡事件循环
+    return await asyncio.to_thread(_read_log_sync, path, tail)
+
+
+def _read_log_sync(path: str, tail: int) -> dict:
     # 先经 _safe_log_path 拦截面板数据目录（防 secret.key/users.json 泄露）
     safe = _safe_log_path(path)
     if not node_manager.isfile(safe):
@@ -168,37 +180,33 @@ async def read_log(path: str = Query(...), tail: int = Query(200, ge=1, le=5000)
     # 远程节点：直接用 tail 读取最后 N 行
     if node_manager.is_remote():
         import shlex
+
         cmd = f"tail -n {int(tail)} {shlex.quote(safe)} 2>/dev/null || true"
         r = node_manager.host_shell(cmd, capture_output=True, text=True, timeout=20)
         lines = r.stdout.splitlines()
         return {"path": path, "lines": lines, "count": len(lines)}
     # 本地：先映射容器挂载前缀再读取
     real = host_path(safe)
-    try:
-        size = os.path.getsize(real)
-        if size > 50 * 1024 * 1024:
-            raise HTTPException(status_code=413, detail="Log file too large (>50MB)")
-        if IS_WIN and real.endswith(".evtx"):
-            return {
-                "content": "Windows .evtx files are binary; use Event Viewer directly."
-            }
-        lines = []
-        with open(real, "r", encoding="utf-8", errors="replace") as f:
-            if size < 2 * 1024 * 1024:
-                all_lines = f.readlines()
-                lines = all_lines[-tail:]
-            else:
-                import collections
+    size = os.path.getsize(real)
+    if size > 50 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Log file too large (>50MB)")
+    if IS_WIN and real.endswith(".evtx"):
+        return {
+            "content": "Windows .evtx files are binary; use Event Viewer directly."
+        }
+    lines = []
+    with open(real, "r", encoding="utf-8", errors="replace") as f:
+        if size < 2 * 1024 * 1024:
+            all_lines = f.readlines()
+            lines = all_lines[-tail:]
+        else:
+            import collections
 
-                ring = collections.deque(maxlen=tail)
-                for line in f:
-                    ring.append(line)
-                lines = list(ring)
-        return {"path": path, "lines": lines, "count": len(lines)}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+            ring = collections.deque(maxlen=tail)
+            for line in f:
+                ring.append(line)
+            lines = list(ring)
+    return {"path": path, "lines": lines, "count": len(lines)}
 
 
 @router.post("/add")
@@ -229,8 +237,8 @@ async def clear_log(req: ClearLogRequest):
     if path not in allowed:
         raise HTTPException(status_code=400, detail="仅允许清空日志列表中登记的日志文件")
     safe = _safe_log_path(path)
-    if not node_manager.isfile(safe):
+    if not await asyncio.to_thread(node_manager.isfile, safe):
         raise HTTPException(status_code=404, detail="Log file not found")
-    # 清空 = 覆盖为空串；远程 / 本地统一走节点文件抽象
-    node_manager.write_text(safe, "")
+    # 清空 = 覆盖为空串；远程 / 本地统一走节点文件抽象（阻塞 IO，放线程池）
+    await asyncio.to_thread(node_manager.write_text, safe, "")
     return {"ok": True}

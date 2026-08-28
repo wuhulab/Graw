@@ -30,6 +30,7 @@ frp.py - Frp（内网穿透）管理
 import json
 import logging
 import os
+import asyncio
 import platform
 import re
 import shlex
@@ -551,7 +552,15 @@ class FrpConfigModel(BaseModel):
 # ---------- 路由 ----------
 @router.get("/status")
 async def frp_status():
-    """探测 frp 安装与运行状态（不暴露 token）。"""
+    """探测 frp 安装与运行状态（不暴露 token）。
+
+    _running / _unit_exists 内部执行 systemctl / tasklist / pgrep 等阻塞
+    subprocess，放线程池避免卡事件循环。
+    """
+    return await asyncio.to_thread(_frp_status_sync)
+
+
+def _frp_status_sync() -> dict:
     data = _load_store()
     mode = data.get("mode", "server")
     bin_path = _bin_for(data)
@@ -747,7 +756,14 @@ async def toggle_proxy(proxy_id: str, body: dict):
 
 @router.post("/start")
 async def start_frp():
-    """启动当前模式 frp。"""
+    """启动当前模式 frp。
+
+    systemctl / nohup / taskkill 等为阻塞 subprocess，放线程池避免卡事件循环。
+    """
+    return await asyncio.to_thread(_start_frp_sync)
+
+
+def _start_frp_sync() -> dict:
     data = _load_store()
     ok, msg = _do_start(data)
     if not ok:
@@ -757,7 +773,11 @@ async def start_frp():
 
 @router.post("/stop")
 async def stop_frp():
-    """停止当前模式 frp。"""
+    """停止当前模式 frp（阻塞 subprocess，放线程池执行）。"""
+    return await asyncio.to_thread(_stop_frp_sync)
+
+
+def _stop_frp_sync() -> dict:
     data = _load_store()
     ok, msg = _do_stop(data)
     if not ok:
@@ -767,7 +787,11 @@ async def stop_frp():
 
 @router.post("/restart")
 async def restart_frp():
-    """重启当前模式 frp（先写盘最新配置再重启）。"""
+    """重启当前模式 frp（先写盘最新配置再重启，阻塞 subprocess 放线程池）。"""
+    return await asyncio.to_thread(_restart_frp_sync)
+
+
+def _restart_frp_sync() -> dict:
     data = _load_store()
     _write_toml(data)  # 确保进程以最新配置启动
     _do_stop(data)

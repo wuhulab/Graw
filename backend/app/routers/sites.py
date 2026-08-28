@@ -2,6 +2,8 @@ import hashlib
 import json
 import logging
 import os
+import asyncio
+import time
 import platform
 import re
 import subprocess
@@ -209,6 +211,8 @@ def _save_sites(sites: list):
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(SITES_FILE, "w", encoding="utf-8") as f:
         json.dump(sites, f, ensure_ascii=False, indent=2)
+    # 站点列表变更，使 merged_sites 的 TTL 缓存立即失效（下次重新发现/解析）
+    _invalidate_merged_cache()
 
 
 # 外部站点「显示名称」覆盖：外部站点由真实配置驱动（每次发现 name 复原），
@@ -231,6 +235,8 @@ def _save_external_names(names: dict):
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(SITES_NAMES_FILE, "w", encoding="utf-8") as f:
         json.dump(names, f, ensure_ascii=False, indent=2)
+    # 显示名称变更同样影响合并结果，使 TTL 缓存失效
+    _invalidate_merged_cache()
 
 
 def _which(cmd: str) -> Optional[str]:
@@ -833,11 +839,32 @@ class UpdateSite(BaseModel):
     domain: Optional[str] = None
 
 
+# merged_sites 结果缓存：站点发现（读 sites.json + 解析真实 nginx conf + glob 目录）
+# 与域名去重是相对重的磁盘/SSH 操作，而 list / WAF / 站点增强下拉会在短时间内
+# 多次调用。TTL 缓存避免每次请求都重新解析，同时保证配置变更后不超过 2 秒生效。
+_merged_cache: Optional[List[dict]] = None
+_merged_cache_at = 0.0
+_MERGED_CACHE_TTL = 2.0
+
+
+def _invalidate_merged_cache() -> None:
+    """使 merged_sites 的缓存失效（站点/外部名称变更时调用）。"""
+    global _merged_cache, _merged_cache_at
+    _merged_cache = None
+    _merged_cache_at = 0.0
+
+
 def merged_sites() -> List[dict]:
     """自建站点 + 外部真实站点 的去重合并列表。
 
     供「网站」列表与 WAF / 站点增强等下拉复用，保证各应用看到同样一组站点。
+    带 2 秒 TTL 缓存：站点发现与 nginx conf 解析较重，避免每次请求重复执行。
     """
+    global _merged_cache, _merged_cache_at
+    now = time.time()
+    if _merged_cache is not None and (now - _merged_cache_at) < _MERGED_CACHE_TTL:
+        # 深拷贝返回，避免调用方修改污染缓存（如 list_sites 叠加 web_server/online）
+        return [dict(s) for s in _merged_cache]
     sites = _load_sites()
     builtin_domains = {
         d.lower()
@@ -853,11 +880,20 @@ def merged_sites() -> List[dict]:
     for e in external:
         if e.get("id") in names and names[e["id"]]:
             e["name"] = names[e["id"]]
-    return sites + external
+    _merged_cache = sites + external
+    _merged_cache_at = now
+    return [dict(s) for s in _merged_cache]
 
 
 @router.get("/list")
 async def list_sites():
+    # _web_server_type（subprocess/SSH 探测）、_discover_existing_sites（解析
+    # nginx conf）、_site_status_by_port（psutil 全量网络连接扫描）均为阻塞操作，
+    # 放线程池避免卡事件循环。
+    return await asyncio.to_thread(_list_sites_sync)
+
+
+def _list_sites_sync() -> dict:
     ws = _web_server_type()
     merged = merged_sites()
     for s in merged:

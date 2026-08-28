@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi import Depends, Request
 from pydantic import BaseModel
 import os
+import asyncio
 import logging
 import time
 import shutil
@@ -139,11 +140,12 @@ async def list_dir(path: Optional[str] = None):
         # 本地容器部署下会再自行 host_path 一次（补 /host 前缀）。若把上方已映射
         # 的 real 传进去会得到 /host/host 双前缀，根目录就 404 Path not found；
         # 远程节点因 host_path 原样返回，sp 与 real 等价，统一传 sp 两种场景皆正确。
-        if not node_manager.exists(sp):
+        # 注意：本地 os.scandir / 远端 SSH 枚举均为阻塞 IO，放线程池避免卡事件循环。
+        if not await asyncio.to_thread(node_manager.exists, sp):
             raise HTTPException(status_code=404, detail="Path not found")
-        if not node_manager.isdir(sp):
+        if not await asyncio.to_thread(node_manager.isdir, sp):
             raise HTTPException(status_code=400, detail="Not a directory")
-        entries = node_manager.listdir_detail(sp)
+        entries = await asyncio.to_thread(node_manager.listdir_detail, sp)
     except PermissionError:
         raise HTTPException(status_code=403, detail="Permission denied")
     except HTTPException:
@@ -203,12 +205,14 @@ async def roots():
 async def read_file(path: str):
     sp = _safe_path(path)
     # 原语统一传宿主视角 sp，由 node_manager 内部完成 /host 映射（见 list_dir 注释）
-    if not node_manager.isfile(sp):
+    # 远端 isfile/getsize/read_text 均为阻塞 SSH 调用，放线程池避免卡事件循环。
+    if not await asyncio.to_thread(node_manager.isfile, sp):
         raise HTTPException(status_code=404, detail="File not found")
-    if node_manager.getsize(sp) > 2 * 1024 * 1024:
+    if await asyncio.to_thread(node_manager.getsize, sp) > 2 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="File too large (>2MB)")
     try:
-        return {"path": sp, "content": node_manager.read_text(sp)}
+        content = await asyncio.to_thread(node_manager.read_text, sp)
+        return {"path": sp, "content": content}
     except Exception as e:
         logger.warning("读取文件失败: %s", e)
         raise _files_error(e, "读取文件失败")
@@ -228,7 +232,8 @@ async def write_file(
     sp = _safe_path(req.path)
     try:
         # 写文件用宿主视角 sp，由 node_manager 内部完成 /host 映射（见 list_dir 注释）
-        node_manager.write_text(sp, req.content)
+        # 本地 / 远端均为阻塞文件 IO / SSH，放线程池避免卡事件循环。
+        await asyncio.to_thread(node_manager.write_text, sp, req.content)
         auditlog.record(
             "写文件", user["username"], get_client_ip(request), sp
         )
@@ -250,19 +255,20 @@ async def delete_path(
 ):
     safe = _safe_path(req.path)
     # 原语统一传宿主视角 safe，由 node_manager 内部完成 /host 映射（见 list_dir 注释）
-    if not node_manager.exists(safe):
+    # 远端 exists / remove / move_to_trash 均为阻塞 SSH，放线程池避免卡事件循环。
+    if not await asyncio.to_thread(node_manager.exists, safe):
         raise HTTPException(status_code=404, detail="Not found")
     try:
         # 回收站已启用时，删除 = 移入回收站（可恢复）；回收站目录内的文件
         # 直接物理删除（防递归回收）。移入失败时宁可报错，绝不静默物理删除。
         if trash.is_enabled() and not trash.path_in_trash(safe):
-            item = trash.move_to_trash(safe, user["username"])
+            item = await asyncio.to_thread(trash.move_to_trash, safe, user["username"])
             auditlog.record(
                 "删除(回收站)", user["username"], get_client_ip(request),
                 f"{safe} -> {item['trash']}",
             )
         else:
-            node_manager.remove(safe)
+            await asyncio.to_thread(node_manager.remove, safe)
             auditlog.record("删除", user["username"], get_client_ip(request), safe)
         return {"ok": True}
     except HTTPException:
@@ -285,12 +291,17 @@ async def mkdir(
     safe = _safe_path(req.path)
     real = host_path(safe)
     try:
+        # 本地 os.makedirs / 远端 mkdir 均为阻塞 IO，放线程池避免卡事件循环
         if node_manager.is_remote():
             # 远程节点经 /bin/sh -c 执行：路径必须转义，防 shell 注入
             # （对比 node_manager.host_cmd 的远程 shlex.quote 语义）
-            node_manager.host_shell(f"mkdir -p {shlex.quote(real)}", timeout=30)
+            await asyncio.to_thread(
+                node_manager.host_shell,
+                f"mkdir -p {shlex.quote(real)}",
+                timeout=30,
+            )
         else:
-            os.makedirs(real, exist_ok=True)
+            await asyncio.to_thread(os.makedirs, real, exist_ok=True)
         auditlog.record("新建目录", user["username"], get_client_ip(request), safe)
         return {"ok": True}
     except Exception as e:
@@ -315,16 +326,19 @@ async def rename(
     dst = host_path(dst_sp)
     # exists 判断传宿主视角 src_sp（本地资源内部自动 /host 映射）；
     # 而 os.rename / 远程 host_shell 需要容器真实路径 src/dst（二者保持一致）
-    if not node_manager.exists(src_sp):
+    # 远端 exists / rename 均为阻塞 SSH，放线程池避免卡事件循环。
+    if not await asyncio.to_thread(node_manager.exists, src_sp):
         raise HTTPException(status_code=404, detail="Source not found")
     try:
         if node_manager.is_remote():
             # 远程节点经 /bin/sh -c 执行：src/dst 均须转义，防 shell 注入
-            node_manager.host_shell(
-                f"mv {shlex.quote(src)} {shlex.quote(dst)}", timeout=30
+            await asyncio.to_thread(
+                node_manager.host_shell,
+                f"mv {shlex.quote(src)} {shlex.quote(dst)}",
+                timeout=30,
             )
         else:
-            os.rename(src, dst)
+            await asyncio.to_thread(os.rename, src, dst)
         auditlog.record("重命名", user["username"], get_client_ip(request), f"{req.src} -> {req.dst}")
         return {"ok": True}
     except Exception as e:
@@ -372,10 +386,10 @@ async def upload(
     try:
         if rel_dirs:
             target = os.path.join(target_dir, *rel_dirs)
-            os.makedirs(target, exist_ok=True)
+            await asyncio.to_thread(os.makedirs, target, exist_ok=True)
         target = os.path.join(target, safe_name)
-        with open(target, "wb") as f:
-            shutil.copyfileobj(file.file, f)
+        # 大文件写入为阻塞磁盘 IO，放线程池避免卡事件循环
+        await asyncio.to_thread(_save_uploaded_file, target, file.file)
         auditlog.record("上传文件", user["username"], get_client_ip(request), unhost_path(target))
         return {"ok": True, "path": unhost_path(target)}
     except Exception as e:
@@ -396,10 +410,10 @@ async def chmod(
 ):
     safe = _safe_path(req.path)
     real = host_path(safe)
-    if not os.path.exists(real):
+    if not await asyncio.to_thread(os.path.exists, real):
         raise HTTPException(status_code=404, detail="Not found")
     try:
-        os.chmod(real, req.mode)
+        await asyncio.to_thread(os.chmod, real, req.mode)
         auditlog.record("修改权限", user["username"], get_client_ip(request), f"{safe} -> {oct(req.mode)}")
         return {"ok": True}
     except Exception as e:
@@ -410,6 +424,89 @@ async def chmod(
 class CopyRequest(BaseModel):
     src: str
     dst: str
+
+
+def _save_uploaded_file(target: str, src) -> None:
+    """把上传文件流写入目标路径（阻塞磁盘 IO，供 asyncio.to_thread 调用）。"""
+    with open(target, "wb") as f:
+        shutil.copyfileobj(src, f)
+
+
+def _copy_sync(src: str, dst: str) -> str:
+    """复制文件/目录并自动去重目标名（阻塞 IO，供 asyncio.to_thread 调用）。"""
+    dst = _unique_dst(dst)
+    if os.path.isdir(src):
+        shutil.copytree(src, dst)
+    else:
+        shutil.copy2(src, dst)
+    return dst
+
+
+def _compress_worker(paths: list, archive: str, fmt: str) -> None:
+    """执行压缩（阻塞 CPU/IO，供 asyncio.to_thread 调用）。"""
+    if fmt == "zip":
+        import zipfile
+
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+            for p in paths:
+                if os.path.isdir(p):
+                    for root, dirs, files in os.walk(p):
+                        for f in files:
+                            fp = os.path.join(root, f)
+                            zf.write(fp, os.path.relpath(fp, os.path.dirname(p)))
+                else:
+                    zf.write(p, os.path.basename(p))
+    else:
+        import tarfile
+
+        mode = "w:gz" if fmt == "tar.gz" else "w"
+        with tarfile.open(archive, mode) as tf:
+            for p in paths:
+                tf.add(p, arcname=os.path.basename(p))
+
+
+def _extract_worker(archive: str, dest: str) -> None:
+    """解压压缩包到目标目录（阻塞 CPU/IO，供 asyncio.to_thread 调用）。
+
+    安全校验（Zip Slip / Tar Slip）与 _is_within 检查保持在原逻辑，仅移动
+    到线程池执行；非法压缩包抛 HTTPException(400) 由端点统一处理。
+    """
+    if archive.endswith(".zip"):
+        import zipfile
+
+        with zipfile.ZipFile(archive, "r") as zf:
+            # 防 Zip Slip：拒绝包含 ../ 等越界路径的压缩包
+            for info in zf.infolist():
+                if not _is_within(dest, os.path.join(dest, info.filename)):
+                    raise HTTPException(status_code=400, detail="压缩包包含非法路径（Zip Slip）")
+            zf.extractall(dest)
+    else:
+        import tarfile
+
+        with tarfile.open(archive, "r:*") as tf:
+            for member in tf.getmembers():
+                if not _is_within(dest, os.path.join(dest, member.name)):
+                    raise HTTPException(status_code=400, detail="压缩包包含非法路径（Zip Slip）")
+                # 防 Tar Slip：符号/硬链接成员的指向目标也必须落在解压目录
+                # 内——否则可先释放链接 evil->/etc，再经 evil/passwd 写出
+                # 任意文件，仅校验成员名拦不住这种二次穿越。
+                if member.issym() or member.islnk():
+                    link = member.linkname
+                    if os.path.isabs(link) or not _is_within(
+                        dest, os.path.join(dest, os.path.normpath(link))
+                    ):
+                        raise HTTPException(
+                            status_code=400, detail="压缩包包含越界链接（Tar Slip）"
+                        )
+                # 拒绝设备文件 / 套接字等特殊成员
+                if member.isdev():
+                    raise HTTPException(status_code=400, detail="压缩包包含特殊文件，已拒绝")
+            try:
+                # Python 3.9.17+ / 3.12+ 提供 data 过滤器（拒绝绝对路径、
+                # 越界链接、设备文件），作为第二道防线；旧版本忽略该参数
+                tf.extractall(dest, filter="data")
+            except TypeError:
+                tf.extractall(dest)
 
 
 def _unique_dst(dst: str) -> str:
@@ -432,20 +529,17 @@ async def copy_path(
 ):
     src = host_path(_safe_path(req.src))
     dst = host_path(_safe_path(req.dst))
-    if not os.path.exists(src):
+    if not await asyncio.to_thread(os.path.exists, src):
         raise HTTPException(status_code=404, detail="Source not found")
     # 防止把目录复制进自身（Windows 同样禁止：复制到子目录会无限递归）
-    if os.path.isdir(src):
+    if await asyncio.to_thread(os.path.isdir, src):
         src_abs = os.path.abspath(src)
         dst_abs = os.path.abspath(dst)
         if dst_abs == src_abs or dst_abs.startswith(src_abs + os.sep):
             raise HTTPException(status_code=400, detail="不能把目录复制到其自身内部")
     try:
-        dst = _unique_dst(dst)
-        if os.path.isdir(src):
-            shutil.copytree(src, dst)
-        else:
-            shutil.copy2(src, dst)
+        # 复制为阻塞磁盘 IO（大目录 copytree 可能很慢），放线程池避免卡事件循环
+        dst = await asyncio.to_thread(_copy_sync, src, dst)
         auditlog.record("复制", user["username"], get_client_ip(request), f"{req.src} -> {dst}")
         return {"ok": True, "dst": _safe_path(dst)}
     except Exception as e:
@@ -467,29 +561,12 @@ async def compress(
 ):
     archive = host_path(_safe_path(req.archive))
     paths = [host_path(_safe_path(p)) for p in req.paths]
-    missing = [p for p in paths if not os.path.exists(p)]
+    missing = [p for p in paths if not await asyncio.to_thread(os.path.exists, p)]
     if missing:
         raise HTTPException(status_code=404, detail=f"Paths not found: {missing}")
     try:
-        if req.fmt == "zip":
-            import zipfile
-
-            with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
-                for p in paths:
-                    if os.path.isdir(p):
-                        for root, dirs, files in os.walk(p):
-                            for f in files:
-                                fp = os.path.join(root, f)
-                                zf.write(fp, os.path.relpath(fp, os.path.dirname(p)))
-                    else:
-                        zf.write(p, os.path.basename(p))
-        else:
-            import tarfile
-
-            mode = "w:gz" if req.fmt == "tar.gz" else "w"
-            with tarfile.open(archive, mode) as tf:
-                for p in paths:
-                    tf.add(p, arcname=os.path.basename(p))
+        # 压缩为阻塞 CPU/IO（大目录遍历 + deflate），放线程池避免卡事件循环
+        await asyncio.to_thread(_compress_worker, paths, archive, req.fmt)
         auditlog.record("压缩", user["username"], get_client_ip(request), f"{[req.archive]}: {req.paths}")
         return {"ok": True, "archive": _safe_path(req.archive)}
     except Exception as e:
@@ -510,46 +587,13 @@ async def extract(
 ):
     archive = host_path(_safe_path(req.archive))
     dest = host_path(_safe_path(req.dest))
-    if not os.path.isfile(archive):
+    if not await asyncio.to_thread(os.path.isfile, archive):
         raise HTTPException(status_code=404, detail="Archive not found")
-    os.makedirs(dest, exist_ok=True)
+    await asyncio.to_thread(os.makedirs, dest, exist_ok=True)
     try:
-        if archive.endswith(".zip"):
-            import zipfile
-
-            with zipfile.ZipFile(archive, "r") as zf:
-                # 防 Zip Slip：拒绝包含 ../ 等越界路径的压缩包
-                for info in zf.infolist():
-                    if not _is_within(dest, os.path.join(dest, info.filename)):
-                        raise HTTPException(status_code=400, detail="压缩包包含非法路径（Zip Slip）")
-                zf.extractall(dest)
-        else:
-            import tarfile
-
-            with tarfile.open(archive, "r:*") as tf:
-                for member in tf.getmembers():
-                    if not _is_within(dest, os.path.join(dest, member.name)):
-                        raise HTTPException(status_code=400, detail="压缩包包含非法路径（Zip Slip）")
-                    # 防 Tar Slip：符号/硬链接成员的指向目标也必须落在解压目录
-                    # 内——否则可先释放链接 evil->/etc，再经 evil/passwd 写出
-                    # 任意文件，仅校验成员名拦不住这种二次穿越。
-                    if member.issym() or member.islnk():
-                        link = member.linkname
-                        if os.path.isabs(link) or not _is_within(
-                            dest, os.path.join(dest, os.path.normpath(link))
-                        ):
-                            raise HTTPException(
-                                status_code=400, detail="压缩包包含越界链接（Tar Slip）"
-                            )
-                    # 拒绝设备文件 / 套接字等特殊成员
-                    if member.isdev():
-                        raise HTTPException(status_code=400, detail="压缩包包含特殊文件，已拒绝")
-                try:
-                    # Python 3.9.17+ / 3.12+ 提供 data 过滤器（拒绝绝对路径、
-                    # 越界链接、设备文件），作为第二道防线；旧版本忽略该参数
-                    tf.extractall(dest, filter="data")
-                except TypeError:
-                    tf.extractall(dest)
+        # 解压为阻塞 CPU/IO（遍历 + 释放文件），放线程池避免卡事件循环；
+        # Zip Slip / Tar Slip 安全校验在 _extract_worker 内保持，非法即抛 400
+        await asyncio.to_thread(_extract_worker, archive, dest)
         auditlog.record("解压", user["username"], get_client_ip(request), f"{req.archive} -> {req.dest}")
         return {"ok": True}
     except HTTPException:

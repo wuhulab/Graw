@@ -262,7 +262,9 @@ def _load_index(refresh: bool = False):
 
 @router.get("/index")
 async def get_index(refresh: bool = False):
-    source, data, _at, error = _load_index(refresh=refresh)
+    # _load_index 首次拉取远程索引会执行同步 urllib 网络请求（最长 30s），
+    # 放线程池避免卡事件循环（缓存命中时开销极小，包上无额外负担）
+    source, data, _at, error = await asyncio.to_thread(_load_index, refresh=refresh)
     store = data.get("store", {})
     apps = []
     for app in data.get("apps", []):
@@ -333,6 +335,11 @@ def _get_compose_text(app: dict) -> str:
 
 @router.get("/app/{app_id}/compose")
 async def get_app_compose(app_id: str):
+    # _get_compose_text 可能同步拉取远程 docker-compose.yml（最长 60s），放线程池
+    return await asyncio.to_thread(_get_app_compose_sync, app_id)
+
+
+def _get_app_compose_sync(app_id: str) -> dict:
     app = _find_app(app_id)
     try:
         compose = _get_compose_text(app)
@@ -361,6 +368,11 @@ def _parse_github_repo(source: str):
 
 @router.get("/app/{app_id}/readme")
 async def get_app_readme(app_id: str):
+    # GitHub API / raw 拉取为同步 urllib 网络请求（最长 30s），放线程池避免卡事件循环
+    return await asyncio.to_thread(_get_app_readme_sync, app_id)
+
+
+def _get_app_readme_sync(app_id: str) -> dict:
     app = _find_app(app_id)
     repo = _parse_github_repo(app.get("source", ""))
     if not repo:
