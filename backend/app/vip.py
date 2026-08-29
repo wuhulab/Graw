@@ -11,8 +11,11 @@ vip.py - Graw 主面板的 VIP（月卡/年卡用户）确认与状态管理
 
 关键约定（与 graw_vip 对齐）：
   - 授权码为一次性凭证；激活后授予固定时长（月卡 +30 天 / 年卡 +365 天）。
-  - 同一用户再次激活新码时采用「取更大截止」：新码授予的时长若晚于当前
-    生效截止则顺延，否则保持现有截止，既不吞时长也避免刷时长。
+  - **面板级共享**：只要面板上任意一个用户激活过 VIP，所有账号同时共享该
+    VIP 状态（get_vip 不再只看当前用户自己的记录，而是取全部生效记录中
+    截止最晚的那个）。
+  - 叠加截止：激活新码时以「当前共享的最晚截止」为基准顺延，既不吞时长
+    也避免刷时长；记录仍按激活用户名落库以便审计。
 落库逻辑见 activate_vip 与 _set_user_vip。"""
 from __future__ import annotations
 
@@ -100,10 +103,43 @@ def _save_state() -> None:
         os.replace(tmp, VIP_STATE_FILE)
 
 
+def _shared_active_record() -> Optional[dict]:
+    """面板级共享：返回全部用户中「生效期截止最晚」的 VIP 记录。
+
+    VIP 状态为整面板共享——只要任意账号激活过 VIP 且仍在有效期内，
+    所有账号均视为已解锁。取截止最晚的记录用于展示套餐与到期时间。
+    """
+    best: Optional[dict] = None
+    best_until: Optional[datetime] = None
+    for rec in _load_state().values():
+        vip_until = rec.get("vip_until")
+        if not _is_active(vip_until):
+            continue
+        try:
+            dt = datetime.fromisoformat(vip_until)
+        except (ValueError, TypeError):
+            continue
+        if best_until is None or dt > best_until:
+            best, best_until = rec, dt
+    return best
+
+
 def get_vip(username: str) -> dict:
-    """查询指定用户的 VIP 状态。未开通/已过期返回非生效状态。"""
+    """查询 VIP 状态（面板级共享：任一用户激活即全员生效）。
+
+    返回当前生效记录（截止最晚的那个）的状态；未开通/全过期返回非生效状态。
+    username 仅用于日志与字段兼容，不再影响结果。
+    """
     username = (username or "").strip()
-    rec = (_load_state().get(username) or {}) if username else {}
+    rec = _shared_active_record()
+    if rec is None:
+        return {
+            "vip": False,
+            "plan": "",
+            "activated_at": "",
+            "vip_until": "",
+            "is_vip": False,
+        }
     vip_until = rec.get("vip_until")
     active = _is_active(vip_until)
     return {
@@ -116,18 +152,21 @@ def get_vip(username: str) -> dict:
 
 
 def _set_user_vip(username: str, plan: str, activated_until: str) -> dict:
-    """落库某用户的 VIP 状态，并返回刷新后的状态字典。"""
+    """落库某用户的 VIP 状态，并返回刷新后的状态字典。
+
+    面板级共享时的叠加基准：以「当前共享的最晚截止」为基点，而不是该用户
+    自己的记录——避免换账号激活时把其它账号已生效的时长吞掉。
+    """
     username = (username or "").strip()
     plan = "year" if plan == "year" else "month"
     with _lock:
         state = _load_state()
-        existing = state.get(username) or {}
-        # 生效期内再次激活采用「顺延累加」：以更大截止为准，避免吞时长/刷时长
-        prev = existing.get("vip_until")
+        # 生效期内再次激活采用「顺延累加」：以共享的最晚截止为基准，防止吞时长
         base = datetime.now(timezone.utc)
-        if _is_active(prev):
+        shared = _shared_active_record()
+        if shared and _is_active(shared.get("vip_until")):
             try:
-                base = datetime.fromisoformat(prev)
+                base = datetime.fromisoformat(shared["vip_until"])
             except (ValueError, TypeError):
                 base = datetime.now(timezone.utc)
         new = max(base, _parse_dt(activated_until))

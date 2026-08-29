@@ -440,6 +440,70 @@ export default {
     disclaimerScrollHint: '(Please scroll to the bottom to check the box)',
     close: 'Decline and Close',
     enter: 'Enter App Store',
+    // Disclaimer full text (informational translation of the Chinese original,
+    // which remains authoritative). Deep-link wording kept faithful on purpose.
+    disclaimerText: `Preface
+
+The Graw Community App Store ("the Store") is a decentralized application index platform initiated by the ShunX public-benefit mother team and jointly maintained by the open-source community across multiple countries. The Store is committed to providing developers with a transparent, secure, and convenient application deployment experience. By accessing, browsing, or using the Store, you are deemed to have read, understood, and agreed to all the terms of this statement.
+
+I. Privacy Protection Commitment
+
+1. Zero Data Collection: The Store does not collect, store, upload, or pass on any of your personal privacy data in any form (including but not limited to IP addresses, device information, browsing history, geographic location, and contact details). You need not worry about privacy-leak risks; the Store requires no separate privacy policy because there is simply no data worth protecting.
+2. Anonymous Operation: Your interactions with the Store (such as browsing the app list or viewing details) are conducted anonymously, and no user profiles or behavioral tracking records are generated.
+3. Third-Party Services: If an app installed via the Store (such as WordPress, Nextcloud, etc.) itself engages in data collection, such behavior is unrelated to the Store; please refer to that app's own privacy policy.
+
+II. Platform Nature Statement
+
+1. Decentralized Open Source Community: The Store is a diversified, decentralized open-source community project maintained by volunteer developers worldwide. All app metadata (including docker-compose.yml, data.yml, README.md, etc.) is hosted in public Git repositories (e.g., GitHub) and contributed by community members via Pull Requests.
+2. Index Nature: The Store is only an index-service provider and does not actually store, host, or distribute any application software itself. The actual file sources of all apps are third-party repositories (such as Docker Hub, GitHub Releases, etc.). The Store only provides metadata links pointing to these resources.
+3. Multi-Source Support: The Store allows users to freely add, switch, or remove any third-party app sources (including but not limited to self-hosted sources, community sources, and organization sources). Users bear full responsibility for the sources they choose to trust and their content. The Store makes no warranty whatsoever about the availability, security, or legality of any third-party source.
+4. No Affiliation: The Store has no affiliation, agency, or partnership with the app authors, third-party repositories, or image sources. App authors are independently responsible for their own works.
+
+III. User Responsibility and Compliance
+
+1. Legal Compliance Self-Check: The Store's app list comes from open-source communities in multiple countries, some of which may involve technology export controls, data compliance, or content-review regulations of specific countries/regions. Before installing or using any app, you should review and comply with all applicable laws, import/export control regulations, and industry standards of your country/region.
+2. Independent Liability: Any consequences arising from your installation, configuration, or use of any app through the Store (including but not limited to data loss, service interruption, legal disputes, administrative penalties, and criminal liability) are borne by you independently. The Store does not assume any liability whatsoever for your actions or their consequences.
+3. App Quality Statement: The Store makes no express or implied warranty for any software in the app list, including but not limited to merchantability, fitness for a particular purpose, security, stability, virus-freeness, and non-infringement. You should assess the quality and security of apps yourself.
+4. Recommendations and Endorsements: The display order or tags of any app in the Store (such as "Featured" or "Official") do not represent recognition or endorsement by the Graw community. Such tags merely enhance the browsing experience and constitute no recommendation in any legal sense.
+
+IV. Content Management and Delisting Rules
+
+1. Handling of International-Law Violations: The Store follows a delisting principle for severe violations of international law, and only delists an app index in the following cases:
+   · The app content violates the UN Charter and generally recognized basic norms of international humanitarian law
+   · The app involves severe criminal acts generally recognized worldwide (such as human trafficking, terrorist financing, etc.)
+   · The app is subject to official sanctions or bans with clear basis in international law
+2. Force Majeure Handling: The Store may temporarily or permanently delist certain apps due to the following force-majeure factors:
+   · Third-party services such as GitHub Pages or Docker Hub are interrupted or discontinued
+   · App authors request delisting or their repositories are removed
+   · Community maintenance teams can no longer maintain the relevant index for technical reasons
+3. National-Law Exception Statement: The Store is not managed according to the laws of any specific country, nor does it undertake to proactively review or block content prohibited by the laws of specific countries/regions. Users should comply with the local laws where they are located; if an app is illegal in your region, you should proactively avoid installing and using it.
+4. Community Autonomy Principle: Additions, deletions, and changes to the app list are jointly decided by community members via PRs. The Graw community reserves the right to urgently delist for the international-law or force-majeure reasons above, but does not guarantee the timeliness or completeness of such decisions.
+
+V. Intellectual Property and Content Responsibility
+
+1. Third-Party Copyright: The app icons, names, logos, interface designs, etc. included in the Store are the lawful property of their respective right holders. The Store indexes them under a principle of technological neutrality and does not bear responsibility for third-party intellectual-property infringement.
+2. Community Content: For app metadata or documentation submitted by users via GitHub Pull Requests, the submitters are independently responsible for their content. The Graw community reserves the right to delist content that clearly violates international law or public order and morality, but does not undertake a proactive review obligation regarding the accuracy, legality, and completeness of community-submitted content.
+3. Infringement Complaints: If you believe that content indexed by the Store infringes your lawful rights, please contact the community maintenance team via GitHub Issues or email. We will review and take necessary action (such as removing the relevant index) within a reasonable time.
+
+VI. Graw's Limited Liability
+
+1. Force Majeure Disclaimer: The Graw community is not liable if the Store is interrupted or inaccessible for the following reasons:
+   · Failures of third-party services such as GitHub Pages or Docker Hub
+   · Force-majeure factors such as natural disasters, war, cyberattacks, or government actions
+   · Internet-infrastructure failures or network transmission delays
+2. No Service-Level Commitment: The Store is provided on an "AS IS" basis and makes no commitment of any kind regarding availability, stability, or continuity of service. The Graw community is under no obligation to ensure 24/7 uninterrupted operation of the Store.
+3. Compensation Cap: Under no circumstances shall the Graw community or its members be liable in any respect.
+
+VII. Other Terms
+
+1. Right to Amend: The Graw community reserves the right to modify this statement at any time. Significant changes (such as those involving user responsibility or privacy protection) will be announced via the announcement board or Release notes of the GitHub repository. Continued use of the Store after such changes take effect is deemed acceptance of the new statement.
+2. Severability: If any provision of this statement is held by a court of competent jurisdiction to be invalid or unenforceable, the validity of the other provisions shall not be affected.
+3. Language Effectiveness: The Chinese version of this statement is authoritative; translated versions are for reference only.
+4. Contact Us: If you have any questions, please file an Issue in the GitHub repository of the ShunX public-benefit mother team, or send an email to s@shunx.top.
+
+The final right of interpretation of this statement belongs to the Graw community and the ShunX public-benefit mother team.
+
+Document version: 1.1.0 | Updated: 2026-08-16`,
   },
   // App Install
   appinstall: {

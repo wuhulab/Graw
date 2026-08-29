@@ -318,6 +318,29 @@
             <span>{{ $t('settings.hideFoxcode') }}</span>
           </label>
         </div>
+
+        <!-- 桌面应用图标下方文字样式：字号 / 颜色 / 黑边描边（即改即存，应用到桌面） -->
+        <div style="border-top:1px dashed rgba(0,0,0,0.12); margin:8px 0 4px; padding-top:10px;">
+          <div class="row" style="gap:10px; justify-content:space-between;">
+            <span style="font-size:12px; color:#1d1d1f;">{{ $t('settings.shortcutFontSize') }}</span>
+            <input v-model.number="settings.shortcutFontSize" type="number" min="8" max="24" step="1" style="width:80px;" />
+          </div>
+          <div style="font-size:11px;color:#8e8e93;">{{ $t('settings.shortcutFontSizeHint') }}</div>
+          <div class="row" style="gap:10px; justify-content:space-between;">
+            <span style="font-size:12px; color:#1d1d1f;">{{ $t('settings.shortcutLabelColor') }}</span>
+            <div style="display:flex; gap:6px; align-items:center;">
+              <input type="color" v-model="settings.shortcutLabelColor" style="width:42px;height:30px;padding:2px;border:1px solid rgba(0,0,0,0.12);border-radius:6px;background:#fff;" />
+              <input v-model.trim="settings.shortcutLabelColor" maxlength="7" spellcheck="false" style="width:90px;" placeholder="#ffffff" />
+            </div>
+          </div>
+          <div class="row">
+            <label class="switch-label">
+              <input type="checkbox" v-model="settings.shortcutLabelStroke" />
+              <span>{{ $t('settings.shortcutLabelStroke') }}</span>
+            </label>
+          </div>
+          <div style="font-size:11px;color:#8e8e93;">{{ $t('settings.shortcutLabelStrokeHint') }}</div>
+        </div>
       </div>
 
       <!-- 回收站设置（仅管理员）：删除的文件是否进入回收站、到期自动清理天数 -->

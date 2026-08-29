@@ -3,12 +3,13 @@
 vip.py - Graw 付费功能（VIP/月卡/年卡）路由
 
 提供：
-  - GET    /status      当前登录用户的 VIP 状态（登录即可）
-  - POST   /activate    用授权码激活当前用户的 VIP（登录即可）
+  - GET    /status      返回 VIP 状态（登录即可）
+  - POST   /activate    用授权码激活 VIP（登录即可）
 
 说明：
-  授权码服务地址固定在后端（app/vip.py 的 DEFAULT_SERVER_URL），前端不可修改，
-  因此不再提供 /config 接口，避免前端越权改动授权地址。
+  VIP 状态为**面板级共享**：任意账号激活成功后，所有账号同时生效
+  （见 app/vip.py 的 _shared_active_record）。授权码服务地址固定在后端，
+  前端不可修改，因此不再提供 /config 接口。
 
 鉴权：
   本路由不挂全局依赖，由各端点内部自行校验（均需登录），方式与 ui/tamper

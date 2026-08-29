@@ -1131,6 +1131,70 @@ export default {
     disclaimerScrollHint: '(Desplácese hasta la parte inferior para marcar la casilla)',
     close: 'Rechazar y cerrar',
     enter: 'Entrar en la tienda de aplicaciones',
+    // Texto completo del descargo de responsabilidad (1.1.0): la versión china
+    // es la autoritativa; esta es una traducción informativa.
+    disclaimerText: `Prefacio
+
+La Graw Community App Store (en adelante, «la Tienda») es una plataforma descentralizada de indexación de aplicaciones creada por el equipo madre sin ánimo de lucro ShunX y mantenida conjuntamente por comunidades de código abierto de muchos países. La Tienda se esfuerza por ofrecer a los desarrolladores una experiencia de despliegue transparente, segura y cómoda. Antes de utilizar sus servicios, lea atentamente las siguientes cláusulas. El acceso, la navegación o el uso de la Tienda implica que usted ha leído, comprendido y aceptado todos los términos de esta declaración.
+
+I. Compromiso de protección de la privacidad
+
+1. Cero recopilación de datos: la Tienda no recopila, almacena, sube ni transmite sus datos personales de ninguna forma (incluidos, entre otros: direcciones IP, información de dispositivos, historial de navegación, ubicación geográfica, datos de contacto). No tiene por qué temer riesgos de fuga; la Tienda no necesita una política de privacidad independiente porque, sencillamente, no hay datos que merezcan protección.
+2. Funcionamiento anónimo: sus interacciones con la Tienda (como consultar la lista de aplicaciones o ver detalles) se realizan de forma anónima, sin generar perfiles de usuario ni registros de seguimiento de comportamiento.
+3. Servicios de terceros: si una aplicación instalada a través de la Tienda (por ejemplo, WordPress, Nextcloud) realiza recopilación de datos por sí misma, ese comportamiento no guarda relación con la Tienda; consulte la política de privacidad de esa aplicación.
+
+II. Declaración sobre la naturaleza de la plataforma
+
+1. Comunidad de código abierto descentralizada: la Tienda es un proyecto comunitario diverso y descentralizado, mantenido por desarrolladores voluntarios de todo el mundo. Todos los metadatos de las aplicaciones (incluidos docker-compose.yml, data.yml, README.md, etc.) se alojan en repositorios Git públicos (como GitHub) y son aportados por los miembros de la comunidad mediante pull requests.
+2. Carácter de índice: la Tienda es únicamente un proveedor de servicios de indexación; no almacena, aloja ni distribuye el software en sí. Las fuentes reales de los archivos de todas las aplicaciones son repositorios de terceros (como Docker Hub, GitHub Releases); la Tienda solo ofrece enlaces de metadatos a esos recursos.
+3. Soporte de múltiples fuentes: la Tienda permite añadir, cambiar o eliminar libremente cualquier fuente de aplicaciones de terceros (incluidas, entre otras, las autoalojadas, las comunitarias y las de organizaciones). El usuario es el único responsable de las fuentes que decide confiar y de su contenido. La Tienda no ofrece ninguna garantía sobre la disponibilidad, seguridad o legalidad del contenido de ninguna fuente de terceros.
+4. Sin afiliación: no existe relación de afiliación, agencia o cooperación entre la Tienda, los autores de las aplicaciones, los repositorios de terceros y las fuentes de imágenes. Los autores son independientemente responsables de sus obras.
+
+III. Responsabilidad y cumplimiento del usuario
+
+1. Autoverificación del cumplimiento legal: la lista de aplicaciones de la Tienda procede de comunidades de código abierto de muchos países; algunas aplicaciones pueden estar sujetas a normas de control de exportación, cumplimiento de datos o revisión de contenidos de países/regiones específicos. Antes de instalar o usar cualquier aplicación, revise y cumpla usted mismo todas las leyes, reglamentos de importación/exportación y normas sectoriales aplicables de su país/región.
+2. Responsabilidad independiente: todas las consecuencias derivadas de instalar, configurar o usar cualquier aplicación a través de la Tienda (incluidas, entre otras: pérdida de datos, interrupción del servicio, disputas legales, sanciones administrativas y responsabilidad penal) son asumidas de forma independiente por usted. La Tienda no asume responsabilidad alguna por sus acciones o sus consecuencias.
+3. Declaración sobre la calidad de las aplicaciones: la Tienda no ofrece ninguna garantía expresa o implícita sobre ningún software de la lista, incluidas, entre otras: comerciabilidad, idoneidad para un fin particular, seguridad, estabilidad, ausencia de virus y no infracción. Usted debe evaluar la calidad y seguridad de las aplicaciones.
+4. Recomendaciones y respaldos: el orden de visualización o las etiquetas de cualquier aplicación (por ejemplo, «精选» o «官方») no representan reconocimiento ni respaldo de la comunidad Graw. Dichas etiquetas solo mejoran la experiencia de navegación y no constituyen ninguna recomendación en sentido jurídico.
+
+IV. Gestión de contenidos y reglas de retirada
+
+1. Tratamiento de violaciones del derecho internacional: la Tienda sigue el principio de retirada ante violaciones graves del derecho internacional y solo retira un índice de aplicación en los siguientes casos:
+   · El contenido infringe la Carta de las Naciones Unidas y las normas básicas del derecho internacional humanitario generalmente reconocidas
+   · La aplicación está involucrada en delitos graves reconocidos a nivel mundial (como tráfico de personas, financiación del terrorismo)
+   · Está sujeta a sanciones o prohibiciones oficiales con base clara en el derecho internacional
+2. Tratamiento de la fuerza mayor: la Tienda puede retirar temporal o definitivamente algunas aplicaciones por los siguientes motivos:
+   · Interrupción o cese de servicios de terceros (GitHub Pages, Docker Hub, etc.)
+   · El autor solicita la retirada o su repositorio ha sido eliminado
+   · Los equipos de mantenimiento de la comunidad no pueden seguir manteniendo el índice por razones técnicas
+3. Excepción del derecho nacional: la Tienda no se gestiona según el derecho de un país concreto ni asume la obligación de revisar o bloquear activamente contenidos prohibidos por las leyes de países/regiones específicos. El usuario debe cumplir el derecho local; si una aplicación es ilegal en su región, absténgase de instalarla y usarla.
+4. Principio de autonomía comunitaria: el alta, la baja y la modificación de la lista de aplicaciones se deciden conjuntamente por los miembros mediante PR. La comunidad Graw se reserva el derecho de retirada urgente por las razones anteriores, pero no garantiza la rapidez ni la exhaustividad de dichas decisiones.
+
+V. Propiedad intelectual y responsabilidad por el contenido
+
+1. Derechos de autor de terceros: los iconos, nombres, logotipos, diseños de interfaz, etc. incluidos en la Tienda son propiedad legítima de sus respectivos titulares. La Tienda los indexa bajo un principio de neutralidad tecnológica y no asume responsabilidad por la infracción de la propiedad intelectual de terceros.
+2. Contenido comunitario: por los metadatos o documentación presentados mediante pull request en GitHub, el remitente es responsable. La comunidad Graw se reserva el derecho de retirar contenidos que infrinjan manifiestamente el derecho internacional o el orden público, pero no asume la obligación de revisar activamente la exactitud, legalidad e integridad del contenido presentado.
+3. Quejas por infracción: si considera que un contenido indexado por la Tienda vulnera sus derechos legítimos, póngase en contacto con el equipo de mantenimiento mediante un issue de GitHub o por correo electrónico. Revisaremos en un plazo razonable y adoptaremos las medidas necesarias (por ejemplo, la retirada del índice correspondiente).
+
+VI. Responsabilidad limitada de Graw
+
+1. Exención por fuerza mayor: la comunidad Graw no será responsable si la Tienda se interrumpe o resulta inaccesible por los siguientes motivos:
+   · Fallos de servicios de terceros (GitHub Pages, Docker Hub, etc.)
+   · Factores de fuerza mayor: catástrofes naturales, guerra, ciberataques, acciones estatales
+   · Fallos de la infraestructura de Internet o retrasos en la transmisión de datos
+2. Sin compromiso de nivel de servicio: la Tienda se ofrece «tal cual» (AS IS), sin compromiso alguno de disponibilidad, estabilidad o continuidad. La comunidad Graw no tiene la obligación de garantizar el funcionamiento ininterrumpido 24/7 de la Tienda.
+3. Tope de compensación: en ningún caso la comunidad Graw ni sus miembros asumirán responsabilidad alguna.
+
+VII. Otras cláusulas
+
+1. Derecho de modificación: la comunidad Graw se reserva el derecho a modificar esta declaración en cualquier momento. Los cambios importantes (relativos, p. ej., a la responsabilidad del usuario o a la protección de la privacidad) se anunciarán mediante el panel de anuncios o las notas de versión del repositorio de GitHub. La continuación del uso de la Tienda tras la entrada en vigor de los cambios se considerará aceptación de la nueva declaración.
+2. Divisibilidad: si cualquier cláusula de esta declaración fuera declarada nula o inaplicable por un tribunal competente, ello no afectará a la validez de las demás cláusulas.
+3. Eficacia del idioma: la versión china es la autoritativa; las traducciones son solo para referencia.
+4. Contacto: si tiene alguna duda, presente un issue en el repositorio de GitHub del equipo madre sin ánimo de lucro ShunX o envíe un correo a s@shunx.top.
+
+El derecho de interpretación final de esta declaración pertenece a la comunidad Graw y al equipo madre sin ánimo de lucro ShunX.
+
+Versión del documento: 1.1.0 | Actualizado: 16 de agosto de 2026`,
   },
   // Instalación de aplicaciones
   appinstall: {

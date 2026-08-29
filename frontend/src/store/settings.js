@@ -9,6 +9,8 @@
     locale     —— 界面语言（与 locales/index.js 的 LANGUAGES 对应）
     unifiedPanel —— 统一面板兼容：开启后每个窗口绑定打开时的节点
     hideFoxcode  —— 是否隐藏桌面上的 Foxcode 快捷方式
+    shortcutFontSize / shortcutLabelColor / shortcutLabelStroke ——
+        桌面图标下方文字的样式：字号(px)、颜色(#RRGGBB)、是否加黑色描边
 
   用法：任意组件直接读 settings 的响应式字段即可；修改会自动被 watch 落盘，
   无需手动保存。
@@ -27,6 +29,10 @@ const defaults = {
   unifiedPanel: false,
   // 隐藏桌面上的 Foxcode 快捷方式
   hideFoxcode: false,
+  // 桌面图标下方文字的样式：字号（px，8-24）/ 颜色 / 是否加黑边描边
+  shortcutFontSize: 12,
+  shortcutLabelColor: '#ffffff',
+  shortcutLabelStroke: false,
 }
 
 // 启动时读取本地偏好；没有缓存 / 内容损坏时回退默认值
@@ -51,6 +57,9 @@ watch(
     locale: settings.locale,
     unifiedPanel: settings.unifiedPanel,
     hideFoxcode: settings.hideFoxcode,
+    shortcutFontSize: settings.shortcutFontSize,
+    shortcutLabelColor: settings.shortcutLabelColor,
+    shortcutLabelStroke: settings.shortcutLabelStroke,
   }),
   (val) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(val))   // 整份快照覆盖写，保持存储结构与 defaults 对齐

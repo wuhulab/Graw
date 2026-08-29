@@ -902,6 +902,70 @@ export default {
     disclaimerScrollHint: '(veuillez défiler jusqu\'en bas pour cocher)',
     close: 'Refuser et fermer',
     enter: 'Entrer dans la boutique',
+    // Texte intégral du disclaimer (1.1.0) : la version chinoise fait foi ;
+    // la présente est une traduction fournie à titre informatif.
+    disclaimerText: `Préface
+
+La Graw Community App Store (ci-après « la Boutique ») est une plateforme décentralisée d'indexation d'applications, lancée par l'équipe-mère à but non lucratif ShunX et maintenue conjointement par des communautés open source de nombreux pays. La Boutique s'efforce d'offrir aux développeurs une expérience de déploiement transparente, sûre et pratique. Avant d'utiliser ses services, veuillez lire attentivement les clauses suivantes. L'accès, la consultation ou l'utilisation de la Boutique vaut reconnaissance, compréhension et acceptation de toutes les dispositions de la présente déclaration.
+
+I. Engagement de protection des données personnelles
+
+1. Collecte de données inexistante : la Boutique ne collecte, ne stocke, ne télécharge ni ne transmet vos données personnelles sous quelque forme que ce soit (y compris, sans s'y limiter : adresses IP, informations sur les appareils, historique de navigation, localisation géographique, coordonnées). Vous n'avez donc aucun risque de fuite à craindre ; la Boutique n'a pas besoin de politique de confidentialité distincte, car il n'existe tout simplement aucune donnée digne d'être protégée.
+2. Fonctionnement anonyme : vos interactions avec la Boutique (consultation de la liste d'applications, affichage des détails, etc.) s'effectuent de manière anonyme, sans génération de profils utilisateur ni d'historique de suivi comportemental.
+3. Services tiers : si une application installée via la Boutique (par ex. WordPress, Nextcloud) procède elle-même à une collecte de données, ce comportement n'est pas lié à la Boutique ; reportez-vous à la politique de confidentialité de cette application.
+
+II. Déclaration sur la nature de la plateforme
+
+1. Communauté open source décentralisée : la Boutique est un projet communautaire diversifié et décentralisé, maintenu par des développeurs bénévoles du monde entier. Toutes les métadonnées d'applications (docker-compose.yml, data.yml, README.md, etc.) sont hébergées dans des dépôts Git publics (ex. GitHub) et fournies par les membres de la communauté via des pull requests.
+2. Nature d'index : la Boutique n'est qu'un fournisseur de services d'indexation ; elle ne stocke, n'héberge ni ne distribue aucun logiciel. Les sources réelles des fichiers de toutes les applications sont des dépôts tiers (ex. Docker Hub, GitHub Releases) ; la Boutique propose uniquement des liens de métadonnées vers ces ressources.
+3. Prise en charge de sources multiples : la Boutique permet d'ajouter, de basculer ou de supprimer librement toute source tierce (y compris, sans s'y limiter, les sources auto-hébergées, communautaires ou d'organisations). L'utilisateur assume l'entière responsabilité des sources qu'il choisit de faire confiance ainsi que de leur contenu. La Boutique ne donne aucune garantie quant à la disponibilité, la sécurité ou la légalité du contenu de toute source tierce.
+4. Absence d'affiliation : aucune relation d'affiliation, de mandat ou de partenariat n'existe entre la Boutique, les auteurs d'applications, les dépôts tiers et les sources d'images. Les auteurs sont indépendamment responsables de leurs œuvres.
+
+III. Responsabilité et conformité de l'utilisateur
+
+1. Auto-vérification de la conformité : la liste d'applications de la Boutique provient de communautés open source de nombreux pays ; certaines applications peuvent être soumises aux règles d'exportation, de conformité des données ou de modération de contenus de pays/régions spécifiques. Avant d'installer ou d'utiliser une application, vérifiez et respectez vous-même l'ensemble des lois, réglementations d'import/export et normes sectorielles applicables de votre pays/région.
+2. Responsabilité indépendante : toutes les conséquences découlant de l'installation, de la configuration ou de l'utilisation d'une application via la Boutique (y compris, sans s'y limiter : perte de données, interruption de service, litiges, sanctions administratives, responsabilité pénale) sont assumées indépendamment par vous. La Boutique ne peut être tenue responsable, sous quelque forme que ce soit, de vos actes ou de leurs conséquences.
+3. Déclaration sur la qualité des applications : la Boutique ne donne aucune garantie expresse ou implicite sur les logiciels de la liste, y compris, sans s'y limiter : qualité marchande, adéquation à un usage particulier, sécurité, stabilité, absence de virus et absence de contrefaçon. Évaluez vous-même la qualité et la sécurité des applications.
+4. Recommandations et mentions : l'ordre d'affichage ou les étiquettes d'une application (ex. « 精选 » ou « 官方 ») ne valent ni reconnaissance ni recommandation de la part de la communauté Graw. Ces étiquettes améliorent uniquement l'expérience de navigation et ne constituent aucune recommandation au sens juridique.
+
+IV. Gestion des contenus et règles de retrait
+
+1. Traitement des violations du droit international : la Boutique applique un principe de retrait en cas de violation grave du droit international, et retire un index d'application uniquement dans les cas suivants :
+   · Le contenu viole la Charte des Nations unies et les normes fondamentales d'humanité généralement reconnues
+   · L'application est liée à des crimes graves reconnus à l'échelle mondiale (par ex. traite des êtres humains, financement du terrorisme)
+   · Elle fait l'objet de sanctions ou d'interdictions officielles fondées sur le droit international
+2. Traitement de la force majeure : la Boutique peut retirer temporairement ou définitivement certaines applications pour les raisons suivantes :
+   · Interruption ou cessation de services tiers (GitHub Pages, Docker Hub, etc.)
+   · L'auteur demande le retrait ou son dépôt a été supprimé
+   · Les équipes de maintenance communautaires ne peuvent plus maintenir l'index concerné pour des raisons techniques
+3. Exemption fondée sur le droit national : la Boutique n'est pas gérée selon le droit d'un pays particulier et ne s'engage pas à examiner ni à bloquer activement les contenus interdits par les droits de pays/régions spécifiques. L'utilisateur doit respecter le droit local ; si une application est illégale dans votre région, abstenez-vous de l'installer et de l'utiliser.
+4. Principe d'autonomie communautaire : l'ajout, la suppression et la modification de la liste d'applications sont décidés conjointement par les membres via des PR. La communauté Graw se réserve le droit de retrait d'urgence pour les raisons précitées, sans garantir le caractère rapide ou complet de ces décisions.
+
+V. Propriété intellectuelle et responsabilité du contenu
+
+1. Droits d'auteur de tiers : les icônes, noms, logos, maquettes d'interface, etc. inclus dans la Boutique sont la propriété légitime de leurs titulaires respectifs. La Boutique les indexe selon un principe de neutralité technologique et n'est pas responsable des atteintes à la propriété intellectuelle de tiers.
+2. Contenus communautaires : pour les métadonnées ou la documentation soumises via pull request GitHub, l'auteur est indépendamment responsable. La communauté Graw se réserve le droit de retirer les contenus manifestement contraires au droit international ou à l'ordre public, mais n'assume aucune obligation d'examen actif de l'exactitude, de la légalité et de l'exhaustivité des contenus soumis.
+3. Plaintes pour atteinte : si vous estimez qu'un contenu indexé par la Boutique porte atteinte à vos droits légitimes, contactez l'équipe de maintenance via une issue GitHub ou par courriel. Nous examinerons dans un délai raisonnable et prendrons les mesures nécessaires (retrait de l'index concerné, par exemple).
+
+VI. Responsabilité limitée de Graw
+
+1. Exonération en cas de force majeure : la communauté Graw n'est pas responsable si la Boutique est interrompue ou inaccessible pour les raisons suivantes :
+   · Défaillance de services tiers (GitHub Pages, Docker Hub, etc.)
+   · Facteurs de force majeure : catastrophes naturelles, guerre, cyberattaques, actes de l'État
+   · Pannes d'infrastructure Internet ou retards de transmission réseau
+2. Absence d'engagement de niveau de service : la Boutique est fournie « en l'état » (AS IS), sans engagement de disponibilité, de stabilité ou de continuité. La communauté Graw n'a aucune obligation d'assurer un fonctionnement ininterrompu 24/7.
+3. Plafond d'indemnisation : en aucun cas la communauté Graw ni ses membres ne pourront être tenus responsables.
+
+VII. Autres clauses
+
+1. Droit de modification : la communauté Graw se réserve le droit de modifier la présente déclaration à tout moment. Les modifications importantes (portant notamment sur la responsabilité de l'utilisateur ou la protection des données) seront annoncées via le tableau d'annonces ou les notes de version du dépôt GitHub. La poursuite de l'utilisation après l'entrée en vigueur vaut acceptation de la nouvelle déclaration.
+2. Divisibilité : si une clause de la présente déclaration est jugée invalide ou inapplicable par un tribunal compétent, la validité des autres clauses n'en est pas affectée.
+3. Efficacité linguistique : la version chinoise fait foi ; les traductions ne sont fournies qu'à titre indicatif.
+4. Nous contacter : pour toute question, déposez une issue dans le dépôt GitHub de l'équipe-mère à but non lucratif ShunX ou envoyez un courriel à s@shunx.top.
+
+Le droit d'interprétation finale de la présente déclaration appartient à la communauté Graw et à l'équipe-mère à but non lucratif ShunX.
+
+Version du document : 1.1.0 | Mise à jour : 16 août 2026`,
   },
   // Installation d\'application
   appinstall: {

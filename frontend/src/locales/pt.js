@@ -1131,6 +1131,70 @@ export default {
     disclaimerScrollHint: '(Role até a parte inferior para marcar a caixa)',
     close: 'Recusar e fechar',
     enter: 'Entrar na loja de aplicativos',
+    // Texto completo do aviso de isenção (1.1.0): a versão chinesa é a
+    // autoritativa; esta é uma tradução meramente informativa.
+    disclaimerText: `Prefácio
+
+A Graw Community App Store (doravante «a Loja») é uma plataforma descentralizada de indexação de aplicações criada pela equipa-mãe sem fins lucrativos ShunX e mantida em conjunto por comunidades de código aberto de vários países. A Loja procura proporcionar aos programadores uma experiência de implantação transparente, segura e conveniente. Antes de utilizar os seus serviços, leia atentamente as seguintes cláusulas. O acesso, a navegação ou a utilização da Loja implica que leu, compreendeu e aceitou todos os termos desta declaração.
+
+I. Compromisso de proteção da privacidade
+
+1. Recolha zero de dados: a Loja não recolhe, armazena, carrega nem transmite os seus dados pessoais sob qualquer forma (incluindo, entre outros: endereços IP, informações do dispositivo, histórico de navegação, localização geográfica, dados de contacto). Não precisa de temer riscos de fuga; a Loja não necessita de nenhuma política de privacidade separada, pois simplesmente não existem dados dignos de proteção.
+2. Funcionamento anónimo: as suas interações com a Loja (como consultar a lista de aplicações ou ver detalhes) são efetuadas de forma anónima, sem gerar perfis de utilizador nem registos de rastreamento comportamental.
+3. Serviços de terceiros: se uma aplicação instalada através da Loja (por exemplo, WordPress, Nextcloud) recolher dados por si própria, esse comportamento não tem relação com a Loja; consulte a política de privacidade dessa aplicação.
+
+II. Declaração sobre a natureza da plataforma
+
+1. Comunidade de código aberto descentralizada: a Loja é um projeto comunitário diversificado e descentralizado, mantido por programadores voluntários de todo o mundo. Todos os metadados das aplicações (incluindo docker-compose.yml, data.yml, README.md, etc.) são alojados em repositórios Git públicos (por exemplo, GitHub) e contribuídos pelos membros da comunidade via pull requests.
+2. Natureza de índice: a Loja é apenas um fornecedor de serviços de indexação; não armazena, aloja nem distribui o software em si. As fontes reais dos ficheiros de todas as aplicações são repositórios de terceiros (como Docker Hub, GitHub Releases); a Loja apenas fornece ligações de metadados para esses recursos.
+3. Suporte de múltiplas fontes: a Loja permite adicionar, alternar ou remover livremente qualquer fonte de terceiros (incluindo, entre outras: fontes autoalojadas, comunitárias e de organizações). O utilizador é o único responsável pelas fontes que escolhe confiar e pelo seu conteúdo. A Loja não oferece qualquer garantia quanto à disponibilidade, segurança ou legalidade do conteúdo de qualquer fonte de terceiros.
+4. Sem afiliação: não existe qualquer relação de afiliação, agência ou cooperação entre a Loja, os autores das aplicações, os repositórios de terceiros e as fontes de imagens. Os autores são independentemente responsáveis pelas suas obras.
+
+III. Responsabilidade e conformidade do utilizador
+
+1. Autoverificação da conformidade legal: a lista de aplicações da Loja provém de comunidades de código aberto de vários países; algumas aplicações podem envolver regras de controlo de exportação, conformidade de dados ou revisão de conteúdos de países/regiões específicos. Antes de instalar ou utilizar qualquer aplicação, verifique e cumpra você próprio todas as leis, regulamentos de importação/exportação e normas do setor aplicáveis do seu país/região.
+2. Responsabilidade independente: todas as consequências decorrentes de instalar, configurar ou utilizar qualquer aplicação através da Loja (incluindo, entre outros: perda de dados, interrupção do serviço, litígios legais, sanções administrativas e responsabilidade criminal) são assumidas independentemente por si. A Loja não assume qualquer responsabilidade pelas suas ações ou pelas suas consequências.
+3. Declaração sobre a qualidade das aplicações: a Loja não oferece qualquer garantia expressa ou implícita sobre qualquer software da lista, incluindo, entre outras: comerciabilidade, adequação a um fim específico, segurança, estabilidade, ausência de vírus e não infração. Deve avaliar você próprio a qualidade e a segurança das aplicações.
+4. Recomendações e endossos: a ordem de apresentação ou as etiquetas de qualquer aplicação (por exemplo, «精选» ou «官方») não representam reconhecimento nem endosso por parte da comunidade Graw. Essas etiquetas destinam-se apenas a melhorar a experiência de navegação e não constituem qualquer recomendação em sentido jurídico.
+
+IV. Gestão de conteúdos e regras de remoção
+
+1. Tratamento de violações do direito internacional: a Loja segue o princípio de remoção por violações graves do direito internacional e apenas remove um índice de aplicação nos seguintes casos:
+   · O conteúdo viola a Carta das Nações Unidas e as normas básicas do direito internacional humanitário geralmente reconhecidas
+   · A aplicação está envolvida em crimes graves reconhecidos a nível mundial (como tráfico de pessoas, financiamento do terrorismo)
+   · Está sujeita a sanções ou proibições oficiais com base clara no direito internacional
+2. Tratamento de força maior: a Loja pode remover temporária ou definitivamente algumas aplicações pelos seguintes motivos:
+   · Interrupção ou cessação de serviços de terceiros (GitHub Pages, Docker Hub, etc.)
+   · O autor solicita a remoção ou o seu repositório foi eliminado
+   · As equipas de manutenção da comunidade não conseguem continuar a manter o índice por razões técnicas
+3. Exceção do direito nacional: a Loja não é gerida de acordo com as leis de um país específico, nem assume a obrigação de rever ou bloquear ativamente conteúdos proibidos pelas leis de países/regiões específicos. O utilizador deve cumprir as leis locais; se uma aplicação for ilegal na sua região, evite instalá-la e utilizá-la.
+4. Princípio da autonomia comunitária: as adições, remoções e alterações à lista de aplicações são decididas conjuntamente pelos membros através de PR. A comunidade Graw reserva-se o direito de remoção urgente pelas razões acima referidas, mas não garante a rapidez nem a integridade dessas decisões.
+
+V. Propriedade intelectual e responsabilidade pelo conteúdo
+
+1. Direitos de autor de terceiros: os ícones, nomes, logótipos, designs de interface, etc. incluídos na Loja são propriedade legítima dos seus respetivos titulares. A Loja indexa-os sob um princípio de neutralidade tecnológica e não assume responsabilidade por violações de propriedade intelectual de terceiros.
+2. Conteúdos comunitários: pelos metadados ou documentação apresentados via pull request no GitHub, o remetente é responsável. A comunidade Graw reserva-se o direito de remover conteúdos que violem manifestamente o direito internacional ou a ordem pública, mas não assume a obrigação de rever ativamente a exatidão, legalidade e integridade dos conteúdos apresentados.
+3. Reclamações por violação: se considerar que um conteúdo indexado pela Loja viola os seus direitos legítimos, contacte a equipa de manutenção através de um issue no GitHub ou por correio eletrónico. Analisaremos em prazo razoável e tomaremos as medidas necessárias (por exemplo, a remoção do índice correspondente).
+
+VI. Responsabilidade limitada da Graw
+
+1. Isenção por força maior: a comunidade Graw não será responsável se a Loja for interrompida ou ficar inacessível pelos seguintes motivos:
+   · Falhas de serviços de terceiros (GitHub Pages, Docker Hub, etc.)
+   · Fatores de força maior: catástrofes naturais, guerra, ciberataques, ações estatais
+   · Falhas da infraestrutura de Internet ou atrasos na transmissão de dados
+2. Sem compromisso de nível de serviço: a Loja é fornecida «tal como está» (AS IS), sem qualquer compromisso de disponibilidade, estabilidade ou continuidade. A comunidade Graw não tem a obrigação de garantir o funcionamento ininterrupto 24/7 da Loja.
+3. Teto de compensação: em nenhuma circunstância a comunidade Graw nem os seus membros assumirão qualquer responsabilidade.
+
+VII. Outras cláusulas
+
+1. Direito de alteração: a comunidade Graw reserva-se o direito de modificar esta declaração a qualquer momento. As alterações importantes (relacionadas, por exemplo, com a responsabilidade do utilizador ou a proteção da privacidade) serão anunciadas através do painel de avisos ou das notas de versão do repositório do GitHub. A continuação do uso da Loja após a entrada em vigor das alterações será considerada aceitação da nova declaração.
+2. Divisibilidade: se qualquer cláusula desta declaração for declarada inválida ou inaplicável por um tribunal competente, a validade das restantes cláusulas não será afetada.
+3. Eficácia do idioma: a versão chinesa é a autoritativa; as traduções destinam-se apenas a referência.
+4. Contacto: se tiver dúvidas, apresente um issue no repositório do GitHub da equipa-mãe sem fins lucrativos ShunX ou envie um correio para s@shunx.top.
+
+O direito de interpretação final desta declaração pertence à comunidade Graw e à equipa-mãe sem fins lucrativos ShunX.
+
+Versão do documento: 1.1.0 | Atualizado: 16 de agosto de 2026`,
   },
   // Instalação de aplicativos
   appinstall: {

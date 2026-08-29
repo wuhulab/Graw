@@ -902,6 +902,70 @@ export default {
     disclaimerScrollHint: '（Bonvolu rulumi ĝis la plej malsupro por marki）',
     close: 'Rifuzi kaj fermi',
     enter: 'Eniri la apo-vendejon',
+    // Plena teksto de la malgarantiilo (1.1.0): la ĉina versio estas aŭtoritata;
+    // tiu ĉi traduko estas nure informa.
+    disclaimerText: `Antaŭparolo
+
+La Graw Community App Store (ĉi-poste "la Vendejo") estas malcentralizita platformo de aplikaĵa indeksado, iniciatita de la senprofita patrina teamo ShunX kaj komune prizorgata de malfermitkodaj komunumoj en multaj landoj. La Vendejo klopodas doni al programistoj travideblan, sekuran kaj oportunan sperton de aplikaĵa deplojo. Antaŭ ol uzi ĝiajn servojn, bonvolu atente legi la sekvajn malgarantiajn kondiĉojn. Aliro, foliumado aŭ uzado de la Vendejo signifas, ke vi legis, komprenis kaj akceptis ĉiujn kondiĉojn de tiu ĉi deklaro.
+
+I. Devontigo pri protekto de privateco
+
+1. Nula datumkolektado: la Vendejo neniam kolektas, konservas, alŝutas aŭ transdonas viajn personajn datumojn en iu ajn formo (inkluzive, sed ne limigite: IP-adresojn, aparatinformojn, foliumhistorion, geografian lokon, kontaktinformojn). Vi ne bezonas timi lik-riskojn; la Vendejo ne postulas apartan privatecan politikon, ĉar simple ne ekzistas datumoj indaj je protekto.
+2. Anonima funkciado: viaj interagoj kun la Vendejo (ekz. foliumi la aplikaĵoliston, vidi detalojn) okazas anonime, sen krei uzantajn profilojn aŭ kondutmajn spurprotokolojn.
+3. Servoj de triaj partioj: se aplikaĵo instalita per la Vendejo (ekz. WordPress, Nextcloud) mem kolektas datumojn, tiu konduto ne rilatas al la Vendejo; konsultu la privatecan politikon de tiu aplikaĵo.
+
+II. Deklaro pri la naturo de la platformo
+
+1. Malcentralizita malfermitkoda komunumo: la Vendejo estas diversa, malcentralizita komunuma projekto, prizorgata de volontulaj programistoj tra la tuta mondo. Ĉiuj aplikaĵaj metadatumoj (inkluzive docker-compose.yml, data.yml, README.md ktp.) estas gastigitaj en publikaj Git-ripozejoj (ekz. GitHub) kaj kontribuitaj de komunumanoj per pull-requestoj.
+2. Indeksa naturo: la Vendejo estas nur provizanto de indeksa servo; ĝi ne stokas, gastigas nek distribuas la programaron mem. La realaj dosierfontejoj de ĉiuj aplikaĵoj estas ripozejoj de triaj partioj (ekz. Docker Hub, GitHub Releases); la Vendejo nur liveras metadatumajn ligilojn al tiuj rimedoj.
+3. Subteno de pluraj fontoj: la Vendejo permesas libere aldoni, ŝanĝi aŭ forigi iun ajn triapartian fonton (inkluzive, sed ne limigite: memgastigitaj, komunumaj kaj organizaj fontoj). La uzanto portas plenan respondecon pri la fontoj, kiujn li elektas fidi, kaj pri ilia enhavo. La Vendejo donas neniun garantion pri haveblo, sekureco aŭ leĝeco de la enhavo de iu ajn triapartia fonto.
+4. Nenia aliĝo: inter la Vendejo, aplikaĵaj aŭtoroj, triapartiaj ripozejoj kaj bildfontejoj ekzistas nenia rilato de aliĝo, reprezentado aŭ kunlaboro. La aŭtoroj respondecas sendepende pri siaj verkoj.
+
+III. Respondecо kaj konformeco de la uzanto
+
+1. Memkontrolo de laŭleĝa konformeco: la aplikaĵolisto de la Vendejo devenas el malfermitkodaj komunumoj de multaj landoj; iuj aplikaĵoj povas impliki eksportkontrolajn, datenkonformecajn aŭ enhavkontrolajn regulojn de specifaj landoj/regionoj. Antaŭ instali aŭ uzi iun ajn aplikaĵon, kontrolu kaj observu ĉiujn aplikeblajn leĝojn, import-/eksport-regularojn kaj industriajn normojn de via lando/regiono.
+2. Sendependa respondeco: ĉiuj konsekvencoj rezultantaj el via instalado, agordo aŭ uzado de iu ajn aplikaĵo per la Vendejo (inkluzive, sed ne limigite: datumperdo, servointerrompo, juraj disputoj, administraj punoj, krima respondeco) estas portataj de vi sendepende. La Vendejo ne akceptas iun ajn respondecon pri viaj agoj aŭ iliaj konsekvencoj.
+3. Deklaro pri aplikaĵa kvalito: la Vendejo ne donas esprimitajn nek implicajn garantiojn pri iu ajn programaro en la listo, inkluzive, sed ne limigite: vendeblon, taŭgecon por aparta celo, sekurecon, stabilecon, senvirusecojn kaj ne-malobservon. Vi mem devas taksi la kvaliton kaj sekurecon de la aplikaĵoj.
+4. Rekomendoj kaj subtenoj: la montra ordo aŭ etikedoj de iu ajn aplikaĵo (ekz. "精选" aŭ "官方") ne reprezentas agnoskon aŭ subtenon de la komunumo Graw. Tiaj etikedoj nur plibonigas la folium-sperton kaj ne konsistigas rekomendon en jura senco.
+
+IV. Enhava administrado kaj forigaj reguloj
+
+1. Traktado de malobservoj de internacia juro: la Vendejo sekvas forig-principon pro gravaj malobservoj de internacia juro, kaj forigas aplikaĵan indekson nur en jenaj kazoj:
+   · La enhavo malobservas la Ĉarton de UN kaj la ĝenerale agnoskitajn bazajn normojn de internacia humanitara juro
+   · La aplikaĵo estas ligita al mondvaste agnoskitaj gravaj krimoj (ekz. homotrafiko, financado de terorismo)
+   · Ĝi estas submetita al oficialaj sankcioj aŭ malpermesoj kun klara bazo en internacia juro
+2. Traktado de nevenkeblaj fortoj: la Vendejo povas provizore aŭ definitive forigi iujn aplikaĵojn pro jenaj kialoj:
+   · Interrompo aŭ ĉeso de triapartiaj servoj (GitHub Pages, Docker Hub ktp.)
+   · La aŭtoro petas la forigon, aŭ lia ripozejo estas forigita
+   · Komunumaj prizorgantoj ne plu povas prizorgi la rilatan indekson pro teknikaj kialoj
+3. Escepto de nacia juro: la Vendejo ne estas administrata laŭ la leĝoj de iu aparta lando, nek akceptas la devon aktive kontroli aŭ bloki enhavon malpermesitan de la leĝoj de specifaj landoj/regionoj. La uzanto devas observi la lokajn leĝojn; se aplikaĵo estas kontraŭleĝa en via regiono, ne instalu kaj ne uzu ĝin.
+4. Principo de komunuma aŭtonomio: aldono, forigo kaj ŝanĝo de la aplikaĵolisto estas komune deciditaj de komunumanoj per PR. La komunumo Graw rezervas la rajton fari urĝan forigon pro la supraj kialoj, sed ne garantias la ĝustatempecon nek la plenan karakteron de tiaj decidoj.
+
+V. Intelekta proprieto kaj enhava respondeco
+
+1. Aŭtorrajtoj de triaj partioj: la ikonoj, nomoj, emblemoj, interfacaj dezajnoj ktp. en la Vendejo estas laŭleĝa proprieto de iliaj respektivaj posedantoj. La Vendejo indeksas ilin laŭ principo de teknologia neŭtraleco kaj ne respondecas pri malobservoj de intelekta proprieto de triaj partioj.
+2. Komunuma enhavo: pri metadatumoj aŭ dokumentaro prezentitaj per GitHub pull-requestoj respondecas la prezentanto. La komunumo Graw rezervas la rajton forigi enhavon, kiu klare malobservas internacian juron aŭ publikan ordon, sed ne akceptas la devon aktive kontroli la ĝustecon, leĝecon kaj elplenan karakteron de la prezentita enhavo.
+3. Plendoj pri malobservo: se vi kredas, ke enhavo indeksita de la Vendejo malobservas viajn laŭleĝajn rajtojn, bonvolu kontakti la prizorgan teamon per GitHub Issue aŭ retpoŝte. Ni revizios en racia tempo kaj faros necesajn paŝojn (ekz. forigi la rilatan indekson).
+
+VI. Limigita respondeco de Graw
+
+1. Senrespongebleco pro nevenkeblaj fortoj: la komunumo Graw ne respondecas, se la Vendejo estas interrompita aŭ neatingebla pro jenaj kialoj:
+   · Misfunkcioj de triapartiaj servoj (GitHub Pages, Docker Hub ktp.)
+   · Faktoroj de nevenkebla forto: naturaj katastrofoj, milito, ciberatakoj, ŝtataj agoj
+   · Misfunkcioj de la interreta infrastrukturo aŭ prokrastoj de reta transdono
+2. Nenia servnivela garantio: la Vendejo estas provizita "kiel ĝi estas" (AS IS), sen ia ajn garantio pri haveblo, stabileco aŭ kontinueco. La komunumo Graw ne havas la devon certigi seninterrompan funkciadon 24/7.
+3. Kompensa plafono: en neniu okazo la komunumo Graw aŭ ĝiaj membroj portos iun ajn respondecon.
+
+VII. Aliaj kondiĉoj
+
+1. Rajto ŝanĝi: la komunumo Graw rezervas la rajton modifi tiun ĉi deklaron iam ajn. Gravaj ŝanĝoj (ekz. pri uzanta respondeco aŭ privateca protekto) estos anoncitaj per la anonctabulo aŭ la versinotoj de la GitHub-ripozejo. Daŭra uzado de la Vendejo post la ekvalido de la ŝanĝoj estas konsiderata akcepto de la nova deklaro.
+2. Dividebleco: se iu kondiĉo de tiu ĉi deklaro estas deklarita nevida aŭ neefektivebla de kompetenta tribunalo, la valideco de la aliaj kondiĉoj ne estas tuŝita.
+3. Lingva efikeco: la ĉina versio estas aŭtoritata; tradukoj estas nur por referenco.
+4. Kontaktu nin: se vi havas demandojn, prezentu Issue-on en la GitHub-ripozejo de la senprofita patrina teamo ShunX aŭ sendu retpoŝton al s@shunx.top.
+
+La fina interpretrajto de tiu ĉi deklaro apartenas al la komunumo Graw kaj al la senprofita patrina teamo ShunX.
+
+Dokumenta versio: 1.1.0 | Ĝisdatigita: 16-a de aŭgusto 2026`,
   },
   // Aplika instalado
   appinstall: {

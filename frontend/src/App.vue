@@ -37,7 +37,7 @@
           @contextmenu.prevent="openShortcutMenu($event, sc)"
         >
           <div class="icon"><component :is="sc.icon" :size="32" /></div>
-          <div class="label" :title="sc.titleKey ? $t(sc.titleKey) : sc.label">{{ sc.titleKey ? $t(sc.titleKey) : sc.label }}</div>
+          <div class="label" :style="shortcutLabelStyle" :title="sc.titleKey ? $t(sc.titleKey) : sc.label">{{ sc.titleKey ? $t(sc.titleKey) : sc.label }}</div>
         </div>
       </div>
 
@@ -393,6 +393,19 @@ const visibleShortcuts = computed(() => shortcuts.value.filter(s =>
 // --- 桌面快捷方式右键菜单：隐藏 / 固定到任务栏 ---
 const shortcutMenu = ref({ show: false, x: 0, y: 0, sc: null })
 
+// 桌面图标下方文字的样式（设置 → 面板 里可调）：字号 / 颜色 / 黑边描边。
+// 黑边开启时用 8 向 text-shadow 模拟描边，否则保持默认柔和投影。
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/
+const shortcutLabelStyle = computed(() => {
+  const size = Number(settings.shortcutFontSize)
+  const fontSize = Number.isFinite(size) && size >= 8 && size <= 24 ? Math.round(size) : 12
+  const color = HEX_COLOR_RE.test(settings.shortcutLabelColor) ? settings.shortcutLabelColor : '#ffffff'
+  const textShadow = settings.shortcutLabelStroke
+    ? '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 -1px 0 #000, 0 1px 0 #000, -1px 0 0 #000, 1px 0 0 #000'
+    : '0 1px 2px rgba(0,0,0,0.45)'
+  return { fontSize: fontSize + 'px', color, textShadow }
+})
+
 function openShortcutMenu(e, sc) {
   // 菜单定位：限制在视口内，避免贴边被截断
   const menuW = 160
@@ -539,13 +552,14 @@ function doLogout() {
 }
 
 function onDocClick(e) {
+  // 右键菜单：点击菜单外部（含桌面空白、窗口、任务栏）任意处即关闭。
+  // 必须在开始菜单判断之前执行——开始菜单关闭时若提前 return，右键菜单会残留。
+  const ctx = e.target.closest('.shortcut-menu')
+  if (shortcutMenu.value.show && !ctx) shortcutMenu.value.show = false
   if (!startMenuOpen.value) return
   const btn = e.target.closest('.start-button')
   const menu = e.target.closest('.start-menu')
-  const ctx = e.target.closest('.shortcut-menu')
   if (!btn && !menu && !ctx) startMenuOpen.value = false
-  // 右键菜单点击任意处即关闭（菜单本身 @click.stop，由自身项处理）
-  if (shortcutMenu.value.show && !ctx) shortcutMenu.value.show = false
 }
 
 // --- 通用窗口打开：含 adminOnly / remoteCap / VIP 三重门控 ---

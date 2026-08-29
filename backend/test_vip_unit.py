@@ -5,6 +5,7 @@
   - 配置：后端常量默认地址 / 环境变量可选覆盖 / 前端不可改动（无 config 接口）
   - 状态：未开通 / 生效 / 过期判断、取更大截止的「顺延不吞时长」
   - 激活：成功落库 / 授权码为空 / 授权码服务不可达（mock HTTP）
+  - 共享：面板级 VIP（任意账号激活 → 所有账号生效、叠加到共享截止）
   - 路由：status 返回当前用户
 
 运行：python -m test_vip_unit
@@ -52,12 +53,12 @@ class VipConfigTest(unittest.TestCase):
 
     def test_default_server_url(self):
         # 无环境变量 → 使用后端常量（尾部斜杠被规范化）
-        self.assertEqual(vip_mod.get_server_url(), "https://graw-vip.shunx.top/")
+        self.assertEqual(vip_mod.get_server_url(), "https://graw-vip.shunx.top")
 
     def test_env_server_url_override(self):
         # 部署时可用环境变量覆盖（仍不受前端控制）
         with mock.patch.dict(os.environ, {"GRAW_VIP_SERVER": "https://graw-vip.shunx.top/"}):
-            self.assertEqual(vip_mod.get_server_url(), "https://graw-vip.shunx.top/")
+            self.assertEqual(vip_mod.get_server_url(), "https://graw-vip.shunx.top")
 
     def test_no_public_config_endpoint(self):
         # 前端不可修改授权地址：路由不再暴露 /config
@@ -133,6 +134,47 @@ class VipRouterTest(unittest.TestCase):
         with mock.patch.object(vip_mod, "get_vip", return_value={"vip": True, "plan": "month", "vip_until": "", "is_vip": True, "activated_at": ""}):
             res = vip_router.vip_status(user)
         self.assertTrue(res["vip"])
+
+
+class VipSharedTest(unittest.TestCase):
+    """面板级 VIP 共享：任意账号激活 → 所有账号同时生效。"""
+
+    def setUp(self):
+        _isolate(self)
+
+    def test_shared_across_users(self):
+        # alice 激活后，未激活过的 bob 同样生效（面板级共享）
+        future = _until_plus(30)
+        with mock.patch.object(vip_mod, "_call_license", return_value={
+            "ok": True, "type": "month", "activated_until": future,
+        }):
+            vip_mod.activate_vip("alice", "CODE-1")
+        s_bob = vip_mod.get_vip("bob")
+        self.assertTrue(s_bob["vip"])
+        self.assertTrue(s_bob["is_vip"])
+        self.assertEqual(s_bob["vip_until"], future)
+
+    def test_shared_all_expired_inactive(self):
+        # 每个账号都过期 → 全员未解锁（无一生效则共享失效）
+        past = _until_plus(-1)
+        with mock.patch.object(vip_mod, "_save_state"):
+            vip_mod._set_user_vip("alice", "month", past)
+            vip_mod._set_user_vip("bob", "month", past)
+        self.assertFalse(vip_mod.get_vip("alice")["vip"])
+        self.assertFalse(vip_mod.get_vip("bob")["vip"])
+
+    def test_stack_on_shared_max(self):
+        # alice 激活较长时长后，bob 换账号激活较短时长：共享截止不缩短、不吞时长
+        late = _until_plus(30)
+        early = _until_plus(5)
+        with mock.patch.object(vip_mod, "_call_license", return_value={"ok": True, "type": "month", "activated_until": late}):
+            vip_mod.activate_vip("alice", "CODE-1")
+        with mock.patch.object(vip_mod, "_call_license", return_value={"ok": True, "type": "month", "activated_until": early}):
+            s = vip_mod.activate_vip("bob", "CODE-2")
+        self.assertTrue(s["vip"])
+        self.assertEqual(s["vip_until"], late)
+        # bob 的记录以共享的最晚截止为基准叠加，不会早于 alice 的截止
+        self.assertGreaterEqual(vip_mod._state_cache["bob"]["vip_until"], late)
 
 
 if __name__ == "__main__":

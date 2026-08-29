@@ -31,6 +31,8 @@
           <span v-if="vip.vip" class="badge badge-on">{{ $t('vip.active') }}</span>
           <span v-else class="badge badge-off">{{ $t('vip.inactive') }}</span>
         </div>
+        <!-- 面板级共享提示：任意账号开通后所有用户同时生效 -->
+        <div class="shared-hint">{{ $t('vip.sharedHint') }}</div>
         <template v-if="vip.vip">
           <div class="status-row">
             <span class="status-label">{{ $t('vip.plan') }}</span>
@@ -129,6 +131,7 @@ onMounted(() => {
 .badge-on { background: rgba(52,199,89,0.15); color: #1d7a3c; }
 .badge-off { background: rgba(142,142,147,0.18); color: #6e6e73; }
 .unlock-hint { font-size: 11px; color: #8e8e93; line-height: 1.6; }
+.shared-hint { font-size: 11px; color: #8e8e93; line-height: 1.6; padding-top: 2px; }
 
 .field { display: block; margin-bottom: 10px; }
 .field .label { display: block; font-size: 11px; color: #6e6e73; font-weight: 600; margin-bottom: 4px; }

@@ -902,6 +902,70 @@ export default {
     disclaimerScrollHint: '(bitte bis ganz nach unten scrollen, um anzukreuzen)',
     close: 'Ablehnen und schließen',
     enter: 'App-Store öffnen',
+    // Vollständiger Haftungsausschluss (1.1.0): maßgeblich ist die chinesische
+    // Fassung; diese Übersetzung dient nur der Information.
+    disclaimerText: `Vorwort
+
+Der Graw Community App Store (im Folgenden „der Store") ist eine dezentrale Anwendungs-Index-Plattform, die vom gemeinnützigen Mutterteam ShunX ins Leben gerufen und von Open-Source-Communitys in vielen Ländern gemeinsam gepflegt wird. Der Store verfolgt das Ziel, Entwicklern eine transparente, sichere und bequeme Bereitstellung von Anwendungen zu ermöglichen. Bitte lesen Sie vor der Nutzung des Stores die folgenden Haftungsausschlüsse sorgfältig. Durch Zugriff, Aufruf oder Nutzung des Stores gelten Sie als damit einverstanden, dass Sie alle Bestimmungen dieser Erklärung gelesen, verstanden und akzeptiert haben.
+
+I. Zusicherung des Datenschutzes
+
+1. Keine Datenerhebung: Der Store erhebt, speichert, lädt oder übermittelt in keiner Form Ihre persönlichen Daten (einschließlich, aber nicht beschränkt auf IP-Adressen, Geräteinformationen, Browserverlauf, Standort und Kontaktdaten). Sie müssen keine Datenschutzrisiken befürchten; der Store benötigt keine eigenständige Datenschutzrichtlinie, schlicht weil keine Daten existieren, die es zu schützen lohnt.
+2. Anonyme Nutzung: Ihre Interaktionen mit dem Store (z. B. Durchsuchen der App-Liste, Ansehen von Details) erfolgen anonym; es werden keine Nutzerprofile oder Verhaltens-Tracking-Protokolle erzeugt.
+3. Hinweis zu Diensten Dritter: Falls eine über den Store installierte Anwendung (z. B. WordPress, Nextcloud) selbst Daten erhebt, steht dies in keiner Beziehung zum Store; beachten Sie die Datenschutzrichtlinie der jeweiligen Anwendung.
+
+II. Erklärung zur Art der Plattform
+
+1. Dezentrale Open-Source-Community: Der Store ist ein vielfältiges, dezentrales Open-Source-Projekt, das von Entwickler-Freiwilligen weltweit gepflegt wird. Alle Anwendungs-Metadaten (einschließlich docker-compose.yml, data.yml, README.md usw.) werden in öffentlichen Git-Repositories (z. B. GitHub) gehostet und von Community-Mitgliedern per Pull Request beigetragen.
+2. Index-Charakter: Der Store ist lediglich ein Anbieter von Indexdiensten und speichert, hostet oder verteilt selbst keine Anwendungssoftware. Die tatsächlichen Dateiquellen aller Anwendungen sind Repositories Dritter (z. B. Docker Hub, GitHub Releases); der Store stellt lediglich Metadaten-Links auf diese Ressourcen bereit.
+3. Unterstützung mehrerer Quellen: Der Store ermöglicht es Ihnen, beliebige Drittanbieter-Quellen (einschließlich, aber nicht beschränkt auf selbst gehostete, Community- und Organisationsquellen) frei hinzuzufügen, zu wechseln oder zu entfernen. Sie tragen die volle Verantwortung für die von Ihnen gewählten Quellen und deren Inhalte. Der Store übernimmt keinerlei Gewähr für Verfügbarkeit, Sicherheit oder rechtliche Zulässigkeit der Inhalte Drittanbieter-Quellen.
+4. Keine Zugehörigkeit: Zwischen dem Store, den Anwendungsautoren, Repositories Dritter und Bildquellen bestehen keine Zugehörigkeits-, Vertretungs- oder Kooperationsbeziehungen. Die Anwendungsautoren sind unabhängig für ihre Werke verantwortlich.
+
+III. Verantwortung und Compliance des Nutzers
+
+1. Eigenständige Prüfung der Rechtskonformität: Die App-Liste des Stores stammt aus Open-Source-Communitys vieler Länder; einzelne Anwendungen können Exportkontroll-, Daten-Compliance- oder Inhaltsprüfungsvorschriften bestimmter Länder/Regionen berühren. Prüfen und befolgen Sie vor Installation oder Nutzung einer Anwendung alle anwendbaren Gesetze, Einfuhr-/Ausfuhrbestimmungen und Branchenstandards Ihres Landes/Ihrer Region.
+2. Eigenständige Haftung: Alle Folgen, die durch Ihre Installation, Konfiguration oder Nutzung einer Anwendung über den Store entstehen (einschließlich, aber nicht beschränkt auf Datenverlust, Dienstunterbrechung, Rechtsstreitigkeiten, Verwaltungsstrafen und strafrechtliche Verantwortung), tragen Sie selbst. Der Store übernimmt keinerlei Verantwortung für Ihre Handlungen oder deren Folgen.
+3. Erklärung zur App-Qualität: Der Store gewährt für keine Software in der Liste ausdrückliche oder stillschweigende Garantien, einschließlich, aber nicht beschränkt auf Marktgängigkeit, Eignung für bestimmte Zwecke, Sicherheit, Stabilität, Virenfreiheit und Nichtverletzung von Rechten. Bewerten Sie Qualität und Sicherheit der Anwendungen selbst.
+4. Empfehlungen und Bestätigungen: Die Anzeigereihenfolge oder Kennzeichnung einer Anwendung (z. B. „精选" oder „官方") stellt keine Anerkennung oder Empfehlung durch die Graw-Community dar. Solche Kennzeichnungen dienen lediglich der Verbesserung des Erlebnisses und stellen keine Empfehlung im rechtlichen Sinne dar.
+
+IV. Inhaltsverwaltung und Entfernungsregeln
+
+1. Behandlung von Verstößen gegen das Völkerrecht: Der Store folgt dem Grundsatz der Entfernung bei schweren Völkerrechtsverstößen und entfernt einen App-Index nur in folgenden Fällen:
+   · Der Inhalt der Anwendung verstößt gegen die UN-Charta und die allgemein anerkannten Grundnormen des humanitären Völkerrechts
+   · Die Anwendung betrifft weltweit anerkannte schwere Straftaten (z. B. Menschenhandel, Terrorismusfinanzierung)
+   · Es liegen offizielle Sanktionen oder Verbote mit klarer völkerrechtlicher Grundlage vor
+2. Behandlung höherer Gewalt: Der Store kann einzelne Anwendungen aus folgenden Gründen vorübergehend oder dauerhaft entfernen:
+   · Unterbrechung oder Einstellung von Drittanbieter-Diensten (GitHub Pages, Docker Hub usw.)
+   · Der Autor fordert die Entfernung an, oder sein Repository wurde gelöscht
+   · Community-Pflegeteams können den betreffenden Index aus technischen Gründen nicht mehr pflegen
+3. Ausnahme nach nationalem Recht: Der Store wird nicht nach den Gesetzen eines bestimmten Landes verwaltet und übernimmt auch nicht die Pflicht, durch Gesetze bestimmter Länder/Regionen verbotene Inhalte aktiv zu prüfen oder zu blockieren. Sie müssen die lokalen Gesetze einhalten; ist eine Anwendung in Ihrer Region unzulässig, verzichten Sie auf Installation und Nutzung.
+4. Grundsatz der Community-Autonomie: Änderungen an der App-Liste werden von Community-Mitgliedern gemeinsam per PR entschieden. Die Graw-Community behält sich das Recht zur dringenden Entfernung aus den oben genannten völkerrechtlichen oder höhere-Gewalt-Gründen vor, übernimmt aber keine Gewähr für die Rechtzeitigkeit oder Vollständigkeit solcher Entscheidungen.
+
+V. Geistiges Eigentum und Inhaltsverantwortung
+
+1. Urheberrechte Dritter: Die im Store aufgenommenen App-Symbole, Namen, Logos, Schnittstellendesigns usw. sind rechtmäßiges Eigentum ihrer jeweiligen Inhaber. Der Store indexiert sie nach dem Prinzip technologischer Neutralität und haftet nicht für Verletzungen geistigen Eigentums Dritter.
+2. Inhalte der Community: Für Metadaten oder Dokumentation, die per GitHub Pull Request eingereicht wurden, ist der Einreichende verantwortlich. Die Graw-Community behält sich das Recht vor, Inhalte zu entfernen, die offensichtlich gegen Völkerrecht oder die öffentliche Ordnung verstoßen, übernimmt jedoch keine aktive Prüfungspflicht hinsichtlich Richtigkeit, Rechtmäßigkeit und Vollständigkeit eingereichter Inhalte.
+3. Beschwerden über Verstöße: Wenn Sie der Ansicht sind, dass vom Store indexierte Inhalte Ihre rechtmäßigen Rechte verletzen, wenden Sie sich per GitHub Issue oder E-Mail an das Pflegeteam. Wir prüfen innerhalb angemessener Zeit und ergreifen erforderliche Maßnahmen (z. B. Entfernung des betreffenden Index).
+
+VI. Begrenzte Haftung von Graw
+
+1. Haftungsfreistellung bei höherer Gewalt: Die Graw-Community haftet nicht, wenn der Store aus folgenden Gründen unterbrochen oder unerreichbar ist:
+   · Ausfälle von Drittanbieter-Diensten (GitHub Pages, Docker Hub usw.)
+   · Höhere Gewalt wie Naturkatastrophen, Krieg, Cyberangriffe, staatliche Handlungen
+   · Ausfälle der Internet-Infrastruktur oder Netzwerkübertragungsverzögerungen
+2. Keine Dienstleistungsgarantie: Der Store wird auf „Wie er ist"-(AS IS)-Basis bereitgestellt und gewährleistet keinerlei Verfügbarkeit, Stabilität oder Kontinuität. Die Graw-Community ist nicht verpflichtet, einen unterbrechungsfreien 24/7-Betrieb sicherzustellen.
+3. Entschädigungsobergrenze: Unter keinen Umständen haften die Graw-Community oder ihre Mitglieder in irgendeiner Hinsicht.
+
+VII. Sonstige Bestimmungen
+
+1. Änderungsrecht: Die Graw-Community behält sich vor, diese Erklärung jederzeit zu ändern. Wesentliche Änderungen (z. B. zu Nutzerverantwortung oder Datenschutz) werden über das Ankündigungsfeld oder die Versionshinweise des GitHub-Repositorys bekannt gegeben. Die weitere Nutzung des Stores nach Inkrafttreten der Änderungen gilt als Zustimmung zur neuen Erklärung.
+2. Teilbarkeit: Wird eine Bestimmung dieser Erklärung von einem zuständigen Gericht für ungültig oder nicht durchsetzbar erklärt, bleibt die Gültigkeit der übrigen Bestimmungen unberührt.
+3. Geltung der Sprache: Maßgeblich ist die chinesische Fassung; Übersetzungen dienen nur zur Referenz.
+4. Kontakt: Bei Fragen reichen Sie ein Issue im GitHub-Repository des gemeinnützigen Mutterteams ShunX ein oder senden Sie eine E-Mail an s@shunx.top.
+
+Das endgültige Auslegungsrecht dieser Erklärung liegt bei der Graw-Community und dem gemeinnützigen Mutterteam ShunX.
+
+Dokumentversion: 1.1.0 | Aktualisiert: 16. August 2026`,
   },
   // App-Installation
   appinstall: {
