@@ -346,6 +346,7 @@ def _podman_json(args: List[str]) -> list:
         if isinstance(data, dict):
             # 单对象：docker 单容器时整体即一个对象 → 包成单元素列表
             return [data]
+    # 整体 JSON 解析失败，忽略并退回逐行解析
     except json.JSONDecodeError:
         pass
     # 2) 逐行解析（docker: 每行一个 JSON 对象）；任一行失败则跳过
@@ -402,6 +403,7 @@ def _try_docker_sdk():
             except Exception:
                 try:
                     _client.close()
+                # 客户端可能已关闭，关闭失败忽略
                 except Exception:
                     pass
                 _client = None
@@ -1180,6 +1182,7 @@ def _container_inspect_sync(container_id: str):
                 sys_delta = cpu.get("system_cpu_usage", 0) - precpu.get("system_cpu_usage", 0)
                 online = cpu.get("online_cpus", 1) or 1
                 cpu_percent = round(cpu_delta / sys_delta * online * 100, 2) if sys_delta > 0 else 0
+            # CPU 占用计算失败（除零等）忽略
             except Exception:
                 pass
 
@@ -1557,7 +1560,6 @@ def _parse_registries_toml(content: str) -> dict:
     if m:
         result["search"] = [x.strip().strip('"\'') for x in m.group(1).split(",") if x.strip()]
     # [[registry]] 与 [[registry.mirror]] 块
-    blocks = re.findall(r"\[\[registry(?:\.[a-z]+)?\]\]\s*location\s*=\s*\"([^\"]+)\"", content)
     in_private = False
     for token in re.findall(r"\[\[registry(?:\.([a-z]+))?\]\]\s*(?:location\s*=\s*\"([^\"]+)\"|insecure\s*=\s*(true|false))", content):
         part, loc, insecure = token
@@ -1639,6 +1641,7 @@ def _docker_config_sync():
             mirrors = data.get("registry-mirrors", []) or []
             private = data.get("insecure-registries", []) or []
             iptables = data.get("iptables", None)
+        # 解析 daemon.json 失败忽略，按无配置处理
         except Exception:
             pass
 

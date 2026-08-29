@@ -26,7 +26,7 @@ def test_reveal_secret_does_not_deadlock(monkeypatch, tmp_path):
     # 步骤1：写入启用的 agent 配置（持锁路径）
     t1 = threading.Thread(
         target=lambda: agent_cfg.set_config(
-            enabled=True, key="test-key", secret="s-very-secret", role="admin"
+            enabled=True, key="test-key", secret="s-very-secret"
         )
     )
     t1.start()

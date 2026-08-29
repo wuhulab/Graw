@@ -351,6 +351,7 @@ class ConPTY:
         if self._out_read_fd != -1:
             try:
                 os.close(self._out_read_fd)
+            # 管道读端可能已关闭，关闭失败忽略
             except OSError:
                 pass
             self._out_read_fd = -1
@@ -364,6 +365,7 @@ class ConPTY:
             alist = self._attr_list
             try:
                 kernel32.DeleteProcThreadAttributeList(alist)
+            # 属性列表可能已被释放，释放失败忽略
             except Exception:
                 pass
             if self._heap:

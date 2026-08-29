@@ -1011,6 +1011,7 @@ class S3Adapter(BaseAdapter):
         dk = self._obj_key(dst)
         try:
             self._rm_prefix(client, dk + "/")  # 目标已存在则先清理
+        # 目标前缀可能不存在或清理失败，忽略继续改名
         except Exception:
             pass
         st = None

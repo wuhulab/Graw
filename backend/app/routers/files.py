@@ -342,7 +342,7 @@ async def rename(
         auditlog.record("重命名", user["username"], get_client_ip(request), f"{req.src} -> {req.dst}")
         return {"ok": True}
     except Exception as e:
-        logger.warning("重命名失败 %s -> %s: %s", req.src, req.dst, e)
+        logger.warning("重命名失败: %s", type(e).__name__)
         raise _files_error(e, "重命名失败")
 
 
@@ -545,7 +545,7 @@ async def copy_path(
         auditlog.record("复制", user["username"], get_client_ip(request), f"{req.src} -> {dst}")
         return {"ok": True, "dst": _safe_path(dst)}
     except Exception as e:
-        logger.warning("复制失败 %s -> %s: %s", req.src, req.dst, e)
+        logger.warning("复制失败: %s", type(e).__name__)
         raise _files_error(e, "复制失败")
 
 

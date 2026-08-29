@@ -577,7 +577,6 @@ def _frp_status_sync() -> dict:
     data = _load_store()
     mode = data.get("mode", "server")
     bin_path = _bin_for(data)
-    custom = (data.get("serverBin") or data.get("clientBin") or "").strip()
     return {
         "mode": mode,
         "installed": os.path.exists(bin_path),
@@ -693,7 +692,7 @@ async def add_proxy(req: ProxyModel):
     data.setdefault("client", {})["proxies"] = proxies
     _save_store(data)
     _write_toml(data)
-    logger.info("新增 frpc 代理 %s", name)
+    logger.info("新增 frpc 代理：name_len=%s", len(name))
     return proxy
 
 

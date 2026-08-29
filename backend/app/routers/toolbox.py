@@ -304,7 +304,7 @@ async def exec_tool(req: ExecRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("工具箱工具 %s 执行异常: %s", tool, e)
+        logger.exception("工具箱工具（类型=%s）执行异常: %s", type(tool).__name__, type(e).__name__)
         raise HTTPException(status_code=500, detail=f"工具执行失败：{e}")
     logger.info("工具箱工具 %s 执行成功（耗时 %.2fs）", repr(tool), time.time() - start)
     return {"ok": True, "tool": tool, "result": result}

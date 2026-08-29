@@ -595,15 +595,13 @@ async def delete_channel(channel_id: str):
     if len(data["channels"]) == before:
         raise HTTPException(status_code=404, detail="通知渠道不存在")
     _save(data)
-    logger.info("删除通知渠道：%s", channel_id)
+    logger.info("删除通知渠道：channel_id_len=%s", len(channel_id))
     return {"ok": True}
 
 
 @router.post("/channels/{channel_id}/test")
 async def test_channel(channel_id: str):
     """测试发送一条渠道通知。"""
-    import asyncio
-
     data = _load()
     channel = next((c for c in data.get("channels", []) if c.get("id") == channel_id), None)
     if not channel:

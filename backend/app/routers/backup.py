@@ -933,7 +933,7 @@ async def delete_task(task_id: str):
             logger.warning("删除计划任务 %s 失败: %s", task["cron_task_id"], e)
     data["tasks"] = [t for t in tasks if t.get("id") != task_id]
     _save_backup(data)
-    logger.info("删除备份任务：%s", task_id)
+    logger.info("删除备份任务：task_id_len=%s", len(task_id))
     return {"ok": True}
 
 
@@ -1051,7 +1051,7 @@ async def create_remote(req: RemoteRequest):
     }
     data.setdefault("remotes", []).append(remote)
     _save_backup(data)
-    logger.info("创建远程备份目标：%s", remote["name"])
+    logger.info("创建远程备份目标：name_len=%s", len(remote["name"]))
     return _mask_remote(remote)
 
 

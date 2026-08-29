@@ -316,7 +316,7 @@ async def update_config(req: ConfigRequest, _: dict = Depends(require_admin)):
     known = _load_known()
     known["_config"]["alert_enabled"] = req.alert_enabled
     _save_json(KNOWN_FILE, known)
-    logger.info("异常登录提醒开关已设置为 %s", req.alert_enabled)
+    logger.info("异常登录提醒开关已设置为: %s", "on" if req.alert_enabled else "off")
     return {"ok": True}
 
 

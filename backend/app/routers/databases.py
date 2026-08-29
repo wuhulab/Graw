@@ -134,6 +134,7 @@ try:
     from bson import ObjectId
 
     MONGO_LIBS = True
+# 缺少可选驱动 pymongo，导入失败忽略
 except Exception:
     pass
 
@@ -454,7 +455,7 @@ async def update_connection(conn_id: str, req: DBConnection):
     conn["database"] = req.database or ""
     conn["updated_at"] = datetime.now().isoformat()
     _save_connections(data)
-    logger.info("编辑数据库连接: %s (%s)", conn["name"], conn["id"])
+    logger.info("编辑数据库连接：name_len=%s, conn_id_len=%s", len(conn["name"]), len(conn["id"]))
     return {
         **conn,
         "has_password": bool(conn.get("password")),

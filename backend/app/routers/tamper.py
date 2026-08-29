@@ -40,7 +40,6 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from pydantic import BaseModel, Field
 
 from app.auth import (
-    get_current_user,
     require_admin,
     require_non_default_password,
     get_current_user_ws_checked,
@@ -573,6 +572,7 @@ async def stop_tamper_monitor():
         _monitor_task.cancel()
         try:
             await _monitor_task
+        # 监控任务已被取消，等待取消过程异常忽略
         except asyncio.CancelledError:
             pass
         _monitor_task = None
@@ -800,7 +800,7 @@ async def delete_protection(site_id: str):
     bdir = _site_backup_dir(site_id)
     if os.path.isdir(bdir):
         shutil.rmtree(bdir, ignore_errors=True)
-    logger.info("已删除网页防篡改配置：%s", site_id)
+    logger.info("已删除网页防篡改配置：site_id_len=%s", len(site_id))
     await _broadcast_status()
     return {"ok": True}
 
@@ -815,7 +815,7 @@ async def backup_now(site_id: str):
     site["baseline"] = await asyncio.to_thread(_snapshot_site, site)
     site["last_backup_at"] = datetime.now().isoformat()
     _save_tamper(data)
-    logger.info("手动备份完成：%s", site_id)
+    logger.info("手动备份完成：site_id_len=%s", len(site_id))
     return {"ok": True, "protected_count": len(site.get("protected_files", [])), "last_backup_at": site["last_backup_at"]}
 
 

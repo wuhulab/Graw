@@ -211,7 +211,7 @@ async def update_user(user_id: str, req: FtpUserUpdate):
     if req.description is not None:
         user["description"] = (req.description or "").strip()
     _save(data)
-    logger.info("更新 FTP 用户：%s", user.get("username"))
+    logger.info("更新 FTP 用户：username_len=%s", len(user.get("username") or ""))
     return _public(user)
 
 

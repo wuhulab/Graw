@@ -531,7 +531,6 @@ const agentSecretBusy = ref(false)
 // 面板常以纯 http 提供服务（如 http://ip:8041），此时 navigator.clipboard 不可用，
 // 旧实现会直接报「复制失败」，故降级到隐藏 textarea + document.execCommand('copy')。
 async function copyTextToClipboard(text) {
-  if (text == null) return false
   if (navigator.clipboard && window.isSecureContext) {
     try {
       await navigator.clipboard.writeText(text)

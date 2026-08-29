@@ -383,7 +383,7 @@ async def deploy_key(key_id: str, req: KeyDeployRequest):
         logger.error("部署密钥到节点 %s 失败: %s", req.node_id, err)
         raise HTTPException(status_code=500, detail=f"部署失败：{err[:200]}")
 
-    logger.info("公钥 %s 已部署到节点 %s", key_id, req.node_id)
+    logger.info("公钥已部署到节点（key_id_len=%s, node_id_len=%s）", len(key_id), len(req.node_id))
     return {
         "ok": True,
         "node_id": req.node_id,

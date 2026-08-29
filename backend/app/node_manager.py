@@ -240,7 +240,7 @@ def set_current(node_id: str) -> dict:
         raise ValueError(f"节点不存在: {node_id}")
     store["current"] = node_id
     _save_store(store)
-    logger.info("切换当前管理主机 -> %s", node_id)
+    logger.info("切换当前管理主机 -> node_id_len=%s", len(node_id))
     return next((node for node in list_nodes() if node["id"] == node_id), None)
 
 
@@ -354,6 +354,7 @@ def delete_node(node_id: str) -> bool:
         from app import agent_client  # noqa: PLC0415 - 打破循环依赖需局部导入
 
         agent_client.drop_token_cache(nkey)
+    # 清除令牌缓存失败不影响判断结果，忽略
     except Exception:
         pass
     return True
@@ -447,6 +448,7 @@ def _paramiko_new_client(node: dict, timeout: int) -> "paramiko.client.SSHClient
     except Exception:
         try:
             client.close()
+        # 连接可能未建立成功，关闭失败忽略
         except Exception:
             pass
         raise
@@ -494,6 +496,7 @@ def _paramiko_pool_client(node: dict, timeout: int):
             if old is not None:
                 try:
                     old.close()
+                # 需淘汰的旧连接可能已断开，关闭失败忽略
                 except Exception:
                     pass
         client = _paramiko_new_client(node, timeout)
@@ -514,6 +517,7 @@ def _paramiko_drop_pool(node_key: Optional[tuple] = None):
             if cur is not None:
                 try:
                     cur.close()
+                # 该节点连接可能已断开，关闭失败忽略
                 except Exception:
                     pass
             return
@@ -570,16 +574,18 @@ def _paramiko_run(node: dict, remote_cmd: str, **kwargs) -> subprocess.Completed
                 input_data = kwargs.get("input")
                 if input_data is not None:
                     stdin.write(input_data.encode("utf-8") if isinstance(input_data, str) else input_data)
-                    try:
-                        stdin.channel.shutdown_write()
-                    except Exception:
-                        pass
+                try:
+                    stdin.channel.shutdown_write()
+                # 远端 stdin 已关闭时忽略写关闭失败
+                except Exception:
+                    pass
                 out = stdout.read()
                 errb = stderr.read()
                 code = stdout.channel.recv_exit_status()
             except Exception:
                 try:
                     client.close()
+                # 连接可能已断开，关闭失败忽略
                 except Exception:
                     pass
                 raise

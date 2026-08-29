@@ -791,6 +791,7 @@ def _map_docker_container_sync(name: str) -> dict:
         # 回滚：尽力把原容器重新启动，避免服务不可用
         try:
             cli_run(["start", cid], 60)
+        # 回滚拉起原容器失败时忽略，避免掩盖主错误
         except Exception:
             pass
         logger.error("一键映射容器 %s 失败: %s", cname, e)
@@ -1188,7 +1189,7 @@ async def ignore_item(req: IgnoreRequest):
             if req.name:
                 item["name"] = req.name
             _save_protection(data)
-            logger.warning("用户%s忽略了保护警告：kind=%s key=%s", "永久" if permanent else "暂时", req.kind, key)
+            logger.warning("用户%s忽略了保护警告：kind_len=%s key_len=%s", "永久" if permanent else "暂时", len(req.kind), len(key))
             return {"ok": True, "already": True, "permanent": permanent}
     data.setdefault("ignored", []).append(
         {
@@ -1200,7 +1201,7 @@ async def ignore_item(req: IgnoreRequest):
         }
     )
     _save_protection(data)
-    logger.warning("用户%s忽略了保护警告：kind=%s key=%s", "永久" if permanent else "暂时", req.kind, key)
+    logger.warning("用户%s忽略了保护警告：kind_len=%s key_len=%s", "永久" if permanent else "暂时", len(req.kind), len(key))
     return {"ok": True, "already": False, "permanent": permanent}
 
 

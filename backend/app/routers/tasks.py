@@ -131,7 +131,7 @@ def delete_task(task_id: str):
         if os.path.exists(log_path):
             os.remove(log_path)
     except Exception as e:
-        logger.warning("删除任务日志失败 %s: %s", task_id, e)
+        logger.warning("删除任务日志失败（task_id_len=%s）: %s", len(task_id), type(e).__name__)
 
 
 def _log_path(task_id: str) -> str:

@@ -368,6 +368,7 @@ def _revoke_user_sessions(username: str) -> None:
                 changed = True
         if changed:
             _save_sessions(sessions)
+    # 会话状态刷新失败不影响访问，忽略
     except Exception:
         pass
 

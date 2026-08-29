@@ -272,8 +272,6 @@ def _check_certs_sync() -> list:
 @router.get("/certs")
 async def certs():
     """返回证书到期状态列表。"""
-    import asyncio
-
     return {"certs": await asyncio.to_thread(_check_certs_sync)}
 
 

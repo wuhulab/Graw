@@ -420,8 +420,8 @@ async def kick_all(
     if not _get_user(target):
         raise HTTPException(status_code=404, detail="用户不存在")
     bump_token_version(target)
-    logger.info("用户 %s 的全部会话已被管理员强制下线（操作者 %s, IP %s）",
-                target, admin["username"], get_client_ip(request))
+    logger.info("用户强制下线：target_len=%s, operator_len=%s, ip_len=%s",
+                len(target or ""), len(admin["username"] or ""), len(get_client_ip(request) or ""))
     auditlog.record("强制下线", target, get_client_ip(request), f"全部设备被 {admin['username']} 强制下线")
     return {"ok": True}
 
@@ -659,7 +659,7 @@ async def otp_enable(req: OtpEnableRequest, request: Request, user: dict = Depen
         raise HTTPException(status_code=400, detail="验证码错误")
     full["otp_enabled"] = True
     _save_users(users)
-    logger.info("用户 %s 已启用两步验证（IP %s）", user["username"], get_client_ip(request))
+    logger.info("用户启用两步验证：username_len=%s, ip_len=%s", len(user["username"] or ""), len(get_client_ip(request) or ""))
     auditlog.record("启用两步验证", user["username"], get_client_ip(request))
     return {"ok": True}
 

@@ -369,6 +369,7 @@ def _parse_root_dir(conf: str) -> str:
         matches = list(re.finditer(r"(?:^|\s)root\s+(.+?);", stripped))
         if matches:
             return matches[-1].group(1).strip()
+    # root 规则解析失败，按无结果处理忽略
     except Exception:
         pass
     return ""
@@ -532,6 +533,7 @@ def _site_status_by_port(port: int) -> bool:
                 and conn.status == psutil.CONN_LISTEN
             ):
                 return True
+    # 端口监听状态读取失败，视为未监听忽略
     except Exception:
         pass
     return False

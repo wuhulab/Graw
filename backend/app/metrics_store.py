@@ -296,6 +296,7 @@ def status() -> dict:
     files = []
     try:
         files = sorted(n for n in os.listdir(METRICS_DIR) if n.endswith(".ndjson"))
+    # 指标目录读取失败，按空结果处理忽略
     except OSError:
         pass
     earliest = None

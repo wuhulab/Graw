@@ -125,7 +125,6 @@ def _mount(type_, source, dest):
 
 
 def test_container_internal_detection():
-    cid, name, status = "abc123", "my-app", "Up 1 hours"
     # 1) 探测命令：仅在容器可写层内查找，排除系统目录（避免误报镜像自带库文件）
     cmd = protection.SQLITE_FIND_CMD
     check("探测命令含 -xdev", "-xdev" in cmd)
