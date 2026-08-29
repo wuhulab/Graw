@@ -24,7 +24,7 @@ import logging
 import os
 import threading
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
