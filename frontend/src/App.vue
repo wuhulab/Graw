@@ -34,10 +34,35 @@
           :class="{ selected: selected === sc.key }"
           @click="onShortcutClick(sc.key)"
           @dblclick="openShortcut(sc.key)"
+          @contextmenu.prevent="openShortcutMenu($event, sc)"
         >
           <div class="icon"><component :is="sc.icon" :size="32" /></div>
           <div class="label" :title="sc.titleKey ? $t(sc.titleKey) : sc.label">{{ sc.titleKey ? $t(sc.titleKey) : sc.label }}</div>
         </div>
+      </div>
+
+      <!-- 快捷方式右键菜单：隐藏 / 固定到任务栏（在设置里可恢复 / 取消固定） -->
+      <div
+        v-if="shortcutMenu.show"
+        class="shortcut-menu"
+        :style="{ left: shortcutMenu.x + 'px', top: shortcutMenu.y + 'px' }"
+        @click.stop="shortcutMenu.show = false"
+      >
+        <template v-if="shortcutMenu.sc">
+          <button class="shortcut-menu-item" @click="hideScFromMenu">
+            <EyeOff :size="14" /> {{ $t('desktop.hideShortcut') }}
+          </button>
+          <button
+            v-if="desktopPrefs.pinnedKeys.includes(shortcutMenu.sc.key)"
+            class="shortcut-menu-item"
+            @click="togglePinSc(false)"
+          >
+            <PinOff :size="14" /> {{ $t('desktop.unpinShortcut') }}
+          </button>
+          <button v-else class="shortcut-menu-item" @click="togglePinSc(true)">
+            <Pin :size="14" /> {{ $t('desktop.pinShortcut') }}
+          </button>
+        </template>
       </div>
 
       <!-- Spacer (center) -->
@@ -84,6 +109,17 @@
         </div>
       </div>
       <div class="task-items">
+        <!-- 固定到任务栏的快捷方式（不随窗口开关，点击即打开应用） -->
+        <div
+          v-for="ps in pinnedShortcuts"
+          :key="'pin-' + ps.key"
+          class="task-item pinned"
+          :class="{ 'window-open': pinnedWindowOpen(ps.key) }"
+          :title="ps.titleKey ? $t(ps.titleKey) : ps.label"
+          @click="openPinned(ps)"
+        >
+          <span class="icon"><component :is="ps.icon" :size="20" /></span>
+        </div>
         <div
           v-for="w in openWindows"
           :key="w.id"
@@ -179,13 +215,14 @@ import { shunxApi, systemApi } from './api'
 import { auth, clearAuth, isAdmin } from './store/auth'
 import { uiState, loadUi, loadUiEffective } from './store/ui'
 import { settings } from './store/settings'
+import { desktopPrefs, bindUser as bindDesktopUser, hideShortcut, pinShortcut, unpinShortcut } from './store/desktopPrefs'
 import { vip as vipStore, refreshVip } from './store/vip'
 import { systemState, startMetrics, stopMetrics } from './store/systemMetrics'
 import { startDocker, stopDocker, refresh as refreshDocker } from './store/docker'
 import { nodes as nodesStore, refreshNodes } from './store/nodes'
 import { setRequestNode } from './store/requestNode'
 import { tamperState, startTamper, stopTamper } from './store/tamper'
-import { Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, BarChart3, FileCode2, History, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用）
+import { Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, BarChart3, FileCode2, History, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug, Pin, PinOff, EyeOff } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用）
 
 // --- 桌面根状态：登录态、动态壁纸、底栏主机徽标 ---
 const loggedIn = computed(() => !!auth.token)
@@ -345,12 +382,92 @@ const shortcuts = ref([
 // 桌面快捷方式：管理员可见全部，普通用户仅可见非管理功能。
 // 远端节点下：未配置 Agent 时隐藏 local 类（面板自身管理项）应用，避免误操作本机；
 // 已配置 Agent 时 local 类经 Agent 代理在子节点可用，正常显示。
-// --- 快捷方式可见性：管理员 / 隐藏 Foxcode / 远端节点 local 类门控 ---
+// --- 快捷方式可见性：管理员 / 隐藏 Foxcode / 远端节点 local 类门控 / 用户隐藏 ---
 const visibleShortcuts = computed(() => shortcuts.value.filter(s =>
   (!s.adminOnly || isAdmin()) &&
   !(s.key === 'foxcode' && settings.hideFoxcode) &&
+  !desktopPrefs.hiddenKeys.includes(s.key) &&
   !(isCurrentHostRemote.value && !currentHostAgentReady.value && s.remoteCap === 'local')
 ))
+
+// --- 桌面快捷方式右键菜单：隐藏 / 固定到任务栏 ---
+const shortcutMenu = ref({ show: false, x: 0, y: 0, sc: null })
+
+function openShortcutMenu(e, sc) {
+  // 菜单定位：限制在视口内，避免贴边被截断
+  const menuW = 160
+  const menuH = 76
+  shortcutMenu.value = {
+    show: true,
+    x: Math.min(e.clientX, window.innerWidth - menuW - 8),
+    y: Math.min(e.clientY, window.innerHeight - menuH - 8),
+    sc,
+  }
+}
+
+// 隐藏当前右键的应用（桌面移除，可在「设置 → 桌面」里恢复）
+function hideScFromMenu() {
+  const sc = shortcutMenu.value.sc
+  if (!sc) return
+  hideShortcut(sc.key)
+  // 若该应用窗口正开着，不强制关闭（只隐藏入口），并收窄为桌面右键菜单已处理
+  shortcutMenu.value.show = false
+}
+
+// 固定 / 取消固定当前右键的应用（任务栏常驻入口）
+function togglePinSc(pin) {
+  const sc = shortcutMenu.value.sc
+  if (!sc) return
+  if (pin) {
+    pinShortcut(sc.key)
+  } else {
+    unpinShortcut(sc.key)
+  }
+  shortcutMenu.value.show = false
+}
+
+// 固定的应用在任务栏的渲染集：按固定顺序匹配 shortcuts 定义
+const pinnedShortcuts = computed(() => {
+  const byKey = {}
+  shortcuts.value.forEach(s => { byKey[s.key] = s })
+  return desktopPrefs.pinnedKeys.map(k => byKey[k]).filter(Boolean)
+})
+
+// 固定应用是否已有窗口打开（任务栏高亮提示）
+function pinnedWindowOpen(key) {
+  return openWindows.value.some(w => w.key === key)
+}
+
+// 点击任务栏固定图标：未打开则打开；已打开则聚焦（若已聚焦则最小化，与其他窗口一致）
+function openPinned(ps) {
+  const existing = openWindows.value.find(w => w.key === ps.key)
+  if (existing) {
+    if (existing.minimized) {
+      existing.minimized = false
+      focusWindow(existing.id)
+    } else if (activeWindowId.value === existing.id) {
+      existing.minimized = true
+    } else {
+      focusWindow(existing.id)
+    }
+    return
+  }
+  if (ps.key === 'foxcode') {
+    openFoxcode()
+  } else {
+    openWindow(ps.key)
+  }
+}
+
+// 登录后校准桌面偏好作用域：切换用户时按「仅当前用户」开关读取对应偏好
+watch(() => auth.user?.username, (name) => {
+  if (name) bindDesktopUser()
+})
+
+// 点击桌面空白处关闭右键菜单（与开始菜单共用 mousedown 处理）
+function onDeskContextClose() {
+  shortcutMenu.value.show = false
+}
 
 // --- 窗口系统状态：选中项、已开窗口、聚焦窗口、开始菜单 ---
 const selected = ref(null)
@@ -425,7 +542,10 @@ function onDocClick(e) {
   if (!startMenuOpen.value) return
   const btn = e.target.closest('.start-button')
   const menu = e.target.closest('.start-menu')
-  if (!btn && !menu) startMenuOpen.value = false
+  const ctx = e.target.closest('.shortcut-menu')
+  if (!btn && !menu && !ctx) startMenuOpen.value = false
+  // 右键菜单点击任意处即关闭（菜单本身 @click.stop，由自身项处理）
+  if (shortcutMenu.value.show && !ctx) shortcutMenu.value.show = false
 }
 
 // --- 通用窗口打开：含 adminOnly / remoteCap / VIP 三重门控 ---

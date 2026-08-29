@@ -169,6 +169,58 @@ button {
   outline: 1px solid rgba(255, 255, 255, 0.4);
 }
 
+/* 快捷方式右键菜单：隐藏 / 固定到任务栏（桌面顶层的独立浮层） */
+.shortcut-menu {
+  position: fixed;
+  z-index: 10001;
+  min-width: 168px;
+  padding: 5px;
+  background: rgba(246, 246, 248, 0.96);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  backdrop-filter: saturate(180%) blur(30px);
+  -webkit-backdrop-filter: saturate(180%) blur(30px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shortcut-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #1d1d1f;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.shortcut-menu-item:hover {
+  background: rgba(0, 0, 0, 0.07);
+}
+
+/* 任务栏固定图标：加粗底指示线提示「已打开窗口」 */
+.task-item.pinned {
+  padding: 0 8px;
+}
+
+.task-item.pinned.window-open::after {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 6px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
 .shortcut .icon {
   width: 52px;
   height: 52px;

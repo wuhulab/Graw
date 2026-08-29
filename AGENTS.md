@@ -86,6 +86,7 @@ Graw/
 | `/api/cron` `/api/firewall` `/api/ssl` `/api/logs` `/api/backup` | 计划任务/防火墙/证书/日志/备份 | ADMIN |
 | `/api/shunx` `/api/tamper` | ShunX 安全入口 / 网页防篡改（含 WS 告警） | 端点内自行鉴权 |
 | `/api/appstore` `/api/tasks` `/api/runtime` | 应用商店 / 任务中心 / 运行时容器 | ADMIN |
+| `/api/plugins` `/api/op` | 应用接口开放协议：插件管理（ADMIN，按 enabled 条件注册）/ 插件开放接口（端点内令牌鉴权）。`/api/plugins/settings` 总开关始终注册 | ADMIN / 令牌 |
 | `/api/nodes` `/api/sshkeys` | 多节点管理 / SSH 密钥部署 | ADMIN |
 | `/api/ui` `/api/vip` | 界面设置（公开/public + 管理员/config）/ VIP | 端点内自行鉴权 |
 | `/api/frp` `/api/netstorage` `/api/update` `/api/notify` `/api/uptime` `/api/certcheck` | 内网穿透/网络储存/更新/通知/可用性/证书 | ADMIN |

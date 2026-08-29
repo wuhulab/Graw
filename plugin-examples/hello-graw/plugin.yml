@@ -1,0 +1,41 @@
+# ============================================================
+# Graw 应用接口开放协议（GPOP）示例插件
+# ------------------------------------------------------------
+# 文件名固定为 plugin.yml，位于插件包根目录。
+# 面板安装时校验本清单，并据此注入协议环境变量。
+# ============================================================
+
+api_version: 1                  # 协议版本（必须 = 1）
+
+id: hello-graw                  # 插件唯一 ID（全局唯一，字母数字开头）
+name: "Hello Graw"
+version: "1.0.0"
+author: "Graw Team"
+description: >
+  Graw 应用接口开放协议（GPOP）的入门示例插件：一个极简 HTTP 服务，
+  启动后用面板注入的令牌调用 /api/op/me 完成握手，并暴露
+  /health 与 /api/hello 两个端点，演示插件与面板的双向交互。
+category: "面板/工具"
+homepage: "https://github.com/wuhulab/Graw"
+
+# 能力声明：插件将使用的面板开放接口（白名单）
+capabilities:
+  - panel_info        # 允许调用 GET /api/op/me
+  - notify            # 允许调用 POST /api/op/notify
+  - audit             # 允许调用 POST /api/op/audit
+  - config            # 允许读写 GET/PUT /api/op/config
+
+# 入口声明：主服务名与对外端口（面板据此做端口映射与展示）
+entry:
+  service: hello
+  port: 8080
+  path: /
+
+# 可选：插件环境变量说明（面板安装时为管理员预填，供插件读取自定义）
+env:
+  - { name: "HELLO_WORLD_COUNT", default: "1", desc: "输出问候语重复次数" }
+
+# 可选：商店/插件中心标签
+tags:
+  - "示例"
+  - "官方"

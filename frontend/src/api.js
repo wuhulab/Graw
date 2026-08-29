@@ -660,3 +660,11 @@ export const vipApi = {
   status: () => api.get('/vip/status').then(r => r.data),
   activate: (code) => api.post('/vip/activate', { code }).then(r => r.data)
 }
+
+// 应用接口开放协议（GPOP）：插件功能总开关（设置界面使用）
+export const pluginApi = {
+  // 读取插件功能总开关状态
+  settings: () => api.get('/plugins/settings').then(r => r.data),
+  // 写入插件功能总开关（需要重启面板完全生效）
+  saveSettings: (enabled) => api.put('/plugins/settings', { enabled }).then(r => r.data)
+}

@@ -583,6 +583,33 @@ export default {
     saveFailed: '保存失败：{error}',
     daysInvalid: '保留天数需为 1-365 的整数',
   },
+  // 桌面快捷方式（隐藏/固定到任务栏）
+  desktop: {
+    title: '桌面应用',
+    titleHint: '在桌面右键应用可以选择隐藏或固定到任务栏。此处可恢复隐藏的应用，或取消任务栏固定。',
+    perUser: '仅当前用户生效',
+    perUserHint: '开启后，隐藏 / 固定只对当前登录账号生效；关闭则为所有账号共享',
+    hiddenSection: '已隐藏的应用',
+    pinnedSection: '已固定到任务栏',
+    restore: '恢复显示',
+    unpin: '取消固定',
+    empty: '暂无隐藏或固定的应用',
+    hideShortcut: '隐藏',
+    pinShortcut: '固定到任务栏',
+    unpinShortcut: '取消固定',
+  },
+  // 应用接口开放协议（GPOP）：插件功能总开关
+  plugins: {
+    title: '插件',
+    titleHint: '启用后支持以插件形式安装第三方应用，并通过开放接口与面板交互',
+    enable: '启用插件',
+    enabled: '已启用',
+    disabled: '已禁用',
+    enabledHint: '插件功能已启用：面板启动时加载插件路由与开放接口',
+    disabledHint: '插件功能已禁用：面板不会加载插件相关代码与接口',
+    needRestart: '已保存。插件开关将在面板重启后完全生效',
+    saveFailed: '保存失败：{error}',
+  },
   // 进程管理
   process: {
     title: '进程管理',

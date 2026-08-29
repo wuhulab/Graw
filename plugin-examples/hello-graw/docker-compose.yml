@@ -1,0 +1,26 @@
+# ============================================================
+# Graw 应用接口开放协议（GPOP）示例插件 - 编排
+# ------------------------------------------------------------
+# 面板安装插件时会把 docker-compose.yml 与 plugin.yml 一起载入，
+# 自动向 entry 声明的服务注入协议环境变量：
+#   GRAW_PLUGIN_ID      插件 ID
+#   GRAW_PLUGIN_TOKEN   访问令牌（插件调用面板 /api/op/* 用）
+#   GRAW_PANEL_URL      面板地址
+#   GRAW_PLUGIN_API_VERSION  协议版本
+# 模板中无需手动预填上述变量（面板注入优先级更高）。
+# ============================================================
+
+services:
+  hello:
+    # 使用官方轻量 Python 镜像，直接挂载 ./server.py 运行
+    image: python:3.11-alpine
+    container_name: graw-hello-graw
+    restart: always
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./server.py:/app/server.py:ro
+    working_dir: /app
+    command: ["python", "-u", "server.py"]
+    environment:
+      - HELLO_WORLD_COUNT=1

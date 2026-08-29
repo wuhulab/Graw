@@ -1065,6 +1065,33 @@ export default {
     saveFailed: 'Save failed: {error}',
     daysInvalid: 'Retention days must be an integer between 1 and 365',
   },
+  // Desktop shortcuts (hide / pin to taskbar)
+  desktop: {
+    title: 'Desktop Apps',
+    titleHint: 'Right-click an app on the desktop to hide it or pin it to the taskbar. Restore hidden apps or unpin them here.',
+    perUser: 'Only for current user',
+    perUserHint: 'When enabled, hide/pin preferences apply only to the logged-in account; otherwise they are shared by all accounts',
+    hiddenSection: 'Hidden apps',
+    pinnedSection: 'Pinned to taskbar',
+    restore: 'Restore',
+    unpin: 'Unpin',
+    empty: 'No hidden or pinned apps',
+    hideShortcut: 'Hide',
+    pinShortcut: 'Pin to taskbar',
+    unpinShortcut: 'Unpin',
+  },
+  // Plugin Open Protocol (GPOP): master switch
+  plugins: {
+    title: 'Plugins',
+    titleHint: 'Enable to install third-party apps as plugins and interact with the panel via open APIs',
+    enable: 'Enable plugins',
+    enabled: 'Enabled',
+    disabled: 'Disabled',
+    enabledHint: 'Plugin feature is enabled: plugin routes and open APIs are loaded on startup',
+    disabledHint: 'Plugin feature is disabled: the panel does not load plugin code or APIs',
+    needRestart: 'Saved. The plugin switch takes full effect after the panel restarts',
+    saveFailed: 'Save failed: {error}',
+  },
   // Process management
   process: {
     title: 'Processes',

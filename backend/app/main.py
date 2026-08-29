@@ -53,6 +53,7 @@ from app.routers import (
     phpversions,
     recycle,
     vip,
+    plugins,
 )
 from app.auth import (
     seed_default_users,
@@ -65,6 +66,7 @@ from app import agent_auth
 from app import node_manager
 from app import agent_client
 from app import trash
+from app import plugin_protocol
 
 # 权限分级：
 #   PROTECTED - 仅需登录（只读信息类接口，如系统概览/备忘录，供桌面展示）
@@ -578,6 +580,24 @@ app.include_router(
 # 配置授权码服务地址。status/activate 需登录，config 需管理员，
 # 均在各端点内部自行鉴权（参照 ui/tamper 路由），故不挂全局依赖。
 app.include_router(vip.router, prefix="/api/vip", tags=["vip"])
+
+# 应用接口开放协议（GPOP）：
+# - /api/plugins/settings 为插件功能总开关（始终注册，否则关闭后无法重新打开）；
+# - /api/plugins 为插件管理接口（安装/启停/卸载/轮换令牌），需管理员；
+# - /api/op 为插件开放接口（插件凭令牌调用，内部自行鉴权）。
+# 插件功能关闭时（data/plugins.json 的 enabled=false）静默切换为「不加载插件
+# 相关代码」：仅注册 settings 开关路由，业务/开放路由整体不注册。
+app.include_router(
+    plugins.settings_router,
+    prefix="/api/plugins",
+    tags=["plugins"],
+    dependencies=ADMIN,
+)
+if plugin_protocol.is_enabled():
+    app.include_router(
+        plugins.router, prefix="/api/plugins", tags=["plugins"], dependencies=ADMIN
+    )
+    app.include_router(plugins.op_router, prefix="/api/op", tags=["plugins"])
 
 
 @app.get("/api/health")
