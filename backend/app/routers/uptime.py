@@ -261,8 +261,7 @@ async def stop_monitor():
         _monitor_task.cancel()
         try:
             await _monitor_task
-        # CodeQL [py/empty-except] 取消后台监控任务触发 CancelledError，正常退出
-        except asyncio.CancelledError:
+        except asyncio.CancelledError:  # lgtm[py/empty-except] 取消后台监控任务触发 CancelledError，正常退出
             pass
         _monitor_task = None
 

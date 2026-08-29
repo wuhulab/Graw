@@ -169,8 +169,7 @@ async def container_terminal_ws(
             await _windows_conpty_terminal(websocket, command)
         else:
             await _unix_terminal(websocket)
-    except WebSocketDisconnect:
-        # CodeQL [py/empty-except] WebSocket 正常断开：清理由 finally 完成
+    except WebSocketDisconnect:  # lgtm[py/empty-except] 正常断开，清理由 finally 完成
         pass
     except Exception as e:
         try:
@@ -219,8 +218,7 @@ async def terminal_ws(
             await _windows_terminal(websocket)
         else:
             await _unix_terminal(websocket)
-    except WebSocketDisconnect:
-        # CodeQL [py/empty-except] WebSocket 正常断开：清理由 finally 完成
+    except WebSocketDisconnect:  # lgtm[py/empty-except] 正常断开，清理由 finally 完成
         pass
     except Exception as e:
         try:
@@ -486,8 +484,7 @@ async def _windows_pipe_command_terminal(websocket: WebSocket, argv: list):
                 proc.stdin.flush()
             except Exception:
                 break
-    except WebSocketDisconnect:
-        # CodeQL [py/empty-except] WebSocket 正常断开：清理由 finally 完成
+    except WebSocketDisconnect:  # lgtm[py/empty-except] 正常断开，清理由 finally 完成
         pass
     finally:
         stop_flag.set()
@@ -569,8 +566,7 @@ async def _windows_conpty_terminal(websocket: WebSocket, shell: str):
                 pty.write(data.encode("utf-8"))
             except Exception:
                 break
-    except WebSocketDisconnect:
-        # CodeQL [py/empty-except] WebSocket 正常断开：清理由 finally 完成
+    except WebSocketDisconnect:  # lgtm[py/empty-except] 正常断开，清理由 finally 完成
         pass
     finally:
         stop_flag.set()
@@ -627,8 +623,7 @@ async def _windows_pipe_terminal(websocket: WebSocket, shell: str):
                 proc.stdin.flush()
             except Exception:
                 break
-    except WebSocketDisconnect:
-        # CodeQL [py/empty-except] WebSocket 正常断开：清理由 finally 完成
+    except WebSocketDisconnect:  # lgtm[py/empty-except] 正常断开，清理由 finally 完成
         pass
     finally:
         stop_flag.set()
@@ -718,23 +713,22 @@ async def _interactive_tty(websocket: WebSocket, fd, pid):
                     _, dims = msg.split(":", 1)
                     rows, cols = [int(x) for x in dims.split(",")]
                     set_winsize(rows, cols)
-                except Exception:
+                except Exception:  # lgtm[py/empty-except] 客户端可能发送畸变尺寸，忽略即可
                     pass
                 continue
             os.write(fd, msg.encode("utf-8"))
-    except WebSocketDisconnect:
-        # CodeQL [py/empty-except] WebSocket 正常断开：清理由 finally 完成
+    except WebSocketDisconnect:  # lgtm[py/empty-except] 正常断开，清理由 finally 完成
         pass
     finally:
         stop_flag.set()
         output_task.cancel()
         try:
-            # CodeQL [py/empty-except] 进程可能已随连接退出，kill 失败无害
+            # 进程可能已随连接退出，kill 失败无害
             os.kill(pid, signal.SIGTERM)
-        except Exception:
+        except Exception:  # lgtm[py/empty-except]
             pass
         try:
-            # CodeQL [py/empty-except] fd 可能已被子进程继承关闭，close 失败无害
+            # fd 可能已被子进程继承关闭，close 失败无害
             os.close(fd)
-        except Exception:
+        except Exception:  # lgtm[py/empty-except]
             pass

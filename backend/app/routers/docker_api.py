@@ -131,9 +131,8 @@ def _run(cmd, timeout=30):
         out = r.stdout if isinstance(r.stdout, bytes) else (r.stdout or "").encode()
         err = r.stderr if isinstance(r.stderr, bytes) else (r.stderr or "").encode()
         return r.returncode, out.decode("utf-8", "replace"), err.decode("utf-8", "replace")
-    # CodeQL [py/command-line-injection] 工具层：cmd 以参数列表逐项透传至
-    # 容器引擎 CLI，命令与参数由各业务调用方构造并校验（含镜像/容器名白名单）
-    p = subprocess.run(cmd, capture_output=True, timeout=timeout)
+    # 工具层：cmd 以参数列表逐项透传至容器引擎 CLI，命令与参数由业务调用方构造校验
+    p = subprocess.run(cmd, capture_output=True, timeout=timeout)  # lgtm[py/command-line-injection]
     return p.returncode, p.stdout.decode("utf-8", "replace"), p.stderr.decode("utf-8", "replace")
 
 

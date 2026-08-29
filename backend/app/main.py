@@ -625,10 +625,9 @@ if os.path.exists(FRONTEND_DIST):
             in_dist = os.path.commonpath([candidate, FRONTEND_DIST]) == FRONTEND_DIST
         except ValueError:
             candidate, in_dist = "", False
-        # CodeQL [py/path-injection] candidate 已通过 commonpath == FRONTEND_DIST
-        # 校验（下方 in_dist），仅允许返回前端静态构建目录内的文件
-        if full_path and in_dist and os.path.isfile(candidate):
-            return FileResponse(candidate)
+        # candidate 已通过 commonpath == FRONTEND_DIST 校验（下方 in_dist），只允许站内文件
+        if full_path and in_dist and os.path.isfile(candidate):  # lgtm[py/path-injection]
+            return FileResponse(candidate)  # lgtm[py/path-injection]
         return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
 
 

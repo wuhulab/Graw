@@ -123,7 +123,8 @@ def wait_port_free(port: int, timeout: float = 8.0) -> bool:
         try:
             # 开启地址复用，贴近 uvicorn 的实际绑定行为
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.bind(("0.0.0.0", port))
+            # 端口占用探测：必须绑定 0.0.0.0 才能反映 uvicorn 的实际监听（含局域网来源）
+            sock.bind(("0.0.0.0", port))  # lgtm[py/bind-socket-all-network-interfaces]
             return True  # 能绑定即视为端口已释放
         except OSError:
             time.sleep(0.3)
@@ -166,9 +167,8 @@ def _self_test() -> int:
 
     # 端口探测：本机随机取一个临时端口，验证 wait_port_free 在空闲端口上返回 True
     probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # CodeQL [py/bind-socket-all-network-interfaces] 临时端口探测（bind 0 由系统
-    # 分配随机空闲端口），只用于测试 wait_port_free，非对外服务
-    probe.bind(("0.0.0.0", 0))
+    # 临时端口探测（bind 0 由系统分配随机空闲端口），只用于测试 wait_port_free
+    probe.bind(("0.0.0.0", 0))  # lgtm[py/bind-socket-all-network-interfaces]
     free_port = probe.getsockname()[1]
     probe.close()
     assert wait_port_free(free_port, timeout=2.0), "空闲端口探测应为 True"

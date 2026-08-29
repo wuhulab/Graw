@@ -274,9 +274,8 @@ def _run(cmd, timeout=120):
         # docker_api._run 无 timeout 透传；此处保护以防超时
         import subprocess
 
-        # CodeQL [py/command-line-injection] 兜底分支：cmd 与主分支同源，
-        # 其中镜像名已过白名单校验，instal/启动命令为管理员容器内功能脚本
-        p = subprocess.run(cmd, capture_output=True, timeout=timeout)
+        # 兜底分支：cmd 与主分支同源，镜像名已过白名单校验，install/启动命令为管理员容器内功能脚本
+        p = subprocess.run(cmd, capture_output=True, timeout=timeout)  # lgtm[py/command-line-injection]
         return p.returncode, p.stdout.decode("utf-8", "replace"), p.stderr.decode("utf-8", "replace")
 
 

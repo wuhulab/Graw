@@ -602,9 +602,8 @@ def _reload_nginx():
     # 按当前引擎（nginx/openresty）执行 reload
     try:
         webserver.reload()
-    # CodeQL [py/empty-except] reload 失败静默：允许批量操作继续，
-    # 失败迹象由后续站点访问探测暴露
-    except Exception:
+    # reload 失败静默：允许批量操作继续，失败由后续站点访问探测暴露
+    except Exception:  # lgtm[py/empty-except]
         pass
 
 

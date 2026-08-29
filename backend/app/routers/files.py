@@ -362,8 +362,8 @@ async def upload(
     file: UploadFile = File(...),
     relpath: str = Form(""),
 ):
-    # CodeQL [py/path-injection] 同上：目录路径经 _safe_path 校验后使用
-    target_dir = host_path(_safe_path(path))
+    # path 经 _safe_path：绝对化 + 面板数据目录拦截 + 设备命名空间拒绝
+    target_dir = host_path(_safe_path(path))  # lgtm[py/path-injection]
     if not os.path.isdir(target_dir):
         raise HTTPException(status_code=400, detail="Target directory not found")
     # 文件名消毒：去除路径分隔符仅保留基本名，防止 ../ 路径穿越写至任意目录
@@ -507,9 +507,8 @@ def _extract_worker(archive: str, dest: str) -> None:
                 # 越界链接、设备文件），作为第二道防线；旧版本忽略该参数
                 tf.extractall(dest, filter="data")
             except TypeError:
-                # CodeQL [py/tarslip] 老 Python 降级路径：安全性已由上方对每个
-                # member 的显式校验（越界路径/越界链接/设备文件）保证
-                tf.extractall(dest)
+                # 老 Python 降级路径：安全性已由上方对每个 member 的显式校验保证
+                tf.extractall(dest)  # lgtm[py/tarslip]
 
 
 def _unique_dst(dst: str) -> str:

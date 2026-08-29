@@ -884,8 +884,8 @@ def merged_sites() -> List[dict]:
         if e.get("id") in names and names[e["id"]]:
             e["name"] = names[e["id"]]
     _merged_cache = sites + external
-    # CodeQL [py/unused-global-variable] 缓存时间戳用于 merged_sites 的 TTL 判定
-    _merged_cache_at = now
+    # 缓存时间戳用于 merged_sites 的 TTL 判定
+    _merged_cache_at = now  # lgtm[py/unused-global-variable]
     return [dict(s) for s in _merged_cache]
 
 

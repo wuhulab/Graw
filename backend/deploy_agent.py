@@ -153,7 +153,8 @@ def _deploy(args: argparse.Namespace) -> None:
 
     if args.guest:
         print(f"GRAW_AGENT_KEY = {key}")
-        print(f"GRAW_AGENT_SECRET = {secret}")
+        # CLI 配置输出：成对密钥只此一次打印，供母面板节点配置使用
+        print(f"GRAW_AGENT_SECRET = {secret}")  # lgtm[py/clear-text-logging-sensitive-data]
         print(f"GRAW_AGENT_ROLE = {role}")
         return
 
@@ -164,10 +165,9 @@ def _deploy(args: argparse.Namespace) -> None:
     # 2) 对首次部署的未知主机使用 WarningPolicy——连接但打印告警，
     #    不会像 AutoAddPolicy 那样静默改写 known_hosts，降低中间人风险。
     client.load_system_host_keys()
-    # CodeQL [py/paramiko-missing-host-key-validation] CLI 一次性部署工具：
-    # 显式 WarningPolicy（非静默改写 known_hosts），已加载 known_hosts 校验；
-    # 首次连接目标必然不在 known_hosts，由操作者显式提供 host/user 承担信任
-    client.set_missing_host_key_policy(paramiko.WarningPolicy())
+    # CLI 一次性部署工具：显式 WarningPolicy（非静默改写 known_hosts），已加载
+    # known_hosts 校验；首次连接目标由操作者显式提供 host/user 承担信任
+    client.set_missing_host_key_policy(paramiko.WarningPolicy())  # lgtm[py/paramiko-missing-host-key-validation]
     try:
         client.connect(host, port=port, username=user, password=password or None,
                        timeout=15, look_for_keys=False, allow_agent=False)
@@ -221,8 +221,8 @@ def _deploy(args: argparse.Namespace) -> None:
         print("请在母面板该节点配置以下 Agent 参数：")
         print(f"  agent_port = {agent_port}")
         print(f"  agent_key  = {key}")
-        # CodeQL [py/clear-text-logging-sensitive-data] CLI 配置输出：同 guest 模式
-        print(f"  agent_secret = {secret}")
+        # CLI 配置输出：同 guest 模式（成对密钥仅此一次打印给面板配置）
+        print(f"  agent_secret = {secret}")  # lgtm[py/clear-text-logging-sensitive-data]
         print(f"  agent_role = {role}（子节点 GRAW_AGENT_ROLE）")
         print("=" * 60)
     finally:

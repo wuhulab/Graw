@@ -179,9 +179,7 @@ def _compose_mounts(working_dir: str, config_files: List[str]):
                 if not rel.startswith(".."):
                     args += ["-f", rel]
                     continue
-            except ValueError:
-                # CodeQL [py/empty-except] 跨盘/不同根时 relpath 抛异常，
-                # 视为越界回退到原路径分支继续加入挂载参数
+            except ValueError:  # lgtm[py/empty-except] 跨盘/不同根时 relpath 抛异常，回退原路径分支
                 pass
         args += ["-f", f]
     return volumes, args

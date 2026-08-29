@@ -137,9 +137,8 @@ def _delete_archive_sync(name: str) -> None:
     """删除归档（文件名白名单校验防穿越）。"""
     if not (_ARCHIVE_RE.match(name) or _PRE_IMPORT_RE.match(name)):
         raise HTTPException(status_code=400, detail="归档文件名非法")
-    # CodeQL [py/path-injection] 文件名已由 _ARCHIVE_RE/_PRE_IMPORT_RE 白名单
-    # 校验（仅允许归档形态文件名），拼入 BACKUP_DIR 不会越界
-    fp = os.path.join(BACKUP_DIR, name)
+    # 文件名已由 _ARCHIVE_RE/_PRE_IMPORT_RE 白名单校验，拼入 BACKUP_DIR 不会越界
+    fp = os.path.join(BACKUP_DIR, name)  # lgtm[py/path-injection]
     if not os.path.isfile(fp):
         raise HTTPException(status_code=404, detail="归档不存在")
     os.remove(fp)
@@ -277,9 +276,8 @@ async def download(name: str):
     """下载指定归档。"""
     if not (_ARCHIVE_RE.match(name) or _PRE_IMPORT_RE.match(name)):
         raise HTTPException(status_code=400, detail="归档文件名非法")
-    # CodeQL [py/path-injection] 文件名已由 _ARCHIVE_RE/_PRE_IMPORT_RE 白名单
-    # 校验（仅允许归档形态文件名），拼入 BACKUP_DIR 不会越界
-    fp = os.path.join(BACKUP_DIR, name)
+    # 文件名已由 _ARCHIVE_RE/_PRE_IMPORT_RE 白名单校验，拼入 BACKUP_DIR 不会越界
+    fp = os.path.join(BACKUP_DIR, name)  # lgtm[py/path-injection]
     if not os.path.isfile(fp):
         raise HTTPException(status_code=404, detail="归档不存在")
     return FileResponse(

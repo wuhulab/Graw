@@ -885,9 +885,8 @@ def read_bytes(path: str) -> bytes:
 def write_text(path: str, content: str) -> None:
     """把字符串写到当前管理主机的文件（覆盖）。"""
     if not is_remote():
-        # CodeQL [py/path-injection] 通用写盘工具：目标路径由各功能性调用方
-        #（frp/sites/panelbackup 等）前置白名单校验；面板具备全权写盘能力
-        os.makedirs(os.path.dirname(hostfs.host_path(path)) or ".", exist_ok=True)
+        # 通用写盘工具：目标路径由各功能性调用方前置白名单校验；面板具备全权写盘能力
+        os.makedirs(os.path.dirname(hostfs.host_path(path)) or ".", exist_ok=True)  # lgtm[py/path-injection]
         with open(hostfs.host_path(path), "w", encoding="utf-8") as f:
             f.write(content)
         return
@@ -902,9 +901,8 @@ def write_text(path: str, content: str) -> None:
 def write_bytes(path: str, data: bytes) -> None:
     """把字节写到当前管理主机的文件（覆盖）。"""
     if not is_remote():
-        # CodeQL [py/path-injection] 通用写盘工具：目标路径由各功能性调用方
-        #（frp/sites/panelbackup 等）前置白名单校验；面板具备全权写盘能力
-        os.makedirs(os.path.dirname(hostfs.host_path(path)) or ".", exist_ok=True)
+        # 通用写盘工具：目标路径由各功能性调用方前置白名单校验；面板具备全权写盘能力
+        os.makedirs(os.path.dirname(hostfs.host_path(path)) or ".", exist_ok=True)  # lgtm[py/path-injection]
         with open(hostfs.host_path(path), "wb") as f:
             f.write(data)
         return

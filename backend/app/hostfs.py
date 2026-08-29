@@ -107,13 +107,13 @@ def host_which(cmd: str) -> Optional[str]:
 def host_shell(command: str, **kwargs) -> "subprocess.CompletedProcess":
     """以 shell 形式在宿主机环境执行单条命令字符串（用于 crontab 等场景）。"""
     if not HOST_ROOT:
-        return subprocess.run(command, shell=True, **kwargs)
+        # 工具层：shell 命令由调用方构造，参数部分均已 shlex.quote（功能 shell 汇聚点）
+        return subprocess.run(command, shell=True, **kwargs)  # lgtm[py/command-line-injection]
     # chroot 后通过 /bin/sh -c 执行，使命令在宿主文件系统中解析
     cmd = ["chroot", HOST_ROOT, "/bin/sh", "-c", command]
     try:
-        # CodeQL [py/command-line-injection] 工具层：同 host_shell 非容器分支，
-        # command 字面量由调用方白名单 / shlex.quote 保证
-        return subprocess.run(cmd, **kwargs)
+        # command 字面量由调用方白名单 / shlex.quote 保证（工具层汇聚点）
+        return subprocess.run(cmd, **kwargs)  # lgtm[py/command-line-injection]
     except FileNotFoundError as e:
         return subprocess.CompletedProcess(cmd, 127, b"", str(e).encode())
 

@@ -76,7 +76,7 @@ def _lan_ip() -> str:
             s.close()
         if ip and not ip.startswith("127."):
             return ip
-    except Exception:
+    except Exception:  # lgtm[py/empty-except] 获取局域网 IP 失败时静默，由调用方报错
         pass
     return ""
 
@@ -122,8 +122,8 @@ def _entry_headers():
     try:
         with open(cfg, "r", encoding="utf-8") as f:
             entry = json.load(f).get("entry_path")
-    # CodeQL [py/empty-except] 读取可选 shunx.json：未配置/损坏时静默忽略
-    except Exception:
+    # 读取可选 shunx.json：未配置/损坏时静默忽略（有意吞异常）
+    except Exception:  # lgtm[py/empty-except]
         pass
     return {"X-ShunX-Entry": entry} if entry else {}
 

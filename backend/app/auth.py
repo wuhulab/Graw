@@ -74,16 +74,13 @@ def _get_secret() -> str:
                 s = f.read().strip()
                 if s:
                     return s
-        # CodeQL [py/empty-except] 既有签名密钥不可读/损坏时视为不存在，
-        # 走下方重建路径
-        except Exception:
+        except Exception:  # lgtm[py/empty-except] 既有签名密钥不可读/损坏时视为不存在，走重建
             pass
     secret = secrets.token_urlsafe(48)
-    # CodeQL [py/clear-text-storage-sensitive-data] 签名密钥必须明文持久化
-    # 才能跨重启校验 JWT（加密密钥无法加密存储——自举问题），
-    # 已配套 0600 权限 + data 目录 0700 收紧
+    # 签名密钥必须明文持久化才能跨重启校验 JWT（加密密钥无法加密存储——
+    # 自举问题），已配套 0600 权限 + data 目录 0700 收紧
     with open(SECRET_FILE, "w", encoding="utf-8") as f:
-        f.write(secret)
+        f.write(secret)  # lgtm[py/clear-text-storage-sensitive-data]
     # 限制签名密钥文件权限（仅本进程/用户可读），Linux 上避免同机低权用户读取
     try:
         os.chmod(SECRET_FILE, 0o600)

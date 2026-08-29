@@ -65,8 +65,8 @@ def main():
         print("write status:", r.status_code)
         try:
             os.remove(tmpf)
-        # CodeQL [py/empty-except] 清理冒烟测试临时文件失败时忽略（尽力而为）
-        except OSError:
+        # 清理冒烟测试临时文件失败时忽略（尽力而为）
+        except OSError:  # lgtm[py/empty-except]
             pass
 
         # 读取面板日志

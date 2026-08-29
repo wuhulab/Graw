@@ -360,10 +360,9 @@ def _write_toml(data: dict) -> str:
     toml = _render(data)
     parent = os.path.dirname(cfg) or "."
     try:
-        # CodeQL [py/path-injection] cfg 已由 _config_path 校验（绝对路径 +
-        # .toml/.ini 白名单），parent 为其目录名，不会越界写盘
-        # 确保目录存在（容器模式下 host_path 映射到挂载根，宿主可见）
-        os.makedirs(node_manager.host_path(parent), exist_ok=True)
+        # cfg 已由 _config_path 校验（绝对路径 + .toml/.ini 白名单），
+        # parent 为其目录名，不会越界写盘
+        os.makedirs(node_manager.host_path(parent), exist_ok=True)  # lgtm[py/path-injection]
         node_manager.write_text(cfg, toml)
     except Exception as exc:  # pragma: no cover
         logger.error("写 frp 配置文件失败 %s", cfg, exc_info=True)

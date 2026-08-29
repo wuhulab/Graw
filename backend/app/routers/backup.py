@@ -999,9 +999,8 @@ async def delete_record(file: str):
     data = _load_backup()
     removed_any = False
     for cand in {_task_target(data, t) for t in data.get("tasks", [])} | {_backup_dir(data)}:
-        # CodeQL [py/path-injection] file 已由 BACKUP_FILE_RE 白名单校验，
-        # 仅允许合法备份文件名，拼入备份目录不会越界
-        fp = os.path.join(host_path(cand), file)
+        # file 已由 BACKUP_FILE_RE 白名单校验，仅允许合法备份文件名，拼入备份目录不会越界
+        fp = os.path.join(host_path(cand), file)  # lgtm[py/path-injection]
         if os.path.isfile(fp):
             try:
                 os.remove(fp)
