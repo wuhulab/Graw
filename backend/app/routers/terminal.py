@@ -406,17 +406,28 @@ async def _try_paramiko_interactive(websocket: WebSocket, node: dict) -> str:
         return str(e).strip() or "paramiko 连接失败"
 
     try:
+        import socket as _socket  # noqa: PLC0415 - 就地导入，便于识别 socket.timeout
+
         shell = client.invoke_shell(term="xterm", width=80, height=24)
         shell.settimeout(10)
         channel = shell
         loop = asyncio.get_running_loop()
         out_queue: "asyncio.Queue[bytes]" = asyncio.Queue()
         stop_flag = threading.Event()
+
         # 远端 shell 输出 -> WS
         def _reader():
             try:
                 while not stop_flag.is_set():
-                    chunk = channel.recv(4096)
+                    try:
+                        chunk = channel.recv(4096)
+                    except _socket.timeout:
+                        # 空闲超时（shell 长时间无输出）≠ 断连：连接仍健康，继续等待。
+                        # 此前把 timeout 当普通异常退出读取线程，导致远端输出永久断流：
+                        # WS 应用层心跳照常回 pong（前端误以为连接健康），但终端从此
+                        # 没有回显、远端接收窗口背压后输入也被卡死——即「挂久了/同时
+                        # 开多个终端时无法输入」的直接原因。
+                        continue
                     if not chunk:
                         break
                     loop.call_soon_threadsafe(out_queue.put_nowait, chunk)
@@ -451,6 +462,10 @@ async def _try_paramiko_interactive(websocket: WebSocket, node: dict) -> str:
                     continue
                 try:
                     channel.send(data.encode("utf-8"))
+                except _socket.timeout:
+                    # send 短暂超时（远端窗口背压/网络抖动）：连接可能仍健康，
+                    # 直接跳过本次输入而不杀死会话，避免「多终端时偶发无法输入」
+                    continue
                 except Exception:
                     break
         except WebSocketDisconnect:

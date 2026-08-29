@@ -160,12 +160,14 @@ import RuntimeCreateWindow from './components/windows/RuntimeCreateWindow.vue'
 import DisksWindow from './components/windows/DisksWindow.vue'
 import MonitoringWindow from './components/windows/MonitoringWindow.vue'
 import CertWindow from './components/windows/CertWindow.vue'
-import PanelBackupWindow from './components/windows/PanelBackupWindow.vue'
+// 面板备份已合并进「ShunX保护机制」应用（详见 ShunxSecurityWindow）
+// import PanelBackupWindow from './components/windows/PanelBackupWindow.vue'
 import WebStatsWindow from './components/windows/WebStatsWindow.vue'
 import RewriteWindow from './components/windows/RewriteWindow.vue'
 import SiteOptsWindow from './components/windows/SiteOptsWindow.vue'
 import MetricsHistoryWindow from './components/windows/MetricsHistoryWindow.vue'
-import HealthCheckWindow from './components/windows/HealthCheckWindow.vue'
+// 系统体检已合并进「ShunX保护机制」应用（详见 ShunxSecurityWindow）
+// import HealthCheckWindow from './components/windows/HealthCheckWindow.vue'
 import FtpUsersWindow from './components/windows/FtpUsersWindow.vue'
 import PhpVersionsWindow from './components/windows/PhpVersionsWindow.vue'
 import SessionsWindow from './components/windows/SessionsWindow.vue'
@@ -183,7 +185,7 @@ import { startDocker, stopDocker, refresh as refreshDocker } from './store/docke
 import { nodes as nodesStore, refreshNodes } from './store/nodes'
 import { setRequestNode } from './store/requestNode'
 import { tamperState, startTamper, stopTamper } from './store/tamper'
-import { Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, Archive, BarChart3, FileCode2, History, Stethoscope, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用）
+import { Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, BarChart3, FileCode2, History, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用）
 
 // --- 桌面根状态：登录态、动态壁纸、底栏主机徽标 ---
 const loggedIn = computed(() => !!auth.token)
@@ -293,7 +295,7 @@ const shortcuts = ref([
   { key: 'appstore', label: '应用商店', titleKey: 'app.shortcut.appstore', icon: markRaw(Store), component: markRaw(AppStoreWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local', vip: true },
   // 任务 = 计划任务 + 任务中心 合并
   { key: 'tasks', label: '任务', titleKey: 'app.shortcut.tasks', icon: markRaw(ListChecks), component: markRaw(TasksWindow), w: 900, h: 560, adminOnly: true, remoteCap: 'local' },
-  // ShunX保护机制 = 防火墙 + 应用防火墙 + 网页防篡改 + 数据库保护 合并
+  // ShunX保护机制 = 防火墙 + 应用防火墙 + 网页防篡改 + 数据库保护 + 系统体检 + 面板备份 + 备份中心 + 通知中心 + SSH密钥 合并
   { key: 'shunxprotection', label: 'ShunX保护机制', titleKey: 'app.shortcut.shunxprotection', icon: markRaw(ShieldCheck), component: markRaw(ShunxSecurityWindow), w: 980, h: 620, adminOnly: true },
   // 下述应用已合并进「ShunX保护机制」，桌面不再单独保留
   // { key: 'protection', label: 'Graw数据库保护机制', titleKey: 'app.shortcut.protection', icon: markRaw(ShieldCheck), component: markRaw(ProtectionWindow), w: 860, h: 560, adminOnly: true, remoteCap: 'local' },
@@ -322,11 +324,13 @@ const shortcuts = ref([
   // SSH 密钥已合并进「ShunX保护机制」应用，桌面不再单独保留
   // { key: 'sshkeys', label: 'SSH 密钥', titleKey: 'app.shortcut.sshkeys', icon: markRaw(KeyRound), component: markRaw(SSHKeysWindow), w: 880, h: 540, adminOnly: true, remoteCap: 'local' },
   { key: 'certcheck', label: '证书到期', titleKey: 'app.shortcut.certcheck', icon: markRaw(Lock), component: markRaw(CertWindow), w: 820, h: 540, adminOnly: true, remoteCap: 'local' },
-  { key: 'healthcheck', label: '系统体检', titleKey: 'app.shortcut.healthcheck', icon: markRaw(Stethoscope), component: markRaw(HealthCheckWindow), w: 820, h: 600, adminOnly: true, remoteCap: 'local' },
+  // 系统体检已合并进「ShunX保护机制」应用，桌面不再单独保留
+  // { key: 'healthcheck', label: '系统体检', titleKey: 'app.shortcut.healthcheck', icon: markRaw(Stethoscope), component: markRaw(HealthCheckWindow), w: 820, h: 600, adminOnly: true, remoteCap: 'local' },
   { key: 'ftpusers', label: 'FTP用户', titleKey: 'app.shortcut.ftpusers', icon: markRaw(UserCheck), component: markRaw(FtpUsersWindow), w: 860, h: 560, adminOnly: true, remoteCap: 'local' },
   // PHP 多版本管理：探测系统 PHP/FPM + 站点 PHP 版本关联（仅管理员）
   { key: 'phpversions', label: 'PHP版本', titleKey: 'app.shortcut.phpversions', icon: markRaw(ServerCog), component: markRaw(PhpVersionsWindow), w: 900, h: 580, adminOnly: true, remoteCap: 'local' },
-  { key: 'panelbackup', label: '面板备份', titleKey: 'app.shortcut.panelbackup', icon: markRaw(Archive), component: markRaw(PanelBackupWindow), w: 860, h: 540, adminOnly: true, remoteCap: 'local' },
+  // 面板备份已合并进「ShunX保护机制」应用，桌面不再单独保留
+  // { key: 'panelbackup', label: '面板备份', titleKey: 'app.shortcut.panelbackup', icon: markRaw(Archive), component: markRaw(PanelBackupWindow), w: 860, h: 540, adminOnly: true, remoteCap: 'local' },
   // 系统更新已从桌面移除（面板自身更新入口走其他渠道）
   // { key: 'update', label: '系统更新', titleKey: 'app.shortcut.update', icon: markRaw(RefreshCw), component: markRaw(UpdateWindow), w: 640, h: 420, adminOnly: true, remoteCap: 'local' },
   // 登录日志已合并进「日志」应用的登录日志标签页，桌面不再单独保留

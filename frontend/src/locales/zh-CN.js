@@ -1590,7 +1590,7 @@ export default {
     secretShownOnce: '校验 secret 已显示（仅本次可见，复制后请妥善保存）',
     secretAlreadyShown: '校验 secret 已展示过；如需再次查看，请点击「生成随机 key/secret」重置后重新保存',
   },
-  // ShunX 保护机制（聚合：防火墙 / 应用防火墙 / 网页防篡改 / 数据库保护）
+  // ShunX 保护机制（聚合：防火墙 / 应用防火墙 / 网页防篡改 / 数据库保护 / 系统体检 / 面板备份）
   shunx: {
     modeFirewall: '防火墙',
     modeWaf: '应用防火墙',
@@ -1599,6 +1599,8 @@ export default {
     modeBackup: '备份中心',
     modeNotify: '通知中心',
     modeSshkeys: 'SSH密钥',
+    modeHealthcheck: '系统体检',
+    modePanelbackup: '面板备份',
   },
   // 监控（聚合：站点监控 / 服务监控）
   monitoring: {

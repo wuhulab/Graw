@@ -74,6 +74,7 @@ let autoSent = false       // 自动命令是否已发送（防止重复发送�
 let autoTimer = null       // 自动命令兜底发送的定时器句柄
 let heartbeatTimer = null  // 应用层心跳定时器（防「半开」连接假死）
 let lastPongAt = 0         // 最近一次「连接建立 / 收到后端 pong」的时间戳
+let lastDataAt = 0         // 最近一次「收到后端任何数据」的时间戳（含 shell 输出）
 // 鼠标模式开关状态（默认关闭，避免干扰普通 shell 与下拉选文本）
 const mouseOn = ref(false)
 
@@ -131,6 +132,7 @@ function connect() {
     setStatus(t('terminal.connected'))
     autoSent = false
     lastPongAt = Date.now()   // 连接建立即视为存活，作为假死判定的起点
+    lastDataAt = Date.now()   // 连接建立瞬间同样视为「链路可用」
     startHeartbeat()
     sendResize()
     // 若用户已开启鼠标模式，连接稳定后重放启用序列，保证重连后仍处于鼠标模式
@@ -151,6 +153,8 @@ function connect() {
     scheduleAutoSend()
   }
   ws.onmessage = (e) => {
+    // 任何来自后端的数据都说明链路可用，优先刷新存活时间
+    lastDataAt = Date.now()
     // 应用层心跳应答：仅刷新存活时间，不得写入终端
     if (typeof e.data === 'string' && e.data.startsWith(HEARTBEAT_PONG)) {
       lastPongAt = Date.now()
@@ -194,8 +198,8 @@ function startHeartbeat() {
     if (!ws || ws.readyState !== 1) return   // 未连接时交给 onclose 的重连流程
     try {
       ws.send(HEARTBEAT_PING)
-      // 距最近一次应答超过阈值：连接已假死，主动断开走 onclose 重连
-      if (Date.now() - lastPongAt > HEARTBEAT_TIMEOUT) {
+      // 距最近一次存活（pong 或真实数据）超过阈值：连接已假死，主动断开走 onclose 重连
+      if (Date.now() - lastAliveAt() > HEARTBEAT_TIMEOUT) {
         try { ws.close() } catch (e) {}
       }
     } catch (e) {
@@ -206,6 +210,13 @@ function startHeartbeat() {
 }
 function stopHeartbeat() {
   if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null }
+}
+
+// 连接「最近存活时间」= 心跳应答 与 shell 实际输出 的较大者。
+// 只信 pong 不够：后端 WS 层正常回 pong 但 pty 输出已断流时（如旧版远端
+// 通道 bug），终端会「显示活着但输入没回应」；任何真实数据都说明链路可用。
+function lastAliveAt() {
+  return Math.max(lastPongAt, lastDataAt)
 }
 
 // --- 断线重连：用指数退避避免高频重试，最多等 5 秒 ---
@@ -263,7 +274,7 @@ onMounted(async () => {
     if (!ws || ws.readyState !== 1) return   // 未连接时丢弃输入，等重连后用户再输
     // 输入时快速探测：若连接早已无应答（半开假死），立即断开让重连流程接管，
     // 否则用户会感觉「输入没反应」直到下一个心跳周期才恢复
-    if (Date.now() - lastPongAt > HEARTBEAT_TIMEOUT) {
+    if (Date.now() - lastAliveAt() > HEARTBEAT_TIMEOUT) {
       try { ws.close() } catch (e) {}
       return
     }

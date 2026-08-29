@@ -1,13 +1,13 @@
 <!--
   ShunX 安全中心聚合窗口
-  业务：单窗口内切换并聚合多个安全相关子应用——防火墙、应用防火墙(WAF)、网页防篡改、数据库保护、备份中心、通知中心、SSH 密钥。
-  后端模块：/api/shunx、/api/waf、/api/tamper、/api/protected、/api/backup、/api/notify、/api/sshkeys
+  业务：单窗口内切换并聚合多个安全相关子应用——防火墙、应用防火墙(WAF)、网页防篡改、数据库保护、备份中心、通知中心、SSH 密钥、系统体检、面板备份。
+  后端模块：/api/shunx、/api/waf、/api/tamper、/api/protected、/api/backup、/api/notify、/api/sshkeys、/api/healthcheck、/api/panelbackup
   关键状态：mode（当前子视图标签）
   打开方式：桌面「ShunX 安全」入口挂载
 -->
 <template>
   <div class="shunx-security-window">
-    <!-- 视图切换：防火墙 / 应用防火墙 / 防篡改 / 数据库保护 / 备份 / 通知 / SSH密钥 -->
+    <!-- 视图切换：防火墙 / 应用防火墙 / 防篡改 / 数据库保护 / 备份 / 通知 / SSH密钥 / 系统体检 / 面板备份 -->
     <div class="toolbar">
       <div class="mode-tabs">
         <button class="tab" :class="{ active: mode === 'firewall' }" @click="switchMode('firewall')">{{ $t('shunx.modeFirewall') }}</button>
@@ -17,6 +17,8 @@
         <button class="tab" :class="{ active: mode === 'backup' }" @click="switchMode('backup')">{{ $t('shunx.modeBackup') }}</button>
         <button class="tab" :class="{ active: mode === 'notify' }" @click="switchMode('notify')">{{ $t('shunx.modeNotify') }}</button>
         <button class="tab" :class="{ active: mode === 'sshkeys' }" @click="switchMode('sshkeys')">{{ $t('shunx.modeSshkeys') }}</button>
+        <button class="tab" :class="{ active: mode === 'healthcheck' }" @click="switchMode('healthcheck')">{{ $t('shunx.modeHealthcheck') }}</button>
+        <button class="tab" :class="{ active: mode === 'panelbackup' }" @click="switchMode('panelbackup')">{{ $t('shunx.modePanelbackup') }}</button>
       </div>
     </div>
 
@@ -51,8 +53,18 @@
     </div>
 
     <!-- SSH密钥视图（合并自独立的「SSH 密钥」应用） -->
-    <div v-else class="hub-body">
+    <div v-else-if="mode === 'sshkeys'" class="hub-body">
       <SSHKeysWindow />
+    </div>
+
+    <!-- 系统体检视图（合并自独立的「系统体检」应用） -->
+    <div v-else-if="mode === 'healthcheck'" class="hub-body">
+      <HealthCheckWindow />
+    </div>
+
+    <!-- 面板备份视图（合并自独立的「面板备份」应用） -->
+    <div v-else class="hub-body">
+      <PanelBackupWindow />
     </div>
   </div>
 </template>
@@ -66,8 +78,10 @@ import ProtectionWindow from './ProtectionWindow.vue'   // 子应用：数据库
 import BackupWindow from './BackupWindow.vue'     // 子应用：备份中心
 import NotifyWindow from './NotifyWindow.vue'     // 子应用：通知中心
 import SSHKeysWindow from './SSHKeysWindow.vue'   // 子应用：SSH 密钥
+import HealthCheckWindow from './HealthCheckWindow.vue'  // 子应用：系统体检
+import PanelBackupWindow from './PanelBackupWindow.vue'  // 子应用：面板备份
 
-// 视图模式：firewall / waf / tamper / protection / backup / notify / sshkeys
+// 视图模式：firewall / waf / tamper / protection / backup / notify / sshkeys / healthcheck / panelbackup
 const mode = ref('firewall')
 
 function switchMode(m) {

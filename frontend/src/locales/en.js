@@ -239,7 +239,7 @@ export default {
     secretShownOnce: 'Verify secret shown (visible once; save it after copying)',
     secretAlreadyShown: 'Verify secret was already shown; click "Generate random key/secret" to reset and re-save to view again.',
   },
-  // ShunX Protection Hub (Firewall / WAF / Tamper / Database protection)
+  // ShunX Protection Hub (Firewall / WAF / Tamper / Database protection / Health check / Panel backup)
   shunx: {
     modeFirewall: 'Firewall',
     modeWaf: 'WAF',
@@ -248,6 +248,8 @@ export default {
     modeBackup: 'Backup Center',
     modeNotify: 'Notification Center',
     modeSshkeys: 'SSH Keys',
+    modeHealthcheck: 'Health Check',
+    modePanelbackup: 'Panel Backup',
   },
   // Monitoring (Uptime / Service monitor)
   monitoring: {
