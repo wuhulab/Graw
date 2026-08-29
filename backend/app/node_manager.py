@@ -328,7 +328,7 @@ def upsert_ssh_node(node: dict) -> dict:
         agent_client.drop_token_cache(_paramiko_node_key(cleaned))
     except Exception:
         pass
-    logger.info("已保存 SSH 节点 %s (%s@%s)", node_id, cleaned["user"], cleaned["host"])
+    logger.info("已保存 SSH 节点 %s (%s@%s)", repr(node_id), repr(cleaned["user"]), repr(cleaned["host"]))
     return next((n for n in list_nodes() if n["id"] == node_id), None)
 
 
@@ -403,6 +403,7 @@ def _tcp_reachable(host: str, port: int) -> None:
         try:
             sock.close()
         except OSError:
+            # 关闭探测 socket 失败（已关闭）时忽略
             pass
         return
     raise ConnectionError(
@@ -477,11 +478,13 @@ def _paramiko_pool_client(node: dict, timeout: int):
                 if transport is not None and transport.is_active():
                     return cur
             except Exception:
+                # 检测连接状态失败（连接已失效）时进入重建流程
                 pass
             # 连接已失效：关闭旧 client 后重建
             try:
                 cur.close()
             except Exception:
+                # 关闭旧连接失败（已断开）时忽略
                 pass
             _paramiko_pool.pop(key, None)
         # 容量控制：超过上限时移除最旧的连接，避免连接数失控（release 侧无感知）
@@ -518,6 +521,7 @@ def _paramiko_drop_pool(node_key: Optional[tuple] = None):
             try:
                 cur.close()
             except Exception:
+                # 关闭全部连接中某一条失败（已断开）时忽略
                 pass
         _paramiko_pool.clear()
 
@@ -550,6 +554,7 @@ def _paramiko_run(node: dict, remote_cmd: str, **kwargs) -> subprocess.Completed
             try:
                 stdin.channel.shutdown_write()
             except Exception:
+                # 远端 stdin 已关闭时忽略写关闭失败
                 pass
         out = stdout.read()
         errb = stderr.read()
@@ -582,6 +587,7 @@ def _paramiko_run(node: dict, remote_cmd: str, **kwargs) -> subprocess.Completed
             try:
                 client.close()
             except Exception:
+                # 关闭失败连接失败（已断开）时忽略
                 pass
             raise
     if text:
@@ -923,6 +929,7 @@ def remove(path: str) -> None:
             try:
                 os.remove(real)
             except OSError:
+                # 文件已不存在导致删除失败时忽略
                 pass
         return
     # 远程：rm -rf（仅给出明确路径，路径部分上层已做安全校验）

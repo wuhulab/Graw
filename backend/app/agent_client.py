@@ -19,10 +19,8 @@ agent_client.py - 主面板访问子节点 Agent API 的客户端（走 SSH 反�
   - 全程走既有 SSH 加密隧道，子节点 Agent 不需暴露公网端口。
   - JWT 角色由子节点环境变量决定（GRAW_AGENT_ROLE），防越权。
 """
-import contextlib
 import hashlib
 import hmac
-import io
 import json
 import secrets
 import time
@@ -121,6 +119,7 @@ def _http_over_channel(chan, method: str, path: str, headers: dict, body: Option
         try:
             chan.close()
         except Exception:
+            # 关闭隧道通道失败（已断开）时忽略
             pass
 
     # 拆分响应头与 body
@@ -172,6 +171,7 @@ def _ensure_token(node: dict, client) -> str:
                 if chan is not None:
                     chan.close()
             except Exception:
+                # 关闭通道失败（已断开）时忽略
                 pass
 
 

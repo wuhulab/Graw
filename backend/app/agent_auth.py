@@ -28,8 +28,6 @@ agent_auth.py - 子节点 Agent API 鉴权（成对访问密钥）
     而非主面板自报），防越权
   - 时间戳 ±新鲜度校验防重放；nonce 防同秒重放
 """
-from typing import Optional
-import os
 import time
 import hmac
 import hashlib
@@ -41,9 +39,7 @@ from pydantic import BaseModel
 
 from app import agent_cfg
 from app.auth import (
-    SECRET_KEY,
     create_token,
-    ALGORITHM,
     hash_password,
     _load_users,
     _save_users,

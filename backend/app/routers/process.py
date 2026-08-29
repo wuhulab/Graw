@@ -78,6 +78,7 @@ def _list_processes_sync(sort_by: str, limit: int):
         try:
             p.cpu_percent(None)
         except Exception:
+            # 进程已退出导致采样失败时忽略
             pass
     time.sleep(0.1)
     for p in psutil.process_iter(["pid", "name", "username", "status", "memory_info", "create_time"]):
@@ -174,10 +175,6 @@ def _remote_process_detail(pid: int):
     """远程单进程详情：`ps -p <pid> -o ...`。"""
     import time
 
-    cmd = (
-        f"ps -p {int(pid)} -o pid=,user=,stat=,pcpu=,rss=,etimes=,comm= "
-        "[ ,args= ] 2>/dev/null"
-    )
     # 兼容无逗号写法，使用标准字段
     cmd = f"ps -p {int(pid)} -o pid=,user=,stat=,pcpu=,rss=,etimes=,comm=,args= 2>/dev/null || echo MISSING"
     r = node_manager.host_shell(cmd, capture_output=True, text=True, timeout=10)

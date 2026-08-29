@@ -25,8 +25,6 @@ import argparse
 import logging
 import os
 import secrets
-import socketserver
-import stat
 import sys
 import time
 from pathlib import Path

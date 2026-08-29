@@ -17,7 +17,7 @@ import sys
 import tempfile
 import shutil
 import unittest
-from unittest import mock
+import unittest.mock as mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -114,8 +114,6 @@ class CertCheckOnceTest(unittest.TestCase):
             json.dump({"certs": certs}, f)
 
     def test_check_reminds_and_dedup(self):
-        import json
-
         from app.routers import notify
 
         # 15 天后到期的证书：命中 30 天档提醒一次

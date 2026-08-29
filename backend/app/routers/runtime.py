@@ -301,7 +301,7 @@ def _container_status(name: str) -> dict:
             "container_id": (ps[0].get("Id", "") or "")[:12] if ps else "",
         }
     except Exception as e:
-        logger.warning("查询容器状态失败 %s: %s", name, e)
+        logger.warning("查询容器状态失败 %s: %s", repr(name), e)
         return {"exists": False, "running": False, "state": "unknown", "status": "", "container_id": ""}
 
 

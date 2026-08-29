@@ -778,6 +778,7 @@ def _run_compose_stream(prefix: list, compose_path: str, args: list, emit, timeo
         try:
             proc.kill()
         except Exception:
+            # 终止超时进程失败（已退出）时忽略
             pass
         raise HTTPException(status_code=504, detail="docker compose 执行超时（可能仍在拉取镜像）")
     return rc, "\n".join(lines)
@@ -823,6 +824,7 @@ def _verify_compose_containers(prefix: list, app_name: str, container_name: str)
             try:
                 containers.append(json.loads(line))
             except Exception:
+                # 单行容器信息解析失败时跳过该行
                 pass
 
     targets = {container_name} if container_name else set()

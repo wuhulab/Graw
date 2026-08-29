@@ -9,7 +9,7 @@ import os
 import sys
 import time
 import unittest
-from unittest import mock
+import unittest.mock as mock
 
 # 确保能 import app 包
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))

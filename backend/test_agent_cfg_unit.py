@@ -13,8 +13,6 @@ test_agent_cfg_unit.py - 「作为子节点」Agent 收取模式配置的单元�
 """
 import threading
 
-import pytest
-
 from app import agent_cfg
 
 
@@ -60,7 +58,7 @@ def test_get_config_blocking_thread_does_not_freeze(monkeypatch, tmp_path):
     monkeypatch.setattr(agent_cfg, "AGENT_CFG_FILE", str(tmp_path / "agent.json"))
     monkeypatch.setattr(agent_cfg, "_cache", None)
 
-    agent_cfg.set_config(enabled=True, key="k", secret="s", role="user")
+    agent_cfg.set_config(enabled=True, key="k", secret="s")
     done = []
 
     def reader():

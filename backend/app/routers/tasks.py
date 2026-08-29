@@ -126,7 +126,7 @@ def delete_task(task_id: str):
     with _lock:
         _tasks.pop(task_id, None)
         _persist()
-    log_path = os.path.join(TASKS_DIR, f"{task_id}.log")
+    log_path = _log_path(task_id)
     try:
         if os.path.exists(log_path):
             os.remove(log_path)
@@ -181,7 +181,7 @@ def read_log(task_id: str) -> list:
                 except Exception:
                     lines.append({"type": "log", "text": raw})
     except Exception as e:
-        logger.warning("读取任务日志失败 %s: %s", task_id, e)
+        logger.warning("读取任务日志失败 %s: %s", repr(task_id), e)
     return lines
 
 

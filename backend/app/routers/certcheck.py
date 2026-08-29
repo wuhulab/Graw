@@ -23,11 +23,10 @@ import json
 import logging
 import os
 import threading
-import time
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from app.hostfs import host_path
@@ -231,6 +230,7 @@ async def stop_monitor():
         try:
             await _monitor_task
         except asyncio.CancelledError:
+            # 取消监控协程时预期抛出 CancelledError，忽略即可
             pass
         _monitor_task = None
 
@@ -280,7 +280,6 @@ async def certs():
 @router.post("/test")
 async def trigger_check():
     """手动触发一次到期检查（推送未提醒过的阈值档）。"""
-    import asyncio
 
     n = await asyncio.to_thread(_check_once)
     return {"ok": True, "triggered": n}

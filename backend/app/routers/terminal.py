@@ -162,6 +162,7 @@ async def container_terminal_ws(
             await websocket.send_text(f"\r\n[container terminal] {e}\r\n")
             await websocket.close()
         except Exception:
+            # 发送错误信息失败（连接已中断）时忽略，无需额外处理
             pass
         return
     try:
@@ -175,10 +176,12 @@ async def container_terminal_ws(
         try:
             await websocket.send_text(f"\r\n[container terminal] {e}\r\n")
         except Exception:
+            # 发送错误信息失败（连接已中断）时忽略
             pass
         try:
             await websocket.close()
         except Exception:
+            # 关闭失败（连接已断开）时忽略
             pass
 
 
@@ -224,10 +227,12 @@ async def terminal_ws(
         try:
             await websocket.send_text(f"\r\n[terminal error] {e}\r\n")
         except Exception:
+            # 发送错误信息失败（连接已中断）时忽略
             pass
         try:
             await websocket.close()
         except Exception:
+            # 关闭失败（连接已断开）时忽略
             pass
     finally:
         node_manager.set_request_node(prev_node)
@@ -251,6 +256,7 @@ def _make_reader(read_fn, loop, out_queue: "asyncio.Queue[bytes]", stop_flag):
                     break
                 loop.call_soon_threadsafe(out_queue.put_nowait, chunk)
         except Exception:
+            # 读取线程异常时结束读取，由 finally 通知队列结束
             pass
         finally:
             loop.call_soon_threadsafe(out_queue.put_nowait, b"")
@@ -320,6 +326,7 @@ async def _windows_remote_terminal(websocket: WebSocket):
     try:
         await websocket.send_text(f"\r\n[paramiko 交互失败，回退 ssh -tt] {pm_reason}\r\n")
     except Exception:
+        # 提示信息发送失败（连接已中断）时忽略，继续回退
         pass
     argv = node_manager.remote_terminal_argv(remote_node)
     cmdline = _windows_quote_argv(argv)
@@ -331,6 +338,7 @@ async def _windows_remote_terminal(websocket: WebSocket):
             except ConPTYError:
                 pass
     except Exception:
+        # ConPTY 启动失败等异常时忽略，回退到管道终端
         pass
     await _windows_pipe_command_terminal(websocket, argv)
 
@@ -387,6 +395,7 @@ async def _try_paramiko_interactive(websocket: WebSocket, node: dict) -> str:
                         break
                     loop.call_soon_threadsafe(out_queue.put_nowait, chunk)
             except Exception:
+                # 读取线程异常或通道断开时结束读取，由 finally 通知队列结束
                 pass
             finally:
                 loop.call_soon_threadsafe(out_queue.put_nowait, b"")
@@ -405,8 +414,10 @@ async def _try_paramiko_interactive(websocket: WebSocket, node: dict) -> str:
                         try:
                             channel.resize_pty(width=max(cols, 1), height=max(rows, 1))
                         except Exception:
+                            # 调整 pty 尺寸失败（通道异常）时忽略，不影响会话
                             pass
                     except Exception:
+                        # 解析 RESIZE 消息失败（畸形尺寸）时忽略
                         pass
                     continue
                 try:
@@ -414,27 +425,32 @@ async def _try_paramiko_interactive(websocket: WebSocket, node: dict) -> str:
                 except Exception:
                     break
         except WebSocketDisconnect:
+            # 客户端正常断开，交由 finally 统一清理
             pass
         finally:
             stop_flag.set()
             try:
                 channel.close()
             except Exception:
+                # 关闭 channel 失败（通道已断开）时忽略
                 pass
             try:
                 client.close()
             except Exception:
+                # 关闭 client 失败（连接已断开）时忽略
                 pass
             output_task.cancel()
             try:
                 await output_task
             except (asyncio.CancelledError, Exception):
+                # 输出任务被取消或异常时忽略，会话已结束
                 pass
         return None
     except Exception as e:  # noqa: BLE001 - 会话异常时主动关闭并返回错误
         try:
             client.close()
         except Exception:
+            # 关闭 client 失败（连接已断开）时忽略
             pass
         return str(e).strip() or "paramiko 会话异常"
 
@@ -491,14 +507,17 @@ async def _windows_pipe_command_terminal(websocket: WebSocket, argv: list):
         try:
             proc.stdin.close()
         except Exception:
+            # 关闭 stdin 失败（进程已退出）时忽略
             pass
         try:
             proc.kill()
         except Exception:
+            # 进程已退出导致 kill 失败时忽略
             pass
         try:
             output_task.cancel()
         except Exception:
+            # 输出任务已结束导致取消失败时忽略
             pass
 
 
@@ -553,6 +572,7 @@ async def _windows_conpty_terminal(websocket: WebSocket, shell: str):
                     rows, cols = (int(x) for x in dims.split(","))
                     pty.resize(rows, cols)
                 except Exception:
+                    # 解析或应用尺寸失败（畸形 RESIZE 消息）时忽略
                     pass
                 continue
             if not mouse_ok:
@@ -573,11 +593,13 @@ async def _windows_conpty_terminal(websocket: WebSocket, shell: str):
         try:
             pty.close()
         except Exception:
+            # 关闭 pty 失败（已关闭）时忽略
             pass
         output_task.cancel()
         try:
             await output_task
         except (asyncio.CancelledError, Exception):
+            # 输出任务被取消或异常时忽略，会话已结束
             pass
 
 
@@ -630,14 +652,17 @@ async def _windows_pipe_terminal(websocket: WebSocket, shell: str):
         try:
             proc.stdin.close()
         except Exception:
+            # 关闭 stdin 失败（进程已退出）时忽略
             pass
         try:
             proc.kill()
         except Exception:
+            # 进程已退出导致 kill 失败时忽略
             pass
         try:
             output_task.cancel()
         except Exception:
+            # 输出任务已结束导致取消失败时忽略
             pass
 
 
@@ -693,6 +718,7 @@ async def _interactive_tty(websocket: WebSocket, fd, pid):
         try:
             fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
         except Exception:
+            # 设置 pty 窗口尺寸失败（fd 失效）时忽略，不影响会话
             pass
 
     set_winsize(24, 80)

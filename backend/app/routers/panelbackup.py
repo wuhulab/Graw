@@ -21,14 +21,12 @@ panelbackup.py - Graw 面板自身备份路由
   backend/data/panelbackups/  ：导出与导入前备份的归档
 """
 import io
-import json
 import logging
 import os
 import re
 import shutil
 import tarfile
 import threading
-import time
 import uuid
 from datetime import datetime
 

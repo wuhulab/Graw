@@ -33,7 +33,7 @@ import subprocess
 import threading
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -163,6 +163,7 @@ def _detect_key_type(private_key) -> str:
         if isinstance(private_key, ec.EllipticCurvePrivateKey):
             return "ecdsa"
     except Exception:
+        # 私钥解析失败时按未知类型处理
         pass
     return "unknown"
 
@@ -404,5 +405,5 @@ async def delete_key(key_id: str):
         import shutil
 
         shutil.rmtree(d, ignore_errors=True)
-    logger.info("删除 SSH 密钥：%s", key_id)
+    logger.info("删除 SSH 密钥：%s", repr(key_id))
     return {"ok": True}

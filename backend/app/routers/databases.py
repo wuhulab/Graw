@@ -6,7 +6,7 @@ import re
 import sqlite3
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -119,6 +119,7 @@ try:
 
     REDIS_LIBS = True
 except Exception:
+    # redis 未安装时降级，隐藏相关功能
     pass
 
 try:
@@ -171,6 +172,7 @@ def _auto_detect_mysql() -> Optional[dict]:
                     "name": "Local MySQL",
                 }
     except Exception:
+        # 进程探测失败（psutil 不可用）时按未检测到处理
         pass
     return None
 
@@ -190,6 +192,7 @@ def _auto_detect_redis() -> Optional[dict]:
                     "name": "Local Redis",
                 }
     except Exception:
+        # 进程探测失败（psutil 不可用）时按未检测到处理
         pass
     return None
 
@@ -209,6 +212,7 @@ def _auto_detect_postgresql() -> Optional[dict]:
                     "name": "Local PostgreSQL",
                 }
     except Exception:
+        # 进程探测失败（psutil 不可用）时按未检测到处理
         pass
     return None
 
@@ -228,6 +232,7 @@ def _auto_detect_mongodb() -> Optional[dict]:
                     "name": "Local MongoDB",
                 }
     except Exception:
+        # 进程探测失败（psutil 不可用）时按未检测到处理
         pass
     return None
 
@@ -463,7 +468,7 @@ async def delete_connection(conn_id: str):
     data = _load_connections()
     data = [c for c in data if c["id"] != conn_id]
     _save_connections(data)
-    logger.info("删除数据库连接: %s", conn_id)
+    logger.info("删除数据库连接: %s", repr(conn_id))
     return {"ok": True}
 
 

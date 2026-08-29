@@ -81,8 +81,6 @@ def test_port_scan_unit():
 
     findings = []
     # 模拟防火墙关闭 + 无端口规则
-    if not True:  # 占位，实际走下方逻辑
-        pass
     fw = {"enabled": False, "port_rules": []}
     if not fw.get("enabled"):
         findings.append({"level": "high"})

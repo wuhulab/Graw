@@ -118,8 +118,7 @@ def get_nginx_extra(site: dict) -> str:
             "# gzip 压缩（面板站点增强配置）",
             "    gzip on;",
             "    gzip_min_length 1024;",
-            "    gzip_types text/css application/javascript application/json application/xml "
-            "application/x-font-woff image/svg+xml text/plain;",
+            "    gzip_types text/css application/javascript application/json application/xml application/x-font-woff image/svg+xml text/plain;",
         ]
         block.append("\n".join(lines))
 

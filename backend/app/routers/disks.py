@@ -296,5 +296,5 @@ async def mount_partition(device: str, mountpoint: str):
     if mount.returncode != 0:
         return {"ok": False, "message": f"挂载失败：{mount.stderr.strip()}"}
 
-    logger.info("已挂载 %s -> %s", dev_path, mountpoint)
+    logger.info("已挂载 %s -> %s", repr(dev_path), repr(mountpoint))
     return {"ok": True, "message": "挂载成功"}

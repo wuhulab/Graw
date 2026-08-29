@@ -138,7 +138,7 @@ def _set_user_vip(username: str, plan: str, activated_until: str) -> dict:
         }
         state[username] = rec
         _save_state()
-    logger.info("更新用户 %s 的 VIP 状态：plan=%s until=%s", username, plan, rec["vip_until"])
+    logger.info("更新用户 %s 的 VIP 状态：plan=%s until=%s", repr(username), repr(plan), rec["vip_until"])
     return get_vip(username)
 
 

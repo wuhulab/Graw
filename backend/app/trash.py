@@ -224,6 +224,7 @@ def _rm_path(path_host_view: str) -> None:
         try:
             os.remove(path)
         except OSError:
+            # 文件已不存在导致删除失败时忽略
             pass
 
 

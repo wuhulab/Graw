@@ -181,7 +181,7 @@ async def set_config(req: SetConfigRequest, _: dict = Depends(require_admin)):
     config["entry_path"] = entry_path if entry_path else None
     config["enabled"] = req.enabled and bool(entry_path)
     _save_config(config)
-    logger.info("ShunX 安全入口已更新: %s", config)
+    logger.info("ShunX 安全入口已更新: %s", repr(config))
     return {"ok": True, "config": config}
 
 

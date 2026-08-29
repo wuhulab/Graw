@@ -8,7 +8,7 @@ webserver.available() 能通过容器回退检测将其识别为可用。
 import os
 import sys
 import unittest
-from unittest import mock
+import unittest.mock as mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 

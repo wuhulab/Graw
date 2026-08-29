@@ -22,7 +22,7 @@ import socket
 import sys
 import unittest
 from types import SimpleNamespace
-from unittest import mock
+import unittest.mock as mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

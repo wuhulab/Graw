@@ -32,7 +32,7 @@ if BACKEND not in sys.path:
 
 from app.routers import frp  # noqa: E402
 import app.main as app_main  # noqa: E402
-from app.main import app  # noqa: E402
+app = app_main.app  # noqa: E402
 from app.auth import get_current_user  # noqa: E402
 
 

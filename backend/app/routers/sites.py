@@ -48,7 +48,7 @@ _SUBDOMAIN_RE = re.compile(r"^[A-Za-z0-9*][A-Za-z0-9*-]*$")
 _PROXY_DOMAIN_RE = re.compile(r"^[A-Za-z0-9*.-]+\Z")
 
 # 反向代理目标：http(s)://host[:port][/path]（支持下划线的服务名/主机名）
-_PROXY_RE = re.compile(r"^https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%_-]+$")
+_PROXY_RE = re.compile(r"^https?://[A-Za-z0-9.~:/?#\[\]@!$&'()*+,;=%_-]+$")
 
 # TCP/UDP 上游地址：host:port（域名或 IP + 端口）
 _UPSTREAM_RE = re.compile(r"^[A-Za-z0-9._-]+:[0-9]{1,5}$")
@@ -269,6 +269,7 @@ def _web_server_type() -> str:
             if "True" in r.stdout:
                 return "iis"
         except Exception:
+            # 探测引擎失败时按未知处理，继续检测其它引擎
             pass
     return "none"
 
@@ -422,6 +423,7 @@ def _existing_site_dirs() -> List[dict]:
         if d:
             dirs.append({"path": d, "source": "nginx"})
     except Exception:
+        # 探测站点目录失败时忽略，继续其它来源
         pass
     # 1Panel：宿主 /opt/1panel/www/conf.d（容器内 conf.d 加载，同一份配置）
     existing = {x["path"] for x in dirs}
@@ -638,6 +640,7 @@ def _nginx_site_config(site: dict) -> str:
             if extra:
                 body.extend(ln if ln.strip() else ln for ln in extra.split("\n"))
         except Exception:
+            # 导入扩展配置失败时忽略
             pass
         return body
 
@@ -719,6 +722,7 @@ def _ensure_stream_include():
         with open(conf_path, "w", encoding="utf-8") as f:
             f.write(content)
     except Exception:
+        # 写临时配置失败时忽略，由后续校验与回滚兜底
         pass
 
 
@@ -804,6 +808,7 @@ def _apply_apache_config(site_id: str, site: dict, enabled: bool):
             ["apache2ctl", "graceful"], capture_output=True, check=False, timeout=10
         )
     except Exception:
+        # 重新加载 apache 失败时忽略
         pass
 
 

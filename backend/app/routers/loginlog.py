@@ -23,7 +23,6 @@ import logging
 import os
 import re
 import threading
-import time
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -248,7 +247,7 @@ def _notify_abnormal(entry: dict) -> None:
         sent, failed = push_all(message)
         if sent:
             logger.info(
-                "异常登录提醒已推送（user=%s, sent=%d）", entry["username"], sent
+                "异常登录提醒已推送（user=%s, sent=%d）", repr(entry["username"]), sent
             )
     except Exception as e:
         # 推送失败不影响登录主流程

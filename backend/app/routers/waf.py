@@ -30,7 +30,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.hostfs import host_path, host_cmd
+from app.hostfs import host_path
 from app import webserver
 
 router = APIRouter()
@@ -573,8 +573,14 @@ async def waf_apply(body: dict):
 
 
 def _write_nginx_fragment(cfg: dict) -> dict:
-    """将某站点 WAF 片段写盘（host_path 映射），有 nginx 则 reload。"""
-    site = cfg.get("site")
+    """将某站点 WAF 片段写盘（host_path 映射），有 nginx 则 reload。
+
+    安全（code-scanning py/path-injection）：site 会被拼入 conf 文件名，
+    统一做白名单校验（与 _remove_nginx_fragment 一致），阻断穿越。
+    """
+    site = str(cfg.get("site") or "")
+    if not _SITE_ID_RE.match(site):
+        raise HTTPException(status_code=400, detail="站点 ID 非法")
     target_dir = host_path(_waf_dir())
     os.makedirs(target_dir, exist_ok=True)
     conf = os.path.join(target_dir, f"{site}.conf")

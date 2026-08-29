@@ -33,7 +33,7 @@ import threading
 import time
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -296,6 +296,7 @@ async def stop_monitor():
         try:
             await _monitor_task
         except asyncio.CancelledError:
+            # 取消监控协程时预期抛出 CancelledError，忽略即可
             pass
         _monitor_task = None
 
@@ -392,7 +393,7 @@ async def create_item(req: ItemRequest):
     data = _load()
     data.setdefault("items", []).append(item)
     _save(data)
-    logger.info("创建服务监控项：%s（%s %s）", item["name"], kind, item["target"])
+    logger.info("创建服务监控项：%s（%s %s）", repr(item["name"]), repr(kind), repr(item["target"]))
     return item
 
 

@@ -12,7 +12,7 @@
 import os
 import tempfile
 import unittest
-from unittest import mock
+import unittest.mock as mock
 
 import app.vip as vip_mod
 from app.routers import vip as vip_router

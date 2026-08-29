@@ -21,7 +21,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from fastapi import FastAPI, HTTPException  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.routers import notify  # noqa: E402
@@ -140,7 +140,7 @@ class NotifyCheckTest(unittest.TestCase):
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     def test_check_triggers_alert(self):
-        from unittest import mock
+        import unittest.mock as mock
 
         with mock.patch("app.routers.notify._read_metrics", return_value={"cpu": 95, "mem": 10, "disk": 10, "load": 5}), \
              mock.patch("app.routers.notify._send_to_channel", return_value=None) as send:
@@ -156,7 +156,7 @@ class NotifyCheckTest(unittest.TestCase):
 
     def test_check_cooldown_dedup(self):
         """冷却期内同一规则不重复告警。"""
-        from unittest import mock
+        import unittest.mock as mock
 
         with mock.patch("app.routers.notify._read_metrics", return_value={"cpu": 95, "mem": 10, "disk": 10, "load": 5}), \
              mock.patch("app.routers.notify._send_to_channel", return_value=None):
@@ -167,7 +167,7 @@ class NotifyCheckTest(unittest.TestCase):
         self.assertEqual(len(notify._load_logs()), 1)
 
     def test_check_below_threshold_no_alert(self):
-        from unittest import mock
+        import unittest.mock as mock
 
         with mock.patch("app.routers.notify._read_metrics", return_value={"cpu": 30, "mem": 10, "disk": 10, "load": 5}), \
              mock.patch("app.routers.notify._send_to_channel", return_value=None) as send:
@@ -176,7 +176,7 @@ class NotifyCheckTest(unittest.TestCase):
         send.assert_not_called()
 
     def test_check_disabled_skips(self):
-        from unittest import mock
+        import unittest.mock as mock
 
         notify._save(dict(notify._load(), enabled=False))
         with mock.patch("app.routers.notify._read_metrics", return_value={"cpu": 99, "mem": 99, "disk": 99, "load": 99}), \
@@ -187,7 +187,7 @@ class NotifyCheckTest(unittest.TestCase):
 
     def test_channel_failure_still_logs(self):
         """渠道发送失败：记录 failed_channels，不影响其它渠道与记录写入。"""
-        from unittest import mock
+        import unittest.mock as mock
 
         with mock.patch("app.routers.notify._read_metrics", return_value={"cpu": 95, "mem": 10, "disk": 10, "load": 5}), \
              mock.patch("app.routers.notify._send_to_channel", side_effect=RuntimeError("boom")):

@@ -27,7 +27,7 @@ import threading
 import time
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -350,6 +350,7 @@ def _send_smtp(cfg: dict, message: str) -> None:
         try:
             server.quit()
         except Exception:
+            # 关闭 SMTP 连接失败（连接已断开）时忽略
             pass
 
 
@@ -491,6 +492,7 @@ async def stop_monitor():
         try:
             await _monitor_task
         except asyncio.CancelledError:
+            # 取消监控协程时预期抛出 CancelledError，忽略即可
             pass
         _monitor_task = None
 
@@ -683,7 +685,7 @@ async def update_config(req: ConfigRequest):
     if req.cooldown_seconds is not None:
         data["cooldown_seconds"] = req.cooldown_seconds
     _save(data)
-    logger.info("更新通知中心配置：%s", data)
+    logger.info("更新通知中心配置：%s", repr(data))
     return {
         "enabled": data["enabled"],
         "interval_seconds": data["interval_seconds"],
@@ -694,7 +696,6 @@ async def update_config(req: ConfigRequest):
 @router.post("/test-alert")
 async def trigger_test_alert():
     """手动触发一次测试告警（验证规则→通知全链路）。"""
-    import asyncio
 
     await asyncio.to_thread(_check_once)
     return {"ok": True}

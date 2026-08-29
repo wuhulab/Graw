@@ -30,18 +30,17 @@ import logging
 import os
 import platform
 import re
-import shutil
 import tarfile
 import threading
 import time
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.hostfs import host_path, unhost_path
+from app.hostfs import host_path
 
 logger = logging.getLogger("graw.backup")
 
@@ -65,9 +64,6 @@ DEFAULT_BACKUP_SCHEDULE = "30 2 * * *"
 
 # 备份文件命名约定：{safe}_{yyyyMMdd_HHmmss}.tar.gz
 BACKUP_FILE_RE = re.compile(r"^(?P<safe>[A-Za-z0-9_.-]+)_(?P<ts>\d{8}_\d{6})\.tar\.gz$")
-
-# 任务 id / 备份 safe 前缀白名单（防路径穿越与注入）
-_BK_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 # 数据写锁（防止并发读写 JSON）
 _backup_lock = threading.Lock()
@@ -805,6 +801,7 @@ def _status_sync(data: dict) -> dict:
                     except OSError:
                         continue
         except OSError:
+            # 遍历备份目录失败时忽略，返回已统计部分
             pass
     return {
         "backup_dir": bdir,
@@ -1096,7 +1093,7 @@ async def update_remote(remote_id: str, req: RemoteRequest):
     if req.password:
         remote["password"] = req.password
     _save_backup(data)
-    logger.info("更新远程备份目标：%s", remote["name"])
+    logger.info("更新远程备份目标：%s", repr(remote["name"]))
     return _mask_remote(remote)
 
 
@@ -1113,7 +1110,7 @@ async def delete_remote(remote_id: str):
         if t.get("remote_id") == remote_id:
             t["remote_id"] = ""
     _save_backup(data)
-    logger.info("删除远程备份目标：%s", remote_id)
+    logger.info("删除远程备份目标：%s", repr(remote_id))
     return {"ok": True}
 
 

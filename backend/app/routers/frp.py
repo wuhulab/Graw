@@ -171,7 +171,7 @@ def _validate_config_path(value: str, field: str) -> str:
         base = os.path.realpath(FRP_CONFIG_DIR)
         real = os.path.realpath(value)
     except Exception as exc:  # pragma: no cover - 路径解析异常统一拒绝
-        logger.warning("configPath realpath 失败 %s: %s", value, exc)
+        logger.warning("configPath realpath 失败 %s: %s", repr(value), exc)
         raise HTTPException(status_code=400, detail=f"{field} 路径解析失败")
     if real != base and not real.startswith(base + os.sep):
         raise HTTPException(
@@ -612,7 +612,6 @@ async def save_config(req: FrpConfigModel):
     _reject_ctrl(req.client.token, "客户端 token")
 
     data = _load_store()
-    old_mode = data.get("mode", "server")
     data["mode"] = req.mode
     data["serverBin"] = _reject_ctrl(req.serverBin, "frps 路径")
     data["clientBin"] = _reject_ctrl(req.clientBin, "frpc 路径")
@@ -734,7 +733,7 @@ async def update_proxy(proxy_id: str, req: ProxyModel):
     })
     _save_store(data)
     _write_toml(data)
-    logger.info("更新 frpc 代理 %s", name)
+    logger.info("更新 frpc 代理 %s", repr(name))
     return proxies[idx]
 
 

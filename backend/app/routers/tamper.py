@@ -610,6 +610,7 @@ async def tamper_ws(websocket: WebSocket, user: Optional[dict] = Depends(get_cur
         try:
             await websocket.close()
         except Exception:
+            # 关闭失败（连接已断开）时忽略
             pass
 
 
@@ -855,7 +856,7 @@ async def restore_file(site_id: str, req: RestoreRequest):
     ok = await asyncio.to_thread(_restore_site_file, site, file_rel)
     if not ok:
         raise HTTPException(status_code=400, detail="恢复失败：备份不存在或路径无效")
-    logger.warning("手动恢复文件：%s/%s", site.get("root"), file_rel)
+    logger.warning("手动恢复文件：%s/%s", repr(site.get("root")), repr(file_rel))
     return {"ok": True, "file": file_rel}
 
 
@@ -883,7 +884,7 @@ async def disable_protection(req: DisableRequest):
         minutes = req.minutes or DEFAULT_DISABLE_MINUTES
         data["enabled"] = True
         data["disabled_until"] = (datetime.now() + timedelta(minutes=minutes)).isoformat()
-        logger.warning("管理员临时关闭网页防篡改 %s 分钟（到期自动恢复）", minutes)
+        logger.warning("管理员临时关闭网页防篡改 %s 分钟（到期自动恢复）", repr(minutes))
     _save_tamper(data)
     await _broadcast_status()
     return _status_payload()

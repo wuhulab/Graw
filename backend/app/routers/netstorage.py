@@ -321,6 +321,7 @@ class FTPAdapter(BaseAdapter):
             try:
                 ftp.quit()
             except Exception:
+                # 关闭 FTP 连接失败（连接已断开）时忽略
                 pass
 
     def read(self, lpath: str) -> str:
@@ -342,6 +343,7 @@ class FTPAdapter(BaseAdapter):
             try:
                 ftp.quit()
             except Exception:
+                # 关闭 FTP 连接失败（连接已断开）时忽略
                 pass
         return buf.getvalue().decode("utf-8", errors="replace")
 
@@ -354,6 +356,7 @@ class FTPAdapter(BaseAdapter):
             try:
                 ftp.quit()
             except Exception:
+                # 关闭 FTP 连接失败（连接已断开）时忽略
                 pass
 
     def mkdir(self, lpath: str) -> None:
@@ -364,6 +367,7 @@ class FTPAdapter(BaseAdapter):
             try:
                 ftp.quit()
             except Exception:
+                # 关闭 FTP 连接失败（连接已断开）时忽略
                 pass
 
     def delete(self, lpath: str) -> None:
@@ -382,6 +386,7 @@ class FTPAdapter(BaseAdapter):
             try:
                 ftp.quit()
             except Exception:
+                # 关闭 FTP 连接失败（连接已断开）时忽略
                 pass
 
     def _rmtree(self, ftp, full: str) -> None:
@@ -394,10 +399,12 @@ class FTPAdapter(BaseAdapter):
                 try:
                     ftp.delete(sub)
                 except Exception:
+                    # 作为文件删除失败（子项可能是目录）时忽略
                     pass
         try:
             ftp.rmd(full)
         except Exception:
+            # 目录移除失败（非空或无权限）时忽略
             pass
 
     def rename(self, src: str, dst: str) -> None:
@@ -408,6 +415,7 @@ class FTPAdapter(BaseAdapter):
             try:
                 ftp.quit()
             except Exception:
+                # 关闭 FTP 连接失败（连接已断开）时忽略
                 pass
 
     def upload(self, lpath: str, file) -> None:
@@ -418,6 +426,7 @@ class FTPAdapter(BaseAdapter):
             try:
                 ftp.quit()
             except Exception:
+                # 关闭 FTP 连接失败（连接已断开）时忽略
                 pass
 
     def download(self, lpath: str):
@@ -442,6 +451,7 @@ class FTPAdapter(BaseAdapter):
                     try:
                         ftp.quit()
                     except Exception:
+                        # 关闭 FTP 连接失败（连接已断开）时忽略
                         pass
             except Exception as e:  # noqa: BLE001
                 err.append(e)
@@ -569,10 +579,12 @@ class SMBAdapter(BaseAdapter):
                     try:
                         smbclient.rmdir(root + "/" + d)
                     except Exception:
+                        # 子目录删除失败（非空或被占用）时忽略
                         pass
             try:
                 smbclient.rmdir(full)
             except Exception:
+                # 根目录删除失败（非空或被占用）时忽略
                 pass
         else:
             smbclient.remove(full)
@@ -978,7 +990,7 @@ class S3Adapter(BaseAdapter):
             if st and ((st.size or 0) >= 0 and (key.endswith("/") or True)):
                 pass  # 占位检测对象本身存在即是空目录标记，一并删除下面前缀即可
         except Exception:
-            st = None
+            pass
         try:
             self._rm_prefix(client, key.rstrip("/") + "/")
         except Exception as e:
@@ -1020,10 +1032,12 @@ class S3Adapter(BaseAdapter):
                 try:
                     client.remove_object(self.bucket, n)
                 except Exception:
+                    # 旧对象删除失败（已被清理）时忽略
                     pass
             try:
                 client.remove_object(self.bucket, sk)
             except Exception:
+                # 目录占位对象删除失败时忽略
                 pass
             if rel == "":
                 client.put_object(self.bucket, dk + "/", BytesIO(b""), 0)

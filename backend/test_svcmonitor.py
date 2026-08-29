@@ -12,7 +12,6 @@ test_svcmonitor.py - 服务/端口监控功能测试
 import os
 import sys
 import json
-import time
 import socket
 import threading
 

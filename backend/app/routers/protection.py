@@ -30,7 +30,6 @@ import re
 import shlex
 import shutil
 import threading
-import uuid
 from datetime import datetime, timedelta
 from typing import List, Optional
 
@@ -747,6 +746,7 @@ def _map_docker_container_sync(name: str) -> dict:
             try:
                 cli_run(["volume", "rm", "-f", vol], 30)
             except Exception:
+                # 删除新卷失败时忽略，避免掩盖主错误
                 pass
             raise
 
@@ -820,6 +820,7 @@ def _dir_size(real_path: str, cap_entries: int = 5000) -> Optional[int]:
                 try:
                     total += os.path.getsize(os.path.join(root, fn))
                 except OSError:
+                    # 文件已删除导致统计失败时忽略
                     pass
                 count += 1
                 if count > cap_entries:
@@ -1103,7 +1104,7 @@ async def add_db_backup(req: BackupRequest):
         }
     )
     _save_protection(data)
-    logger.info("已将数据库路径加入自动备份：%s（任务：%s）", path, name)
+    logger.info("已将数据库路径加入自动备份：%s（任务：%s）", repr(path), repr(name))
     return {"ok": True, "already": False, "path": path, "task": task}
 
 
@@ -1214,7 +1215,7 @@ async def unignore_item(req: UnignoreRequest):
     ]
     if len(data["ignored"]) != before:
         _save_protection(data)
-        logger.info("已恢复保护提醒：kind=%s key=%s", req.kind, req.key)
+        logger.info("已恢复保护提醒：kind=%s key=%s", repr(req.kind), repr(req.key))
     return {"ok": True}
 
 

@@ -125,7 +125,6 @@ def _mount(type_, source, dest):
 
 
 def test_container_internal_detection():
-    print("[5] 容器内 SQLite 文件探测")
     cid, name, status = "abc123", "my-app", "Up 1 hours"
     # 1) 探测命令：仅在容器可写层内查找，排除系统目录（避免误报镜像自带库文件）
     cmd = protection.SQLITE_FIND_CMD
@@ -245,7 +244,6 @@ def test_scan_docker_parses_fields():
     ]
     docker_inspect = [{"Id": "809ec1ad039a", "Name": "1panel-openresty", "Mounts": []}]
 
-    orig_call = protection._podman_json
     calls = {"n": 0}
 
     def fake_podman_json(args):

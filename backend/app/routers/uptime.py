@@ -32,7 +32,7 @@ import threading
 import time
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -336,7 +336,7 @@ async def create_item(req: ItemRequest):
     data = _load()
     data.setdefault("items", []).append(item)
     _save(data)
-    logger.info("创建站点监控项：%s（%s）", item["name"], item["url"])
+    logger.info("创建站点监控项：%s（%s）", repr(item["name"]), repr(item["url"]))
     return item
 
 
@@ -376,7 +376,6 @@ async def delete_item(item_id: str):
 @router.post("/items/{item_id}/test")
 async def test_item(item_id: str):
     """手动立即探测一次监控项。"""
-    import asyncio
 
     data = _load()
     item = _find_item(data.get("items", []), item_id)

@@ -10,7 +10,7 @@ test_docker_remote.py - Docker 多机（节点）远端执行单元测试
 import os
 import sys
 import unittest
-from unittest import mock
+import unittest.mock as mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 
@@ -83,7 +83,7 @@ class FindPodmanRemoteTest(unittest.TestCase):
              mock.patch.object(docker_api.node_manager, "current_node_id", return_value="node_a"), \
              mock.patch.object(docker_api, "_run",
                                side_effect=(
-                                   lambda cmd, timeout=20: FakeProc(0, f"{cmd[0]} version" if False else f"Docker version 27.0.0" if cmd[0] == "docker" else "", b"").returncode if False else
+                                   lambda cmd, timeout=20:
                                    (0, "Docker version 27.0.0", "") if cmd[0] == "docker" and cmd[-1] == "--version" else
                                    (0, "Server Version: 27", "") if cmd[0] == "docker" and cmd[-1] == "info" else (1, "", ""))):
             cli_a = docker_api._find_podman()

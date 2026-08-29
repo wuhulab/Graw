@@ -168,8 +168,6 @@ def _host_to_wsl_path(p: str) -> str:
 
     供通过 WSL 执行的 podman/宿主机命令使用（如备份导出文件路径）。
     """
-    import re
-
     p = p.replace("\\", "/")
     m = re.match(r"^([A-Za-z]):(/.*)$", p)
     if m:
@@ -428,6 +426,7 @@ def _try_docker_sdk():
                 try:
                     c.close()
                 except Exception:
+                    # 关闭探测失败连接失败（已断开）时忽略
                     pass
         _docker_fail_until = time.time() + _podman_fail_backoff
         return None
@@ -767,6 +766,7 @@ def _containers_sync(all: bool = True):
                     else:
                         ports.append(k)
             except Exception:
+                # 端口映射解析失败时忽略，不影响容器信息
                 pass
             st = stats.get(c.name, {})
             cid = c.short_id
@@ -1114,6 +1114,7 @@ def _container_inspect_sync(container_id: str):
                         virtual_size = int(img.get("VirtualSize", 0) or img.get("Size", 0))
                         break
             except Exception:
+                # 查询镜像大小失败时忽略
                 pass
 
             install_dir = _find_install_dir(c)
@@ -1342,8 +1343,6 @@ def _upgrade_container_sync(container_id: str):
             image = c.image
             # 拉取新镜像
             image.pull()
-            # 获取配置重建
-            config = c.attrs
             name = c.name
             c.remove(force=True)
             new_c = client.containers.run(image, name=name, detach=True, **{})
@@ -1409,7 +1408,6 @@ def _parse_size_bytes(s: str) -> int:
         "K": 1024, "M": 1024 ** 2, "G": 1024 ** 3, "T": 1024 ** 4,
         "KiB": 1024, "MiB": 1024 ** 2, "GiB": 1024 ** 3, "TiB": 1024 ** 4,
     }
-    import re
     m = re.match(r"^([\d.]+)\s*([A-Za-z]+)$", s)
     if m:
         try:
@@ -1489,6 +1487,7 @@ def _save_panel_cfg(cfg: dict) -> None:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
         os.replace(tmp, _PANEL_CFG_FILE)
     except Exception:
+        # 配置写入失败不影响主流程，仅记录
         pass
 
 
@@ -1547,7 +1546,6 @@ def _write_engine_config(path: str, content: str) -> None:
 
 def _parse_registries_toml(content: str) -> dict:
     """解析 registries.conf (TOML) 提取 search/mirrors/private_registries。"""
-    import re
 
     result = {"search": [], "mirrors": [], "private": []}
     # unqualified-search-registries = [...]（顶层）
@@ -1797,7 +1795,6 @@ def _compose_projects_sync():
             })
 
     # 查询容器，统计每个 project 的运行状态
-    services_by_project = {}
     try:
         if kind == "cli":
             ps = _podman_json(["ps", "-a", "--format", "json"])
@@ -1838,6 +1835,7 @@ def _compose_projects_sync():
                 if data and isinstance(data.get("services"), dict):
                     services = list(data.get("services", {}).keys())
             except Exception:
+                # compose 文件解析失败时跳过服务名提取
                 pass
         p["services"] = services
     return projects
@@ -2040,7 +2038,8 @@ def _build_image_sync(req: BuildRequest):
         if os.path.isdir(context_dir):
             image, logs = client.images.build(path=context_dir, tag=full_name)
             return {"ok": True, "image": full_name, "id": image.short_id}
-        image, logs = client.images.build(fileobj=open(context_dir, "rb"), tag=full_name)
+        with open(context_dir, "rb") as cfh:
+            image, logs = client.images.build(fileobj=cfh, tag=full_name)
         return {"ok": True, "image": full_name, "id": image.short_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=_clean_reason(e))

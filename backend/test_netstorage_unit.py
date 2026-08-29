@@ -14,12 +14,9 @@ test_netstorage_unit.py - 网络储存路由单元测试
 运行：backend\.venv\Scripts\python.exe test_netstorage_unit.py
 """
 import os
-import re
 import shutil
-import stat
 import tempfile
 import unittest
-from io import BytesIO
 
 # 让被测模块指向临时配置目录，避免触碰真实 data/netstorage.json
 import app.routers.netstorage as ns
@@ -237,7 +234,7 @@ class TestFtpAdapterSmoke(unittest.TestCase):
         adapter._connect = FakeFTP
         res = adapter.list("/")
         names = {i["name"]: i for i in res["items"]}
-        self.assertTrue(names["file1.txt"]["is_dir"] is False)
+        self.assertIs(names["file1.txt"]["is_dir"], False)
         self.assertEqual(names["file1.txt"]["size"], 10)
         self.assertTrue(names["sub/"]["is_dir"])
 

@@ -274,7 +274,7 @@ async def delete_path(
     except HTTPException:
         raise
     except Exception as e:
-        logger.warning("删除失败 %s: %s", safe, e)
+        logger.warning("删除失败 %s: %s", repr(safe), e)
         raise _files_error(e, "删除失败")
 
 
@@ -418,7 +418,7 @@ async def chmod(
         auditlog.record("修改权限", user["username"], get_client_ip(request), f"{safe} -> {oct(req.mode)}")
         return {"ok": True}
     except Exception as e:
-        logger.warning("修改权限失败 %s: %s", safe, e)
+        logger.warning("修改权限失败 %s: %s", repr(safe), e)
         raise _files_error(e, "修改权限失败")
 
 
@@ -572,7 +572,7 @@ async def compress(
         auditlog.record("压缩", user["username"], get_client_ip(request), f"{[req.archive]}: {req.paths}")
         return {"ok": True, "archive": _safe_path(req.archive)}
     except Exception as e:
-        logger.warning("压缩失败 %s: %s", req.archive, e)
+        logger.warning("压缩失败 %s: %s", repr(req.archive), e)
         raise _files_error(e, "压缩失败")
 
 

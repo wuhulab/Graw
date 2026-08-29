@@ -225,5 +225,5 @@ async def delete_user(user_id: str):
     if len(data["users"]) == before:
         raise HTTPException(status_code=404, detail="FTP 用户不存在")
     _save(data)
-    logger.info("删除 FTP 用户：%s", user_id)
+    logger.info("删除 FTP 用户：%s", repr(user_id))
     return {"ok": True}

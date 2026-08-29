@@ -2,7 +2,6 @@ import json
 import os
 import asyncio
 import platform
-import subprocess
 from datetime import datetime
 from typing import Optional
 
