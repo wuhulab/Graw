@@ -48,7 +48,7 @@
       <span>{{ $t('files.uploading', { current: uploadIdx + 1, total: uploadingFiles.length }) }}</span>
       <div class="progress-bar"><div class="progress-fill" :style="{ width: ((uploadIdx / uploadingFiles.length) * 100) + '%' }"></div></div>
     </div>
-    <div style="flex:1; overflow:auto;">
+    <div style="flex:1; overflow:auto;" @scroll="closeMenus">
       <table class="dt">
         <thead>
           <tr>
@@ -77,7 +77,7 @@
     </div>
     <!-- 右键菜单：行条目时展示条目操作；空白处展示目录操作 -->
     <Teleport to="body">
-      <div v-if="contextMenu.show" class="context-menu" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }" @click.stop>
+      <div v-if="contextMenu.show" ref="ctxMenuEl" class="context-menu" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }" @click.stop @contextmenu.prevent.stop>
         <template v-if="contextMenu.item">
           <div class="menu-item" @click="menuEdit">{{ $t('files.openEdit') }}</div>
           <div class="menu-item" @click="menuRename">{{ $t('files.rename') }}</div>
@@ -106,7 +106,7 @@
 
 <script setup>
 // 响应式状态与生命周期钩子
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 // 国际化
 import { useI18n } from 'vue-i18n'
 // 文件管理 API 与字节格式化工具
@@ -127,6 +127,7 @@ const path = ref('')             // 当前路径
 const pathInput = ref('')        // 地址栏输入值
 const newMenuOpen = ref(false)   // 「新建」下拉菜单显隐
 const contextMenu = ref({ show: false, x: 0, y: 0, item: null })   // 右键菜单
+const ctxMenuEl = ref(null)      // 右键菜单 DOM（用于打开后按实际尺寸修正位置）
 // 选中态与剪贴板（复刻 Windows：单击选中、Ctrl/Shift 多选、Ctrl+C 复制、Ctrl+V 粘贴、Delete 删除）
 const selected = ref([])         // 当前选中条目路径数组（支持多选）
 const anchorIdx = ref(-1)        // Shift 范围选择锚点（条目在 items 中的下标）
@@ -329,14 +330,42 @@ function closeMenus() {
   contextMenu.value.show = false
 }
 
+// 菜单打开后按实际尺寸把位置限制在视口内，避免窗口拖出屏幕边缘后
+// 菜单位置溢出视口、出现「右键了却点不到菜单」的情况；同时给场景
+// 兜底（窗口嵌套/缩放过），保证菜单始终落在可点击区域。
+function clampMenuPos() {
+  try {
+    const el = ctxMenuEl.value
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    let x = contextMenu.value.x
+    let y = contextMenu.value.y
+    if (r.right > vw) x = Math.max(0, vw - r.width - 4)
+    if (r.bottom > vh) y = Math.max(0, vh - r.height - 4)
+    if (x !== contextMenu.value.x || y !== contextMenu.value.y) {
+      contextMenu.value = { ...contextMenu.value, x, y }
+    }
+  } catch (e) {
+    /* 位置修正失败不影响菜单弹出 */
+  }
+}
+
 // 记录右键位置与目标条目，弹出上下文菜单（行条目）。
 // Windows 行为对齐：右键一个「未选中」的文件会先只选中它；右键已选中的文件则保持多选。
+// 用 try/catch 兜底：即使条目数据异常也保证菜单能弹出/关闭，不出现「点不了菜单」的假死。
 function onContextMenu(e, it) {
-  if (!selected.value.includes(it.path)) {
-    selected.value = [it.path]
-    anchorIdx.value = items.value.findIndex(x => x.path === it.path)
+  try {
+    if (!selected.value.includes(it.path)) {
+      selected.value = [it.path]
+      anchorIdx.value = items.value.findIndex(x => x.path === it.path)
+    }
+  } catch (err) {
+    if (selected.value) selected.value = []
   }
   contextMenu.value = { show: true, x: e.clientX, y: e.clientY, item: it }
+  nextTick(clampMenuPos)
 }
 
 // 右键/键盘删除等批量操作的对象：右键条目在选中集内则作用于整个选中集，否则仅该条目
@@ -351,6 +380,7 @@ function onBlankContextMenu(e) {
   // 仅当点击发生在表格区域外的空白处才弹目录级菜单；防与行菜单冲突
   if (e.target.closest('tr')) return
   contextMenu.value = { show: true, x: e.clientX, y: e.clientY, item: null }
+  nextTick(clampMenuPos)
 }
 
 // ---------- 剪贴板（复制 / 粘贴，复刻 Windows，跨文件管理窗口共享） ----------
@@ -603,6 +633,11 @@ function onKeyDown(e) {
   const tag = (e.target && e.target.tagName) || ''
   // 输入框中不拦截快捷键（用户可能正在编辑路径/文件名）
   if (['INPUT', 'TEXTAREA'].includes(tag)) return
+  // Escape：关闭右键/新建菜单（挂久后若菜单残留，按 Esc 也能关掉）
+  if (e.key === 'Escape') {
+    closeMenus()
+    return
+  }
   const mod = e.ctrlKey || e.metaKey
   const key = String(e.key).toLowerCase()
   if (mod && key === 'c') {
@@ -631,13 +666,20 @@ function onRootClick(e) {
   anchorIdx.value = -1
 }
 
+// 窗口失焦（切走浏览器/最小化）时关闭菜单，防止挂机后菜单残留遮挡
+function onWindowBlur() {
+  closeMenus()
+}
+
 onMounted(async () => {
   await load(props.path || '')   // 挂载后进入父窗口指定的初始目录
   document.addEventListener('keydown', onKeyDown)
+  window.addEventListener('blur', onWindowBlur)
 })
 
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeyDown)
+  window.removeEventListener('blur', onWindowBlur)
 })
 </script>
 

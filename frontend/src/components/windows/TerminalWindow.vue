@@ -72,12 +72,25 @@ let reconnectTimer = null  // 断线重连的定时器句柄
 let backoff = 500          // 重连退避毫秒数，从 500ms 起按 1.5 倍递增
 let autoSent = false       // 自动命令是否已发送（防止重复发送）
 let autoTimer = null       // 自动命令兜底发送的定时器句柄
+let heartbeatTimer = null  // 应用层心跳定时器（防「半开」连接假死）
+let lastPongAt = 0         // 最近一次「连接建立 / 收到后端 pong」的时间戳
 // 鼠标模式开关状态（默认关闭，避免干扰普通 shell 与下拉选文本）
 const mouseOn = ref(false)
 
 // SGR 扩展鼠标模式启用/停用序列：?1000 启用 X10 鼠标追踪（点击），?1006 使用 SGR 坐标格式（兼容性更好）
 const MOUSE_ON_SEQ = '\x1b[?1000h\x1b[?1006h'
 const MOUSE_OFF_SEQ = '\x1b[?1000l\x1b[?1006l'
+
+// 应用层心跳（与监控 WS 同协议，见 store/systemMetrics.js）：
+// 浏览器 WebSocket 无法发送协议级 ping 帧，而长时间空闲的终端连接会被反向
+// 代理 / NAT 设备掐断成「半开」状态——readyState 仍为 OPEN、send 也不报错，
+// 但数据早已收发不通，表现为「挂久了输入不了东西」。这里每 20s 发一次 ping，
+// 后端命中后回 pong（不写入 pty）；超过 65s 未收到 pong 即判定连接假死，
+// 主动 close 触发指数退避重连。
+const HEARTBEAT_INTERVAL = 20000   // 心跳发送间隔（需小于反代默认 60s 空读超时）
+const HEARTBEAT_TIMEOUT = 65000    // 判定假死的超时阈值（需明显大于心跳间隔）
+const HEARTBEAT_PING = '{"type":"ping"}'
+const HEARTBEAT_PONG = '{"type":"pong"}'
 
 // 切换鼠标模式：同时写入前端 xterm 解析器（让其捕获鼠标事件）与后端/TUI（让应用进入或退出鼠标模式）
 function toggleMouse() {
@@ -93,6 +106,7 @@ function setStatus(s) { statusText.value = s }
 // --- 建立 WebSocket 连接（拼装 token/节点/容器参数，挂接各事件回调） ---
 function connect() {
   if (ws) { try { ws.close() } catch (e) {} }
+  stopHeartbeat()   // 新连接建立前先停掉旧心跳，避免对旧 ws 重复发送
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'   // https 页面必须用 wss，否则浏览器拒绝
   setStatus(t('terminal.connecting'))
   // 浏览器 WebSocket 无法设置请求头，token 通过查询参数传递；
@@ -116,6 +130,8 @@ function connect() {
     backoff = 500
     setStatus(t('terminal.connected'))
     autoSent = false
+    lastPongAt = Date.now()   // 连接建立即视为存活，作为假死判定的起点
+    startHeartbeat()
     sendResize()
     // 若用户已开启鼠标模式，连接稳定后重放启用序列，保证重连后仍处于鼠标模式
     if (mouseOn.value) {
@@ -135,6 +151,11 @@ function connect() {
     scheduleAutoSend()
   }
   ws.onmessage = (e) => {
+    // 应用层心跳应答：仅刷新存活时间，不得写入终端
+    if (typeof e.data === 'string' && e.data.startsWith(HEARTBEAT_PONG)) {
+      lastPongAt = Date.now()
+      return
+    }
     if (term) term.write(e.data)
     // 收到 shell 首次输出（提示符出现）后再发送自动命令，连接就绪判断更可靠
     if (props.autoCommand && !autoSent) doAutoSend()
@@ -142,6 +163,7 @@ function connect() {
   ws.onclose = () => {
     setStatus(t('terminal.disconnectedShort'))
     clearAutoTimer()
+    stopHeartbeat()   // 连接关闭后停止心跳，等待重连的 onopen 重新启动
     if (alive) scheduleReconnect()
   }
   ws.onerror = () => { setStatus(t('terminal.error')) }
@@ -161,6 +183,29 @@ function doAutoSend() {
 }
 function clearAutoTimer() {
   if (autoTimer) { clearTimeout(autoTimer); autoTimer = null }
+}
+
+// --- 应用层心跳：定期 ping 后端；长时间无 pong 判定连接「半开」并强制重连 ---
+// 核心原因：长时空闲的 WebSocket 会被反代/NAT 静默掐断，且 onclose 不触发、
+// send 不报错，导致输入看似无响应。心跳让前端有办法区分「连接活着」与「连接假死」。
+function startHeartbeat() {
+  stopHeartbeat()
+  heartbeatTimer = setInterval(() => {
+    if (!ws || ws.readyState !== 1) return   // 未连接时交给 onclose 的重连流程
+    try {
+      ws.send(HEARTBEAT_PING)
+      // 距最近一次应答超过阈值：连接已假死，主动断开走 onclose 重连
+      if (Date.now() - lastPongAt > HEARTBEAT_TIMEOUT) {
+        try { ws.close() } catch (e) {}
+      }
+    } catch (e) {
+      // send 抛错说明连接已失效，主动断开触发重连
+      try { ws.close() } catch (e2) {}
+    }
+  }, HEARTBEAT_INTERVAL)
+}
+function stopHeartbeat() {
+  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null }
 }
 
 // --- 断线重连：用指数退避避免高频重试，最多等 5 秒 ---
@@ -215,7 +260,14 @@ onMounted(async () => {
   term.open(termEl.value)
   fit.fit()
   term.onData(data => {
-    if (ws && ws.readyState === 1) ws.send(data)   // 键盘输入原样转发给后端 shell
+    if (!ws || ws.readyState !== 1) return   // 未连接时丢弃输入，等重连后用户再输
+    // 输入时快速探测：若连接早已无应答（半开假死），立即断开让重连流程接管，
+    // 否则用户会感觉「输入没反应」直到下一个心跳周期才恢复
+    if (Date.now() - lastPongAt > HEARTBEAT_TIMEOUT) {
+      try { ws.close() } catch (e) {}
+      return
+    }
+    ws.send(data)   // 键盘输入原样转发给后端 shell
   })
   connect()
   resizeObserver = new ResizeObserver(() => sendResize())   // 容器大小变化时同步后端行列
@@ -226,6 +278,7 @@ onBeforeUnmount(() => {
   alive = false                     // 先标记已销毁，杜绝卸载后仍触发重连
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
   clearAutoTimer()
+  stopHeartbeat()                   // 停止心跳定时器，避免泄漏
   resizeObserver && resizeObserver.disconnect()
   if (ws) { try { ws.close() } catch (e) {} }   // 关闭连接并释放后端会话
   if (term) { try { term.dispose() } catch (e) {} }   // 释放 xterm 占用的 DOM 与资源

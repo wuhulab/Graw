@@ -36,6 +36,32 @@ _MOUSE_INPUT_RE = re.compile(
 )
 
 
+# 应用层心跳（与监控 WS 同协议，见 routers/system.py）：
+# 浏览器 WebSocket 无法发送协议级 ping 帧，而长时间空闲的终端会被反向代理
+# （Nginx/OpenResty 默认约 60s 空读超时）或中间 NAT 设备掐断。断连后连接
+# 进入「半开」状态：前端 readyState 仍为 OPEN、send 也不报错，于是键盘输入
+# 发不出去也不提示，表现为「挂久了输入不了东西」。前端每 20s 发一次心跳帧，
+# 后端命中时不写入 pty、直接回 pong，前端据此判断连接是否仍真实可用。
+HEARTBEAT_PING_PREFIX = '{"type":"ping"}'
+HEARTBEAT_PONG = '{"type":"pong"}'
+
+
+async def _consume_heartbeat(websocket: WebSocket, msg: str) -> bool:
+    """识别并消费心跳帧。
+
+    命中时回 pong（不写入 pty，避免干扰 shell），返回 True 表示调用方应
+    continue；未命中返回 False。回 pong 失败（连接已断）时忽略，交由外层
+    receive 循环的异常处理统一收尾。
+    """
+    if not msg.startswith(HEARTBEAT_PING_PREFIX):
+        return False
+    try:
+        await websocket.send_text(HEARTBEAT_PONG)
+    except Exception:
+        pass
+    return True
+
+
 def _conpty_mouse_supported() -> tuple:
     """检测当前平台是否支持向 ConPTY/PTY 注入 TUI 鼠标。
 
@@ -407,6 +433,9 @@ async def _try_paramiko_interactive(websocket: WebSocket, node: dict) -> str:
                 # 会话复检（第十四轮审计修复）：改密/踢出后立即中断终端
                 if not ws_session_still_valid(websocket):
                     break
+                # 应用层心跳：命中 ping 帧时回 pong，不写入远端 shell
+                if await _consume_heartbeat(websocket, data):
+                    continue
                 if data.startswith("\x1bRESIZE:"):
                     try:
                         _, dims = data.split(":", 1)
@@ -491,6 +520,9 @@ async def _windows_pipe_command_terminal(websocket: WebSocket, argv: list):
             # 会话复检（第十四轮审计修复）：改密/踢出后立即中断终端
             if not ws_session_still_valid(websocket):
                 break
+            # 应用层心跳：命中 ping 帧时回 pong，不写入进程管道
+            if await _consume_heartbeat(websocket, data):
+                continue
             if data.startswith("\x1bRESIZE:"):
                 continue
             if proc.poll() is not None:
@@ -566,6 +598,9 @@ async def _windows_conpty_terminal(websocket: WebSocket, shell: str):
             # 会话复检（第十四轮审计修复）：改密/踢出后立即中断终端
             if not ws_session_still_valid(websocket):
                 break
+            # 应用层心跳：命中 ping 帧时回 pong，不写入 ConPTY
+            if await _consume_heartbeat(websocket, data):
+                continue
             if data.startswith("\x1bRESIZE:"):
                 try:
                     _, dims = data.split(":", 1)
@@ -634,6 +669,9 @@ async def _windows_pipe_terminal(websocket: WebSocket, shell: str):
             # 会话复检（第十四轮审计修复）：改密/踢出后立即中断终端
             if not ws_session_still_valid(websocket):
                 break
+            # 应用层心跳：命中 ping 帧时回 pong，不写入进程管道
+            if await _consume_heartbeat(websocket, data):
+                continue
             if data.startswith("\x1bRESIZE:"):
                 continue
             if proc.poll() is not None:
@@ -734,6 +772,9 @@ async def _interactive_tty(websocket: WebSocket, fd, pid):
             # 会话复检（第十四轮审计修复）：改密/踢出后立即中断终端
             if not ws_session_still_valid(websocket):
                 break
+            # 应用层心跳：命中 ping 帧时回 pong，不写入 pty
+            if await _consume_heartbeat(websocket, msg):
+                continue
             if msg.startswith("\x1bRESIZE:"):
                 try:
                     _, dims = msg.split(":", 1)
