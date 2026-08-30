@@ -139,38 +139,24 @@ async def list_plugins():
     return {"api_version": pp.OPEN_API_VERSION, "count": len(out), "plugins": out}
 
 
-def _safe_plugin_data_path(path: str) -> str:
-    """归一化并校验路径必须落在插件数据目录（DATA_DIR）内；非法返回空串。
-
-    插件注册表中的 compose_file 等路径属持久化外部可控数据（可能被篡改），
-    os.path.exists / open 等文件操作前必须校验落在 data/ 之内，防止路径
-    穿越读取任意文件（与 logs.py 的 _safe_log_path 同款防护语义）。
-    """
-    if not path or not isinstance(path, str):
-        return ""
-    root = os.path.normpath(os.path.abspath(pp.DATA_DIR))
-    cand = os.path.normpath(os.path.abspath(path))
-    try:
-        if (
-            os.path.commonpath([os.path.normcase(cand), os.path.normcase(root)])
-            != os.path.normcase(root)
-        ):
-            return ""
-    except ValueError:
-        # Windows 跨盘符 / UNC：不可能位于 data 目录内
-        return ""
-    return cand
-
-
 def _public_record(rec: dict) -> dict:
     """脱敏插件记录：不回传 token_hash；附加 compose 是否存在的标记。"""
     public = {k: v for k, v in rec.items() if k not in ("token_hash", "manifest")}
     manifest = rec.get("manifest") or {}
     if isinstance(manifest, dict) and "env" in manifest:
         public["env"] = manifest["env"]
-    compose = _safe_plugin_data_path(rec.get("compose_file") or "")
-    # lgtm[py/path-injection] compose 已由 _safe_plugin_data_path 校验落在 data/ 内
-    public["has_compose"] = bool(compose) and os.path.exists(compose)  # lgtm[py/path-injection]
+    compose = rec.get("compose_file") or ""
+    # 路径注入防护（py/path-injection）：compose_file 为持久化外部可控值——
+    # 先 abspath/normpath 归一化，再用 commonpath 前缀检查验证落在 data/ 内，
+    # 文件操作只在检查通过的分支执行（与 main.py spa_fallback 同款守卫语义）。
+    root = os.path.normpath(os.path.abspath(pp.DATA_DIR))
+    cand = os.path.normpath(os.path.abspath(compose)) if compose else ""
+    try:
+        safe = bool(cand) and os.path.commonpath([cand, root]) == root
+    except ValueError:
+        # Windows 跨盘符 / UNC：不可能位于 data 目录内
+        safe = False
+    public["has_compose"] = safe and bool(cand) and os.path.exists(cand)
     return public
 
 
@@ -488,11 +474,18 @@ def _require_installed(plugin_id: str) -> tuple:
     rec = pp.get_plugin(plugin_id)
     if not rec:
         raise HTTPException(status_code=404, detail=f"插件不存在: {plugin_id}")
-    compose = _safe_plugin_data_path(rec.get("compose_file") or "")
-    # lgtm[py/path-injection] compose 已由 _safe_plugin_data_path 校验落在 data/ 内
-    if not compose or not os.path.exists(compose):  # lgtm[py/path-injection]
+    compose = rec.get("compose_file") or ""
+    # 路径注入防护：compose_file 为持久化外部可控值——归一化 + 前缀检查
+    # 通过后才允许访问（与 _public_record 同款守卫语义）。
+    root = os.path.normpath(os.path.abspath(pp.DATA_DIR))
+    cand = os.path.normpath(os.path.abspath(compose)) if compose else ""
+    try:
+        safe = bool(cand) and os.path.commonpath([cand, root]) == root
+    except ValueError:
+        safe = False
+    if not safe or not os.path.exists(cand):
         raise HTTPException(status_code=400, detail=f"插件缺少 compose 文件: {plugin_id}")
-    engine_path = _engine_visible_path(compose)
+    engine_path = _engine_visible_path(cand)
     return rec, engine_path
 
 
