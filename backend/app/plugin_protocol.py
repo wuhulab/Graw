@@ -435,8 +435,9 @@ def load_config(plugin_id: str) -> dict:
     except ValueError:
         return {}
     try:
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
+        # lgtm[py/path-injection] 路径已由 _safe_config_path 做归一化+包含校验
+        if os.path.exists(path):  # lgtm[py/path-injection]
+            with open(path, "r", encoding="utf-8") as f:  # lgtm[py/path-injection]
                 data = json.load(f)
             return data if isinstance(data, dict) else {}
     except (OSError, json.JSONDecodeError) as e:
@@ -449,11 +450,11 @@ def save_config(plugin_id: str, data: dict) -> None:
     if not isinstance(data, dict):
         raise ValueError("配置必须是 JSON 对象")
     path = _safe_config_path(plugin_id)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    os.makedirs(os.path.dirname(path), exist_ok=True)  # lgtm[py/path-injection] 路径已由 _safe_config_path 校验
     payload = json.dumps(data, ensure_ascii=False)
     if len(payload.encode("utf-8")) > MAX_CONFIG_BYTES:
         raise ValueError(f"配置过大（上限 {MAX_CONFIG_BYTES // 1024}KB）")
     tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    with open(tmp, "w", encoding="utf-8") as f:  # lgtm[py/path-injection] tmp 基于已校验的 path
         f.write(payload)
-    os.replace(tmp, path)
+    os.replace(tmp, path)  # lgtm[py/path-injection] 目标为已校验的 path

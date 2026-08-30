@@ -169,7 +169,8 @@ def _public_record(rec: dict) -> dict:
     if isinstance(manifest, dict) and "env" in manifest:
         public["env"] = manifest["env"]
     compose = _safe_plugin_data_path(rec.get("compose_file") or "")
-    public["has_compose"] = bool(compose) and os.path.exists(compose)
+    # lgtm[py/path-injection] compose 已由 _safe_plugin_data_path 校验落在 data/ 内
+    public["has_compose"] = bool(compose) and os.path.exists(compose)  # lgtm[py/path-injection]
     return public
 
 
@@ -488,7 +489,8 @@ def _require_installed(plugin_id: str) -> tuple:
     if not rec:
         raise HTTPException(status_code=404, detail=f"插件不存在: {plugin_id}")
     compose = _safe_plugin_data_path(rec.get("compose_file") or "")
-    if not compose or not os.path.exists(compose):
+    # lgtm[py/path-injection] compose 已由 _safe_plugin_data_path 校验落在 data/ 内
+    if not compose or not os.path.exists(compose):  # lgtm[py/path-injection]
         raise HTTPException(status_code=400, detail=f"插件缺少 compose 文件: {plugin_id}")
     engine_path = _engine_visible_path(compose)
     return rec, engine_path
