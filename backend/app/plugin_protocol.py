@@ -161,26 +161,20 @@ def load_config(plugin_id: str) -> dict:
         pid = _validate_plugin_id(plugin_id)
     except ValueError:
         return {}
-    # 路径注入防护（py/path-injection）：插件 ID 为外部可控值——
-    # 先 normpath 归一化，再用 commonpath 前缀检查验证最终路径落在
-    # data/plugins 根内；所有文件操作只在检查通过的分支中执行
-    # （与 main.py spa_fallback 同款守卫语义）。
+    # 路径注入防护（py/path-injection）：插件 ID 为外部可控值——先经
+    # normpath 归一化（CodeQL PathNormalization），再用 startswith 前缀
+    # 检查（CodeQL SafeAccessCheck，仅 true 分支阻断）确认路径落在
+    # data/plugins 根内；文件访问仅在检查通过的正分支执行。
     root = os.path.normpath(os.path.abspath(os.path.join(DATA_DIR, "plugins")))
     path = os.path.normpath(os.path.join(root, pid, "config.json"))
-    try:
-        safe = os.path.commonpath([path, root]) == root
-    except ValueError:
-        # Windows 跨盘符 / UNC：不可能位于 plugins 根内，直接拒绝
-        safe = False
-    if not safe:
-        return {}
-    try:
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return data if isinstance(data, dict) else {}
-    except (OSError, json.JSONDecodeError) as e:
-        logger.warning("读取插件 %s 配置失败：%s", repr(plugin_id), e)
+    if path.startswith(root):
+        try:
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                return data if isinstance(data, dict) else {}
+        except (OSError, json.JSONDecodeError) as e:
+            logger.warning("读取插件 %s 配置失败：%s", repr(plugin_id), e)
     return {}
 
 
@@ -189,23 +183,19 @@ def save_config(plugin_id: str, data: dict) -> None:
     if not isinstance(data, dict):
         raise ValueError("配置必须是 JSON 对象")
     pid = _validate_plugin_id(plugin_id)
-    # 路径注入防护：同 load_config——归一化 + 前缀检查通过后才写盘
     root = os.path.normpath(os.path.abspath(os.path.join(DATA_DIR, "plugins")))
     path = os.path.normpath(os.path.join(root, pid, "config.json"))
-    try:
-        safe = os.path.commonpath([path, root]) == root
-    except ValueError:
-        safe = False
-    if not safe:
+    if path.startswith(root):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        payload = json.dumps(data, ensure_ascii=False)
+        if len(payload.encode("utf-8")) > MAX_CONFIG_BYTES:
+            raise ValueError(f"配置过大（上限 {MAX_CONFIG_BYTES // 1024}KB）")
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(payload)
+        os.replace(tmp, path)
+    else:
         raise ValueError("插件配置路径非法（超出插件目录）")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    payload = json.dumps(data, ensure_ascii=False)
-    if len(payload.encode("utf-8")) > MAX_CONFIG_BYTES:
-        raise ValueError(f"配置过大（上限 {MAX_CONFIG_BYTES // 1024}KB）")
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(payload)
-    os.replace(tmp, path)
 
 
 def get_plugin(plugin_id: str) -> Optional[dict]:

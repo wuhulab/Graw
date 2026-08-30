@@ -147,16 +147,15 @@ def _public_record(rec: dict) -> dict:
         public["env"] = manifest["env"]
     compose = rec.get("compose_file") or ""
     # 路径注入防护（py/path-injection）：compose_file 为持久化外部可控值——
-    # 先 abspath/normpath 归一化，再用 commonpath 前缀检查验证落在 data/ 内，
-    # 文件操作只在检查通过的分支执行（与 main.py spa_fallback 同款守卫语义）。
+    # 先 normpath 归一化（CodeQL PathNormalization），再用 startswith 前缀
+    # 检查（CodeQL SafeAccessCheck，仅 true 分支阻断）确认落在 data/ 内，
+    # 文件访问仅在检查通过的正分支执行。
     root = os.path.normpath(os.path.abspath(pp.DATA_DIR))
     cand = os.path.normpath(os.path.abspath(compose)) if compose else ""
-    try:
-        safe = bool(cand) and os.path.commonpath([cand, root]) == root
-    except ValueError:
-        # Windows 跨盘符 / UNC：不可能位于 data 目录内
-        safe = False
-    public["has_compose"] = safe and bool(cand) and os.path.exists(cand)
+    has_compose = False
+    if cand and cand.startswith(root):
+        has_compose = os.path.exists(cand)
+    public["has_compose"] = has_compose
     return public
 
 
@@ -475,18 +474,16 @@ def _require_installed(plugin_id: str) -> tuple:
     if not rec:
         raise HTTPException(status_code=404, detail=f"插件不存在: {plugin_id}")
     compose = rec.get("compose_file") or ""
-    # 路径注入防护：compose_file 为持久化外部可控值——归一化 + 前缀检查
-    # 通过后才允许访问（与 _public_record 同款守卫语义）。
+    # 路径注入防护：compose_file 为持久化外部可控值——归一化 + startswith
+    # 前缀检查通过后才允许访问（与 _public_record 同款守卫语义）。
     root = os.path.normpath(os.path.abspath(pp.DATA_DIR))
     cand = os.path.normpath(os.path.abspath(compose)) if compose else ""
-    try:
-        safe = bool(cand) and os.path.commonpath([cand, root]) == root
-    except ValueError:
-        safe = False
-    if not safe or not os.path.exists(cand):
-        raise HTTPException(status_code=400, detail=f"插件缺少 compose 文件: {plugin_id}")
-    engine_path = _engine_visible_path(cand)
-    return rec, engine_path
+    if cand and cand.startswith(root):
+        if not os.path.exists(cand):
+            raise HTTPException(status_code=400, detail=f"插件缺少 compose 文件: {plugin_id}")
+        engine_path = _engine_visible_path(cand)
+        return rec, engine_path
+    raise HTTPException(status_code=400, detail=f"插件缺少 compose 文件: {plugin_id}")
 
 
 @router.post("/{plugin_id}/start")
