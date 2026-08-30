@@ -155,9 +155,27 @@ def _validate_plugin_id(plugin_id: str) -> str:
     return pid
 
 
-def _plugin_dir(plugin_id: str) -> str:
-    """已安装插件的项目目录：data/plugins/<id>/ （调用前需先经 _validate_plugin_id）。"""
-    return os.path.join(DATA_DIR, "plugins", plugin_id)
+def _safe_config_path(plugin_id: str) -> str:
+    """构造插件配置文件的绝对路径（路径注入防护：归一化 + 包含校验）。
+
+    插件 ID 为外部可控值（清单 / 接口入参），直接 os.path.join 拼接会引入
+    路径穿越（绝对路径 / ../ 逃逸到任意目录）。此处先做 ID 白名单校验，
+    再归一化并校验最终路径必须落在 data/plugins 根目录之内，非法即抛
+    ValueError——与 logs.py 的 _safe_log_path 同款防护语义。
+
+    返回示例：<DATA_DIR>/plugins/<id>/config.json
+    """
+    pid = _validate_plugin_id(plugin_id)
+    root = os.path.normpath(os.path.abspath(os.path.join(DATA_DIR, "plugins")))
+    candidate = os.path.abspath(os.path.normpath(os.path.join(root, pid, "config.json")))
+    try:
+        common = os.path.commonpath([os.path.normcase(candidate), os.path.normcase(root)])
+    except ValueError:
+        # Windows 跨盘符 / UNC：不可能位于 plugins 根内，直接拒绝
+        raise ValueError("插件配置路径非法")
+    if common != os.path.normcase(root):
+        raise ValueError("插件配置路径非法（超出插件目录）")
+    return candidate
 
 
 def get_plugin(plugin_id: str) -> Optional[dict]:
@@ -413,33 +431,29 @@ def validate_manifest(raw: dict) -> dict:
 def load_config(plugin_id: str) -> dict:
     """读取插件的持久化配置（不存在返回空 dict）。"""
     try:
-        pid = _validate_plugin_id(plugin_id)
+        path = _safe_config_path(plugin_id)
     except ValueError:
         return {}
-    path = os.path.join(_plugin_dir(pid), "config.json")
     try:
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             return data if isinstance(data, dict) else {}
     except (OSError, json.JSONDecodeError) as e:
-        logger.warning("读取插件 %s 配置失败：%s", plugin_id, e)
+        logger.warning("读取插件 %s 配置失败：%s", repr(plugin_id), e)
     return {}
 
 
 def save_config(plugin_id: str, data: dict) -> None:
     """保存插件配置（限大小 64KB，原子写）。"""
-    try:
-        pid = _validate_plugin_id(plugin_id)
-    except ValueError as e:
-        raise ValueError(e)
     if not isinstance(data, dict):
         raise ValueError("配置必须是 JSON 对象")
-    os.makedirs(_plugin_dir(pid), exist_ok=True)
+    path = _safe_config_path(plugin_id)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     payload = json.dumps(data, ensure_ascii=False)
     if len(payload.encode("utf-8")) > MAX_CONFIG_BYTES:
         raise ValueError(f"配置过大（上限 {MAX_CONFIG_BYTES // 1024}KB）")
-    tmp = os.path.join(_plugin_dir(pid), "config.json.tmp")
+    tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(payload)
-    os.replace(tmp, os.path.join(_plugin_dir(pid), "config.json"))
+    os.replace(tmp, path)

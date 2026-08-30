@@ -16,7 +16,6 @@ test_plugin_protocol.py - Graw 应用接口开放协议（GPOP）单元测试
 import os
 import sys
 import unittest
-import unittest.mock as mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 
@@ -176,6 +175,28 @@ class PluginConfigTest(_IsolatedRegistryMixin, unittest.TestCase):
         big = {"data": "x" * (pp.MAX_CONFIG_BYTES)}
         with self.assertRaises(ValueError):
             pp.save_config("demo", big)
+
+
+class ConfigPathSafetyTest(unittest.TestCase):
+    """配置路径防护（py/path-injection 回归）：穿越 ID 一律拒绝。"""
+
+    def test_safe_config_path_within_root(self):
+        """合法 ID 返回 data/plugins/<id>/config.json，且落在 plugins 根内。"""
+        root = os.path.normpath(os.path.abspath(os.path.join(pp.DATA_DIR, "plugins")))
+        p = pp._safe_config_path("demo")
+        self.assertEqual(p, os.path.join(root, "demo", "config.json"))
+        self.assertEqual(os.path.commonpath([p, root]), root)
+
+    def test_safe_config_path_rejects_traversal(self):
+        """../ 等穿越 ID 必须被拒绝（ID 白名单 + 路径包含校验双重拦截）。"""
+        for bad in ("../evil", "..", "a/../../b", "a\\..\\..\\etc", ""):
+            with self.assertRaises(ValueError, msg=repr(bad)):
+                pp._safe_config_path(bad)
+
+    def test_load_config_never_leaks_outside_root(self):
+        """load_config 遇到非法/穿越 ID 一律返回空 dict，绝不访问任意路径。"""
+        self.assertEqual(pp.load_config("../../etc/passwd"), {})
+        self.assertEqual(pp.load_config(""), {})
 
 
 class OpenApiAuthTest(_IsolatedRegistryMixin, unittest.TestCase):

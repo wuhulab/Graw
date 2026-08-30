@@ -57,7 +57,7 @@ async def _consume_heartbeat(websocket: WebSocket, msg: str) -> bool:
         return False
     try:
         await websocket.send_text(HEARTBEAT_PONG)
-    except Exception:
+    except Exception:  # lgtm[py/empty-except] 连接已断时回 pong 失败，交由外层 receive 循环统一收尾
         pass
     return True
 

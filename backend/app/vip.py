@@ -132,7 +132,6 @@ def get_vip(username: str) -> dict:
     返回当前生效记录（截止最晚的那个）的状态；未开通/全过期返回非生效状态。
     username 仅用于日志与字段兼容，不再影响结果。
     """
-    username = (username or "").strip()
     rec = _shared_active_record()
     if rec is None:
         return {
@@ -230,12 +229,10 @@ def _resolve_duration(resp: dict, plan: str) -> timedelta:
     at = (resp.get("activated_at") or "")
     until = (resp.get("activated_until") or "")
     if at and until:
-        try:
-            delta = _parse_dt(until) - _parse_dt(at)
-            if delta > timedelta(0):
-                return timedelta(seconds=max(1, int(delta.total_seconds())))
-        except (ValueError, TypeError):
-            pass
+        # _parse_dt 内部已兜底解析失败（回退为当前时间），此处无需 try/except
+        delta = _parse_dt(until) - _parse_dt(at)
+        if delta > timedelta(0):
+            return timedelta(seconds=max(1, int(delta.total_seconds())))
     return timedelta(days=30 if plan == "month" else 365)
 
 

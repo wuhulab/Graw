@@ -139,13 +139,36 @@ async def list_plugins():
     return {"api_version": pp.OPEN_API_VERSION, "count": len(out), "plugins": out}
 
 
+def _safe_plugin_data_path(path: str) -> str:
+    """归一化并校验路径必须落在插件数据目录（DATA_DIR）内；非法返回空串。
+
+    插件注册表中的 compose_file 等路径属持久化外部可控数据（可能被篡改），
+    os.path.exists / open 等文件操作前必须校验落在 data/ 之内，防止路径
+    穿越读取任意文件（与 logs.py 的 _safe_log_path 同款防护语义）。
+    """
+    if not path or not isinstance(path, str):
+        return ""
+    root = os.path.normpath(os.path.abspath(pp.DATA_DIR))
+    cand = os.path.normpath(os.path.abspath(path))
+    try:
+        if (
+            os.path.commonpath([os.path.normcase(cand), os.path.normcase(root)])
+            != os.path.normcase(root)
+        ):
+            return ""
+    except ValueError:
+        # Windows 跨盘符 / UNC：不可能位于 data 目录内
+        return ""
+    return cand
+
+
 def _public_record(rec: dict) -> dict:
     """脱敏插件记录：不回传 token_hash；附加 compose 是否存在的标记。"""
     public = {k: v for k, v in rec.items() if k not in ("token_hash", "manifest")}
     manifest = rec.get("manifest") or {}
     if isinstance(manifest, dict) and "env" in manifest:
         public["env"] = manifest["env"]
-    compose = rec.get("compose_file") or ""
+    compose = _safe_plugin_data_path(rec.get("compose_file") or "")
     public["has_compose"] = bool(compose) and os.path.exists(compose)
     return public
 
@@ -464,7 +487,7 @@ def _require_installed(plugin_id: str) -> tuple:
     rec = pp.get_plugin(plugin_id)
     if not rec:
         raise HTTPException(status_code=404, detail=f"插件不存在: {plugin_id}")
-    compose = rec.get("compose_file") or ""
+    compose = _safe_plugin_data_path(rec.get("compose_file") or "")
     if not compose or not os.path.exists(compose):
         raise HTTPException(status_code=400, detail=f"插件缺少 compose 文件: {plugin_id}")
     engine_path = _engine_visible_path(compose)
@@ -621,7 +644,7 @@ async def op_notify(body: NotifyBody, rec: dict = Depends(_require_plugin_ctx)):
     try:
         sent = _notify.push_all(message)[0]  # (成功渠道数, 失败渠道数)
     except Exception as e:
-        logger.warning("插件 %s 推送通知失败: %s", rec["id"], e)
+        logger.warning("插件 %s 推送通知失败: %s", repr(rec["id"]), e)
         raise HTTPException(status_code=500, detail=f"推送通知失败: {e}")
     auditlog.record(
         "插件通知", f"plugin:{rec['id']}", "",
