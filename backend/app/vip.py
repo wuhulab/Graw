@@ -14,8 +14,10 @@ vip.py - Graw 主面板的 VIP（月卡/年卡用户）确认与状态管理
   - **面板级共享**：只要面板上任意一个用户激活过 VIP，所有账号同时共享该
     VIP 状态（get_vip 不再只看当前用户自己的记录，而是取全部生效记录中
     截止最晚的那个）。
-  - 叠加截止：激活新码时以「当前共享的最晚截止」为基准顺延，既不吞时长
-    也避免刷时长；记录仍按激活用户名落库以便审计。
+  - 叠加截止：激活新码时以「当前共享的最晚截止」为基准，加上本次授权码
+    服务授予的时长增量（duration_seconds，月卡 +30 天 / 年卡 +365 天），
+    可无限顺延叠加；不再「以服务端绝对截止与存量 max」，避免连续激活时
+    叠加被封顶。记录仍按激活用户名落库以便审计。
 落库逻辑见 activate_vip 与 _set_user_vip。"""
 from __future__ import annotations
 
@@ -25,7 +27,7 @@ import os
 import threading
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 logger = logging.getLogger("graw.vip")
@@ -151,17 +153,22 @@ def get_vip(username: str) -> dict:
     }
 
 
-def _set_user_vip(username: str, plan: str, activated_until: str) -> dict:
+def _set_user_vip(username: str, plan: str, duration: timedelta) -> dict:
     """落库某用户的 VIP 状态，并返回刷新后的状态字典。
 
-    面板级共享时的叠加基准：以「当前共享的最晚截止」为基点，而不是该用户
-    自己的记录——避免换账号激活时把其它账号已生效的时长吞掉。
+    无限叠加语义：
+      - duration 为本次授权码服务授予的时长增量（timedelta，如 30 / 365 天）；
+      - 以「当前共享的最晚截止」为基准累加 duration；存量截止已过期则从
+        当前时刻起算。这样换账号激活不会吞掉已生效时长，且可无限顺延叠加。
     """
     username = (username or "").strip()
     plan = "year" if plan == "year" else "month"
+    # 非 timedelta 的非法增量按套餐类型回退，保证落库必然有效
+    if not isinstance(duration, timedelta):
+        duration = timedelta(days=30 if plan == "month" else 365)
     with _lock:
         state = _load_state()
-        # 生效期内再次激活采用「顺延累加」：以共享的最晚截止为基准，防止吞时长
+        # 叠加基准：共享的最晚截止（已过期或不存在则从当前时刻起算）
         base = datetime.now(timezone.utc)
         shared = _shared_active_record()
         if shared and _is_active(shared.get("vip_until")):
@@ -169,7 +176,7 @@ def _set_user_vip(username: str, plan: str, activated_until: str) -> dict:
                 base = datetime.fromisoformat(shared["vip_until"])
             except (ValueError, TypeError):
                 base = datetime.now(timezone.utc)
-        new = max(base, _parse_dt(activated_until))
+        new = base + duration
         rec = {
             "plan": plan,
             "activated_at": _now(),
@@ -205,8 +212,31 @@ def activate_vip(username: str, code: str) -> dict:
         err = resp.get("detail") or resp.get("message") or "授权码无效"
         raise ValueError(err)
     plan = "year" if resp.get("type") == "year" else "month"
-    until = resp.get("activated_until") or ""
-    return _set_user_vip(username, plan, until)
+    return _set_user_vip(username, plan, _resolve_duration(resp, plan))
+
+
+def _resolve_duration(resp: dict, plan: str) -> timedelta:
+    """从激活响应解析本次应叠加的时长增量（timedelta）。
+
+    优先级：
+      1. 服务端权威字段 duration_seconds（推荐，支持无限累加）；
+      2. activated_until - activated_at 差值推算（兼容旧版服务）；
+      3. 按套餐类型回退（月卡 30 天 / 年卡 365 天）。
+    解析失败一律回退到套餐固定时长，保证激活必然可落库。
+    """
+    secs = resp.get("duration_seconds")
+    if isinstance(secs, (int, float)) and secs > 0:
+        return timedelta(seconds=secs)
+    at = (resp.get("activated_at") or "")
+    until = (resp.get("activated_until") or "")
+    if at and until:
+        try:
+            delta = _parse_dt(until) - _parse_dt(at)
+            if delta > timedelta(0):
+                return timedelta(seconds=max(1, int(delta.total_seconds())))
+        except (ValueError, TypeError):
+            pass
+    return timedelta(days=30 if plan == "month" else 365)
 
 
 def _call_license(method: str, path: str, payload: dict) -> dict:

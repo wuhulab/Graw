@@ -3,10 +3,9 @@
 
 覆盖：
   - 配置：后端常量默认地址 / 环境变量可选覆盖 / 前端不可改动（无 config 接口）
-  - 状态：未开通 / 生效 / 过期判断、取更大截止的「顺延不吞时长」
+  - 状态：未开通 / 生效 / 过期判断、按共享截止 + 时长增量无限叠加
   - 激活：成功落库 / 授权码为空 / 授权码服务不可达（mock HTTP）
-  - 共享：面板级 VIP（任意账号激活 → 所有账号生效、叠加到共享截止）
-  - 路由：status 返回当前用户
+  - 共享：面板级 VIP（任意账号激活 → 所有账号生效、跨账号叠加不吞时长）
 
 运行：python -m test_vip_unit
 """
@@ -14,6 +13,7 @@ import os
 import tempfile
 import unittest
 import unittest.mock as mock
+from datetime import datetime, timedelta, timezone
 
 import app.vip as vip_mod
 from app.routers import vip as vip_router
@@ -43,7 +43,6 @@ def _stop(case: unittest.TestCase):
 
 def _until_plus(days: int) -> str:
     """返回 days 天后的 ISO UTC 时间（作为 VIP 截止）。"""
-    from datetime import datetime, timedelta, timezone
     return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
 
 
@@ -78,17 +77,15 @@ class VipStatusTest(unittest.TestCase):
         self.assertEqual(s["plan"], "")
 
     def test_active_and_expired(self):
-        future = _until_plus(10)
-        past = _until_plus(-1)
-        # 未开通时写状态再查询
+        # 直接落库一个增量为 10 天的有效 VIP
         with mock.patch.object(vip_mod, "_save_state"):
-            vip_mod._set_user_vip("bob", "month", future)
+            vip_mod._set_user_vip("bob", "month", timedelta(days=10))
         s1 = vip_mod.get_vip("bob")
         self.assertTrue(s1["vip"])
         self.assertEqual(s1["plan"], "month")
-        # 过期判断（直接注入过去的时间）
+        # 过期判断（直接注入过去的截止时间）
         with mock.patch.object(vip_mod, "_save_state"):
-            vip_mod._state_cache["bob"]["vip_until"] = past
+            vip_mod._state_cache["bob"]["vip_until"] = _until_plus(-1)
         self.assertFalse(vip_mod.get_vip("bob")["vip"])
 
 
@@ -101,14 +98,16 @@ class VipActivateTest(unittest.TestCase):
             vip_mod.activate_vip("alice", "  ")
 
     def test_activate_success(self):
-        future = _until_plus(30)
+        # 服务端返回权威时长增量 duration_seconds → 落库截止 ≈ now + 30 天
         with mock.patch.object(vip_mod, "_call_license", return_value={
-            "ok": True, "type": "month", "activated_until": future,
+            "ok": True, "type": "month", "duration_seconds": 30 * 24 * 3600,
         }):
             s = vip_mod.activate_vip("alice", "GRAW-MONTH-ABC")
         self.assertTrue(s["vip"])
         self.assertEqual(s["plan"], "month")
-        self.assertEqual(s["vip_until"], future)
+        end = datetime.fromisoformat(s["vip_until"])
+        self.assertAlmostEqual((end - datetime.now(timezone.utc)).total_seconds(),
+                               30 * 24 * 3600, delta=60)
 
     def test_activate_license_rejection(self):
         # 服务端拒绝（已使用/无效）→ ValueError
@@ -144,37 +143,44 @@ class VipSharedTest(unittest.TestCase):
 
     def test_shared_across_users(self):
         # alice 激活后，未激活过的 bob 同样生效（面板级共享）
-        future = _until_plus(30)
         with mock.patch.object(vip_mod, "_call_license", return_value={
-            "ok": True, "type": "month", "activated_until": future,
+            "ok": True, "type": "month", "duration_seconds": 30 * 24 * 3600,
         }):
             vip_mod.activate_vip("alice", "CODE-1")
         s_bob = vip_mod.get_vip("bob")
         self.assertTrue(s_bob["vip"])
         self.assertTrue(s_bob["is_vip"])
-        self.assertEqual(s_bob["vip_until"], future)
+        end = datetime.fromisoformat(s_bob["vip_until"])
+        self.assertAlmostEqual((end - datetime.now(timezone.utc)).total_seconds(),
+                               30 * 24 * 3600, delta=60)
 
     def test_shared_all_expired_inactive(self):
-        # 每个账号都过期 → 全员未解锁（无一生效则共享失效）
-        past = _until_plus(-1)
+        # 每个账号的 VIP 都已过期 → 全员未解锁（无一生效则共享失效）
         with mock.patch.object(vip_mod, "_save_state"):
-            vip_mod._set_user_vip("alice", "month", past)
-            vip_mod._set_user_vip("bob", "month", past)
+            vip_mod._set_user_vip("alice", "month", timedelta(days=-1))
+            vip_mod._set_user_vip("bob", "month", timedelta(days=-1))
         self.assertFalse(vip_mod.get_vip("alice")["vip"])
         self.assertFalse(vip_mod.get_vip("bob")["vip"])
 
-    def test_stack_on_shared_max(self):
-        # alice 激活较长时长后，bob 换账号激活较短时长：共享截止不缩短、不吞时长
-        late = _until_plus(30)
-        early = _until_plus(5)
-        with mock.patch.object(vip_mod, "_call_license", return_value={"ok": True, "type": "month", "activated_until": late}):
-            vip_mod.activate_vip("alice", "CODE-1")
-        with mock.patch.object(vip_mod, "_call_license", return_value={"ok": True, "type": "month", "activated_until": early}):
-            s = vip_mod.activate_vip("bob", "CODE-2")
-        self.assertTrue(s["vip"])
-        self.assertEqual(s["vip_until"], late)
-        # bob 的记录以共享的最晚截止为基准叠加，不会早于 alice 的截止
-        self.assertGreaterEqual(vip_mod._state_cache["bob"]["vip_until"], late)
+    def test_stack_accumulates_unbounded(self):
+        # 无限叠加：连续激活 3 张月卡，共享截止应逐次累加 ≈ now + 90 天（不封顶）
+        with mock.patch.object(vip_mod, "_call_license", return_value={
+            "ok": True, "type": "month", "duration_seconds": 30 * 24 * 3600,
+        }):
+            s = None
+            for code in ("CODE-1", "CODE-2", "CODE-3"):
+                s = vip_mod.activate_vip("alice", code)
+        end = datetime.fromisoformat(s["vip_until"])
+        self.assertAlmostEqual((end - datetime.now(timezone.utc)).total_seconds(),
+                               90 * 24 * 3600, delta=120)
+        # 换账号激活同样累加在共享截止之上，不吞已生效时长（≈ now + 120 天）
+        with mock.patch.object(vip_mod, "_call_license", return_value={
+            "ok": True, "type": "month", "duration_seconds": 30 * 24 * 3600,
+        }):
+            s2 = vip_mod.activate_vip("bob", "CODE-4")
+        end2 = datetime.fromisoformat(s2["vip_until"])
+        self.assertAlmostEqual((end2 - datetime.now(timezone.utc)).total_seconds(),
+                               120 * 24 * 3600, delta=120)
 
 
 if __name__ == "__main__":
