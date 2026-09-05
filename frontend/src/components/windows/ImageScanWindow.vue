@@ -16,11 +16,16 @@
     <!-- 扫描 tab -->
     <div v-if="tab === 'scan'" class="tab-body">
       <div class="scan-row">
-        <input v-model="image" class="ui-input" type="text" :placeholder="$t('imgscan.imagePlaceholder')" />
-        <button class="ui-btn primary" :disabled="scanning || !image.trim()" @click="doScan">
+        <select class="ui-select" v-model="selectedId">
+          <option value="">{{ $t('imgscan.selectContainer') }}</option>
+          <option v-for="c in containers" :key="c.id" :value="c.id">{{ c.name }}（{{ c.image }}）</option>
+        </select>
+        <button class="ui-btn primary" :disabled="scanning || !selected" @click="doScan">
           {{ scanning ? $t('common.loading') : $t('imgscan.scan') }}
         </button>
       </div>
+      <div v-if="loadError" class="container-err">{{ loadError }}</div>
+      <div v-else-if="containers.length === 0" class="ui-hint" style="margin-bottom:10px;">{{ $t('imgscan.noContainers') }}</div>
       <div v-if="result" class="summary">
         <span class="ui-badge off">{{ $t('imgscan.pkgCount') }}: {{ result.total_pkgs }}</span>
         <span class="ui-badge" :class="result.findings.length ? 'warn' : 'ok'">
@@ -96,13 +101,15 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'         // 响应式 + 挂载
+import { ref, computed, onMounted } from 'vue'         // 响应式 + 派生选中项 + 挂载
 import { useI18n } from 'vue-i18n'            // 国际化
 import { imgsafetyApi } from '../../api'      // 扫描接口
 
 const { t } = useI18n()
 const tab = ref('scan')
-const image = ref('')
+const containers = ref([])      // 本地容器列表（name + image）
+const selectedId = ref('')      // 下拉选中的容器 id
+const loadError = ref('')       // 容器列表加载失败提示
 const scanning = ref(false)
 const result = ref(null)
 
@@ -111,11 +118,32 @@ const advPkgs = ref([])
 const importing = ref(false)
 const importMsg = ref('')
 
+// 当前选中的容器对象（未选时 null，禁用扫描按钮）
+const selected = computed(() => containers.value.find((c) => c.id === selectedId.value) || null)
+
+// --- 拉取本地容器列表（下拉数据源） ---
+async function loadContainers() {
+  loadError.value = ''
+  try {
+    const res = await imgsafetyApi.containers()
+    containers.value = res.containers || []
+    if (res.error && containers.value.length === 0) {
+      loadError.value = t('imgscan.loadContainersFailed', { error: res.error })
+    }
+  } catch (e) {
+    containers.value = []
+    loadError.value = t('imgscan.loadContainersFailed', { error: e?.response?.data?.detail || e?.message || String(e) })
+  }
+}
+
+// --- 扫描选中容器对应的镜像 ---
 async function doScan() {
+  const img = selected.value?.image
+  if (!img) return   // 未选容器（防御性，按钮本身禁用）
   scanning.value = true
   result.value = null
   try {
-    result.value = await imgsafetyApi.scan(image.value.trim())
+    result.value = await imgsafetyApi.scan(img.trim())
   } catch (e) {
     alert(e?.response?.data?.detail || String(e))
   } finally {
@@ -156,14 +184,18 @@ async function doImport() {
   }
 }
 
-onMounted(loadAdvisory)
+onMounted(() => {
+  loadContainers()   // 打开即拉取本地容器列表（下拉数据源）
+  loadAdvisory()
+})
 </script>
 
 <style scoped>
 .imgscan-window { display: flex; flex-direction: column; height: 100%; padding: 10px; box-sizing: border-box; gap: 8px; }
 .tab-body { flex: 1; overflow: auto; padding: 2px 4px 12px; }
 .scan-row { display: flex; gap: 8px; margin-bottom: 10px; }
-.scan-row .ui-input { flex: 1; font-size: 12px; }
+.scan-row .ui-select { flex: 1; font-size: 12px; }
+.container-err { color: #b91c1c; font-size: 12.5px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; word-break: break-all; }
 .summary { display: flex; gap: 8px; margin-bottom: 8px; }
 .ok-tip { color: #27ae60; font-size: 12px; margin-top: 6px; }
 .adv-area { width: 100%; font-family: Consolas, monospace; font-size: 11px; }

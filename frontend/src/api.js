@@ -301,6 +301,7 @@ export const portforwardApi = {
 export const imgsafetyApi = {
   scan: (image) => api.post('/imgsafety/scan', { image }).then(r => r.data),
   advisory: () => api.get('/imgsafety/advisory').then(r => r.data),
+  containers: () => api.get('/imgsafety/containers').then(r => r.data),
   importAdvisory: (packages) => api.post('/imgsafety/advisory/import', { packages }).then(r => r.data)
 }
 

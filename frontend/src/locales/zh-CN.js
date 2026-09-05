@@ -688,8 +688,10 @@ export default {
   imgscan: {
     tabScan: '扫描镜像',
     tabAdvisory: '漏洞库',
-    imagePlaceholder: '本地镜像引用，如 nginx:latest',
     scan: '开始扫描',
+    selectContainer: '选择本地容器…',
+    noContainers: '暂无本地容器（Docker 引擎未运行或无容器）',
+    loadContainersFailed: '加载容器列表失败：{error}',
     pkgCount: '检测包数',
     findingCount: '命中 {n} 个',
     cached: '命中缓存',

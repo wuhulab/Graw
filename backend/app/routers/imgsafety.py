@@ -54,6 +54,32 @@ async def advisory_list():
     return {"packages": imgsafety.load_advisory(), "total": len(imgsafety.load_advisory())}
 
 
+@router.get("/containers")
+async def list_containers():
+    """本地容器列表（供前端下拉选择容器后按镜像扫描）。
+
+    复用 docker_api.containers() 的引擎（docker SDK / podman / CLI），
+    仅提取前端下拉所需的 id / name / image 三字段；image 缺失时回退容器名，
+    保证「按镜像扫描」总能拿到一个可用的镜像引用。
+    """
+    from app.routers import docker_api  # 延迟导入，避免循环依赖
+
+    try:
+        containers = await docker_api.containers(all=True)
+    except HTTPException as e:
+        # Docker 引擎不可用时返回空列表 + 错误提示（前端展示引导）
+        return {"containers": [], "error": e.detail}
+    except Exception as e:  # 拒绝访问 / 引擎异常等
+        logger.warning("获取容器列表失败: %s", e)
+        return {"containers": [], "error": str(e)}
+    return {
+        "containers": [
+            {"id": c.get("id", ""), "name": c.get("name", ""), "image": (c.get("image") or c.get("name") or "")}
+            for c in containers
+        ]
+    }
+
+
 @router.post("/advisory/import")
 async def advisory_import(req: AdvisoryImportReq):
     """导入 advisory（按 名称+CVE 去重，非法条目跳过）。"""
