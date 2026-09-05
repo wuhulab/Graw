@@ -814,3 +814,266 @@ table.dt tr:hover td { background: #f5f5f7; }
     font-size: 11px;
   }
 }
+
+/* ============================================================
+   Graw UI 设计系统（v1）
+   以「应用商店 / 网站」既有简洁风格为基准（白底 + 细分隔线 +
+   6~10px 圆角 + 深色主按钮 + 胶囊状态徽标）。
+   约定：所有窗口通用控件优先使用 .ui-* 类，组件 scoped 内不再
+   重复定义这些基础样式；窗口特有样式（布局、自定义块）保留在
+   scoped 内。状态徽标语义统一：ok=绿 / warn=黄 / off=灰 / danger=红。
+   ============================================================ */
+
+/* ---- 设计 tokens ---- */
+:root {
+  --ui-radius-sm: 8px;      /* 表格容器 / 页签 / 控件 */
+  --ui-radius-md: 12px;     /* 弹窗 / 大卡片 */
+  --ui-border: #e5e7eb;     /* 常规边框 / 分隔线 */
+  --ui-border-strong: #d1d5db;
+  --ui-bg: #ffffff;
+  --ui-bg-muted: #f9fafb;   /* 表头 / 悬停行 */
+  --ui-text: #1d1d1f;
+  --ui-text-secondary: #6e6e73;
+  --ui-text-tertiary: #9ca3af;
+  --ui-primary: #111827;    /* 主按钮 / 激活页签 */
+  --ui-primary-hover: #1f2937;
+  --ui-accent: #0a84ff;     /* 输入聚焦高亮 */
+  --ui-ok-bg: #d1fae5;  --ui-ok-fg: #065f46;
+  --ui-warn-bg: #fffbeb; --ui-warn-fg: #b45309;
+  --ui-off-bg: #f3f4f6;  --ui-off-fg: #6b7280;
+  --ui-danger-bg: #fee2e2; --ui-danger-fg: #b91c1c;
+  --ui-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.06);
+  --ui-shadow-md: 0 10px 30px rgba(0, 0, 0, 0.15);
+}
+
+/* ---- 圆角卡片（对应 AppStore 的应用卡片） ---- */
+.ui-card {
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  padding: 12px;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+.ui-card:hover {
+  border-color: #c7d2fe;
+  box-shadow: var(--ui-shadow-sm);
+}
+
+/* ---- 表格容器（对应 Sites/Backup 的 .table-wrap） ---- */
+.ui-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg);
+}
+.ui-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.ui-table-wrap th,
+.ui-table-wrap td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f0f0f0;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.ui-table-wrap th {
+  background: var(--ui-bg-muted);
+  position: sticky;
+  top: 0;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+.ui-table-wrap tbody tr:hover td {
+  background: var(--ui-bg-muted);
+}
+.ui-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+  white-space: normal;
+}
+
+/* ---- 状态徽标：语义统一 ok=绿 / warn=黄 / off=灰 / danger=红 ---- */
+.ui-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.6;
+  vertical-align: middle;
+}
+.ui-badge.ok { background: var(--ui-ok-bg); color: var(--ui-ok-fg); }
+.ui-badge.warn { background: var(--ui-warn-bg); color: var(--ui-warn-fg); }
+.ui-badge.off { background: var(--ui-off-bg); color: var(--ui-off-fg); }
+.ui-badge.danger { background: var(--ui-danger-bg); color: var(--ui-danger-fg); }
+
+/* ---- 按钮 ---- */
+.ui-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--ui-border-strong);
+  background: var(--ui-bg);
+  border-radius: var(--ui-radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ui-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.4;
+  transition: background 0.12s;
+}
+.ui-btn:hover:not(:disabled) { background: var(--ui-bg-muted); }
+.ui-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ui-btn.primary { background: var(--ui-primary); color: #fff; border-color: var(--ui-primary); }
+.ui-btn.primary:hover:not(:disabled) { background: var(--ui-primary-hover); }
+.ui-btn.danger { background: var(--ui-danger-bg); color: var(--ui-danger-fg); border-color: transparent; }
+.ui-btn.danger:hover:not(:disabled) { background: #fecaca; color: #991b1b; }
+.ui-btn.ghost { border-color: transparent; background: transparent; color: var(--ui-text-secondary); }
+.ui-btn.ghost:hover:not(:disabled) { background: var(--ui-bg-muted); color: var(--ui-text); }
+.ui-btn.mini { padding: 3px 8px; font-size: 11.5px; }
+
+/* ---- 页签（对应 Sites 的 mode-tabs） ---- */
+.ui-tabs {
+  display: inline-flex;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  overflow: hidden;
+  flex-wrap: wrap;
+  background: var(--ui-bg);
+}
+.ui-tabs .ui-tab {
+  padding: 6px 14px;
+  font-size: 13px;
+  background: var(--ui-bg);
+  border: none;
+  border-right: 1px solid var(--ui-border);
+  cursor: pointer;
+  color: var(--ui-text-secondary);
+  font-family: inherit;
+}
+.ui-tabs .ui-tab:last-child { border-right: none; }
+.ui-tabs .ui-tab:hover { background: var(--ui-bg-muted); }
+.ui-tabs .ui-tab.active { background: var(--ui-primary); color: #fff; }
+
+/* ---- 工具条 ---- */
+.ui-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.ui-hint { color: var(--ui-text-secondary); font-size: 12px; }
+.ui-hint.right { margin-left: auto; }
+
+/* ---- 空状态 ---- */
+.ui-empty {
+  text-align: center;
+  color: var(--ui-text-tertiary);
+  padding: 36px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+/* ---- 表单 ---- */
+.ui-field { display: block; margin-bottom: 12px; }
+.ui-field .ui-label {
+  display: block;
+  font-size: 12px;
+  color: var(--ui-text);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.ui-field .ui-label .sub { color: var(--ui-text-tertiary); font-weight: 400; }
+.ui-field-row { display: flex; gap: 12px; }
+.ui-field-row .ui-field { flex: 1; }
+.ui-input,
+.ui-select,
+.ui-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-radius-sm);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+}
+.ui-input:focus,
+.ui-select:focus,
+.ui-textarea:focus {
+  outline: none;
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.15);
+}
+.ui-textarea { font-family: inherit; resize: vertical; }
+.ui-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+
+/* ---- 确认 / 只读弹窗（仍保留在窗口内的场景） ---- */
+.ui-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+.ui-modal {
+  background: var(--ui-bg);
+  border-radius: var(--ui-radius-md);
+  padding: 16px;
+  width: 480px;
+  max-width: 92vw;
+  max-height: 92vh;
+  overflow: auto;
+  box-shadow: var(--ui-shadow-md);
+}
+.ui-modal.wide { width: 720px; }
+.ui-modal h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---- 右键菜单（对应 Sites 的 context-menu） ---- */
+.ui-context-menu {
+  position: fixed;
+  background: var(--ui-bg);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: var(--ui-radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  z-index: 3000;
+  min-width: 160px;
+  padding: 4px 0;
+}
+.ui-context-menu .menu-header {
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ui-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+.ui-context-menu .menu-item {
+  padding: 8px 14px;
+  font-size: 12.5px;
+  cursor: pointer;
+  color: #374151;
+}
+.ui-context-menu .menu-item:hover { background: #f5f5f7; }
+.ui-context-menu .menu-item.danger { color: var(--ui-danger-fg); }
+.ui-context-menu .menu-item.danger:hover { background: var(--ui-danger-bg); }
+.ui-context-menu .menu-divider { height: 1px; background: var(--ui-border); margin: 4px 0; }

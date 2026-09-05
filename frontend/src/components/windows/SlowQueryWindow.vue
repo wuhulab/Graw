@@ -7,50 +7,50 @@
   打开方式：桌面「慢查询分析」入口（管理员）
 -->
 <template>
-  <div style="display:flex; flex-direction:column; height:100%;">
-    <div class="toolbar">
-      <select v-model="connId" style="min-width:200px; font-size:12px;">
+  <div class="slowq-window">
+    <div class="ui-toolbar">
+      <select v-model="connId" class="ui-select conn-select">
         <option value="">-- {{ $t('slowq.selectConn') }} --</option>
         <option v-for="c in conns" :key="c.id" :value="c.id">{{ c.name }}（{{ c.host }}:{{ c.port }}）</option>
       </select>
-      <button class="btn primary" :disabled="!connId || scanning" @click="doScan">
+      <button class="ui-btn primary" :disabled="!connId || scanning" @click="doScan">
         {{ scanning ? $t('common.loading') : $t('slowq.scan') }}
       </button>
-      <span style="margin-left:auto; color:#888; font-size:11px;">{{ $t('slowq.hint') }}</span>
+      <span class="ui-hint right">{{ $t('slowq.hint') }}</span>
     </div>
 
-    <div style="flex:1; overflow:auto; padding: 12px;">
+    <div class="tab-body">
       <!-- 未开启 / 未找到日志时的引导 -->
       <div v-if="hint" class="hint-box">{{ hint }}</div>
 
-      <table v-if="items.length" class="dt">
-        <thead>
-          <tr>
-            <th style="width:120px;">{{ $t('slowq.time') }}</th>
-            <th style="width:70px;">{{ $t('slowq.queryTime') }}</th>
-            <th style="width:70px;">{{ $t('slowq.sent') }}</th>
-            <th style="width:80px;">{{ $t('slowq.examined') }}</th>
-            <th style="width:90px;">{{ $t('slowq.user') }}</th>
-            <th>{{ $t('slowq.sql') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(it, i) in items" :key="i">
-            <td class="mono" style="font-size:11px;">{{ it.time }}</td>
-            <td><b style="color:#c0392b;">{{ it.query_time.toFixed(2) }}s</b></td>
-            <td>{{ it.rows_sent }}</td>
-            <td>{{ it.rows_examined }}</td>
-            <td>{{ it.user }}</td>
-            <td>
-              <div class="sql">{{ it.sql }}</div>
-              <div v-if="it.suggest" class="suggest">💡 {{ it.suggest }}</div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <div v-else-if="!hint && !scanning" style="color:#999; text-align:center; padding:30px; font-size:12px;">
-        {{ $t('slowq.empty') }}
+      <div v-if="items.length" class="ui-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:120px;">{{ $t('slowq.time') }}</th>
+              <th style="width:70px;">{{ $t('slowq.queryTime') }}</th>
+              <th style="width:70px;">{{ $t('slowq.sent') }}</th>
+              <th style="width:80px;">{{ $t('slowq.examined') }}</th>
+              <th style="width:90px;">{{ $t('slowq.user') }}</th>
+              <th>{{ $t('slowq.sql') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(it, i) in items" :key="i">
+              <td class="ui-mono" style="font-size:11px;">{{ it.time }}</td>
+              <td><b class="query-time">{{ it.query_time.toFixed(2) }}s</b></td>
+              <td>{{ it.rows_sent }}</td>
+              <td>{{ it.rows_examined }}</td>
+              <td>{{ it.user }}</td>
+              <td>
+                <div class="sql">{{ it.sql }}</div>
+                <div v-if="it.suggest" class="suggest">💡 {{ it.suggest }}</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
+      <div v-else-if="!hint && !scanning" class="ui-empty">{{ $t('slowq.empty') }}</div>
     </div>
   </div>
 </template>
@@ -96,10 +96,14 @@ onMounted(loadConns)
 </script>
 
 <style scoped>
+.slowq-window { display: flex; flex-direction: column; height: 100%; padding: 10px; box-sizing: border-box; gap: 8px; }
+.conn-select { min-width: 200px; font-size: 12px; }
+.tab-body { flex: 1; overflow: auto; padding: 2px 4px 12px; }
 .hint-box {
   background: #fffbeb; border: 1px solid #fcd34d; color: #92400e;
-  border-radius: 6px; padding: 10px 12px; font-size: 12px; margin-bottom: 10px;
+  border-radius: 8px; padding: 10px 12px; font-size: 12px; margin-bottom: 10px;
 }
+.query-time { color: #c0392b; }
 .sql {
   font-family: Consolas, monospace; font-size: 11px; color: #2c3e50;
   word-break: break-all;

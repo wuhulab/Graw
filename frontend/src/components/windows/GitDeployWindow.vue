@@ -93,91 +93,28 @@
       </div>
     </div>
 
-    <!-- 新建 / 编辑弹窗 -->
-    <div v-if="editing" class="modal-overlay" @click.self="editing = null">
-      <div class="modal">
-        <h3>{{ editing.isNew ? $t('gitdeploy.create') : $t('gitdeploy.edit') }}</h3>
-        <div class="form">
-          <label>{{ $t('gitdeploy.name') }}</label>
-          <input v-model="editing.name" :placeholder="$t('gitdeploy.namePlaceholder')" />
-
-          <label>{{ $t('gitdeploy.site') }}</label>
-          <select v-model="editing.site_id" :disabled="!editing.isNew" @change="onSiteChange">
-            <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}（{{ firstDomain(s) }}）</option>
-          </select>
-
-          <label>{{ $t('gitdeploy.repoUrl') }}</label>
-          <input v-model="editing.repo_url" type="text" placeholder="https://github.com/user/repo.git" />
-
-          <div class="form-row">
-            <div>
-              <label>{{ $t('gitdeploy.branch') }}</label>
-              <input v-model="editing.branch" type="text" placeholder="main" />
-            </div>
-            <div>
-              <label>{{ $t('gitdeploy.auth') }}</label>
-              <select v-model="editing.auth">
-                <option value="none">{{ $t('gitdeploy.authNone') }}</option>
-                <option value="token">{{ $t('gitdeploy.authToken') }}</option>
-                <option value="ssh">{{ $t('gitdeploy.authSsh') }}</option>
-              </select>
-            </div>
-          </div>
-
-          <div v-if="editing.auth === 'token'">
-            <label>{{ $t('gitdeploy.token') }}</label>
-            <input v-model="editing.token" type="password" :placeholder="$t('gitdeploy.tokenPlaceholder')" />
-          </div>
-          <div v-else-if="editing.auth === 'ssh'" class="sub">{{ $t('gitdeploy.sshHint') }}</div>
-
-          <label>{{ $t('gitdeploy.deployDir') }}</label>
-          <input v-model="editing.deploy_dir" type="text" :placeholder="$t('gitdeploy.deployDirPlaceholder')" />
-
-          <div class="form-row">
-            <div>
-              <label>{{ $t('gitdeploy.node') }}</label>
-              <select v-model="editing.node_id">
-                <option v-for="n in nodes.list" :key="n.id" :value="n.id">{{ n.name }}</option>
-              </select>
-            </div>
-            <div class="check-line">
-              <input id="gd-notify" v-model="editing.notify" type="checkbox" style="width:auto;" />
-              <label for="gd-notify">{{ $t('gitdeploy.notify') }}</label>
-            </div>
-          </div>
-
-          <!-- 创建 / 重置 secret 后展示 Webhook 地址 -->
-          <div v-if="editing.webhookUrl" class="webhook-box">
-            <div class="sub">{{ $t('gitdeploy.webhookUrl') }}</div>
-            <code>{{ editing.webhookUrl }}</code>
-            <div class="actions" style="margin-top:6px;">
-              <button class="btn mini" @click="copyText(editing.webhookUrl)">{{ $t('common.copy') }}</button>
-            </div>
-          </div>
-
-          <div class="actions">
-            <button class="btn" @click="editing = null">{{ $t('common.cancel') }}</button>
-            <button class="btn primary" :disabled="saving" @click="save">{{ saving ? $t('common.loading') : $t('common.save') }}</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- 新建 / 编辑表单改由独立窗口承载（GitDeployFormWindow），避免点遮罩误关丢失输入 -->
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'                       // 响应式 + 挂载刷新
-import { useI18n } from 'vue-i18n'                         // 国际化
+import { ref, onMounted, watch } from 'vue'                  // 响应式 + 挂载刷新 + 表单信号监听
+import { useI18n } from 'vue-i18n'                           // 国际化
 import { RefreshCw, Plus, Play, Pencil, Link2, Trash2 } from 'lucide-vue-next' // 图标（与其它应用一致的行内图标按钮）
-import { gitdeployApi, sitesApi } from '../../api'         // 部署 + 站点接口
-import { nodes, refreshNodes } from '../../store/nodes'    // 节点列表（选择部署目标节点）
+import { gitdeployApi, sitesApi } from '../../api'            // 部署 + 站点接口
+import { nodes, refreshNodes } from '../../store/nodes'       // 节点列表（选择部署目标节点）
+import { formBus } from '../../store/formBus'                 // 表单保存信号：独立表单窗口保存成功后刷新列表
 
 const { t } = useI18n()
+
+const emit = defineEmits(['openGitDeployForm'])   // 打开独立「新建/编辑部署绑定」窗口（binding: 表单对象）
+
 const deploys = ref([])       // 部署列表（脱敏）
 const sites = ref([])         // 站点下拉数据
-const editing = ref(null)     // 弹窗编辑对象；null=关闭
 const loading = ref(false)
-const saving = ref(false)
+
+// 表单新增/编辑改由独立窗口承载：保存成功后 bumpForm('gitdeploy') 触发此处重载
+watch(() => formBus.gitdeploy, load)
 
 function statusText(s) {
   if (s === 'running') return t('gitdeploy.st.running')
@@ -207,66 +144,27 @@ async function load() {
   }
 }
 
+// 打开独立「新建」表单窗口
 function openCreate() {
-  editing.value = {
-    isNew: true, name: '', site_id: sites.value[0]?.id || '', repo_url: '',
-    branch: 'main', auth: 'none', token: '', deploy_dir: '',
-    node_id: nodes.list?.[0]?.id || 'local', notify: true, webhookUrl: ''
-  }
-}
-
-function openEdit(d) {
-  editing.value = {
-    isNew: false, id: d.id, name: d.name, site_id: d.site_id, repo_url: d.repo_url,
-    branch: d.branch, auth: d.auth, token: '', deploy_dir: d.deploy_dir,
-    node_id: d.node_id, notify: d.notify === undefined ? true : d.notify,
-    webhookUrl: ''
-  }
-}
-
-function onSiteChange() {
-  // 站点选中后自动带出默认部署目录（站点 root），用户可改
-  if (!editing.value.site_id) return
-  const s = sites.value.find(x => x.id === editing.value.site_id)
-  if (s && s.root && editing.value.isNew && !editing.value.deploy_dir.trim()) {
-    editing.value.deploy_dir = s.root
-  }
-}
-
-async function save() {
-  const e = editing.value
-  if (!e.name && e.isNew) { alert(t('gitdeploy.needName')); return }
-  if (!e.repo_url.trim()) { alert(t('gitdeploy.needRepo')); return }
-  saving.value = true
-  try {
-    if (e.isNew) {
-      const res = await gitdeployApi.create({
-        name: e.name, site_id: e.site_id,
-        source: { repo_url: e.repo_url.trim(), branch: e.branch.trim() || 'main', auth: e.auth, token: e.token || '' },
-        deploy_dir: e.deploy_dir, node_id: e.node_id, notify: e.notify
-      })
-      showWebhook(res) // 创建成功：展示一次性 Webhook URL
-    } else {
-      const res = await gitdeployApi.update(e.id, {
-        name: e.name, repo_url: e.repo_url.trim(), branch: e.branch.trim() || 'main',
-        auth: e.auth, token: e.token || undefined, deploy_dir: e.deploy_dir,
-        node_id: e.node_id, notify: e.notify
-      })
-      if (res.secret_once) showWebhook(res) // 重置 secret 后重新展示
-      else editing.value = null
+  emit('openGitDeployForm', {
+    binding: {
+      isNew: true, name: '', site_id: sites.value[0]?.id || '', repo_url: '',
+      branch: 'main', auth: 'none', token: '', deploy_dir: '',
+      node_id: nodes.list?.[0]?.id || 'local', notify: true, webhookUrl: ''
     }
-  } catch (err) {
-    alert(err?.response?.data?.detail || String(err))
-  } finally {
-    saving.value = false
-    await load()
-  }
+  })
 }
 
-// 创建/重置成功后：在弹窗内展示一次性 Webhook URL（含 secret）
-function showWebhook(res) {
-  const base = location.origin || ''
-  editing.value.webhookUrl = `${base}/api/gitdeploy/webhook/${res.id}?secret=${res.secret_once || ''}`
+// 打开独立「编辑」表单窗口
+function openEdit(d) {
+  emit('openGitDeployForm', {
+    binding: {
+      isNew: false, id: d.id, name: d.name, site_id: d.site_id, repo_url: d.repo_url,
+      branch: d.branch, auth: d.auth, token: '', deploy_dir: d.deploy_dir,
+      node_id: d.node_id, notify: d.notify === undefined ? true : d.notify,
+      webhookUrl: ''
+    }
+  })
 }
 
 async function doTrigger(d) {
@@ -322,7 +220,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-/* 与 BackupWindow / CronWindow 一致的表格、徽标、弹窗与表单样式 */
+/* 与 BackupWindow / CronWindow 一致的表格、徽标样式 */
 .global-status { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #5a6478; }
 .toolbar-actions { margin-left: auto; display: flex; gap: 8px; }
 .table-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; }
@@ -349,22 +247,4 @@ tbody tr:last-child td { border-bottom: none; }
 .iconbtn:hover { background: #f0f2f7; color: #0a3d7a; }
 .iconbtn.danger:hover { background: #fee2e2; color: #b91c1c; }
 .empty { text-align: center; color: #9aa3b2; padding: 30px; font-size: 12px; }
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 2000; }
-.modal { background: #fff; border-radius: 12px; padding: 16px; width: 520px; max-width: 92vw; box-shadow: 0 10px 30px rgba(0,0,0,.15); }
-.modal h3 { margin: 0 0 12px; font-size: 16px; }
-.form { display: flex; flex-direction: column; gap: 4px; }
-.form label { font-size: 12px; color: #4b5563; font-weight: 600; margin-top: 8px; }
-.form input[type='text'], .form input[type='password'], .form select, .form textarea {
-  font-size: 13px; border: 1px solid #d7dbe7; border-radius: 6px; padding: 6px 8px; outline: none; width: 100%; box-sizing: border-box;
-}
-.form input:focus, .form select:focus { border-color: #3b82f6; }
-.form-row { display: flex; gap: 10px; }
-.form-row > div { flex: 1; display: flex; flex-direction: column; }
-.check-line { flex-direction: row !important; align-items: center; gap: 8px; margin-top: 24px; }
-.check-line label { margin-top: 0; }
-.actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
-.webhook-box { margin-top: 10px; padding: 8px 10px; background: #f7f8fb; border: 1px dashed #b7c5dd; border-radius: 6px; }
-.webhook-box code { font-size: 11px; word-break: break-all; color: #0a3d7a; }
-/* 行内小按钮（BackupWindow 同款） */
-.btn.mini { padding: 2px 8px; font-size: 11px; }
 </style>

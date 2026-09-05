@@ -24,17 +24,17 @@
 
     <!-- 防火墙视图（合并自独立的「防火墙」应用） -->
     <div v-if="mode === 'firewall'" class="hub-body">
-      <FirewallWindow />
+      <FirewallWindow @openFirewallRuleForm="emit('openFirewallRuleForm', $event)" />
     </div>
 
     <!-- 应用防火墙视图（合并自独立的「应用防火墙」应用） -->
     <div v-else-if="mode === 'waf'" class="hub-body">
-      <WafWindow />
+      <WafWindow @openWafAclForm="emit('openWafAclForm', $event)" />
     </div>
 
     <!-- 网页防篡改视图（合并自独立的「ShunX网页防篡改」应用） -->
     <div v-else-if="mode === 'tamper'" class="hub-body">
-      <TamperWindow />
+      <TamperWindow @openTamperForm="emit('openTamperForm', $event)" />
     </div>
 
     <!-- 数据库保护视图（合并自独立的「Graw数据库保护机制」应用） -->
@@ -44,17 +44,17 @@
 
     <!-- 备份中心视图（合并自独立的「备份中心」应用） -->
     <div v-else-if="mode === 'backup'" class="hub-body">
-      <BackupWindow />
+      <BackupWindow @openBackupTaskForm="emit('openBackupTaskForm', $event)" @openBackupRemoteForm="emit('openBackupRemoteForm', $event)" />
     </div>
 
     <!-- 通知中心视图（合并自独立的「通知中心」应用） -->
     <div v-else-if="mode === 'notify'" class="hub-body">
-      <NotifyWindow />
+      <NotifyWindow @openNotifyChannelForm="emit('openNotifyChannelForm', $event)" @openNotifyRuleForm="emit('openNotifyRuleForm', $event)" />
     </div>
 
     <!-- SSH密钥视图（合并自独立的「SSH 密钥」应用） -->
     <div v-else-if="mode === 'sshkeys'" class="hub-body">
-      <SSHKeysWindow />
+      <SSHKeysWindow @openSshKeyGen="emit('openSshKeyGen', $event)" @openSshKeyImport="emit('openSshKeyImport', $event)" @openSshKeyDeploy="emit('openSshKeyDeploy', $event)" />
     </div>
 
     <!-- 系统体检视图（合并自独立的「系统体检」应用） -->
@@ -80,6 +80,20 @@ import NotifyWindow from './NotifyWindow.vue'     // 子应用：通知中心
 import SSHKeysWindow from './SSHKeysWindow.vue'   // 子应用：SSH 密钥
 import HealthCheckWindow from './HealthCheckWindow.vue'  // 子应用：系统体检
 import PanelBackupWindow from './PanelBackupWindow.vue'  // 子应用：面板备份
+
+// 冒泡到桌面（App.vue）的独立表单窗口事件：把各子应用弹出的「表单窗口」事件转发给桌面统一打开
+const emit = defineEmits([
+  'openFirewallRuleForm',
+  'openWafAclForm',
+  'openTamperForm',
+  'openBackupTaskForm',
+  'openBackupRemoteForm',
+  'openNotifyChannelForm',
+  'openNotifyRuleForm',
+  'openSshKeyGen',
+  'openSshKeyImport',
+  'openSshKeyDeploy'
+])
 
 // 视图模式：firewall / waf / tamper / protection / backup / notify / sshkeys / healthcheck / panelbackup
 const mode = ref('firewall')

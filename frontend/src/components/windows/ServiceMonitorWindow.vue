@@ -2,7 +2,8 @@
   服务监控窗口
   业务：监控 TCP 端口 / 进程 / systemd 服务状态，故障与恢复自动推送通知中心；支持增删改与测试。
   后端模块：/api/svcmonitor
-  关键状态：items（监控项列表）、confirm（删除高危二次确认）、formOpen（编辑弹窗）
+  关键状态：items（监控项列表）、confirm（删除高危二次确认）；添加/编辑表单已改为独立窗口
+           ServiceMonitorFormWindow（保存后经 formBus.svcmonitor 刷新本列表）。
   打开方式：独立「服务监控」入口挂载
 -->
 <template>
@@ -22,7 +23,7 @@
 
     <!-- 列表 -->
     <div class="table-toolbar">
-      <button class="btn primary" @click="openAdd"><Plus :size="14" /> 添加监控</button>
+      <button class="btn primary" @click="emit('openServiceMonitorForm', { item: null })"><Plus :size="14" /> 添加监控</button>
     </div>
 
     <div v-if="loading" class="empty">加载中…</div>
@@ -84,55 +85,12 @@
                 >{{ i.is_enabled === true ? '已自启' : '自启' }}</button>
               </template>
               <button class="btn mini" :disabled="busy" @click="toggleItem(i)">{{ i.enabled ? '停用' : '启用' }}</button>
-              <button class="btn mini" :disabled="busy" @click="openEdit(i)">编辑</button>
+              <button class="btn mini" :disabled="busy" @click="emit('openServiceMonitorForm', { item: i })">编辑</button>
               <button class="btn mini danger-text" :disabled="busy" @click="doDelete(i)">删除</button>
             </td>
           </tr>
         </tbody>
       </table>
-    </div>
-
-    <!-- 添加 / 编辑弹窗 -->
-    <div v-if="formOpen" class="modal-overlay" @click.self="formOpen = false">
-      <div class="modal">
-        <h3><Server :size="16" /> {{ editing ? '编辑监控项' : '添加监控项' }}</h3>
-
-        <label class="field">
-          <span class="label">名称</span>
-          <input v-model.trim="form.name" maxlength="64" placeholder="如：数据库端口 / Web 服务进程" />
-        </label>
-        <label class="field">
-          <span class="label">监控类型</span>
-          <select v-model="form.kind">
-            <option value="port">TCP 端口</option>
-            <option value="process">进程</option>
-            <option value="service">systemd 服务（Linux）</option>
-          </select>
-        </label>
-        <label class="field">
-          <span class="label">{{ targetLabel }}</span>
-          <input v-model.trim="form.target" :placeholder="targetPlaceholder" spellcheck="false" />
-        </label>
-        <div class="field-row">
-          <label class="field">
-            <span class="label">检查间隔（秒）</span>
-            <input type="number" min="10" max="86400" v-model.number="form.interval_seconds" />
-          </label>
-          <label class="field">
-            <span class="label">超时（秒）</span>
-            <input type="number" min="1" max="30" v-model.number="form.timeout_seconds" />
-          </label>
-          <label class="field check" style="justify-content:flex-end;">
-            <input type="checkbox" v-model="form.enabled" />
-            <span>启用</span>
-          </label>
-        </div>
-        <div v-if="formError" class="error">{{ formError }}</div>
-        <div class="actions">
-          <button class="btn" :disabled="saving" @click="formOpen = false">取消</button>
-          <button class="btn primary" :disabled="saving" @click="saveForm">{{ saving ? '保存中…' : '保存' }}</button>
-        </div>
-      </div>
     </div>
 
     <!-- 高风险操作二次确认：删除监控项需输入面板密码 -->
@@ -151,10 +109,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'   // Composition API：响应式、表单、计算属性、挂载
+import { ref, computed, onMounted, watch } from 'vue'   // Composition API：响应式、计算属性、挂载、表单总线监听
 import { Server, RefreshCw, Plus } from 'lucide-vue-next'    // 图标集合
 import { svcmonitorApi } from '../../api'                    // 服务监控后端接口封装
 import ConfirmDialog from '../ConfirmDialog.vue'             // 高危操作二次确认弹窗（输入面板密码）
+// 表单保存信号：独立「添加 / 编辑监控项」窗口保存成功后刷新本列表
+import { formBus } from '../../store/formBus'
 
 const loading = ref(false)
 const busy = ref(false)
@@ -162,26 +122,16 @@ const items = ref([])
 // 高风险操作二次确认状态（删除监控项需输入面板密码）
 const confirm = ref({ show: false, target: null })
 
-const formOpen = ref(false)
-const editing = ref(null)
-const saving = ref(false)
-const formError = ref('')
-const form = reactive({
-  name: '', kind: 'port', target: '',
-  timeout_seconds: 5, interval_seconds: 60, enabled: true,
-})
+const emit = defineEmits(['openServiceMonitorForm'])   // 打开独立「添加/编辑监控项」表单窗口（props 传 item）
+
+// 添加 / 编辑表单已改为独立窗口承载：保存成功后 bumpForm('svcmonitor') 触发此处重载
+watch(() => formBus.svcmonitor, loadAll)
 
 const upCount = computed(() => items.value.filter((i) => i.last_status === 'ok').length)
 const downCount = computed(() => items.value.filter((i) => i.last_status === 'down').length)
 
-// 类型标签与目标输入提示
+// 类型标签
 const kindLabel = (k) => ({ port: '端口', process: '进程', service: '服务' }[k] || k)
-const targetLabel = computed(() => {
-  return { port: '目标（host:port，host 可省略默认 127.0.0.1）', process: '进程名 / 命令行关键字', service: 'systemd 服务名' }[form.kind] || '目标'
-})
-const targetPlaceholder = computed(() => {
-  return { port: '如：3306 或 127.0.0.1:3306', process: '如：nginx / mysqld', service: '如：nginx.service' }[form.kind] || ''
-})
 
 function fmtTime(iso) {
   if (!iso) return '—'
@@ -200,46 +150,6 @@ async function loadAll() {
     alert('加载失败：' + (e.response?.data?.detail || e.message))
   } finally {
     loading.value = false
-  }
-}
-
-function openAdd() {
-  editing.value = null
-  formError.value = ''
-  Object.assign(form, { name: '', kind: 'port', target: '', timeout_seconds: 5, interval_seconds: 60, enabled: true })
-  formOpen.value = true
-}
-
-function openEdit(i) {
-  editing.value = i
-  formError.value = ''
-  Object.assign(form, {
-    name: i.name || '', kind: i.kind || 'port', target: i.target || '',
-    timeout_seconds: i.timeout_seconds ?? 5, interval_seconds: i.interval_seconds ?? 60,
-    enabled: i.enabled !== false,
-  })
-  formOpen.value = true
-}
-
-async function saveForm() {
-  if (saving.value) return
-  formError.value = ''
-  if (!form.name.trim()) { formError.value = '请填写名称'; return }
-  if (!form.target.trim()) { formError.value = '请填写监控目标'; return }
-  const body = {
-    name: form.name.trim(), kind: form.kind, target: form.target.trim(),
-    timeout_seconds: form.timeout_seconds, interval_seconds: form.interval_seconds, enabled: form.enabled,
-  }
-  saving.value = true
-  try {
-    if (editing.value) await svcmonitorApi.updateItem(editing.value.id, body)
-    else await svcmonitorApi.createItem(body)
-    formOpen.value = false
-    await loadAll()
-  } catch (e) {
-    formError.value = e.response?.data?.detail || e.message
-  } finally {
-    saving.value = false
   }
 }
 
@@ -367,16 +277,4 @@ tbody tr:hover { background: #f9fafb; }
 .btn.autostart-on { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
 
 .empty { text-align: center; color: #9ca3af; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: 13px; }
-
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.modal { background: #fff; border-radius: 10px; padding: 20px; width: 460px; max-width: 92vw; box-shadow: 0 8px 30px rgba(0,0,0,0.18); max-height: 88vh; overflow: auto; }
-.modal h3 { margin: 0 0 14px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
-.field { display: block; margin-bottom: 12px; }
-.field .label { display: block; font-size: 12px; color: #4b5563; margin-bottom: 4px; }
-.field input, .field select { width: 100%; padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; box-sizing: border-box; }
-.field-row { display: flex; gap: 10px; flex-wrap: wrap; }
-.field-row .field { flex: 1; min-width: 120px; }
-.field.check { display: flex; align-items: center; gap: 6px; margin-top: 20px; }
-.error { color: #b91c1c; font-size: 12px; margin: 6px 0; }
-.actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
 </style>

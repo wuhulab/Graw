@@ -39,7 +39,7 @@
       <button class="btn" :disabled="loading" @click="loadIndex(false)">
         {{ loading ? $t('common.loading') : $t('common.refresh') }}
       </button>
-      <button class="btn" @click="showConfigModal = true"><Settings2 :size="14" /> {{ $t('appstore.indexConfig') }}</button>
+      <button class="btn" @click="emit('openAppStoreConfig', { indexUrl: configForm.index_url })"><Settings2 :size="14" /> {{ $t('appstore.indexConfig') }}</button>
     </div>
 
     <!-- 索引错误提示 -->
@@ -99,23 +99,7 @@
       </div>
     </div>
 
-    <!-- ============ 索引地址配置弹窗 ============ -->
-    <div v-if="showConfigModal" class="modal-overlay" @click.self="showConfigModal = false">
-      <div class="modal">
-        <h3><Settings2 :size="16" /> {{ $t('appstore.indexConfigTitle') }}</h3>
-        <p class="modal-desc">{{ $t('appstore.indexConfigDesc') }}</p>
-        <input v-model.trim="configForm.index_url" class="inp mono" style="width:100%;"
-               :placeholder="$t('appstore.indexConfigPlaceholder')" />
-        <div class="actions">
-          <button class="btn" @click="showConfigModal = false">{{ $t('common.cancel') }}</button>
-          <button class="btn primary" :disabled="savingConfig" @click="saveConfig">
-            {{ savingConfig ? $t('common.saving') : $t('appstore.saveAndRefresh') }}
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ============ 首次进入免责声明弹窗 ============ -->
+    <!-- ============ 首次进入免责声明弹窗（保留内嵌确认） ============ -->
     <div v-if="showDisclaimer" class="disc-modal-overlay">
       <div class="disc-modal">
         <div class="disc-head">
@@ -145,14 +129,15 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'   // 状态/表单/派生值/挂载钩子
+import { ref, reactive, computed, onMounted, watch } from 'vue'   // 状态/表单/派生值/挂载钩子
 import { useI18n } from 'vue-i18n'   // 翻译函数与当前语种
 import { appStoreApi } from '../../api'   // 应用商店 API（索引/配置）
 import { localizedName, localizedDescription } from '../../appStoreL10n'   // 应用名/描述的多语言文案
+import { formBus } from '../../store/formBus'   // 表单保存信号：索引配置窗口保存成功后强制刷新
 import { Store, Settings2, Globe, Github, Container, AlertTriangle, Loader2, BookOpen, Search, ShieldAlert } from 'lucide-vue-next'   // 工具栏/卡片/弹窗图标
 
 const { t, locale } = useI18n()
-const emit = defineEmits(['openAppInstall', 'openReadme', 'close'])   // openAppInstall 打开安装表单；openReadme 打开 README；close 关窗
+const emit = defineEmits(['openAppInstall', 'openReadme', 'openAppStoreConfig', 'close'])   // openAppInstall 打开安装表单；openReadme 打开 README；openAppStoreConfig 打开索引配置窗口；close 关窗
 
 // 应用显示名称：优先索引内嵌翻译（i18n.<locale>.yml），
 // 其次前端语言包内 appNames 覆盖，最后回退索引默认名称
@@ -209,9 +194,9 @@ const filteredApps = computed(() => {
   })
 })
 
-// 索引地址配置
-const showConfigModal = ref(false)
-const savingConfig = ref(false)
+// 索引地址配置已拆分为独立窗口（AppStoreConfigWindow）：
+// 保存成功后 bumpForm('appstore') 触发此处强制刷新索引
+watch(() => formBus.appstore, () => loadIndex(true))
 const configForm = reactive({ index_url: '' })
 
 // ===================== 首次进入免责声明 =====================
@@ -270,19 +255,7 @@ async function loadIndex(refresh) {
 
 function closePopovers() { /* 预留：点击空白收起下拉 */ }
 
-// --- 保存索引地址并强制刷新 ---
-async function saveConfig() {
-  savingConfig.value = true
-  try {
-    await appStoreApi.saveConfig(configForm.index_url)
-    showConfigModal.value = false
-    await loadIndex(true)
-  } catch (e) {
-    alert(t('appstore.saveConfigFailed', { error: e.response?.data?.detail || e.message }))
-  } finally {
-    savingConfig.value = false
-  }
-}
+// --- 保存索引地址并强制刷新（已移至独立配置窗口） ---
 
 onMounted(async () => {
   try {

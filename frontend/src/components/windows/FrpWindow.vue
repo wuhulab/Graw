@@ -75,7 +75,7 @@
 
       <div class="section-head">
         <h4>{{ $t('frp.proxies') }}</h4>
-        <button class="btn primary" @click="openProxyModal()"><Plus :size="14" /> {{ $t('frp.addProxy') }}</button>
+        <button class="btn primary" @click="emit('openFrpProxyForm', { proxy: null })"><Plus :size="14" /> {{ $t('frp.addProxy') }}</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -97,7 +97,7 @@
               <td><span class="badge" :class="p.enabled ? 'ok' : 'off'">{{ $t(p.enabled ? 'frp.enabled' : 'frp.disabled') }}</span></td>
               <td class="ops">
                 <button class="iconbtn" :title="$t('frp.toggle')" @click="toggleProxy(p)"><Power :size="14" /></button>
-                <button class="iconbtn" :title="$t('common.edit')" @click="openProxyModal(p)"><Pencil :size="14" /></button>
+                <button class="iconbtn" :title="$t('common.edit')" @click="emit('openFrpProxyForm', { proxy: p })"><Pencil :size="14" /></button>
                 <button class="iconbtn danger" :title="$t('common.delete')" @click="delProxy(p)"><Trash2 :size="14" /></button>
               </td>
             </tr>
@@ -115,57 +115,24 @@
         <div class="actions"><button class="btn primary" @click="showPreview=false">{{ $t('common.close') }}</button></div>
       </div>
     </div>
-
-    <!-- 代理编辑弹窗 -->
-    <div v-if="showProxyModal" class="modal-overlay" @click.self="showProxyModal=false">
-      <div class="modal">
-        <h3>{{ proxyForm.id ? $t('frp.editProxy') : $t('frp.addProxy') }}</h3>
-        <div class="form">
-          <label>{{ $t('frp.name') }}</label><input v-model="proxyForm.name" />
-          <label>{{ $t('frp.type') }}</label>
-          <select v-model="proxyForm.type">
-            <option v-for="t in proxyTypes" :key="t" :value="t">{{ t }}</option>
-          </select>
-          <label>{{ $t('frp.localIp') }}</label><input v-model="proxyForm.localIp" />
-          <label>{{ $t('frp.localPort') }}</label><input v-model.number="proxyForm.localPort" type="number" />
-          <template v-if="isPortType">
-            <label>{{ $t('frp.remotePort') }}</label>
-            <input v-model.number="proxyForm.remotePort" type="number" />
-          </template>
-          <template v-else>
-            <label>{{ $t('frp.customDomains') }}</label>
-            <input v-model="proxyForm.customDomains" :placeholder="$t('frp.customDomainsPlaceholder')" />
-          </template>
-          <label>{{ $t('frp.remark') }}</label><input v-model="proxyForm.remark" />
-          <div class="row">
-            <label class="inline"><input type="checkbox" v-model="proxyForm.useEncryption" /> {{ $t('frp.useEncryption') }}</label>
-            <label class="inline"><input type="checkbox" v-model="proxyForm.useCompression" /> {{ $t('frp.useCompression') }}</label>
-            <label class="inline"><input type="checkbox" v-model="proxyForm.enabled" /> {{ $t('frp.enabled') }}</label>
-          </div>
-          <div class="actions">
-            <button class="btn" @click="showProxyModal=false">{{ $t('common.cancel') }}</button>
-            <button class="btn primary" @click="saveProxy">{{ $t('common.save') }}</button>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup>
 // 响应式状态、计算属性与生命周期钩子
-import { ref, computed, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 // 国际化
 import { useI18n } from 'vue-i18n'
 // FRP API：status/config/save/switch_mode/preview/start/stop/restart + 代理增删改
 import { frpApi } from '../../api'
 // 图标（刷新/播放/停止/添加/删除/编辑/开关）
 import { RotateCw, Play, Square, Plus, Trash2, Pencil, Power } from 'lucide-vue-next'
+// 表单保存信号：独立「新增/编辑代理」窗口保存成功后刷新本列表
+import { formBus } from '../../store/formBus'
 
 const { t } = useI18n()
 
-// tcp/udp 代理使用远程端口，http/https 使用自定义域名
-const isPortType = computed(() => proxyForm.value.type === 'tcp' || proxyForm.value.type === 'udp')
+const emit = defineEmits(['openFrpProxyForm'])   // 打开独立「代理规则」窗口（proxy: 编辑对象或 null）
 
 const mode = ref('server')       // 运行模式：server（服务端）/ client（客户端）
 const installed = ref(false)     // FRP 是否已安装（有无可用二进制）
@@ -177,17 +144,12 @@ const server = ref({ bindAddr: '0.0.0.0', bindPort: 7000, token: '', configPath:
 const client = ref({ serverAddr: '', serverPort: 7000, token: '', configPath: '', loginFailExit: true, logLevel: 'info' })
 const proxies = ref([])          // 客户端代理规则列表
 const logLevels = ['trace', 'debug', 'info', 'warn', 'error']   // 日志级别可选项
-const proxyTypes = ['tcp', 'udp', 'http', 'https']              // 代理类型可选项
 
 const showPreview = ref(false)   // 配置预览弹窗显隐
 const previewText = ref('')      // 预览的 toml 文本
-const showProxyModal = ref(false)   // 代理编辑弹窗显隐
-const proxyForm = ref(newProxy())   // 代理表单（新增/编辑共用）
 
-// 生成一个空白代理表单（编辑时用目标代理覆盖之）
-function newProxy() {
-  return { id: '', name: '', type: 'tcp', localIp: '127.0.0.1', localPort: 80, remotePort: 8080, customDomains: '', useEncryption: false, useCompression: false, enabled: true, remark: '' }
-}
+// 代理规则新增/编辑改由独立窗口承载：保存成功后 bumpForm('frp') 触发此处重载
+watch(() => formBus.frp, load)
 
 // 把后端返回的服务端配置合并进本地表单
 function applyServer(d) {
@@ -275,41 +237,6 @@ async function preview() {
   }
 }
 
-// --- 动作：打开代理弹窗（p 为空则新增，否则编辑该代理） ---
-function openProxyModal(p) {
-  proxyForm.value = p ? { ...p } : newProxy()
-  showProxyModal.value = true
-}
-
-// --- 动作：保存代理（有 id 走更新，否则走新增） ---
-async function saveProxy() {
-  try {
-    const payload = {
-      name: proxyForm.value.name,
-      type: proxyForm.value.type,
-      localIp: proxyForm.value.localIp,
-      localPort: proxyForm.value.localPort,
-      remotePort: proxyForm.value.remotePort || null,
-      customDomains: proxyForm.value.customDomains || '',
-      useEncryption: proxyForm.value.useEncryption,
-      useCompression: proxyForm.value.useCompression,
-      enabled: proxyForm.value.enabled,
-      remark: proxyForm.value.remark
-    }
-    if (proxyForm.value.id) {
-      await frpApi.updateProxy(proxyForm.value.id, payload)
-    } else {
-      await frpApi.addProxy(payload)
-    }
-    showProxyModal.value = false
-    const cfg = await frpApi.config()
-    applyAll(cfg)
-    statusMsg.value = t('frp.saved')
-  } catch (e) {
-    statusMsg.value = (e?.response?.data?.detail) || e.message || t('common.error')
-  }
-}
-
 // --- 动作：启用/停用代理（向后端传反向状态） ---
 async function toggleProxy(p) {
   try {
@@ -382,10 +309,6 @@ tr.muted { opacity: 0.55; }
 .modal { background: #fff; border-radius: 12px; padding: 16px; width: 440px; max-width: 92vw; box-shadow: 0 10px 30px rgba(0,0,0,0.15); }
 .modal.wide { width: 640px; }
 .modal h3 { margin: 0 0 12px; font-size: 16px; }
-.form { display: flex; flex-direction: column; gap: 10px; }
-.form label { font-size: 12px; color: #374151; }
-.row { display: flex; gap: 14px; flex-wrap: wrap; }
-.inline { display: flex; align-items: center; gap: 5px; font-size: 12px; }
 .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .toml { background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 8px; max-height: 60vh; overflow: auto; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
 </style>

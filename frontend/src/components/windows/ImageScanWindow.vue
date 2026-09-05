@@ -7,29 +7,29 @@
   打开方式：桌面「镜像扫描」入口（管理员）
 -->
 <template>
-  <div style="display:flex; flex-direction:column; height:100%;">
-    <div class="toolbar">
-      <button class="btn" :class="{ primary: tab === 'scan' }" @click="tab = 'scan'">{{ $t('imgscan.tabScan') }}</button>
-      <button class="btn" :class="{ primary: tab === 'adv' }" @click="tab = 'adv'; loadAdvisory()">{{ $t('imgscan.tabAdvisory') }}</button>
+  <div class="imgscan-window">
+    <div class="ui-toolbar">
+      <button class="ui-btn" :class="{ primary: tab === 'scan' }" @click="tab = 'scan'">{{ $t('imgscan.tabScan') }}</button>
+      <button class="ui-btn" :class="{ primary: tab === 'adv' }" @click="tab = 'adv'; loadAdvisory()">{{ $t('imgscan.tabAdvisory') }}</button>
     </div>
 
     <!-- 扫描 tab -->
-    <div v-if="tab === 'scan'" style="flex:1; overflow:auto; padding: 12px;">
-      <div style="display:flex; gap:8px; margin-bottom:10px;">
-        <input v-model="image" type="text" :placeholder="$t('imgscan.imagePlaceholder')" style="flex:1; font-size:12px;" />
-        <button class="btn primary" :disabled="scanning || !image.trim()" @click="doScan">
+    <div v-if="tab === 'scan'" class="tab-body">
+      <div class="scan-row">
+        <input v-model="image" class="ui-input" type="text" :placeholder="$t('imgscan.imagePlaceholder')" />
+        <button class="ui-btn primary" :disabled="scanning || !image.trim()" @click="doScan">
           {{ scanning ? $t('common.loading') : $t('imgscan.scan') }}
         </button>
       </div>
       <div v-if="result" class="summary">
-        <span class="badge">{{ $t('imgscan.pkgCount') }}: {{ result.total_pkgs }}</span>
-        <span class="badge" :class="result.findings.length ? 'warn' : 'ok'">
+        <span class="ui-badge off">{{ $t('imgscan.pkgCount') }}: {{ result.total_pkgs }}</span>
+        <span class="ui-badge" :class="result.findings.length ? 'warn' : 'ok'">
           {{ $t('imgscan.findingCount', { n: result.findings.length }) }}
         </span>
-        <span v-if="result.cached" class="badge">{{ $t('imgscan.cached') }}</span>
+        <span v-if="result.cached" class="ui-badge off">{{ $t('imgscan.cached') }}</span>
       </div>
-      <div v-if="result && result.findings.length">
-        <table class="dt">
+      <div v-if="result && result.findings.length" class="ui-table-wrap">
+        <table>
           <thead>
             <tr>
               <th>{{ $t('imgscan.severity') }}</th>
@@ -42,53 +42,55 @@
           <tbody>
             <tr v-for="(f, i) in result.findings" :key="i">
               <td><span class="sev" :class="f.severity">{{ f.severity }}</span></td>
-              <td class="mono">{{ f.cve }}</td>
+              <td class="ui-mono">{{ f.cve }}</td>
               <td>{{ f.pkg }}</td>
-              <td class="mono">{{ f.version }}</td>
+              <td class="ui-mono">{{ f.version }}</td>
               <td style="font-size:11px; color:#666;">{{ f.desc }}</td>
             </tr>
           </tbody>
         </table>
       </div>
-      <div v-else-if="result" style="color:#27ae60; font-size:12px; margin-top:6px;">{{ $t('imgscan.noFindings') }}</div>
+      <div v-else-if="result" class="ok-tip">{{ $t('imgscan.noFindings') }}</div>
     </div>
 
     <!-- advisory tab -->
-    <div v-else style="flex:1; overflow:auto; padding: 12px;">
+    <div v-else class="tab-body">
       <textarea
         v-model="advJson"
         rows="6"
-        style="width:100%; font-family:Consolas,monospace; font-size:11px;"
+        class="ui-textarea adv-area"
         :placeholder="'[ { name, versions, cve, severity, desc }, ... ] 每项：name=软件包名，versions=版本约束(如 <= 3.0.14)'"
       />
-      <div style="display:flex; gap:8px; margin:8px 0;">
-        <button class="btn primary" :disabled="importing" @click="doImport">{{ importing ? $t('common.loading') : $t('imgscan.import') }}</button>
-        <span v-if="importMsg" style="font-size:12px; color:#0a3d7a; align-self:center;">{{ importMsg }}</span>
+      <div class="adv-row">
+        <button class="ui-btn primary" :disabled="importing" @click="doImport">{{ importing ? $t('common.loading') : $t('imgscan.import') }}</button>
+        <span v-if="importMsg" class="import-msg">{{ importMsg }}</span>
       </div>
-      <div style="font-size:11px; color:#888; margin-bottom:6px;">{{ $t('imgscan.advisoryCount', { n: advPkgs.length }) }}</div>
-      <table class="dt">
-        <thead>
-          <tr>
-            <th>{{ $t('imgscan.pkg') }}</th>
-            <th>{{ $t('imgscan.constraint') }}</th>
-            <th>{{ $t('imgscan.cve') }}</th>
-            <th>{{ $t('imgscan.severity') }}</th>
-            <th>{{ $t('imgscan.desc') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(a, i) in advPkgs" :key="i">
-            <td>{{ a.name }}</td>
-            <td class="mono">{{ a.versions }}</td>
-            <td class="mono">{{ a.cve }}</td>
-            <td><span class="sev" :class="a.severity">{{ a.severity }}</span></td>
-            <td style="font-size:11px; color:#666;">{{ a.desc }}</td>
-          </tr>
-          <tr v-if="advPkgs.length === 0">
-            <td colspan="5" style="text-align:center; color:#999;">{{ $t('imgscan.advEmpty') }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="adv-count">{{ $t('imgscan.advisoryCount', { n: advPkgs.length }) }}</div>
+      <div class="ui-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>{{ $t('imgscan.pkg') }}</th>
+              <th>{{ $t('imgscan.constraint') }}</th>
+              <th>{{ $t('imgscan.cve') }}</th>
+              <th>{{ $t('imgscan.severity') }}</th>
+              <th>{{ $t('imgscan.desc') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(a, i) in advPkgs" :key="i">
+              <td>{{ a.name }}</td>
+              <td class="ui-mono">{{ a.versions }}</td>
+              <td class="ui-mono">{{ a.cve }}</td>
+              <td><span class="sev" :class="a.severity">{{ a.severity }}</span></td>
+              <td style="font-size:11px; color:#666;">{{ a.desc }}</td>
+            </tr>
+            <tr v-if="advPkgs.length === 0">
+              <td colspan="5" class="ui-empty">{{ $t('imgscan.advEmpty') }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </template>
@@ -158,14 +160,19 @@ onMounted(loadAdvisory)
 </script>
 
 <style scoped>
+.imgscan-window { display: flex; flex-direction: column; height: 100%; padding: 10px; box-sizing: border-box; gap: 8px; }
+.tab-body { flex: 1; overflow: auto; padding: 2px 4px 12px; }
+.scan-row { display: flex; gap: 8px; margin-bottom: 10px; }
+.scan-row .ui-input { flex: 1; font-size: 12px; }
 .summary { display: flex; gap: 8px; margin-bottom: 8px; }
-.badge { background: #f0f3fa; color: #0a3d7a; font-size: 11px; padding: 2px 10px; border-radius: 10px; }
-.badge.ok { background: #d1fae5; color: #065f46; }
-.badge.warn { background: #fde68a; color: #92400e; }
+.ok-tip { color: #27ae60; font-size: 12px; margin-top: 6px; }
+.adv-area { width: 100%; font-family: Consolas, monospace; font-size: 11px; }
+.adv-row { display: flex; gap: 8px; margin: 8px 0; align-items: center; }
+.import-msg { font-size: 12px; color: #0a3d7a; align-self: center; }
+.adv-count { font-size: 11px; color: #888; margin-bottom: 6px; }
 .sev { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: #eef2ff; color: #4338ca; }
 .sev.critical { background: #7f1d1d; color: #fff; }
 .sev.high { background: #c0392b; color: #fff; }
 .sev.medium { background: #f39c12; color: #fff; }
 .sev.low { background: #eef2ff; color: #4338ca; }
-.mono { font-family: Consolas, monospace; }
 </style>

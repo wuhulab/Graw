@@ -86,12 +86,16 @@
 
     <!-- SSL证书视图（合并自独立的「SSL」应用） -->
     <div v-else class="ssl-wrap">
-      <SSLWindow />
+      <!-- 转发 SSL 表单窗口事件：内嵌场景下也能打开独立的「上传证书 / Let's Encrypt」窗口 -->
+      <SSLWindow
+        @openSslUpload="emit('openSslUpload', $event)"
+        @openSslLeForm="emit('openSslLeForm', $event)"
+      />
     </div>
 
     <!-- 右键菜单：Teleport 到 body，避免被窗口容器的 overflow/层级裁掉 -->
     <Teleport to="body">
-      <div v-if="ctxMenu.show" class="context-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
+      <div v-if="ctxMenu.show" class="ui-context-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
         <!-- 外部接管的站点（非本面板创建）只给「看」的能力，不提供启停与删除，防止改坏别人的配置 -->
         <template v-if="ctxMenu.site?.external">
           <div class="menu-header">{{ ctxMenu.site?.name }}</div>
@@ -114,8 +118,8 @@
     </Teleport>
 
     <!-- 类型选择弹窗：新建站点的第一步，先定类型再决定后续表单长什么样 -->
-    <div v-if="showTypePicker" class="modal-overlay" @click.self="showTypePicker = false">
-      <div class="modal type-modal">
+    <div v-if="showTypePicker" class="ui-modal-overlay" @click.self="showTypePicker = false">
+      <div class="ui-modal type-modal">
         <h3>{{ $t('sites.selectType') }}</h3>
         <div class="type-grid">
           <div
@@ -130,9 +134,9 @@
             <div class="t-desc">{{ t.desc }}</div>
           </div>
         </div>
-        <div class="actions">
-          <button class="btn" @click="showTypePicker = false">{{ $t('common.cancel') }}</button>
-          <button class="btn primary" :disabled="!pickedType" @click="confirmType">{{ $t('common.next') }}</button>
+        <div class="ui-actions">
+          <button class="ui-btn" @click="showTypePicker = false">{{ $t('common.cancel') }}</button>
+          <button class="ui-btn primary" :disabled="!pickedType" @click="confirmType">{{ $t('common.next') }}</button>
         </div>
       </div>
     </div>
@@ -140,37 +144,18 @@
     <!-- 创建 / 编辑：由独立窗口承载（SitesWindow 仅负责打开） -->
 
     <!-- Config viewer：只读展示后端生成的 Nginx 站点配置，方便排查线上问题 -->
-    <div v-if="showConfig" class="modal-overlay" @click.self="showConfig = false">
-      <div class="modal wide">
+    <div v-if="showConfig" class="ui-modal-overlay" @click.self="showConfig = false">
+      <div class="ui-modal wide">
         <h3>{{ $t('sites.viewConfig', { name: configSite?.name }) }}</h3>
         <pre class="code">{{ configText }}</pre>
-        <div class="actions">
-          <button class="btn" @click="showConfig = false">{{ $t('sites.close') }}</button>
+        <div class="ui-actions">
+          <button class="ui-btn" @click="showConfig = false">{{ $t('sites.close') }}</button>
         </div>
       </div>
     </div>
 
-    <!-- 维护模式弹窗：一键开启/关闭 + 自定义维护页 HTML -->
-    <div v-if="maint.show" class="modal-overlay" @click.self="closeMaint">
-      <div class="modal">
-        <h3>{{ $t('sites.maintTitle', { name: maint.site?.name }) }}</h3>
-        <label style="display:flex; align-items:center; gap:8px; font-size:13px; margin-bottom:10px;">
-          <input type="checkbox" v-model="maint.enabled" style="width:auto;" />
-          {{ maint.enabled ? $t('sites.maintEnabled') : $t('sites.maintDisabled') }}
-        </label>
-        <div style="font-size:11px; color:#888; margin-bottom:6px;">{{ $t('sites.maintHtmlHint') }}</div>
-        <textarea
-          v-model="maint.html"
-          rows="8"
-          style="width:100%; font-family:Consolas,monospace; font-size:12px;"
-          :placeholder="'<html>…'"
-        />
-        <div class="actions">
-          <button class="btn" @click="closeMaint">{{ $t('common.cancel') }}</button>
-          <button class="btn primary" :disabled="saving" @click="doMaintenance">{{ saving ? $t('common.loading') : $t('common.save') }}</button>
-        </div>
-      </div>
-    </div>
+    <!-- 维护模式已拆分为独立窗口（SiteMaintenanceWindow）：开关 + 自定义维护页 HTML，
+         避免误触遮罩丢失已填 HTML -->
 
     <!-- 高风险操作二次确认：删除站点需输入站点名 -->
     <ConfirmDialog
@@ -195,6 +180,7 @@ import { sitesApi } from '../../api'                             // 网站管理
 import { siteRevision } from '../../store/siteBus'               // 站点变更信号：别的窗口改完站点后通知本列表刷新
 import ConfirmDialog from '../ConfirmDialog.vue'                 // 高风险操作确认框（删站点要求手打站点名）
 import SSLWindow from './SSLWindow.vue'                          // SSL 页签直接复用证书管理窗口，避免功能重复实现
+import { formBus } from '../../store/formBus'                    // 表单保存信号：维护模式窗口保存成功后刷新列表
 import {
   Plus, Globe, Share2, Network, Layers                          // 新建按钮 + 四种站点类型的示意图标
 } from 'lucide-vue-next'
@@ -234,14 +220,13 @@ const configText = ref('')         // 后端返回的 Nginx 配置原文
 const configSite = ref(null)       // 配置属于哪个站点，用于弹窗标题
 // 右键菜单状态
 const ctxMenu = ref({ show: false, x: 0, y: 0, site: null })
-// 维护模式弹窗状态：目标站点 + 开关 + 自定义 HTML
-const maint = ref({ show: false, site: null, enabled: false, html: '' })
-const saving = ref(false)
 // 高风险操作二次确认状态：记录待删除的站点
 const confirm = ref({ show: false, site: null })
 
-// 通知 App 打开独立「站点编辑」窗口（创建 / 编辑共用）
-const emit = defineEmits(['openSiteEdit'])
+// 通知 App 打开独立「站点编辑」窗口（创建 / 编辑共用）；
+// 内嵌 SSL 视图时转发「上传证书 / Let's Encrypt」表单窗口事件；
+// openSiteMaintenance 打开独立「维护模式」窗口
+const emit = defineEmits(['openSiteEdit', 'openSslUpload', 'openSslLeForm', 'openSiteMaintenance'])
 
 // 站点列表发生变更（独立窗口保存成功）后自动刷新
 // siteRevision 是个全局计数器，站点编辑窗口保存成功就自增一次，本窗口据此重新拉列表，
@@ -251,6 +236,9 @@ watch(siteRevision, () => {
   revisionInited = true
   load()
 })
+
+// 维护模式窗口保存成功后（formBus.sites）同样触发刷新
+watch(() => formBus.sites, load)
 
 // --- 打开右键菜单（记录点击位置与命中的站点） ---
 function openCtx(e, s) {
@@ -294,40 +282,11 @@ function menuRemove() {
   if (s) remove(s)
 }
 
-// --- 菜单项：打开维护模式弹窗 ---
+// --- 菜单项：打开维护模式（独立窗口：开关 + 自定义维护页 HTML） ---
 function menuMaintenance() {
   const s = ctxMenu.value.site
   closeCtx()
-  if (!s) return
-  maint.value = {
-    show: true,
-    site: s,
-    enabled: !!s.maintenance,   // 当前是否已维护中（未维护默认关）
-    html: ''                    // 自定义 HTML：留空=保持默认/不修改
-  }
-}
-
-// --- 关闭维护弹窗 ---
-function closeMaint() {
-  maint.value.show = false
-}
-
-// --- 保存维护模式：下发开关 + 可选自定义 HTML ---
-async function doMaintenance() {
-  const m = maint.value
-  if (!m.site) return
-  saving.value = true
-  try {
-    const body = { enabled: m.enabled }
-    if (m.html.trim()) body.html = m.html   // 只传用户填写过的自定义 HTML
-    await sitesApi.maintenance(m.site.id, body)
-    closeMaint()
-    await load()                            // 开关后刷新列表（维护状态徽标/配置即时更新）
-  } catch (e) {
-    alert(e?.response?.data?.detail || String(e))
-  } finally {
-    saving.value = false
-  }
+  if (s) emit('openSiteMaintenance', { site: s })
 }
 
 // --- 删除站点第一步：只弹确认框，不真删 ---
@@ -434,32 +393,10 @@ th { background: #f9fafb; position: sticky; top: 0; }
 .tag-1p { display: inline-block; margin-left: 4px; padding: 1px 6px; border-radius: 6px; font-size: 10px; background: #fffbeb; color: #b45309; border: 1px solid #fcd34d; white-space: nowrap; }
 
 /* 右键菜单 */
-.context-menu {
-  position: fixed; background: #fff; border: 1px solid rgba(0,0,0,0.1);
-  border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-  z-index: 3000; min-width: 160px; padding: 4px 0;
-}
-.menu-header { padding: 8px 14px; font-size: 12px; font-weight: 600; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
-.menu-item { padding: 8px 14px; font-size: 12.5px; cursor: pointer; color: #374151; }
-.menu-item:hover { background: #f5f5f7; }
-.menu-item.readonly { color: #9ca3af; cursor: default; }
-.menu-item.danger { color: #b91c1c; }
-.menu-item.danger:hover { background: #fef2f2; }
-.menu-divider { height: 1px; background: #e5e7eb; margin: 4px 0; }
 .empty { text-align: center; color: #9ca3af; padding: 24px; }
 .btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
 .btn.primary { background: #111827; color: #fff; border-color: #111827; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; z-index: 2000; }
-.modal { background: #fff; border-radius: 12px; padding: 16px; width: 480px; max-width: 90vw; box-shadow: 0 10px 30px rgba(0,0,0,0.15); }
-.modal.wide { width: 720px; }
-.modal h3 { margin: 0 0 12px; font-size: 16px; }
-.form { display: flex; flex-direction: column; gap: 10px; }
-.form label { font-size: 12px; color: #374151; }
-.form input { padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
-.form .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
-.radio-row { display: flex; gap: 16px; }
-.radio { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #111827; cursor: pointer; }
 .type-modal { width: 560px; }
 .type-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
 .type-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; cursor: pointer; transition: all 0.15s; }

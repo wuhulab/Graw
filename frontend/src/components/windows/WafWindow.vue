@@ -46,9 +46,9 @@
         </option>
       </select>
 
-      <button class="btn primary" :disabled="!currentSite" @click="save">保存站点策略</button>
-      <button class="btn" :disabled="!currentSite" @click="loadPreview">生成预览</button>
-      <button class="btn" @click="applyAll">全局应用</button>
+      <button class="ui-btn primary" :disabled="!currentSite" @click="save">保存站点策略</button>
+      <button class="ui-btn" :disabled="!currentSite" @click="loadPreview">生成预览</button>
+      <button class="ui-btn" @click="applyAll">全局应用</button>
     </div>
 
     <!-- 页签导航 -->
@@ -152,7 +152,7 @@
           </div>
           <div class="add-row">
             <input v-model="newBw[lst.key]" :placeholder="lst.placeholder" @keyup.enter="addBw(lst.key)" />
-            <button class="btn small" @click="addBw(lst.key)">添加</button>
+            <button class="ui-btn mini" @click="addBw(lst.key)">添加</button>
           </div>
         </div>
       </div>
@@ -202,7 +202,7 @@
           </div>
           <div class="add-row">
             <input v-model="newCountry" placeholder="如：CN" @keyup.enter="addCountry" />
-            <button class="btn small" @click="addCountry">添加</button>
+            <button class="ui-btn mini" @click="addCountry">添加</button>
           </div>
         </div>
       </div>
@@ -210,7 +210,7 @@
       <!-- ─── 8 自定义规则 ACL ─── -->
       <div v-else-if="activeTab === 8">
         <div class="toolbar-inline">
-          <button class="btn primary" @click="openAclEditor()">新增 ACL</button>
+          <button class="ui-btn primary mini" @click="openAclForm()">新增 ACL</button>
         </div>
         <table class="table">
           <thead><tr><th>匹配项</th><th>操作符</th><th>值</th><th>动作</th><th>操作</th></tr></thead>
@@ -219,13 +219,13 @@
               <td>{{ matchLabel(a.match) }}</td>
               <td>{{ a.op }}</td>
               <td class="mono">{{ a.value }}</td>
-              <td><span class="badge" :class="aclActionClass(a.action)">{{ aclActionLabel(a.action) }}</span></td>
+              <td><span class="ui-badge" :class="aclActionClass(a.action)">{{ aclActionLabel(a.action) }}</span></td>
               <td>
-                <button class="iconbtn" @click="openAclEditor(a)">✎</button>
+                <button class="iconbtn" @click="openAclForm(a)">✎</button>
                 <button class="iconbtn danger" @click="delAcl(a.id)">✕</button>
               </td>
             </tr>
-            <tr v-if="!cfg.acl.length"><td colspan="5" class="empty">暂无 ACL 规则</td></tr>
+            <tr v-if="!cfg.acl.length"><td colspan="5" class="ui-empty">暂无 ACL 规则</td></tr>
           </tbody>
         </table>
       </div>
@@ -241,10 +241,10 @@
             <option value="challenge">challenge</option>
             <option value="429">429</option>
           </select>
-          <button class="btn" @click="loadLogs">查询</button>
-          <button class="btn danger" @click="clearLogs">清空</button>
+          <button class="ui-btn" @click="loadLogs">查询</button>
+          <button class="ui-btn danger" @click="clearLogs">清空</button>
         </div>
-        <div class="table-wrap">
+        <div class="ui-table-wrap">
           <table class="table">
             <thead><tr><th>时间</th><th>站点</th><th>IP</th><th>规则</th><th>动作</th><th>原因</th></tr></thead>
             <tbody>
@@ -253,10 +253,10 @@
                 <td>{{ l.site }}</td>
                 <td class="mono">{{ l.ip }}</td>
                 <td>{{ l.rule }}</td>
-                <td><span class="badge" :class="l.action === 'deny' ? 'warn' : 'info'">{{ l.action }}</span></td>
+                <td><span class="ui-badge" :class="l.action === 'deny' ? 'danger' : 'off'">{{ l.action }}</span></td>
                 <td class="clamp">{{ l.reason }}</td>
               </tr>
-              <tr v-if="!logs.length"><td colspan="6" class="empty">暂无拦截日志</td></tr>
+              <tr v-if="!logs.length"><td colspan="6" class="ui-empty">暂无拦截日志</td></tr>
             </tbody>
           </table>
         </div>
@@ -286,36 +286,8 @@
       </div>
     </div>
 
-    <!-- ACL 编辑弹窗 -->
-    <div v-if="aclEditor" class="modal-overlay" @click.self="aclEditor = null">
-      <div class="modal">
-        <h3>{{ aclEditor.id ? '编辑 ACL' : '新增 ACL' }}</h3>
-        <div class="form">
-          <label>匹配项</label>
-          <select v-model="aclEditor.match">
-            <option value="uri">URL</option><option value="ip">IP</option>
-            <option value="ua">User-Agent</option><option value="args">参数</option>
-            <option value="method">请求方法</option>
-          </select>
-          <label>操作符</label>
-          <select v-model="aclEditor.op">
-            <option value="eq">等于</option><option value="regex">正则</option>
-            <option value="contains">包含</option><option value="starts">前缀</option>
-          </select>
-          <label>值</label>
-          <input v-model="aclEditor.value" />
-          <label>动作</label>
-          <select v-model="aclEditor.action">
-            <option value="deny">拒绝</option><option value="allow">放行</option>
-            <option value="challenge">挑战</option>
-          </select>
-          <div class="actions">
-            <button class="btn" @click="aclEditor = null">取消</button>
-            <button class="btn primary" @click="saveAcl">保存</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- ACL 编辑已拆分为独立窗口（WafAclFormWindow）：编辑结果通过回调写回本地 cfg，
+         随「保存站点策略」统一提交后端，避免误触遮罩丢已填内容 -->
 
     <!-- 高风险操作二次确认：清空拦截日志需输入面板密码 -->
     <ConfirmDialog
@@ -336,6 +308,9 @@
 import { ref, reactive, computed, onMounted } from 'vue'   // 响应式状态、表单对象、派生值、挂载钩子
 import { wafApi } from '../../api'   // WAF 后端能力：/api/waf/* 的封装
 import ConfirmDialog from '../ConfirmDialog.vue'   // 高风险操作确认框（清空日志要求输入面板密码）
+
+// openWafAclForm 打开独立「ACL 编辑」窗口
+const emit = defineEmits(['openWafAclForm'])
 
 // 高风险操作二次确认状态（清空拦截日志需输入面板密码）
 const confirm = ref({ show: false, action: null })
@@ -399,8 +374,7 @@ const newBw = reactive({})
 bwGroups.forEach(g => (newBw[g.key] = ''))
 const newCountry = ref('')
 
-// ACL 编辑器
-const aclEditor = ref(null)
+// ACL 编辑已拆分为独立窗口（WafAclFormWindow），无窗口内状态
 
 // --- 空策略模板：新站点 / 后端缺字段时的兜底默认值 ---
 function emptyCfg() {
@@ -582,19 +556,19 @@ function addCountry() {
 }
 
 // ---- ACL ----
-function openAclEditor(acl) {
-  aclEditor.value = acl ? { ...acl } : { id: '', match: 'uri', op: 'eq', value: '', action: 'deny' }
-}
-
-function saveAcl() {
-  if (!aclEditor.value.value) return
-  if (aclEditor.value.id) {
-    const idx = cfg.value.acl.findIndex(a => a.id === aclEditor.value.id)
-    if (idx >= 0) cfg.value.acl[idx] = { ...aclEditor.value }
-  } else {
-    cfg.value.acl.push({ ...aclEditor.value, id: Date.now().toString(36) })
-  }
-  aclEditor.value = null
+// 打开独立「ACL 编辑」窗口：把编辑结果通过 onSaved 回调写回本地 cfg（新增生成临时 id）
+function openAclForm(acl) {
+  emit('openWafAclForm', {
+    acl: acl || null,
+    onSaved: (data) => {
+      if (data.id) {
+        const idx = cfg.value.acl.findIndex((a) => a.id === data.id)
+        if (idx >= 0) cfg.value.acl[idx] = { ...data }
+      } else {
+        cfg.value.acl.push({ ...data, id: Date.now().toString(36) })
+      }
+    }
+  })
 }
 
 function delAcl(id) {
@@ -655,24 +629,12 @@ h4 { margin: 8px 0 8px; font-size: 13px; }
 .add-row { display: flex; gap: 6px; margin-top: 6px; }
 .add-row input { flex: 1; padding: 4px 6px; }
 
-.table-wrap { overflow: auto; }
 .table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .table th, .table td { border: 1px solid #eee; padding: 5px 8px; text-align: left; }
 .table th { background: #f7f7f8; }
 .mono { font-family: monospace; font-size: 11px; }
 .clamp { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.empty { text-align: center; color: #aaa; padding: 16px; }
 
-.badge { padding: 2px 8px; border-radius: 10px; font-size: 12px; }
-.badge.ok { background: #e6f6ec; color: #1a7f37; }
-.badge.off { background: #fee; color: #c0392b; }
-.badge.warn { background: #fef3e2; color: #b45309; }
-.badge.info { background: #e9f0ff; color: #2563eb; }
-.btn { padding: 4px 12px; border: 1px solid #ccc; border-radius: 6px; background: #fff; cursor: pointer; font-size: 13px; }
-.btn.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
-.btn.danger { background: #fff; color: #c0392b; border-color: #e2b3af; }
-.btn.small { padding: 2px 10px; font-size: 12px; }
-.btn:disabled { opacity: .5; cursor: not-allowed; }
 .iconbtn { border: none; background: transparent; cursor: pointer; font-size: 12px; color: #555; }
 .iconbtn.danger { color: #c0392b; }
 
@@ -680,9 +642,6 @@ h4 { margin: 8px 0 8px; font-size: 13px; }
 .modal { background: #fff; border-radius: 12px; padding: 18px; width: 420px; max-width: 92vw;
   max-height: 86vh; overflow: auto; box-shadow: 0 8px 30px rgba(0,0,0,.2); }
 .modal.wide { width: 760px; }
-.form { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-.form label { font-size: 13px; color: #555; }
-.form select, .form input { padding: 6px; }
 .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 
 .preview { background: #0f172a; color: #cbd5e1; padding: 12px; border-radius: 8px;

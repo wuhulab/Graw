@@ -3,8 +3,8 @@
   作用：管理面板内置的纯 Python 虚拟 FTP 用户（增删改查、启停用），无需在系统创建真实账号，
         用户数据持久化于后端 data/ftp_users.json，每个用户绑定一个 chroot 目录。
   后端模块：/api/ftpusers（list 列表、create 新增、update 编辑/启停用、delete 删除）。
-  关键状态：items（用户列表）、form/editing（添加/编辑弹窗）、saving/busy（提交中）、
-            confirm（删除二次确认）。
+  关键状态：items（用户列表）、confirm（删除二次确认）；添加/编辑表单已改为独立窗口
+            FtpUserFormWindow（保存后经 formBus.ftpusers 刷新本列表）。
   删除用户为高风险操作，需输入面板密码（ConfirmDialog）确认。
   打开方式：桌面「FTP 用户」卡片。
 -->
@@ -23,7 +23,7 @@
 
     <!-- 列表 -->
     <div class="table-toolbar">
-      <button class="btn primary" @click="openAdd"><Plus :size="14" /> 添加用户</button>
+      <button class="btn primary" @click="emit('openFtpUserForm', { user: null })"><Plus :size="14" /> 添加用户</button>
     </div>
 
     <div v-if="loading" class="empty">加载中…</div>
@@ -55,47 +55,12 @@
             <td class="mono">{{ fmtTime(u.created_at) }}</td>
             <td class="actions-cell">
               <button class="btn mini" :disabled="busy" @click="toggleItem(u)">{{ u.enabled ? '停用' : '启用' }}</button>
-              <button class="btn mini" :disabled="busy" @click="openEdit(u)">编辑</button>
+              <button class="btn mini" :disabled="busy" @click="emit('openFtpUserForm', { user: u })">编辑</button>
               <button class="btn mini danger-text" :disabled="busy" @click="doDelete(u)">删除</button>
             </td>
           </tr>
         </tbody>
       </table>
-    </div>
-
-    <!-- 添加 / 编辑弹窗 -->
-    <div v-if="formOpen" class="modal-overlay" @click.self="formOpen = false">
-      <div class="modal">
-        <h3><UserCheck :size="16" /> {{ editing ? '编辑 FTP 用户' : '添加 FTP 用户' }}</h3>
-
-        <label class="field">
-          <span class="label">用户名</span>
-          <input v-model.trim="form.username" maxlength="64" placeholder="仅字母/数字/._-，如 webuser" spellcheck="false" />
-        </label>
-        <label class="field">
-          <span class="label">{{ editing ? '密码（留空保持原密码）' : '密码（至少 6 位）' }}</span>
-          <input v-model="form.password" type="password" maxlength="128" placeholder="FTP 登录密码" autocomplete="new-password" />
-        </label>
-        <label class="field">
-          <span class="label">目录（chroot 路径）</span>
-          <input v-model.trim="form.directory" maxlength="1024" placeholder="如 /srv/ftp/webuser 或 C:\ftp\webuser" spellcheck="false" />
-        </label>
-        <div class="field-row">
-          <label class="field check">
-            <input type="checkbox" v-model="form.enabled" />
-            <span>启用</span>
-          </label>
-        </div>
-        <label class="field">
-          <span class="label">描述</span>
-          <input v-model.trim="form.description" maxlength="255" placeholder="可选，记录用途（如：官网文件上传账号）" />
-        </label>
-        <div v-if="formError" class="error">{{ formError }}</div>
-        <div class="actions">
-          <button class="btn" :disabled="saving" @click="formOpen = false">取消</button>
-          <button class="btn primary" :disabled="saving" @click="saveForm">{{ saving ? '保存中…' : '保存' }}</button>
-        </div>
-      </div>
     </div>
 
     <!-- 高风险操作二次确认：删除 FTP 用户需输入面板密码 -->
@@ -114,14 +79,16 @@
 </template>
 
 <script setup>
-// 响应式状态（reactive 用于表单对象）
-import { ref, reactive, onMounted } from 'vue'
+// 响应式状态
+import { ref, onMounted, watch } from 'vue'
 // 图标（用户 / 刷新 / 添加）
 import { UserCheck, RefreshCw, Plus } from 'lucide-vue-next'
 // FTP 用户 API：list/create/update/delete
 import { ftpusersApi } from '../../api'
 // 高风险操作「输入面板密码」二次确认弹窗
 import ConfirmDialog from '../ConfirmDialog.vue'
+// 表单保存信号：独立「添加 / 编辑 FTP 用户」窗口保存成功后刷新本列表
+import { formBus } from '../../store/formBus'
 
 const loading = ref(false)              // 列表加载中
 const busy = ref(false)                 // 行内操作（启停用/删除）进行中
@@ -129,13 +96,10 @@ const items = ref([])                   // FTP 用户列表
 // 高风险操作二次确认状态（删除 FTP 用户需输入面板密码）
 const confirm = ref({ show: false, target: null })
 
-const formOpen = ref(false)             // 添加/编辑弹窗是否显示
-const editing = ref(null)               // 当前编辑的用户对象（null 表示新增）
-const saving = ref(false)               // 保存请求进行中（防重复提交）
-const formError = ref('')               // 表单校验/提交错误提示
-const form = reactive({
-  username: '', password: '', directory: '', enabled: true, description: '',
-})
+const emit = defineEmits(['openFtpUserForm'])   // 打开独立「添加/编辑 FTP 用户」表单窗口（props 传 user）
+
+// 添加 / 编辑表单已改为独立窗口承载：保存成功后 bumpForm('ftpusers') 触发此处重载
+watch(() => formBus.ftpusers, loadAll)
 
 // 后端返回 ISO 时间串 → 本地可读格式（YYYY-MM-DD HH:mm:ss）
 function fmtTime(iso) {
@@ -156,58 +120,6 @@ async function loadAll() {
     alert('加载失败：' + (e.response?.data?.detail || e.message))
   } finally {
     loading.value = false
-  }
-}
-
-// --- 动作：打开「新增用户」弹窗（清空表单） ---
-function openAdd() {
-  editing.value = null
-  formError.value = ''
-  Object.assign(form, { username: '', password: '', directory: '', enabled: true, description: '' })
-  formOpen.value = true
-}
-
-// --- 动作：打开「编辑用户」弹窗（密码留空表示保持原密码） ---
-function openEdit(u) {
-  editing.value = u
-  formError.value = ''
-  // 编辑时密码留空表示保持原密码
-  Object.assign(form, {
-    username: u.username || '', password: '', directory: u.directory || '',
-    enabled: u.enabled !== false, description: u.description || '',
-  })
-  formOpen.value = true
-}
-
-// --- 动作：提交新增/编辑表单 ---
-async function saveForm() {
-  if (saving.value) return   // 防重复提交
-  formError.value = ''
-  if (!form.username.trim()) { formError.value = '请填写用户名'; return }
-  if (!form.directory.trim()) { formError.value = '请填写目录'; return }
-  const body = {
-    username: form.username.trim(),
-    directory: form.directory.trim(),
-    enabled: form.enabled,
-    description: form.description.trim(),
-  }
-  if (editing.value) {
-    // 编辑时密码非空才更新密码
-    if (form.password) body.password = form.password
-  } else {
-    if (!form.password) { formError.value = '请填写密码'; return }
-    body.password = form.password
-  }
-  saving.value = true
-  try {
-    if (editing.value) await ftpusersApi.update(editing.value.id, body)
-    else await ftpusersApi.create(body)
-    formOpen.value = false
-    await loadAll()
-  } catch (e) {
-    formError.value = e.response?.data?.detail || e.message
-  } finally {
-    saving.value = false
   }
 }
 
@@ -279,18 +191,4 @@ tbody tr:hover { background: #f9fafb; }
 .badge.off { background: #f3f4f6; color: #6b7280; }
 
 .empty { text-align: center; color: #9ca3af; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 2000; }
-.modal { background: #fff; border-radius: 12px; padding: 18px; width: 560px; max-width: 92vw; box-shadow: 0 10px 30px rgba(0,0,0,0.18); max-height: 92vh; overflow: auto; }
-.modal h3 { margin: 0 0 12px; font-size: 16px; display: flex; align-items: center; gap: 8px; }
-.field { display: block; margin-bottom: 10px; }
-.field .label { display: block; font-size: 11px; color: #1d1d1f; font-weight: 600; margin-bottom: 5px; }
-.field input { width: 100%; box-sizing: border-box; border: 1px solid rgba(0,0,0,0.15); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-family: inherit; }
-.field input:focus { outline: none; border-color: #0a84ff; box-shadow: 0 0 0 3px rgba(10,132,255,0.15); }
-.field.check { display: flex; align-items: center; gap: 8px; }
-.field.check input { width: auto; }
-.field-row { display: flex; gap: 12px; }
-.field-row .field { flex: 1; }
-.error { color: #b91c1c; font-size: 12.5px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; }
-.actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 </style>

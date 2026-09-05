@@ -89,7 +89,7 @@
       @move="(x, y) => moveWindow(w.id, x, y)"
       @resize="(width, height) => resizeWindow(w.id, width, height)"
     >
-      <component :is="w.component" v-bind="w.props || {}" @close="handleCloseWindow(w.id)" @dirty="(v) => { const ww=openWindows.value.find(x=>x.id===w.id); if(ww) ww.dirty=v }" @openTerminal="openTerminalAt" @openEditor="openEditor" @openMedia="openMedia" @openUsers="openUsers" @openVip="openVip" @openUiSettings="openUiSettings" @openLogs="openContainerLogs" @openContainerTerminal="openContainerTerminal" @openContainerDetails="openContainerDetails" @openContainerStats="openContainerStats" @openContainerEdit="openContainerEdit" @openFiles="openFiles" @openDockerConfigEditor="openDockerConfigEditor" @openAppInstall="openAppStoreInstall" @openComposeEditor="openAppStoreComposeEditor" @openInstallLog="openAppStoreInstallLog" @openReadme="openAppStoreReadme" @openTaskCenter="openTasks" @openRuntimeCreate="openRuntimeCreate" @openConnectionForm="openConnectionForm" @openNetStorageBrowse="openNetStorageBrowse" @openNetStorageForm="openNetStorageForm" @openSiteEdit="openSiteEdit" />
+      <component :is="w.component" v-bind="w.props || {}" @close="handleCloseWindow(w.id)" @dirty="(v) => { const ww=openWindows.value.find(x=>x.id===w.id); if(ww) ww.dirty=v }" @openTerminal="openTerminalAt" @openEditor="openEditor" @openMedia="openMedia" @openUsers="openUsers" @openVip="openVip" @openUiSettings="openUiSettings" @openLogs="openContainerLogs" @openContainerTerminal="openContainerTerminal" @openContainerDetails="openContainerDetails" @openContainerStats="openContainerStats" @openContainerEdit="openContainerEdit" @openFiles="openFiles" @openDockerConfigEditor="openDockerConfigEditor" @openAppInstall="openAppStoreInstall" @openComposeEditor="openAppStoreComposeEditor" @openInstallLog="openAppStoreInstallLog" @openReadme="openAppStoreReadme" @openTaskCenter="openTasks" @openRuntimeCreate="openRuntimeCreate" @openConnectionForm="openConnectionForm" @openNetStorageBrowse="openNetStorageBrowse" @openNetStorageForm="openNetStorageForm" @openSiteEdit="openSiteEdit" @openFirewallRuleForm="openFirewallRuleForm" @openBackupTaskForm="openBackupTaskForm" @openBackupRemoteForm="openBackupRemoteForm" @openDatabaseManage="openDatabaseManage" @openDatabaseCreate="openDatabaseCreate" @openTamperForm="openTamperForm" @openSiteMaintenance="openSiteMaintenance" @openAppStoreConfig="openAppStoreConfig" @openCronTaskForm="openCronTaskForm" @openNotifyChannelForm="openNotifyChannelForm" @openNotifyRuleForm="openNotifyRuleForm" @openFrpProxyForm="openFrpProxyForm" @openGitDeployForm="openGitDeployForm" @openLogCollectForm="openLogCollectForm" @openServiceMonitorForm="openServiceMonitorForm" @openUptimeForm="openUptimeForm" @openFtpUserForm="openFtpUserForm" @openWafAclForm="openWafAclForm" @openSslUpload="openSslUpload" @openSslLeForm="openSslLeForm" @openSshKeyGen="openSshKeyGen" @openSshKeyImport="openSshKeyImport" @openSshKeyDeploy="openSshKeyDeploy" @openPortForwardForm="openPortForwardForm" />
     </WindowFrame>
 
     <!-- Dock -->
@@ -187,6 +187,29 @@ import AppStoreInstallWindow from './components/windows/AppStoreInstallWindow.vu
 import AppStoreComposeEditorWindow from './components/windows/AppStoreComposeEditorWindow.vue'
 import AppStoreInstallLogWindow from './components/windows/AppStoreInstallLogWindow.vue'
 import AppStoreReadmeWindow from './components/windows/AppStoreReadmeWindow.vue'
+import FirewallRuleFormWindow from './components/windows/FirewallRuleFormWindow.vue'
+import BackupTaskFormWindow from './components/windows/BackupTaskFormWindow.vue'
+import BackupRemoteFormWindow from './components/windows/BackupRemoteFormWindow.vue'
+import DatabaseManageWindow from './components/windows/DatabaseManageWindow.vue'
+import DatabaseCreateWindow from './components/windows/DatabaseCreateWindow.vue'
+import TamperFormWindow from './components/windows/TamperFormWindow.vue'
+import SiteMaintenanceWindow from './components/windows/SiteMaintenanceWindow.vue'
+import AppStoreConfigWindow from './components/windows/AppStoreConfigWindow.vue'
+import CronTaskFormWindow from './components/windows/CronTaskFormWindow.vue'
+import NotifyChannelFormWindow from './components/windows/NotifyChannelFormWindow.vue'
+import NotifyRuleFormWindow from './components/windows/NotifyRuleFormWindow.vue'
+import FrpProxyFormWindow from './components/windows/FrpProxyFormWindow.vue'
+import GitDeployFormWindow from './components/windows/GitDeployFormWindow.vue'
+import LogCollectFormWindow from './components/windows/LogCollectFormWindow.vue'
+import ServiceMonitorFormWindow from './components/windows/ServiceMonitorFormWindow.vue'
+import UptimeFormWindow from './components/windows/UptimeFormWindow.vue'
+import FtpUserFormWindow from './components/windows/FtpUserFormWindow.vue'
+import WafAclFormWindow from './components/windows/WafAclFormWindow.vue'
+import SslUploadWindow from './components/windows/SslUploadWindow.vue'
+import SslLeFormWindow from './components/windows/SslLeFormWindow.vue'
+import SshKeyGenWindow from './components/windows/SshKeyGenWindow.vue'
+import SshKeyImportWindow from './components/windows/SshKeyImportWindow.vue'
+import SshKeyDeployWindow from './components/windows/SshKeyDeployWindow.vue'
 import TasksWindow from './components/windows/TasksWindow.vue'
 import ShunxSecurityWindow from './components/windows/ShunxSecurityWindow.vue'
 import UISettingsWindow from './components/windows/UISettingsWindow.vue'
@@ -210,6 +233,7 @@ import BatchWindow from './components/windows/BatchWindow.vue'
 import GitDeployWindow from './components/windows/GitDeployWindow.vue'
 import ReportWindow from './components/windows/ReportWindow.vue'
 import PortForwardWindow from './components/windows/PortForwardWindow.vue'
+import PortForwardFormWindow from './components/windows/PortForwardFormWindow.vue'
 import ImageScanWindow from './components/windows/ImageScanWindow.vue'
 import SlowQueryWindow from './components/windows/SlowQueryWindow.vue'
 // 系统体检已合并进「ShunX保护机制」应用（详见 ShunxSecurityWindow）
@@ -233,7 +257,7 @@ import { startDocker, stopDocker, refresh as refreshDocker } from './store/docke
 import { nodes as nodesStore, refreshNodes } from './store/nodes'
 import { setRequestNode } from './store/requestNode'
 import { tamperState, startTamper, stopTamper } from './store/tamper'
-import { Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, BarChart3, FileCode2, History, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug, Pin, PinOff, EyeOff } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用）
+import { Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, Shield, ShieldAlert, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, BarChart3, FileCode2, History, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug, Pin, PinOff, EyeOff, Clock, BellRing, Gauge, KeyRound, FileUp, Send } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用）
 
 // --- 桌面根状态：登录态、动态壁纸、底栏主机徽标 ---
 const loggedIn = computed(() => !!auth.token)
@@ -745,6 +769,644 @@ function openEditor({ path, content }) {
     y: 60 + (openWindows.value.length * 25),
     width: 780,
     height: 520,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 防火墙：点击「新增端口/IP规则」打开独立的规则表单窗口（避免内嵌弹窗误触遮罩丢输入）
+function openFirewallRuleForm(payload) {
+  const id = ++windowSeq
+  // 窗口标题按类型展示（端口规则 / IP 规则）
+  const isPort = payload?.mode !== 'ip'
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'firewall-rule-form',
+    nodeId: boundNode,
+    title: isPort ? t('firewall.addPortRule') : t('firewall.addIpRule'),
+    titleKey: isPort ? 'firewall.addPortRule' : 'firewall.addIpRule',
+    icon: markRaw(Shield),
+    component: markRaw(FirewallRuleFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 420,
+    height: 340,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 计划任务：新增/编辑「定时任务」的独立表单窗口（mode: regular/standar，task 存在即为编辑）
+function openCronTaskForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.task
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'cron-task-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑定时任务' : '新建定时任务',
+    titleKey: null,
+    icon: markRaw(Clock),
+    component: markRaw(CronTaskFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 520,
+    height: 560,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 通知中心：新增/编辑「通知渠道」的独立表单窗口
+function openNotifyChannelForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.channel
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'notify-channel-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑通知渠道' : '添加通知渠道',
+    titleKey: null,
+    icon: markRaw(BellRing),
+    component: markRaw(NotifyChannelFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 520,
+    height: 560,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 通知中心：新增/编辑「告警规则」的独立表单窗口
+function openNotifyRuleForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.rule
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'notify-rule-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑告警规则' : '添加告警规则',
+    titleKey: null,
+    icon: markRaw(Gauge),
+    component: markRaw(NotifyRuleFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 480,
+    height: 420,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 内网穿透：新增/编辑「代理配置」的独立表单窗口
+function openFrpProxyForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.proxy
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'frp-proxy-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑代理' : '新增代理',
+    titleKey: null,
+    icon: markRaw(Radio),
+    component: markRaw(FrpProxyFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 560,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// Git 部署：新增/编辑「部署绑定」的独立表单窗口（binding.isNew 为创建）
+function openGitDeployForm(payload) {
+  const id = ++windowSeq
+  const isCreate = !!payload?.binding?.isNew
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'git-deploy-form',
+    nodeId: boundNode,
+    title: isCreate ? '创建部署绑定' : '编辑部署绑定',
+    titleKey: null,
+    icon: markRaw(FileCode2),
+    component: markRaw(GitDeployFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 520,
+    height: 560,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 日志中心：添加「日志收集」的独立表单窗口
+function openLogCollectForm(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'log-collect-form',
+    nodeId: boundNode,
+    title: '添加日志收集',
+    titleKey: null,
+    icon: markRaw(ScrollText),
+    component: markRaw(LogCollectFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 420,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 服务监控：新增/编辑「监控项」的独立表单窗口
+function openServiceMonitorForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.item
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'service-monitor-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑监控项' : '添加监控项',
+    titleKey: null,
+    icon: markRaw(Activity),
+    component: markRaw(ServiceMonitorFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 520,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 站点监控：新增/编辑「监控项」的独立表单窗口
+function openUptimeForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.item
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'uptime-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑监控项' : '添加监控项',
+    titleKey: null,
+    icon: markRaw(Activity),
+    component: markRaw(UptimeFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 400,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// FTP 用户：新增/编辑「FTP 用户」的独立表单窗口
+function openFtpUserForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.user
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'ftp-user-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑 FTP 用户' : '添加 FTP 用户',
+    titleKey: null,
+    icon: markRaw(UserCheck),
+    component: markRaw(FtpUserFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 460,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 应用防火墙：新增/编辑「自定义 ACL」的独立表单窗口（编辑结果经 onSaved 写回父窗口）
+function openWafAclForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.acl
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'waf-acl-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑 ACL' : '新增 ACL',
+    titleKey: null,
+    icon: markRaw(ShieldCheck),
+    component: markRaw(WafAclFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 420,
+    height: 440,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// SSL：证书「上传」独立窗口（证书名由多语言键提供）
+function openSslUpload(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'ssl-upload',
+    nodeId: boundNode,
+    title: t('ssl.uploadTitle'),
+    titleKey: 'ssl.uploadTitle',
+    icon: markRaw(Lock),
+    component: markRaw(SslUploadWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 420,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// SSL：证书「Let's Encrypt 申请」独立窗口
+function openSslLeForm(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'ssl-le-form',
+    nodeId: boundNode,
+    title: t('ssl.leTitle'),
+    titleKey: 'ssl.leTitle',
+    icon: markRaw(Lock),
+    component: markRaw(SslLeFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 380,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// SSH 密钥：生成密钥对的独立窗口
+function openSshKeyGen(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'ssh-key-gen',
+    nodeId: boundNode,
+    title: '生成密钥对',
+    titleKey: null,
+    icon: markRaw(KeyRound),
+    component: markRaw(SshKeyGenWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 420,
+    height: 360,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// SSH 密钥：导入私钥的独立窗口
+function openSshKeyImport(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'ssh-key-import',
+    nodeId: boundNode,
+    title: '导入私钥',
+    titleKey: null,
+    icon: markRaw(FileUp),
+    component: markRaw(SshKeyImportWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 520,
+    height: 560,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// SSH 密钥：部署私钥到节点的独立窗口
+function openSshKeyDeploy(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'ssh-key-deploy',
+    nodeId: boundNode,
+    title: '部署到节点',
+    titleKey: null,
+    icon: markRaw(Send),
+    component: markRaw(SshKeyDeployWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 360,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 备份中心：新建/编辑「备份任务」的独立表单窗口（避免内嵌弹窗误触遮罩丢输入）
+function openBackupTaskForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.task
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'backup-task-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑备份任务' : '新建备份任务',
+    titleKey: null,
+    icon: markRaw(Archive),
+    component: markRaw(BackupTaskFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 520,
+    height: 620,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 备份中心：新建/编辑「远程备份目标（WebDAV）」的独立表单窗口
+function openBackupRemoteForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.remote
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'backup-remote-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑远程备份目标' : '添加远程备份目标',
+    titleKey: null,
+    icon: markRaw(Cloud),
+    component: markRaw(BackupRemoteFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 480,
+    height: 320,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 数据库：点击「管理」打开独立的连接管理控制台窗口（库列表 / 查询，误触不丢查询内容）
+function openDatabaseManage(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'database-manage',
+    nodeId: boundNode,
+    title: t('database.manageTitle', { name: payload?.conn?.name || '' }),
+    titleKey: null,
+    icon: markRaw(Database),
+    component: markRaw(DatabaseManageWindow),
+    props: payload ? { ...payload } : {},
+    x: 160 + (openWindows.value.length * 30),
+    y: 70 + (openWindows.value.length * 25),
+    width: 720,
+    height: 520,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 数据库：管理窗口内点「创建数据库」打开的独立表单窗口
+function openDatabaseCreate(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'database-create',
+    nodeId: boundNode,
+    title: t('database.createDBTitle'),
+    titleKey: 'database.createDBTitle',
+    icon: markRaw(Database),
+    component: markRaw(DatabaseCreateWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 90 + (openWindows.value.length * 25),
+    width: 380,
+    height: 180,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 网页防篡改：点击「添加/编辑」打开独立的防护表单窗口（含长文本域，误触不丢内容）
+function openTamperForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.task
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'tamper-form',
+    nodeId: boundNode,
+    title: isEdit ? t('tamper.formTitleEdit', { name: payload?.task?.site_name || '' }) : t('tamper.formTitle'),
+    titleKey: null,
+    icon: markRaw(ShieldAlert),
+    component: markRaw(TamperFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 520,
+    height: 640,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 网站：右键「维护模式」打开的独立表单窗口（开关 + 自定义维护页 HTML）
+function openSiteMaintenance(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'site-maintenance',
+    nodeId: boundNode,
+    title: t('sites.maintTitle', { name: payload?.site?.name || '' }),
+    titleKey: null,
+    icon: markRaw(Wrench),
+    component: markRaw(SiteMaintenanceWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 420,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 应用商店：点击「索引地址配置」打开的独立表单窗口
+function openAppStoreConfig(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'appstore-config',
+    nodeId: boundNode,
+    title: t('appstore.indexConfigTitle'),
+    titleKey: 'appstore.indexConfigTitle',
+    icon: markRaw(Settings2),
+    component: markRaw(AppStoreConfigWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 220,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 端口转发：点击「新建」打开的独立表单窗口（选择节点 + 端口配置，误触不丢内容）
+function openPortForwardForm() {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'portforward-form',
+    nodeId: boundNode,
+    title: t('pf.create'),
+    titleKey: 'pf.create',
+    icon: markRaw(Unlink),
+    component: markRaw(PortForwardFormWindow),
+    props: {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 420,
+    height: 480,
     z: ++zSeq,
     minimized: false,
     maximized: false,

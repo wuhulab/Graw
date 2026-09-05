@@ -29,7 +29,7 @@
 
     <!-- 计划任务视图（合并自独立的「计划任务」应用） -->
     <div v-if="mode === 'cron'" class="hub-body">
-      <CronWindow />
+      <CronWindow @openCronTaskForm="emit('openCronTaskForm', $event)" />
     </div>
 
     <!-- 任务中心视图（合并自独立的「任务中心」应用） -->
@@ -43,6 +43,9 @@
 import { ref } from 'vue'   // 页签模式状态
 import CronWindow from './CronWindow.vue'   // 计划任务子窗口（crontab 定时任务管理）
 import TaskCenterWindow from './TaskCenterWindow.vue'   // 任务中心子窗口（应用商店任务实时进度）
+
+// 冒泡到桌面（App.vue）的独立表单窗口事件：把 CronWindow 弹出的「新增定时任务」事件转发给桌面统一打开
+const emit = defineEmits(['openCronTaskForm'])
 
 // 视图模式：'cron' 计划任务 / 'taskcenter' 任务中心
 const mode = ref('cron')
