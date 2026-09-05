@@ -89,7 +89,7 @@
       @move="(x, y) => moveWindow(w.id, x, y)"
       @resize="(width, height) => resizeWindow(w.id, width, height)"
     >
-      <component :is="w.component" v-bind="w.props || {}" @close="handleCloseWindow(w.id)" @dirty="(v) => { const ww=openWindows.value.find(x=>x.id===w.id); if(ww) ww.dirty=v }" @openTerminal="openTerminalAt" @openEditor="openEditor" @openMedia="openMedia" @openUsers="openUsers" @openVip="openVip" @openLogs="openContainerLogs" @openContainerTerminal="openContainerTerminal" @openContainerDetails="openContainerDetails" @openContainerStats="openContainerStats" @openContainerEdit="openContainerEdit" @openFiles="openFiles" @openDockerConfigEditor="openDockerConfigEditor" @openAppInstall="openAppStoreInstall" @openComposeEditor="openAppStoreComposeEditor" @openInstallLog="openAppStoreInstallLog" @openReadme="openAppStoreReadme" @openTaskCenter="openTasks" @openRuntimeCreate="openRuntimeCreate" @openConnectionForm="openConnectionForm" @openNetStorageBrowse="openNetStorageBrowse" @openNetStorageForm="openNetStorageForm" @openSiteEdit="openSiteEdit" />
+      <component :is="w.component" v-bind="w.props || {}" @close="handleCloseWindow(w.id)" @dirty="(v) => { const ww=openWindows.value.find(x=>x.id===w.id); if(ww) ww.dirty=v }" @openTerminal="openTerminalAt" @openEditor="openEditor" @openMedia="openMedia" @openUsers="openUsers" @openVip="openVip" @openUiSettings="openUiSettings" @openLogs="openContainerLogs" @openContainerTerminal="openContainerTerminal" @openContainerDetails="openContainerDetails" @openContainerStats="openContainerStats" @openContainerEdit="openContainerEdit" @openFiles="openFiles" @openDockerConfigEditor="openDockerConfigEditor" @openAppInstall="openAppStoreInstall" @openComposeEditor="openAppStoreComposeEditor" @openInstallLog="openAppStoreInstallLog" @openReadme="openAppStoreReadme" @openTaskCenter="openTasks" @openRuntimeCreate="openRuntimeCreate" @openConnectionForm="openConnectionForm" @openNetStorageBrowse="openNetStorageBrowse" @openNetStorageForm="openNetStorageForm" @openSiteEdit="openSiteEdit" />
     </WindowFrame>
 
     <!-- Dock -->
@@ -149,6 +149,9 @@
 
   <!-- ShunX 安全入口：登录后未配置入口时强制设置，阻止使用面板其他功能 -->
   <ShunXSetup v-if="loggedIn && shunxRequired" @saved="onShunxSaved" />
+
+  <!-- 全局快捷搜索（Ctrl+K / Spotlight）：搜索功能/节点/站点/容器并直达 -->
+  <CommandPalette v-if="loggedIn" ref="paletteRef" :app-items="paletteItems" @open="onPaletteOpen" />
 </template>
 
 <script setup>
@@ -202,6 +205,13 @@ import WebStatsWindow from './components/windows/WebStatsWindow.vue'
 import RewriteWindow from './components/windows/RewriteWindow.vue'
 import SiteOptsWindow from './components/windows/SiteOptsWindow.vue'
 import MetricsHistoryWindow from './components/windows/MetricsHistoryWindow.vue'
+import RollbackWindow from './components/windows/RollbackWindow.vue'
+import BatchWindow from './components/windows/BatchWindow.vue'
+import GitDeployWindow from './components/windows/GitDeployWindow.vue'
+import ReportWindow from './components/windows/ReportWindow.vue'
+import PortForwardWindow from './components/windows/PortForwardWindow.vue'
+import ImageScanWindow from './components/windows/ImageScanWindow.vue'
+import SlowQueryWindow from './components/windows/SlowQueryWindow.vue'
 // 系统体检已合并进「ShunX保护机制」应用（详见 ShunxSecurityWindow）
 // import HealthCheckWindow from './components/windows/HealthCheckWindow.vue'
 import FtpUsersWindow from './components/windows/FtpUsersWindow.vue'
@@ -210,6 +220,7 @@ import SessionsWindow from './components/windows/SessionsWindow.vue'
 import ShunXSetup from './components/ShunXSetup.vue'
 import TamperAlert from './components/TamperAlert.vue'
 import InstallCheckAlert from './components/InstallCheckAlert.vue'
+import CommandPalette from './components/CommandPalette.vue'
 import Login from './views/Login.vue'
 import { shunxApi, systemApi } from './api'
 import { auth, clearAuth, isAdmin } from './store/auth'
@@ -376,7 +387,21 @@ const shortcuts = ref([
   { key: 'sessions', label: '会话管理', titleKey: 'app.shortcut.sessions', icon: markRaw(MonitorSmartphone), component: markRaw(SessionsWindow), w: 900, h: 560, adminOnly: false, remoteCap: 'local' },
   { key: 'terminal', label: '终端', titleKey: 'app.shortcut.terminal', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true },
   // Foxcode：双击打开终端并自动输入 foxcode 命令启动
-  { key: 'foxcode', label: 'Foxcode', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true, props: { autoCommand: 'foxcode' } }
+  { key: 'foxcode', label: 'Foxcode', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true, props: { autoCommand: 'foxcode' } },
+  // 配置回滚：站点/防火墙配置的写前快照 + 一键恢复（管理员）
+  { key: 'rollback', label: '配置回滚', titleKey: 'app.shortcut.rollback', icon: markRaw(History), component: markRaw(RollbackWindow), w: 980, h: 580, adminOnly: true },
+  // 批量操作中心：多节点批量命令 / 批量容器启停（管理员）
+  { key: 'batch', label: '批量操作', titleKey: 'app.shortcut.batch', icon: markRaw(ServerCog), component: markRaw(BatchWindow), w: 1000, h: 620, adminOnly: true },
+  // 站点 Git 自动部署：绑定仓库 + Webhook 自动发布（管理员，面板自身管理项）
+  { key: 'gitdeploy', label: 'Git 部署', titleKey: 'app.shortcut.gitdeploy', icon: markRaw(FileCode2), component: markRaw(GitDeployWindow), w: 960, h: 600, adminOnly: true, remoteCap: 'local' },
+  // 巡检报告：每日/手动生成系统健康汇总并推送（管理员）
+  { key: 'report', label: '巡检报告', titleKey: 'app.shortcut.report', icon: markRaw(BarChart3), component: markRaw(ReportWindow), w: 960, h: 600, adminOnly: true },
+  // SSH 端口转发：本地直连远程节点服务（管理员，面向远程节点的隧道）
+  { key: 'portforward', label: '端口转发', titleKey: 'app.shortcut.portforward', icon: markRaw(Unlink), component: markRaw(PortForwardWindow), w: 880, h: 580, adminOnly: true },
+  // 镜像漏洞扫描：本地 advisory 比对（管理员）
+  { key: 'imgsafety', label: '镜像扫描', titleKey: 'app.shortcut.imgsafety', icon: markRaw(ShieldCheck), component: markRaw(ImageScanWindow), w: 980, h: 600, adminOnly: true },
+  // MySQL 慢查询分析：慢日志 TOP N 与建议（管理员）
+  { key: 'slowquery', label: '慢查询分析', titleKey: 'app.shortcut.slowquery', icon: markRaw(Activity), component: markRaw(SlowQueryWindow), w: 1000, h: 620, adminOnly: true }
 ])
 
 // 桌面快捷方式：管理员可见全部，普通用户仅可见非管理功能。
@@ -538,6 +563,9 @@ function openUsers() { openWindow('users') }
 function openChangePwd() { openWindow('changepwd') }
 function openSettings() { openWindow('settings') }
 function openVip() { openWindow('vip') }
+// 「设置」窗口 →「界面设置」入口：复用桌面快捷方式门控（adminOnly + VIP），
+// 未解锁 VIP 时 openWindow 内部会提示并跳转「付费解锁」窗口。
+function openUiSettings() { openWindow('uisettings') }
 function openTasks() { openWindow('tasks') }
 
 // 报告问题：跳转到项目 GitHub Issues 新建页（新窗口，noopener 防钓鱼）
@@ -560,6 +588,25 @@ function onDocClick(e) {
   const btn = e.target.closest('.start-button')
   const menu = e.target.closest('.start-menu')
   if (!btn && !menu && !ctx) startMenuOpen.value = false
+}
+
+// --- 全局快捷搜索（CommandPalette）：
+// 功能入口取「对当前用户可见」的快捷方式（复用 visibleShortcuts 门控）；
+// 站点/容器/节点由 CommandPalette 内部拉取；执行动作统一走 openWindow（含门控）。
+const paletteRef = ref(null)
+const paletteItems = computed(() =>
+  visibleShortcuts.value.map(s => ({ key: s.key, label: s.titleKey ? t(s.titleKey) : (s.label || s.key) }))
+)
+function onPaletteOpen(key) {
+  openWindow(key) // openWindow 内部已做 adminOnly / remoteCap / VIP 三层守卫
+}
+function onPaletteGlobalKey(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    paletteRef.value?.toggle()
+  } else if (e.key === 'Escape') {
+    paletteRef.value?.close()
+  }
 }
 
 // --- 通用窗口打开：含 adminOnly / remoteCap / VIP 三重门控 ---
@@ -1260,6 +1307,9 @@ onMounted(() => {
   updateClock()
   clockTimer = setInterval(updateClock, 1000)
   document.addEventListener('mousedown', onDocClick)
+  // 全局快捷搜索：Ctrl/Cmd+K 唤出（浏览器保留常用 Ctrl+K 聚焦地址栏，
+  // 通常在输入框内不拦截，这里在面板顶层监听一次即可）
+  document.addEventListener('keydown', onPaletteGlobalKey)
 })
 
 // 统一面板兼容：把「当前请求目标节点」设为当前聚焦/打开窗口绑定的节点。
@@ -1298,5 +1348,6 @@ onUnmounted(() => {
   stopCarousel()
   clearInterval(clockTimer)
   document.removeEventListener('mousedown', onDocClick)
+  document.removeEventListener('keydown', onPaletteGlobalKey)
 })
 </script>

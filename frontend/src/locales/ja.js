@@ -1239,6 +1239,9 @@ Graw コミュニティアプリストア（以下「本ストア」）は、Shu
   settings: {
     title: 'アカウント',
     openUsers: 'アカウント管理を開く',
+    uiSettingsTitle: 'UI設定',
+    uiSettingsHint: 'ログインページとデスクトップの外観をカスタマイズ：サイト名、ウェルカムメッセージ、ロゴ、動的壁紙、リンググラフの配色など。',
+    openUiSettings: 'UI設定を開く',
     shunxTitle: 'ShunX セキュアエントリ',
     shunxPlaceholder: '例: shunx-8f3k2q7m（空欄で保存すると解除）',
     shunxNotSet: 'セキュアエントリ未設定（現在は直接ログイン可）',

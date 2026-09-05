@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from app.hostfs import host_path, host_cmd, host_which
 from app import webserver
+from app import config_snapshot
 
 logger = logging.getLogger("graw.sites")
 
@@ -513,9 +514,18 @@ def _apply_external_nginx_config(site: dict, enabled: bool):
     if not conf_path:
         return
     if enabled:
+        # 写前快照：把旧 conf 内容存档，便于配置异常时一键回滚
+        config_snapshot.capture_before("site", site.get("id", "ext"), conf_path,
+                                       route="_apply_external_nginx_config")
         os.makedirs(os.path.dirname(conf_path), exist_ok=True)
-        with open(conf_path, "w", encoding="utf-8") as f:
-            f.write(_nginx_site_config(site))
+        if site.get("maintenance"):
+            # 维护模式：写维护页并生成「仅服务维护页」的 conf
+            _write_site_maint_file(site, True)
+            with open(conf_path, "w", encoding="utf-8") as f:
+                f.write(_maintenance_nginx_config(site))
+        else:
+            with open(conf_path, "w", encoding="utf-8") as f:
+                f.write(_nginx_site_config(site))
     else:
         if os.path.exists(conf_path):
             os.remove(conf_path)
@@ -738,6 +748,8 @@ def _apply_nginx_config(site_id: str, site: dict, enabled: bool):
         stream_conf = os.path.join(stream_dir, conf_name)
         if enabled:
             os.makedirs(stream_dir, exist_ok=True)
+            config_snapshot.capture_before("site", site_id, stream_conf,
+                                           route="_apply_nginx_config")
             with open(stream_conf, "w", encoding="utf-8") as f:
                 f.write(_nginx_stream_config(site))
             _ensure_stream_include()
@@ -759,8 +771,16 @@ def _apply_nginx_config(site_id: str, site: dict, enabled: bool):
     conf = os.path.join(conf_dir, conf_name)
     if enabled:
         os.makedirs(conf_dir, exist_ok=True)
-        with open(conf, "w", encoding="utf-8") as f:
-            f.write(_nginx_site_config(site))
+        config_snapshot.capture_before("site", site_id, conf,
+                                       route="_apply_nginx_config")
+        if site.get("maintenance"):
+            # 维护模式：写维护页并生成「仅服务维护页」的 conf
+            _write_site_maint_file(site, True)
+            with open(conf, "w", encoding="utf-8") as f:
+                f.write(_maintenance_nginx_config(site))
+        else:
+            with open(conf, "w", encoding="utf-8") as f:
+                f.write(_nginx_site_config(site))
     else:
         if os.path.exists(conf):
             os.remove(conf)
@@ -769,6 +789,115 @@ def _apply_nginx_config(site_id: str, site: dict, enabled: bool):
 def _reload_nginx():
     # 按当前引擎（nginx/openresty）执行 reload
     webserver.reload()
+
+
+# ---------------------------------------------------------------------------
+# 维护模式：一键把站点切到「维护中」维护页（nginx 层拦截）
+#
+# 实现思路：
+#   - 维护中 conf 复用站点原 root，仅对外暴露 /_mainten.html 维护页，
+#     其余请求一律 503（error_page 指向维护页）；
+#   - 面板把维护页 HTML（默认内置 / 用户自定义）持久化在
+#     data/maintenance/{site_id}.html，应用配置时写到站点 root/_mainten.html；
+#   - 关闭维护即写回正常 conf 并删除 _mainten.html 与本地存档。
+# 安全：site_id 白名单防穿越；html 走 Pydantic 长度上限限制。
+# ---------------------------------------------------------------------------
+MAINT_FILE = "_mainten.html"
+MAINT_DIR = os.path.join(DATA_DIR, "maintenance")
+
+# 默认维护页（文案面向普通访客，无敏感信息）
+_DEFAULT_MAINT_HTML = """<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>维护中</title>
+<style>
+body{margin:0;font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+background:#f6f8fb;color:#334;display:flex;align-items:center;justify-content:center;height:100vh}
+.box{text-align:center;padding:32px;background:#fff;border-radius:12px;
+box-shadow:0 6px 24px rgba(30,60,120,.08)}
+h1{font-size:22px;margin:0 0 10px}h1 .dot{display:inline-block;width:10px;height:10px;
+border-radius:50%;background:#f39c12;margin-right:8px;vertical-align:2px}
+p{color:#666;font-size:14px}
+</style></head><body>
+<div class="box"><h1><span class="dot"></span>网站维护中</h1>
+<p>我们正在对站点进行升级维护，请稍后再访问。</p></div>
+</body></html>
+"""
+
+
+def _maint_html_path(site_id: str) -> str:
+    """维护 HTML 存档路径（site_id 白名单防穿越）。"""
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{1,127}", site_id or ""):
+        raise HTTPException(status_code=400, detail="站点 ID 非法")
+    return os.path.join(MAINT_DIR, site_id + ".html")
+
+
+def _load_maint_html(site_id: str) -> str:
+    """读取站点维护页 HTML（无存档用默认页；损坏回退默认）。"""
+    p = _maint_html_path(site_id)
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return _DEFAULT_MAINT_HTML
+
+
+def _save_maint_html(site_id: str, html: str) -> None:
+    """持久化站点维护页 HTML（原子写；清空/空串删除存档回退默认）。"""
+    p = _maint_html_path(site_id)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    content = (html or "").strip()
+    if not content:
+        content = _DEFAULT_MAINT_HTML
+    tmp = p + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(content)
+    os.replace(tmp, p)
+
+
+def _write_site_maint_file(site: dict, apply: bool) -> None:
+    """把维护页写到（或从）站点 root 删除。apply=True 写入，False 删除。"""
+    root = _conf_token(site.get("root") or "")
+    if not root:
+        return
+    real_root = host_path(root)
+    dst = os.path.join(real_root, MAINT_FILE)
+    try:
+        if apply:
+            os.makedirs(real_root, exist_ok=True)
+            with open(dst, "w", encoding="utf-8") as f:
+                f.write(_load_maint_html(site.get("id", "site")))
+        else:
+            if os.path.exists(dst):
+                os.remove(dst)
+    except OSError as e:
+        logger.warning("写维护页文件失败 %s: %s", dst, e)
+
+
+def _maintenance_nginx_config(site: dict) -> str:
+    """生成「维护中」nginx server 配置：仅放行 /_mainten.html，其余 503。"""
+    server_name = _site_server_name(site)
+    port = int(site.get("port", 80) or 80)
+    lines = [f"# Graw Maintenance mode: {site.get('id', '')}"]
+    ssl = site.get("ssl", {}) or {}
+    if ssl.get("enabled") and ssl.get("cert") and ssl.get("key"):
+        cert = _conf_token(ssl.get("cert") or "")
+        key = _conf_token(ssl.get("key") or "")
+        lines.append("server {")
+        lines.append("    listen 443 ssl;")
+        lines.append("    server_name %s;" % server_name)
+        lines.append(f"    ssl_certificate {cert};")
+        lines.append(f"    ssl_certificate_key {key};")
+    else:
+        lines.append("server {")
+        lines.append(f"    listen {port};")
+        lines.append("    server_name %s;" % server_name)
+    lines.append(f"    root {_conf_token(site.get('root') or '/var/www/html')};")
+    lines.append(f"    location = /{MAINT_FILE} {{ access_log off; }}")
+    lines.append("    location / { return 503; }")
+    lines.append(f"    error_page 503 /{MAINT_FILE};")
+    lines.append("}")
+    return "\n".join(lines)
 
 
 def _apache_site_config(site: dict) -> str:
@@ -794,6 +923,8 @@ def _apply_apache_config(site_id: str, site: dict, enabled: bool):
     if enabled:
         os.makedirs(avail_dir, exist_ok=True)
         os.makedirs(enab_dir, exist_ok=True)
+        config_snapshot.capture_before("site", site_id, avail,
+                                       route="_apply_apache_config")
         with open(avail, "w", encoding="utf-8") as f:
             f.write(_apache_site_config(site))
         if os.path.exists(enab):
@@ -1116,3 +1247,43 @@ async def delete_site(site_id: str):
     sites = [s for s in sites if s["id"] != site_id]
     _save_sites(sites)
     return {"ok": True}
+
+
+class MaintenanceReq(BaseModel):
+    """维护模式开关请求：enabled 必填；html 可选（空串/缺省用默认维护页）。"""
+
+    enabled: bool
+    html: Optional[str] = Field(default=None, max_length=65536)
+
+
+@router.post("/{site_id}/maintenance")
+async def set_maintenance(site_id: str, req: MaintenanceReq):
+    """一键开启/关闭站点维护模式（nginx 层拦截，保留原站点 root）。"""
+    sites = _load_sites()
+    site = next((s for s in sites if s["id"] == site_id), None)
+    external = False
+    if not site:
+        site = _find_external_site(site_id)
+        if not site:
+            raise HTTPException(status_code=404, detail="Site not found")
+        external = True
+    # 持久化自定义维护页 HTML（空串回退默认页）
+    if req.html is not None:
+        _save_maint_html(site_id, req.html)
+    site["maintenance"] = bool(req.enabled)
+    # 重新应用配置：维护中 → 写维护 conf；关闭 → 写回正常 conf 并清理维护页
+    if external:
+        _apply_external_nginx_config(site, site.get("enabled", True))
+        return {"ok": True, "external": True, "maintenance": site.get("maintenance")}
+    if site.get("enabled"):
+        ws = _web_server_type()
+        if ws in ("nginx", "openresty"):
+            _apply_nginx_config(site_id, site, True)
+            _reload_nginx()
+        elif ws == "apache":
+            _apply_apache_config(site_id, site, True)
+    else:
+        # 站点停用状态下仅记录维护标记，待启用时一并生效
+        pass
+    _save_sites(sites)
+    return {"ok": True, "maintenance": site.get("maintenance")}

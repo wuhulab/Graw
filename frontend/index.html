@@ -1,17 +1,36 @@
 <!-- Graw 单页应用（SPA）入口 HTML 外壳。
      浏览器加载后仅含一个 #app 挂载点；Vue 经 /src/main.js 模块脚本启动并渲染整个桌面界面。
-     后端 API 经 Vite 代理（开发期）或同源托管（生产）提供，本页不含任何业务 HTML。 -->
+     后端 API 经 Vite 代理（开发期）或同源托管（生产）提供，本页不含任何业务 HTML。
+     PWA：manifest + theme-color + Service Worker 注册（https/localhost 才注册，
+     http+IP 环境注册失败时静默降级，不影响面板使用）。 -->
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 移动端视口 + PWA 主题：窄屏下桌面按 isTouchDevice+媒体查询自适应 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f1722" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <title>Graw Server Panel</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
   <body>
     <div id="app"></div>
     <!-- 入口模块：Vite 以 ES Module 方式加载并启动 Vue 应用 -->
     <script type="module" src="/src/main.js"></script>
+    <!-- PWA 离线壳：仅 https / localhost 可注册；失败静默降级 -->
+    <script>
+      ;(function () {
+        if (!('serviceWorker' in navigator)) return
+        var okHost = location.protocol === 'https:' || ['localhost', '127.0.0.1'].indexOf(location.hostname) >= 0
+        if (!okHost) return
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/sw.js').catch(function () {})
+        })
+      })()
+    </script>
   </body>
 </html>

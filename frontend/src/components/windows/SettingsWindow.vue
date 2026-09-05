@@ -298,49 +298,11 @@
         </template>
       </div>
 
-      <div class="block">
-        <div class="block-title">{{ $t('settings.panelTitle') }}</div>
-        <div class="row">
-          <label class="switch-label">
-            <input type="checkbox" v-model="settings.showTaskbarText" />
-            <span>{{ $t('settings.showTaskbarText') }}</span>
-          </label>
-        </div>
-        <div class="row">
-          <label class="switch-label">
-            <input type="checkbox" v-model="settings.taskbarTextOnly" />
-            <span>{{ $t('settings.taskbarTextOnly') }}</span>
-          </label>
-        </div>
-        <div class="row">
-          <label class="switch-label">
-            <input type="checkbox" v-model="settings.hideFoxcode" />
-            <span>{{ $t('settings.hideFoxcode') }}</span>
-          </label>
-        </div>
-
-        <!-- 桌面应用图标下方文字样式：字号 / 颜色 / 黑边描边（即改即存，应用到桌面） -->
-        <div style="border-top:1px dashed rgba(0,0,0,0.12); margin:8px 0 4px; padding-top:10px;">
-          <div class="row" style="gap:10px; justify-content:space-between;">
-            <span style="font-size:12px; color:#1d1d1f;">{{ $t('settings.shortcutFontSize') }}</span>
-            <input v-model.number="settings.shortcutFontSize" type="number" min="8" max="24" step="1" style="width:80px;" />
-          </div>
-          <div style="font-size:11px;color:#8e8e93;">{{ $t('settings.shortcutFontSizeHint') }}</div>
-          <div class="row" style="gap:10px; justify-content:space-between;">
-            <span style="font-size:12px; color:#1d1d1f;">{{ $t('settings.shortcutLabelColor') }}</span>
-            <div style="display:flex; gap:6px; align-items:center;">
-              <input type="color" v-model="settings.shortcutLabelColor" style="width:42px;height:30px;padding:2px;border:1px solid rgba(0,0,0,0.12);border-radius:6px;background:#fff;" />
-              <input v-model.trim="settings.shortcutLabelColor" maxlength="7" spellcheck="false" style="width:90px;" placeholder="#ffffff" />
-            </div>
-          </div>
-          <div class="row">
-            <label class="switch-label">
-              <input type="checkbox" v-model="settings.shortcutLabelStroke" />
-              <span>{{ $t('settings.shortcutLabelStroke') }}</span>
-            </label>
-          </div>
-          <div style="font-size:11px;color:#8e8e93;">{{ $t('settings.shortcutLabelStrokeHint') }}</div>
-        </div>
+      <!-- 界面设置入口（仅管理员）：引导打开独立的「界面设置」窗口（网站名/欢迎语/Logo/动态壁纸/环形配色） -->
+      <div class="block" v-if="isAdmin()">
+        <div class="block-title">{{ $t('settings.uiSettingsTitle') }}</div>
+        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('settings.uiSettingsHint') }}</div>
+        <button class="btn" @click="emit('openUiSettings')">{{ $t('settings.openUiSettings') }}</button>
       </div>
 
       <!-- 回收站设置（仅管理员）：删除的文件是否进入回收站、到期自动清理天数 -->
@@ -368,37 +330,6 @@
           </button>
           <span v-if="rcMsg" :class="['msg', rcMsgType]">{{ rcMsg }}</span>
         </div>
-      </div>
-
-      <!-- 桌面快捷方式：隐藏的应用（恢复） / 固定到任务栏（取消固定） / 仅当前用户 -->
-      <div class="block">
-        <div class="block-title">{{ $t('desktop.title') }}</div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('desktop.titleHint') }}</div>
-
-        <!-- 仅当前用户开关：控制隐藏/固定偏好只对本账号生效（否则全局共享） -->
-        <div class="row" style="justify-content:space-between; padding:2px 0 6px;">
-          <label class="switch-label">
-            <input type="checkbox" v-model="desktopPrefs.perUser" @change="onPerUserChange" />
-            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('desktop.perUser') }}</span>
-          </label>
-          <span style="font-size:11px;color:#8e8e93;">{{ $t('desktop.perUserHint') }}</span>
-        </div>
-
-        <!-- 已隐藏的应用：可在此恢复；已固定的应用：可取消固定 -->
-        <template v-if="hiddenShortcuts.length || pinnedShortcutsManage.length">
-          <div style="font-size:12px;font-weight:600;color:#1d1d1f;margin:6px 0 4px;">{{ $t('desktop.hiddenSection') }}</div>
-          <div v-for="h in hiddenShortcuts" :key="'h-' + h.key" class="row" style="justify-content:space-between;padding:3px 0;">
-            <span style="font-size:12px;color:#1d1d1f;">{{ displayScName(h) }}</span>
-            <button class="btn btn-mini" @click="restoreShortcut(h.key)">{{ $t('desktop.restore') }}</button>
-          </div>
-
-          <div style="font-size:12px;font-weight:600;color:#1d1d1f;margin:8px 0 4px;">{{ $t('desktop.pinnedSection') }}</div>
-          <div v-for="p in pinnedShortcutsManage" :key="'p-' + p.key" class="row" style="justify-content:space-between;padding:3px 0;">
-            <span style="font-size:12px;color:#1d1d1f;">{{ displayScName(p) }}</span>
-            <button class="btn btn-mini" @click="unpinShortcut(p.key)">{{ $t('desktop.unpin') }}</button>
-          </div>
-        </template>
-        <div v-else style="font-size:12px;color:#8e8e93;padding:4px 0;">{{ $t('desktop.empty') }}</div>
       </div>
 
       <!-- 应用接口开放协议（GPOP）：插件功能总开关（仅管理员） -->
@@ -487,7 +418,6 @@ import { settings } from '../../store/settings'                 // 全局界面�
 import { isAdmin } from '../../store/auth'                      // 管理员门控：限定敏感区块
 import { vip as vipStore, refreshVip, isVip } from '../../store/vip'   // VIP 状态：解锁付费功能
 import { nodesApi, shunxApi, panelApi, updateApi, webmodeApi, authApi, agentApi, recycleApi, pluginApi } from '../../api'   // 各设置区块后端接口
-import { desktopPrefs, showShortcut, unpinShortcut } from '../../store/desktopPrefs'   // 桌面快捷方式偏好（隐藏/固定/仅当前用户）
 import { nodes as nodesStore, refreshNodes, setCurrentNode } from '../../store/nodes'   // 多节点状态与当前节点切换
 import { LANGUAGES, setLocale } from '../../locales'            // 语言清单与切换函数
 import ConfirmDialog from '../ConfirmDialog.vue'                // 高危操作二次确认弹窗（输入面板密码）
@@ -499,7 +429,7 @@ const { t } = useI18n()
 // 其中仅 openUsers / openVip 会被本组件实际触发，其余为窗口系统公共事件。
 const emit = defineEmits([
   'close', 'dirty',
-  'openUsers', 'openVip',
+  'openUsers', 'openVip', 'openUiSettings',
   'openTerminal', 'openEditor', 'openMedia', 'openLogs',
   'openContainerTerminal', 'openContainerDetails', 'openContainerStats', 'openContainerEdit',
   'openFiles', 'openDockerConfigEditor',
@@ -901,66 +831,6 @@ async function saveRecycle() {
   } finally {
     rcSaving.value = false
   }
-}
-
-// ---- 桌面快捷方式（隐藏/固定 管理，放在「设置 → 桌面」区块） ----
-// 快捷方式的完整清单（key/标题/图标）由 App.vue 维护；这里只需一份可展示的
-// key → 名称映射（titleKey 走 i18n，缺省回退 label），用于列出隐藏/固定的项。
-const DESKTOP_SC_DEFS = [
-  { key: 'sites', label: '网站', titleKey: 'app.shortcut.sites' },
-  { key: 'database', label: '数据库', titleKey: 'app.shortcut.database' },
-  { key: 'frp', label: 'Frp内网穿透', titleKey: 'app.shortcut.frp' },
-  { key: 'logs', label: '日志', titleKey: 'app.shortcut.logs' },
-  { key: 'docker', label: 'Docker', titleKey: 'app.shortcut.docker' },
-  { key: 'appstore', label: '应用商店', titleKey: 'app.shortcut.appstore' },
-  { key: 'tasks', label: '任务', titleKey: 'app.shortcut.tasks' },
-  { key: 'shunxprotection', label: 'ShunX保护机制', titleKey: 'app.shortcut.shunxprotection' },
-  { key: 'runtime', label: '运行环境', titleKey: 'app.shortcut.runtime' },
-  { key: 'process', label: '进程管理', titleKey: 'app.shortcut.process' },
-  { key: 'files', label: '文件管理', titleKey: 'app.shortcut.files' },
-  { key: 'recycle', label: '回收站', titleKey: 'app.shortcut.recycle' },
-  { key: 'netstorage', label: '网络储存', titleKey: 'app.shortcut.netstorage' },
-  { key: 'uisettings', label: '界面设置', titleKey: 'app.shortcut.uisettings' },
-  { key: 'disks', label: '磁盘管理', titleKey: 'app.shortcut.disks' },
-  { key: 'monitoring', label: '监控', titleKey: 'app.shortcut.monitoring' },
-  { key: 'webstats', label: '访问统计', titleKey: 'app.shortcut.webstats' },
-  { key: 'rewrite', label: '伪静态规则', titleKey: 'app.shortcut.rewrite' },
-  { key: 'siteopts', label: '防盗链缓存', titleKey: 'app.shortcut.siteopts' },
-  { key: 'metricshistory', label: '历史监控', titleKey: 'app.shortcut.metricshistory' },
-  { key: 'certcheck', label: '证书到期', titleKey: 'app.shortcut.certcheck' },
-  { key: 'ftpusers', label: 'FTP用户', titleKey: 'app.shortcut.ftpusers' },
-  { key: 'phpversions', label: 'PHP版本', titleKey: 'app.shortcut.phpversions' },
-  { key: 'sessions', label: '会话管理', titleKey: 'app.shortcut.sessions' },
-  { key: 'terminal', label: '终端', titleKey: 'app.shortcut.terminal' },
-  { key: 'foxcode', label: 'Foxcode', titleKey: '' },
-]
-
-function scDefByKey(key) {
-  return DESKTOP_SC_DEFS.find(d => d.key === key)
-}
-
-function displayScName(sc) {
-  if (!sc) return ''
-  return sc.titleKey ? t(sc.titleKey) : (sc.label || sc.key)
-}
-
-// 已隐藏快捷方式（含名称）：按固定顺序展示，便于恢复
-const hiddenShortcuts = computed(() =>
-  desktopPrefs.hiddenKeys.map(k => scDefByKey(k)).filter(Boolean)
-)
-
-// 固定到任务栏的快捷方式（含名称），可按需取消固定
-const pinnedShortcutsManage = computed(() =>
-  desktopPrefs.pinnedKeys.map(k => scDefByKey(k)).filter(Boolean)
-)
-
-function restoreShortcut(key) {
-  showShortcut(key)
-}
-
-function onPerUserChange() {
-  // perUser 已在 v-model 写入，store 内部会自动切换存储作用域并重读
-  desktopPrefs.perUser = !!desktopPrefs.perUser
 }
 
 // ---- 应用接口开放协议（GPOP）：插件功能总开关 ----

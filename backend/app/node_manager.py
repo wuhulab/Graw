@@ -702,6 +702,39 @@ def host_shell(command: str, **kwargs) -> subprocess.CompletedProcess:
     return _run_ssh(node, command, **kwargs)
 
 
+def run_on_node(node_id: str, fn) -> object:
+    """在指定节点的上下文内执行 fn，返回其返回值。
+
+    背景（批量操作/巡检/Git 部署等跨节点功能共用）：
+      asyncio.to_thread 开启的工作线程在事件循环中会被复用，若直接在
+      worker 线程里调用 set_request_node，contextvars 会在线程复用时
+      残留/串扰——把外部并发请求的「当前节点」一并污染。因此这里用
+      contextvars.copy_context() 克隆当前上下文，并在独立的 ctx 内
+      set_request_node + 执行，set 只作用于本次调用，互不干扰
+
+    Args:
+        node_id: 目标节点 ID（local 或 SSH 节点），无此节点时抛 ValueError。
+        fn: 零参可调用对象（内部应使用 node_manager.host_shell / host_cmd
+            等「当前节点感知」的执行入口）。
+
+    Returns:
+        fn 的返回值（如 subprocess.CompletedProcess）。
+
+    Raises:
+        ValueError: 节点不存在。
+    """
+    if not node_id or get_node(node_id) is None:
+        raise ValueError(f"节点不存在: {node_id}")
+    ctx = contextvars.copy_context()
+
+    def _inner() -> object:
+        # 在克隆出的独立上下文里设置请求级节点，仅对本线程本次调用生效
+        set_request_node(node_id)
+        return fn()
+
+    return ctx.run(_inner)
+
+
 def host_which(cmd: str) -> Optional[str]:
     """在当前管理主机上探测命令是否存在（返回固定占位路径或 None）。
 

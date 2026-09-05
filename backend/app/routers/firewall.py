@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.node_manager import host_cmd
+from app import config_snapshot
 
 
 def _validate_ip(value: str) -> str:
@@ -84,6 +85,9 @@ def _load_fw() -> dict:
 
 
 def _save_fw(data: dict):
+    # 写前快照：把当前防火墙规则 JSON 存档，便于规则误改时一键回滚
+    config_snapshot.capture_before("firewall", "firewall", FW_FILE,
+                                   route="_save_fw")
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(FW_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)

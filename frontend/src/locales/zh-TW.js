@@ -1247,6 +1247,9 @@ Graw 社群應用商店（以下簡稱"本商店"）是由 ShunX 公益母團隊
   settings: {
     title: '帳號',
     openUsers: '開啟帳號管理',
+    uiSettingsTitle: '介面設定',
+    uiSettingsHint: '自訂登入頁與桌面觀感：網站名、歡迎語、Logo、動態桌布、環形統計圖配色等。',
+    openUiSettings: '開啟介面設定',
     shunxTitle: 'ShunX 安全入口',
     shunxPlaceholder: '例如 shunx-8f3k2q7m（留空儲存則清除）',
     shunxNotSet: '未設定安全入口（目前允許直接登入）',

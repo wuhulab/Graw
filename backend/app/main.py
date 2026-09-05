@@ -45,6 +45,13 @@ from app.routers import (
     webstats,
     rewrite,
     sitesopts,
+    rollback,
+    batch,
+    gitdeploy as gitdeploy_api,
+    report,
+    portforward,
+    imgsafety,
+    slowquery,
     svcmonitor,
     sshkeys,
     healthcheck,
@@ -67,6 +74,8 @@ from app import node_manager
 from app import agent_client
 from app import trash
 from app import plugin_protocol
+from app import reporting
+from app import portforward as pf_store
 
 # 权限分级：
 #   PROTECTED - 仅需登录（只读信息类接口，如系统概览/备忘录，供桌面展示）
@@ -117,6 +126,10 @@ async def lifespan(app: FastAPI):
     await svcmonitor.start_monitor()
     # 启动回收站后台自动清理（按小时清理所有节点过期回收站条目）
     await trash.start_auto_purge()
+    # 启动每日巡检报告协程（每天 08:00 生成并推送，见 app/reporting.py）
+    reporting.start_daily()
+    # 恢复持久化的 SSH 端口转发隧道（enabled=true 条目）
+    pf_store.restore_all()
     yield
     # 关闭后台采集协程
     await system.stop_metrics_producer()
@@ -126,6 +139,8 @@ async def lifespan(app: FastAPI):
     await certcheck.stop_monitor()
     await svcmonitor.stop_monitor()
     await trash.stop_auto_purge()
+    reporting.stop_daily()
+    pf_store.stop_all()
 
 
 # 安全：默认关闭交互式 API 文档（/docs、/redoc、/openapi.json）。
@@ -196,6 +211,9 @@ _AGENT_PROXY_EXCLUDE_PREFIX = (
     "/api/shunx",
     "/api/vip",
     "/api/health",
+    "/api/batch",
+    "/api/gitdeploy",
+    "/api/portforward",
 )
 
 
@@ -542,6 +560,36 @@ app.include_router(rewrite.router, prefix="/api/rewrite", tags=["rewrite"], depe
 
 # 站点增强配置：防盗链 / gzip / 静态资源缓存（写入 nginx 配置，管理员）
 app.include_router(sitesopts.router, prefix="/api/sitesopts", tags=["sitesopts"], dependencies=ADMIN)
+
+# 配置快照 / 一键回滚：站点 nginx conf 与防火墙规则的写前快照与恢复（管理员）
+app.include_router(
+    rollback.router, prefix="/api/rollback", tags=["rollback"], dependencies=ADMIN
+)
+
+# 批量操作中心：多节点批量命令 / 批量容器启停（管理员；排除 Agent 代理——
+# 批量命令由主面板持全部节点凭据直连执行）
+app.include_router(batch.router, prefix="/api/batch", tags=["batch"], dependencies=ADMIN)
+
+# 站点 Git 自动部署：CRUD 与手动触发（管理员）；webhook 端点公开、令牌校验
+app.include_router(
+    gitdeploy_api.admin_router, prefix="/api/gitdeploy", tags=["gitdeploy"], dependencies=ADMIN
+)
+# webhook 接收端点不能挂全局 ADMIN（Git 平台无面板登录态），端点内校验签名；
+# 且必须排除 Agent 代理——部署要在主面板上依 deploy.node_id 分发执行
+app.include_router(gitdeploy_api.webhook_router, prefix="/api/gitdeploy", tags=["gitdeploy"])
+
+# 巡检报告：手动生成 / 历史查看（管理员；每日 08:00 由 lifespan 协程自动生成）
+app.include_router(report.router, prefix="/api/report", tags=["report"], dependencies=ADMIN)
+
+# SSH 端口转发：本地直连远程服务（管理员，排除 Agent 代理——隧道建立在
+# 主面板与节点之间，不能把请求转发给子节点执行）
+app.include_router(portforward.router, prefix="/api/portforward", tags=["portforward"], dependencies=ADMIN)
+
+# 镜像漏洞扫描：本地 advisory 比对（管理员；扫描在线程池执行，不阻塞事件循环）
+app.include_router(imgsafety.router, prefix="/api/imgsafety", tags=["imgsafety"], dependencies=ADMIN)
+
+# MySQL 慢查询分析：解析慢日志 TOP N（管理员）
+app.include_router(slowquery.router, prefix="/api/slowquery", tags=["slowquery"], dependencies=ADMIN)
 
 # 服务/端口监控：自定义监控项（端口/进程/systemd 服务）状态看板（管理员）
 app.include_router(

@@ -56,6 +56,9 @@ export default {
   settings: {
     title: 'Cuenta',
     openUsers: 'Abrir gestión de cuentas',
+    uiSettingsTitle: 'Interfaz',
+    uiSettingsHint: 'Personalice la apariencia de la página de inicio y del escritorio: nombre del sitio, mensaje de bienvenida, logotipo, fondo de pantalla dinámico, colores de los gráficos de anillo, etc.',
+    openUiSettings: 'Abrir interfaz',
     shunxTitle: 'Entrada segura ShunX',
     shunxPlaceholder: 'ej. shunx-8f3k2q7m (déjelo vacío para borrar)',
     shunxNotSet: 'Entrada segura no configurada (actualmente se permite acceso directo)',

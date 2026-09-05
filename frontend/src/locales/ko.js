@@ -1239,6 +1239,9 @@ Graw 커뮤니티 앱 스토어(이하 "본 스토어")는 ShunX 공익 마더�
   settings: {
     title: '계정',
     openUsers: '계정 관리 열기',
+    uiSettingsTitle: '인터페이스 설정',
+    uiSettingsHint: '로그인 페이지와 데스크톱 외관을 사용자 지정: 사이트 이름, 환영 문구, 로고, 동적 배경화면, 링 그래프 색상 등.',
+    openUiSettings: '인터페이스 설정 열기',
     shunxTitle: 'ShunX 보안 진입',
     shunxPlaceholder: '예: shunx-8f3k2q7m (비워두고 저장하면 해제)',
     shunxNotSet: '보안 진입 미설정 (현재 직접 로그인 허용)',

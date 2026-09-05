@@ -72,6 +72,7 @@
             <td>
               <!-- 两个状态是分开的：enabled 是配置层面有没有启用，online 是实际探测能不能访问 -->
               <span class="badge" :class="s.enabled ? 'ok' : 'off'">{{ s.enabled ? $t('sites.enabled') : $t('sites.disabled') }}</span>
+              <span v-if="s.maintenance" class="badge maint">{{ $t('sites.maintaining') }}</span>
               <span class="badge" :class="s.online ? 'ok' : 'warn'">{{ s.online ? $t('sites.online') : $t('sites.offline') }}</span>
             </td>
           </tr>
@@ -103,6 +104,7 @@
           <div class="menu-header">{{ ctxMenu.site?.name }}</div>
           <div class="menu-divider"></div>
           <div class="menu-item" @click="menuToggleEnable">{{ ctxMenu.site?.enabled ? $t('sites.disableAction') : $t('sites.enableAction') }}</div>
+          <div class="menu-item" @click="menuMaintenance">{{ ctxMenu.site?.maintenance ? $t('sites.exitMaintenance') : $t('sites.enterMaintenance') }}</div>
           <div class="menu-item" @click="menuEdit">{{ $t('sites.config') }}</div>
           <div class="menu-item" @click="menuViewConfig">{{ $t('sites.viewConfigHint') }}</div>
           <div class="menu-divider"></div>
@@ -144,6 +146,28 @@
         <pre class="code">{{ configText }}</pre>
         <div class="actions">
           <button class="btn" @click="showConfig = false">{{ $t('sites.close') }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 维护模式弹窗：一键开启/关闭 + 自定义维护页 HTML -->
+    <div v-if="maint.show" class="modal-overlay" @click.self="closeMaint">
+      <div class="modal">
+        <h3>{{ $t('sites.maintTitle', { name: maint.site?.name }) }}</h3>
+        <label style="display:flex; align-items:center; gap:8px; font-size:13px; margin-bottom:10px;">
+          <input type="checkbox" v-model="maint.enabled" style="width:auto;" />
+          {{ maint.enabled ? $t('sites.maintEnabled') : $t('sites.maintDisabled') }}
+        </label>
+        <div style="font-size:11px; color:#888; margin-bottom:6px;">{{ $t('sites.maintHtmlHint') }}</div>
+        <textarea
+          v-model="maint.html"
+          rows="8"
+          style="width:100%; font-family:Consolas,monospace; font-size:12px;"
+          :placeholder="'<html>…'"
+        />
+        <div class="actions">
+          <button class="btn" @click="closeMaint">{{ $t('common.cancel') }}</button>
+          <button class="btn primary" :disabled="saving" @click="doMaintenance">{{ saving ? $t('common.loading') : $t('common.save') }}</button>
         </div>
       </div>
     </div>
@@ -210,6 +234,9 @@ const configText = ref('')         // 后端返回的 Nginx 配置原文
 const configSite = ref(null)       // 配置属于哪个站点，用于弹窗标题
 // 右键菜单状态
 const ctxMenu = ref({ show: false, x: 0, y: 0, site: null })
+// 维护模式弹窗状态：目标站点 + 开关 + 自定义 HTML
+const maint = ref({ show: false, site: null, enabled: false, html: '' })
+const saving = ref(false)
 // 高风险操作二次确认状态：记录待删除的站点
 const confirm = ref({ show: false, site: null })
 
@@ -265,6 +292,42 @@ function menuRemove() {
   const s = ctxMenu.value.site
   closeCtx()
   if (s) remove(s)
+}
+
+// --- 菜单项：打开维护模式弹窗 ---
+function menuMaintenance() {
+  const s = ctxMenu.value.site
+  closeCtx()
+  if (!s) return
+  maint.value = {
+    show: true,
+    site: s,
+    enabled: !!s.maintenance,   // 当前是否已维护中（未维护默认关）
+    html: ''                    // 自定义 HTML：留空=保持默认/不修改
+  }
+}
+
+// --- 关闭维护弹窗 ---
+function closeMaint() {
+  maint.value.show = false
+}
+
+// --- 保存维护模式：下发开关 + 可选自定义 HTML ---
+async function doMaintenance() {
+  const m = maint.value
+  if (!m.site) return
+  saving.value = true
+  try {
+    const body = { enabled: m.enabled }
+    if (m.html.trim()) body.html = m.html   // 只传用户填写过的自定义 HTML
+    await sitesApi.maintenance(m.site.id, body)
+    closeMaint()
+    await load()                            // 开关后刷新列表（维护状态徽标/配置即时更新）
+  } catch (e) {
+    alert(e?.response?.data?.detail || String(e))
+  } finally {
+    saving.value = false
+  }
 }
 
 // --- 删除站点第一步：只弹确认框，不真删 ---
@@ -366,6 +429,7 @@ th { background: #f9fafb; position: sticky; top: 0; }
 .badge.ok { background: #d1fae5; color: #065f46; }
 .badge.warn { background: #fef3c7; color: #92400e; }
 .badge.off { background: #f3f4f6; color: #6b7280; }
+.badge.maint { background: #fde68a; color: #92400e; }
 .type-badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; background: #eef2ff; color: #4338ca; }
 .tag-1p { display: inline-block; margin-left: 4px; padding: 1px 6px; border-radius: 6px; font-size: 10px; background: #fffbeb; color: #b45309; border: 1px solid #fcd34d; white-space: nowrap; }
 

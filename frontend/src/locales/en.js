@@ -58,6 +58,9 @@ export default {
   settings: {
     title: 'Account',
     openUsers: 'Open Account Management',
+    uiSettingsTitle: 'UI Settings',
+    uiSettingsHint: 'Customize the login page and desktop appearance: site name, welcome text, logo, dynamic wallpaper, ring chart colors, etc.',
+    openUiSettings: 'Open UI Settings',
     shunxTitle: 'ShunX Secure Entry',
     shunxPlaceholder: 'e.g. shunx-8f3k2q7m (leave empty to clear)',
     shunxNotSet: 'Secure entry not set (direct login currently allowed)',
