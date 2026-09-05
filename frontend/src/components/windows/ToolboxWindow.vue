@@ -3,26 +3,21 @@
 
   这个窗口做什么：
     面板的实用小工具集合，所有计算都在服务器端执行（经 /api/toolbox/exec）：
-      - Base64 编解码；
-      - 哈希计算（MD5 / SHA1 / SHA256）；
-      - 时间戳与日期时间互转；
+      - Base64 编解码；哈希计算；时间戳与日期时间互转；
       - 端口扫描（单次最多 200 个端口，仅 TCP 连通性探测）；
-      - Whois 域名查询（依赖服务器上安装的 whois 命令，未安装会提示不可用）。
-    五个页签共用底部同一块结果区，「复制」按钮一键拷贝结果。
+      - Whois 域名查询（依赖服务器上安装的 whois 命令）；
+      - 网络诊断：ping / 路由追踪 / DNS 查询 / HTTP(S) 探测（在当前管理节点上执行）；
+      - 端口排查：监听端口 -> 进程 -> 容器归属映射（GET /api/toolbox/portview）；
+      - 脚本库：常用命令片段保存/复用（data/toolbox_scripts.json，含危险命令二次确认）。
 
   用到的后端模块：
-    /api/toolbox/*（管理员）——exec 统一执行入口，用 tool 名区分各工具。
-    端口上限 200 与合法范围 1-65535 与后端保持一致。
+    /api/toolbox/*（管理员）——exec 统一执行入口、portview 端口视图、scripts 脚本库 CRUD。
 
   关键状态：
-    tab          当前页签（base64 / hash / timestamp / portscan / whois）
+    tab          当前页签（base64 / hash / timestamp / portscan / whois / net / ports / scripts）
     busy         请求进行中（禁用按钮）
-    resultText   结果区文本（所有页签共用）
+    resultText   结果区文本（前 5 个页签 + 网络诊断共用）
     errorText    执行失败提示
-    各页签表单：b64 / hashInput / tsMode / scan / whoisDomain
-
-  怎么被打开：
-    桌面「工具箱」应用图标打开。
 -->
 <template>
   <div class="toolbox-window">
@@ -138,8 +133,196 @@
       </div>
     </div>
 
-    <!-- 结果区（所有页签共用） -->
-    <div class="result-area">
+    <!-- 网络诊断（P0：ping / 路由追踪 / DNS / HTTP 探测） -->
+    <div v-if="tab === 'net'" class="tab-body">
+      <div class="net-grid">
+        <div class="net-card">
+          <div class="net-title">Ping 连通性</div>
+          <label class="field">
+            <span class="label">主机地址</span>
+            <input v-model.trim="net.ping.host" placeholder="如 8.8.8.8 或 example.com" spellcheck="false" />
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span class="label">次数（1-10）</span>
+              <input type="number" min="1" max="10" v-model.number="net.ping.count" />
+            </label>
+          </div>
+          <div class="actions">
+            <button class="btn primary" :disabled="busy" @click="runPing">{{ busy ? '测试中…' : '开始 Ping' }}</button>
+          </div>
+        </div>
+
+        <div class="net-card">
+          <div class="net-title">路由追踪</div>
+          <label class="field">
+            <span class="label">目标主机</span>
+            <input v-model.trim="net.trace.host" placeholder="如 example.com" spellcheck="false" />
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span class="label">最大跳数（1-30）</span>
+              <input type="number" min="1" max="30" v-model.number="net.trace.maxHops" />
+            </label>
+          </div>
+          <div class="actions">
+            <button class="btn primary" :disabled="busy" @click="runTrace">{{ busy ? '追踪中…' : '开始追踪' }}</button>
+          </div>
+        </div>
+
+        <div class="net-card">
+          <div class="net-title">DNS 查询</div>
+          <div class="field-row">
+            <label class="field">
+              <span class="label">域名</span>
+              <input v-model.trim="net.dns.domain" placeholder="如 example.com" spellcheck="false" />
+            </label>
+            <label class="field field-sm">
+              <span class="label">类型</span>
+              <select v-model="net.dns.type">
+                <option v-for="t in dnsTypes" :key="t" :value="t">{{ t }}</option>
+              </select>
+            </label>
+          </div>
+          <div class="actions">
+            <button class="btn primary" :disabled="busy" @click="runDns">{{ busy ? '查询中…' : '解析' }}</button>
+          </div>
+        </div>
+
+        <div class="net-card">
+          <div class="net-title">HTTP(S) 探测</div>
+          <label class="field">
+            <span class="label">URL</span>
+            <input v-model.trim="net.http.url" placeholder="如 https://example.com" spellcheck="false" />
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span class="label">超时秒（3-60）</span>
+              <input type="number" min="3" max="60" v-model.number="net.http.timeout" />
+            </label>
+          </div>
+          <div class="actions">
+            <button class="btn primary" :disabled="busy" @click="runHttp">{{ busy ? '探测中…' : '探测' }}</button>
+          </div>
+        </div>
+      </div>
+      <div class="hint">网络诊断在当前管理节点上执行（多节点场景会按聚焦节点执行），结果见下方结果区。</div>
+    </div>
+
+    <!-- 端口排查（P0：监听端口 -> 进程 -> 容器归属） -->
+    <div v-if="tab === 'ports'" class="tab-body">
+      <div class="toolbar-row">
+        <input
+          v-model.trim="portFilter"
+          class="filter-input"
+          placeholder="过滤：端口 / 进程名 / 容器ID"
+          spellcheck="false"
+          @keyup.enter="loadPorts"
+        />
+        <button class="btn" :disabled="portLoading" @click="loadPorts">
+          <RefreshCw :size="13" :class="{ spin: portLoading }" /> 刷新
+        </button>
+      </div>
+      <div class="table-wrap">
+        <table class="dt">
+          <thead>
+            <tr><th>端口</th><th>协议</th><th>进程</th><th>PID</th><th>归属容器</th></tr>
+          </thead>
+          <tbody>
+            <tr v-if="portLoading">
+              <td colspan="5" class="empty">正在读取监听端口…</td>
+            </tr>
+            <tr v-else-if="!portItems.length">
+              <td colspan="5" class="empty">没有匹配的监听项</td>
+            </tr>
+            <tr v-for="p in portItems" :key="p.port + '-' + p.proto + '-' + (p.pid || '')">
+              <td class="mono">{{ p.port }}</td>
+              <td>{{ p.proto }}</td>
+              <td>{{ p.process || '—' }}</td>
+              <td class="mono">{{ p.pid || '—' }}</td>
+              <td class="cid">{{ p.container_id || '' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="hint">共 {{ portItems.length }} 条监听项；数据取自当前管理节点的 ss / netstat，容器归属经 Docker inspect 映射。</div>
+    </div>
+
+    <!-- 脚本库（P0：常用命令片段保存/复用） -->
+    <div v-if="tab === 'scripts'" class="tab-body">
+      <div class="toolbar-row">
+        <input
+          v-model.trim="scriptFilter"
+          class="filter-input"
+          placeholder="按名称 / 描述 / 标签过滤"
+          spellcheck="false"
+        />
+        <button class="btn primary" @click="openEditor()"><Plus :size="13" /> 新建脚本</button>
+      </div>
+
+      <!-- 编辑器 -->
+      <div v-if="editorOpen" class="script-editor">
+        <div class="field-row">
+          <label class="field">
+            <span class="label">名称</span>
+            <input v-model.trim="form.name" placeholder="如 磁盘占用 TOP10" spellcheck="false" />
+          </label>
+          <label class="field field-sm">
+            <span class="label">适用目标</span>
+            <select v-model="form.target">
+              <option value="host">宿主机</option>
+              <option value="node">节点</option>
+              <option value="container">容器内</option>
+            </select>
+          </label>
+        </div>
+        <label class="field">
+          <span class="label">描述</span>
+          <input v-model.trim="form.desc" placeholder="这段脚本是干什么的" spellcheck="false" />
+        </label>
+        <label class="field">
+          <span class="label">标签（逗号分隔，最多 8 个）</span>
+          <input v-model.trim="form.tags" placeholder="如 日志,清理,日常" spellcheck="false" />
+        </label>
+        <label class="field">
+          <span class="label">脚本内容</span>
+          <textarea v-model="form.content" rows="6" placeholder="#!/bin/bash&#10;# 描述你的脚本…" spellcheck="false"></textarea>
+        </label>
+        <div v-if="dangerHits.length" class="warn">
+          ⚠ 检测到危险命令模式：<code>{{ dangerHits.join('、') }}</code>，保存时需二次确认。
+        </div>
+        <div class="actions">
+          <button class="btn" @click="closeEditor">取消</button>
+          <button class="btn primary" :disabled="saving" @click="saveScript">{{ saving ? '保存中…' : '保存' }}</button>
+        </div>
+      </div>
+
+      <!-- 列表 -->
+      <div class="script-list">
+        <div v-if="!filteredScripts.length" class="empty-box">还没有脚本片段，点击「新建脚本」添加一条。</div>
+        <div v-for="s in filteredScripts" :key="s.id" class="script-item">
+          <div class="row">
+            <strong>{{ s.name }}</strong>
+            <span v-if="s.dangerous" class="tag tag-danger" title="包含危险命令">危险</span>
+            <span class="tag" :title="s.target">{{ targetLabel(s.target) }}</span>
+            <span v-for="t in (s.tags || [])" :key="t" class="tag">{{ t }}</span>
+          </div>
+          <div class="desc">{{ s.desc || '（无描述）' }}</div>
+          <pre v-if="expandedId === s.id" class="code">{{ s.content }}</pre>
+          <div class="ops">
+            <button class="btn mini" @click="toggleExpand(s)">
+              {{ expandedId === s.id ? '收起' : '查看' }}
+            </button>
+            <button class="btn mini" @click="copyScript(s)"><Copy :size="11" /> 复制</button>
+            <button class="btn mini" @click="openEditor(s)"><Pencil :size="11" /> 编辑</button>
+            <button class="btn mini danger" @click="removeScript(s)"><Trash2 :size="11" /> 删除</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 结果区（前 5 个页签 + 网络诊断共用） -->
+    <div v-if="showResult" class="result-area">
       <div class="result-toolbar">
         <span class="result-title">结果</span>
         <button class="btn mini" :disabled="!resultText" @click="copyResult"><Copy :size="12" /> 复制</button>
@@ -157,25 +340,29 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'   // 响应式状态、表单对象
-import { Binary, Hash, Clock, Radar, Globe, Copy } from 'lucide-vue-next'   // 各页签与复制按钮图标
+import { ref, reactive, computed, onMounted } from 'vue'   // 响应式状态、表单对象、生命周期
+import { Binary, Hash, Clock, Radar, Globe, Network, Plug, FileCode, RefreshCw, Plus, Pencil, Trash2, Copy } from 'lucide-vue-next'
 import { toolboxApi } from '../../api'   // 工具箱后端能力：/api/toolbox/* 的封装
 
-// 当前页签
+// 当前页签 & 定义：key 与后端 exec 的 tool 参数一一对应（网络诊断沿用 exec）
 const tab = ref('base64')
-// 页签定义：key 与后端 exec 的 tool 参数一一对应
 const tabs = [
   { key: 'base64', label: 'Base64', icon: Binary },
   { key: 'hash', label: '哈希', icon: Hash },
   { key: 'timestamp', label: '时间戳', icon: Clock },
   { key: 'portscan', label: '端口扫描', icon: Radar },
   { key: 'whois', label: 'Whois', icon: Globe },
+  { key: 'net', label: '网络诊断', icon: Network },
+  { key: 'ports', label: '端口排查', icon: Plug },
+  { key: 'scripts', label: '脚本库', icon: FileCode },
 ]
 
 // 状态与结果
-const busy = ref(false)         // 请求进行中（禁用执行按钮）
-const resultText = ref('')      // 结果区文本（所有页签共用）
+const busy = ref(false)         // exec 请求进行中（禁用执行按钮）
+const resultText = ref('')      // 结果区文本（所有 exec 页签共用）
 const errorText = ref('')       // 执行失败提示
+// 结果区只在会产出文本的页签显示（端口排查/脚本库用独立面板）
+const showResult = computed(() => ['ports', 'scripts'].indexOf(tab.value) === -1)
 
 // Base64 表单
 const b64 = reactive({ mode: 'encode', input: '' })
@@ -190,6 +377,29 @@ const tsDatetime = ref('')
 const scan = reactive({ host: '', start: 1, end: 100 })
 // Whois 表单
 const whoisDomain = ref('')
+
+// ---- 网络诊断表单 ----
+const dnsTypes = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS']
+const net = reactive({
+  ping: { host: '', count: 4 },
+  trace: { host: '', maxHops: 15 },
+  dns: { domain: '', type: 'A' },
+  http: { url: '', timeout: 15 },
+})
+
+// ---- 端口排查 ----
+const portFilter = ref('')       // 过滤关键字
+const portItems = ref([])        // 端口条目
+const portLoading = ref(false)
+
+// ---- 脚本库 ----
+const scripts = ref([])          // 脚本列表
+const scriptFilter = ref('')     // 名称/描述/标签过滤
+const editorOpen = ref(false)    // 是否显示编辑器
+const editingId = ref(null)      // 编辑中的脚本 id（null = 新建）
+const form = reactive({ name: '', desc: '', target: 'host', tags: '', content: '' })
+const saving = ref(false)
+const expandedId = ref('')       // 展开查看内容的脚本 id
 
 // 将后端返回的 result 规范化为可展示文本
 function fmtResult(r) {
@@ -266,6 +476,154 @@ function runWhois() {
   exec('whois', { domain: whoisDomain.value })
 }
 
+// --- 网络诊断四件套（P0） ---
+function runPing() {
+  if (!net.ping.host) { errorText.value = '请输入主机地址'; return }
+  const count = Math.min(Math.max(Number(net.ping.count) || 4, 1), 10)
+  exec('ping', { host: net.ping.host, count })
+}
+
+function runTrace() {
+  if (!net.trace.host) { errorText.value = '请输入目标主机'; return }
+  const maxHops = Math.min(Math.max(Number(net.trace.maxHops) || 15, 1), 30)
+  exec('traceroute', { host: net.trace.host, max_hops: maxHops })
+}
+
+function runDns() {
+  if (!net.dns.domain) { errorText.value = '请输入域名'; return }
+  exec('dns_lookup', { domain: net.dns.domain, type: net.dns.type })
+}
+
+function runHttp() {
+  if (!net.http.url) { errorText.value = '请输入 URL'; return }
+  const timeout = Math.min(Math.max(Number(net.http.timeout) || 15, 3), 60)
+  exec('http_probe', { url: net.http.url, timeout })
+}
+
+// --- 端口排查看板（P0） ---
+async function loadPorts() {
+  portLoading.value = true
+  try {
+    const r = await toolboxApi.portView(portFilter.value || '')
+    portItems.value = (r && r.items) || []
+  } catch (e) {
+    portItems.value = []
+    errorText.value = e.response?.data?.detail || e.message || '读取端口失败'
+  } finally {
+    portLoading.value = false
+  }
+}
+
+// --- 脚本库（P0） ---
+const filteredScripts = computed(() => {
+  const kw = (scriptFilter.value || '').trim().toLowerCase()
+  if (!kw) return scripts.value
+  return scripts.value.filter(s =>
+    ((s.name || '') + ' ' + (s.desc || '') + ' ' + ((s.tags || []).join(' '))).toLowerCase().includes(kw)
+  )
+})
+
+function targetLabel(t) {
+  return { host: '宿主机', node: '节点', container: '容器' }[t] || t
+}
+
+// 前端危险命令扫描（与后端 _DANGER_PATTERNS 保持同源，用于保存前二次确认）
+function scanDanger(text) {
+  const patterns = [
+    /\brm\s+-[a-z]*r[a-z]*f[a-z]*(\s|\/|$)/i,
+    /\brm\s+-[a-z]*r[a-z]*f[a-z]*\s+[^|;]*\/\*/i,
+    /\bmkfs(?:\.[a-z0-9]+)?\b/i,
+    /\bdd\b/i,
+    /\bchmod\s+-R\s+777\s+\/\s*$/i,
+    /\b(?:shutdown|reboot|poweroff|init\s+0|init\s+6)\b/i,
+    /\b:\(\)\s*\{/,
+    />>\s*\/etc\/(?:passwd|shadow)/i,
+  ]
+  return patterns.filter(p => p.test(text || ''))
+}
+const dangerHits = computed(() => scanDanger(form.content))
+
+async function loadScripts() {
+  try {
+    const r = await toolboxApi.listScripts()
+    scripts.value = (r && r.scripts) || []
+  } catch (e) {
+    errorText.value = e.response?.data?.detail || e.message || '读取脚本库失败'
+  }
+}
+
+function openEditor(script) {
+  editingId.value = script ? script.id : null
+  form.name = script ? script.name : ''
+  form.desc = script ? script.desc || '' : ''
+  form.target = script ? script.target || 'host' : 'host'
+  form.tags = script && script.tags ? script.tags.join(',') : ''
+  form.content = script ? script.content || '' : ''
+  expandedId.value = ''
+  editorOpen.value = true
+}
+
+function closeEditor() {
+  editorOpen.value = false
+  editingId.value = null
+}
+
+async function saveScript() {
+  if (!form.name.trim()) { alert('请填写脚本名称'); return }
+  // 危险命令二次确认（仅提示，不强制禁止）
+  const hits = scanDanger(form.content)
+  if (hits.length) {
+    const ok = window.confirm(
+      '该脚本包含危险命令（' + hits.join('、') + '），请确认是本人有意的运维操作后保存。\n仍要保存吗？'
+    )
+    if (!ok) return
+  }
+  const body = {
+    name: form.name,
+    desc: form.desc,
+    target: form.target,
+    tags: form.tags.split(/[,，\s]+/).map(t => t.trim()).filter(Boolean),
+    content: form.content,
+  }
+  saving.value = true
+  try {
+    if (editingId.value) {
+      await toolboxApi.updateScript(editingId.value, body)
+    } else {
+      await toolboxApi.createScript(body)
+    }
+    await loadScripts()
+    closeEditor()
+  } catch (e) {
+    alert(e.response?.data?.detail || e.message || '保存失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+async function removeScript(script) {
+  if (!window.confirm(`确认删除脚本「${script.name}」？删除后不可恢复。`)) return
+  try {
+    await toolboxApi.deleteScript(script.id)
+    await loadScripts()
+  } catch (e) {
+    alert(e.response?.data?.detail || e.message || '删除失败')
+  }
+}
+
+async function copyScript(script) {
+  try {
+    await navigator.clipboard.writeText(script.content || '')
+    alert('已复制脚本内容')
+  } catch (e) {
+    alert('复制失败：' + e.message)
+  }
+}
+
+function toggleExpand(script) {
+  expandedId.value = expandedId.value === script.id ? '' : script.id
+}
+
 // --- 复制结果到剪贴板 ---
 async function copyResult() {
   try {
@@ -275,38 +633,84 @@ async function copyResult() {
     alert('复制失败：' + e.message)
   }
 }
+
+// 进入窗口时预加载端口与脚本数据
+onMounted(() => {
+  loadPorts()
+  loadScripts()
+})
 </script>
 
 <style scoped>
 .toolbox-window { padding: 10px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; gap: 10px; }
 .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
-.tab { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; color: #1d1d1f; }
+.tab { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; color: #374151; }
 .tab:hover { background: #f9fafb; }
 .tab.active { background: #111827; color: #fff; border-color: #111827; }
 
-.tab-body { display: flex; flex-direction: column; gap: 10px; }
+.tab-body { display: flex; flex-direction: column; gap: 10px; overflow: auto; min-height: 0; }
 .field-row { display: flex; gap: 12px; }
 .field-row .field { flex: 1; }
 .field { display: block; }
-.field .label { display: block; font-size: 11px; color: #1d1d1f; font-weight: 600; margin-bottom: 5px; }
-.field input, .field select { width: 100%; box-sizing: border-box; border: 1px solid rgba(0,0,0,0.15); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-family: inherit; }
-.field input:focus, .field select:focus { outline: none; border-color: #0a84ff; box-shadow: 0 0 0 3px rgba(10,132,255,0.15); }
-.field textarea { width: 100%; box-sizing: border-box; border: 1px solid rgba(0,0,0,0.15); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-family: ui-monospace, Menlo, Consolas, monospace; resize: vertical; }
-.field textarea:focus { outline: none; border-color: #0a84ff; box-shadow: 0 0 0 3px rgba(10,132,255,0.15); }
+.field .label { display: block; font-size: 12px; color: #374151; font-weight: 500; margin-bottom: 5px; }
+.field input, .field select { width: 100%; box-sizing: border-box; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: inherit; background: #fff; color: #1d1d1f; }
+.field input:focus, .field select:focus { outline: none; border-color: #111827; box-shadow: 0 0 0 3px rgba(17,24,39,0.08); }
+.field textarea { width: 100%; box-sizing: border-box; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: ui-monospace, Menlo, Consolas, monospace; resize: vertical; }
+.field textarea:focus { outline: none; border-color: #111827; box-shadow: 0 0 0 3px rgba(17,24,39,0.08); }
 .hint { color: #6e6e73; font-size: 12px; }
-.actions { display: flex; justify-content: flex-end; }
+.actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* 网络诊断卡片（对齐网站「类型选择卡片」风格） */
+.net-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.net-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: #fff; transition: all 0.15s; }
+.net-card:hover { border-color: #94a3b8; background: #f9fafb; }
+.net-title { font-size: 13px; font-weight: 600; color: #111827; display: flex; align-items: center; gap: 6px; }
+.net-title::before { content: ''; width: 3px; height: 12px; border-radius: 2px; background: #111827; }
+
+/* 工具栏 */
+.toolbar-row { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+.filter-input { flex: 1; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: ui-monospace, Menlo, Consolas, monospace; background: #fff; color: #1d1d1f; }
+.filter-input:focus { outline: none; border-color: #111827; box-shadow: 0 0 0 3px rgba(17,24,39,0.08); }
+
+/* 端口排查表格（对齐网站列表表格风格） */
+.table-wrap { border: 1px solid #e5e7eb; border-radius: 8px; overflow: auto; max-height: 260px; background: #fff; }
+.table-wrap table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.table-wrap th, .table-wrap td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
+.table-wrap th { background: #f9fafb; color: #6b7280; font-size: 12px; font-weight: 600; position: sticky; top: 0; }
+.table-wrap tbody tr:hover td { background: #f9fafb; }
+.table-wrap td.empty { text-align: center; color: #9ca3af; padding: 22px 0; }
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.cid { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: #111827; font-weight: 500; }
+
+/* 脚本库 */
+.script-editor { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; background: #f9fafb; display: flex; flex-direction: column; gap: 10px; }
+.script-list { display: flex; flex-direction: column; gap: 8px; overflow: auto; min-height: 0; }
+.script-item { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; background: #fff; display: flex; flex-direction: column; gap: 6px; }
+.script-item:hover { border-color: #111827; }
+.script-item .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.script-item .desc { color: #6b7280; font-size: 12px; }
+.script-item .code { margin: 0; background: #0f1115; color: #d1d5db; border-radius: 8px; padding: 10px; font-size: 12px; font-family: ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all; max-height: 220px; overflow: auto; }
+.script-item .ops { display: flex; gap: 6px; }
+.tag { font-size: 11px; background: #f3f4f6; border: 1px solid #e5e7eb; color: #6b7280; border-radius: 999px; padding: 1px 8px; }
+.tag-danger { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+.empty-box { color: #9ca3af; text-align: center; padding: 26px 0; font-size: 13px; }
+.warn { color: #92400e; font-size: 12px; background: #fef3c7; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 10px; }
+.warn code { font-family: ui-monospace, Menlo, Consolas, monospace; }
 
 .result-area { display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0; }
 .result-toolbar { display: flex; align-items: center; justify-content: space-between; }
-.result-title { font-size: 11px; color: #1d1d1f; font-weight: 600; }
-.result-area textarea { flex: 1; width: 100%; box-sizing: border-box; border: 1px solid rgba(0,0,0,0.15); border-radius: 8px; padding: 8px 10px; font-size: 12px; font-family: ui-monospace, Menlo, Consolas, monospace; resize: none; background: #fafafa; }
+.result-title { font-size: 12px; color: #111827; font-weight: 600; }
+.result-area textarea { flex: 1; width: 100%; box-sizing: border-box; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 10px; font-size: 12px; font-family: ui-monospace, Menlo, Consolas, monospace; resize: none; background: #fafafa; color: #1d1d1f; }
 
-.btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
+.btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
 .btn:hover:not(:disabled) { background: #f9fafb; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn.mini { padding: 3px 8px; font-size: 11.5px; }
+.btn.mini { padding: 3px 8px; font-size: 12px; }
 .btn.primary { background: #111827; color: #fff; border-color: #111827; }
 .btn.primary:hover:not(:disabled) { background: #1f2937; }
+.btn.danger { color: #b91c1c; }
 
-.error { color: #b91c1c; font-size: 12.5px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 8px 10px; }
+.error { color: #b91c1c; font-size: 12.5px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 8px 10px; }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>

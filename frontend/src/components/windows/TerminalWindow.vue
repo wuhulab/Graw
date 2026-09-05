@@ -36,7 +36,18 @@
         :title="!mouseSupported ? (mouseReason || $t('terminal.mouseUnsupported')) : (mouseOn ? $t('terminal.mouseOffHint') : $t('terminal.mouseOnHint'))"
         @click="toggleMouse">{{ $t('terminal.mouse') }}:{{ mouseOn ? $t('terminal.on') : $t('terminal.off') }}</button>
     </div>
-    <div ref="termEl" style="flex:1; min-height:0; padding:4px; background:#1e1e1e; overflow:hidden;"></div>
+    <!-- 终端主体：阻止浏览器默认右键菜单，改为弹出终端本地操作菜单 -->
+    <div ref="termEl" style="flex:1; min-height:0; padding:4px; background:#1e1e1e; overflow:hidden;"
+      @contextmenu.prevent.stop="onTermContextMenu"></div>
+    <!-- 右键菜单：复制 / 粘贴（类本地终端习惯；Teleport 到 body 顶层避免被窗口裁剪） -->
+    <Teleport to="body">
+      <div v-if="ctxMenu.show" ref="ctxMenuEl" class="term-ctx-menu"
+        :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+        @click.stop @contextmenu.prevent.stop>
+        <div class="menu-item" @mousedown.prevent="menuCopy">{{ $t('terminal.copy') }}</div>
+        <div class="menu-item" @mousedown.prevent="menuPaste">{{ $t('terminal.paste') }}</div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -100,6 +111,115 @@ function toggleMouse() {
   const seq = mouseOn.value ? MOUSE_ON_SEQ : MOUSE_OFF_SEQ
   try { if (term) term.write(seq) } catch (e) { /* 写入 xterm 解析器失败不阻塞 */ }
   try { if (ws && ws.readyState === 1) ws.send(seq) } catch (e) { /* 连接未就绪时忽略，重连时会重放 */ }
+}
+
+// ---------- 右键菜单 + 剪贴板（类本地终端：右键 → 复制/粘贴） ----------
+const ctxMenu = ref({ show: false, x: 0, y: 0 })   // 右键菜单显隐与定位坐标
+const ctxMenuEl = ref(null)                         // 右键菜单 DOM（用于判断点击是否在菜单内）
+const TASK_START = { MENU_W: 120, MENU_H: 82, EDGE: 8 }   // 菜单宽高与边缘留白（两项菜单约 82px 高）
+
+// 弹出右键菜单：阻止浏览器默认菜单（已由模板 .prevent 处理），按点击位置定位，
+// 切换到「不越出右缘 / 不戳到桌面底部任务栏」的坐标（任务栏高 64 + 底部留白 12）。
+function onTermContextMenu(e) {
+  const x = Math.max(TASK_START.EDGE, Math.min(e.clientX, window.innerWidth - TASK_START.MENU_W - TASK_START.EDGE))
+  const maxY = window.innerHeight - 76 - TASK_START.MENU_H - TASK_START.EDGE
+  const y = Math.max(TASK_START.EDGE, Math.min(e.clientY, maxY))
+  ctxMenu.value = { show: true, x, y }
+}
+
+// 关闭右键菜单（点击菜单外的任意位置、菜单项操作后调用）
+function closeMenus() {
+  if (ctxMenu.value.show) ctxMenu.value = { show: false, x: 0, y: 0 }
+}
+
+// 点击菜单以外的任何地方（含窗口/桌面/任务栏）都收起菜单
+function onDocMouseDown(e) {
+  if (ctxMenu.value.show && ctxMenuEl.value && !ctxMenuEl.value.contains(e.target)) closeMenus()
+}
+
+// 复制选中文本：优先异步剪贴板 API（HTTPS/localhost 可用），
+// 非安全上下文降级为「临时隐藏 textarea + execCommand('copy')」（用户手势内通常可行）。
+async function copyToClipboard(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      return
+    }
+  } catch (e) {
+    // 剪贴板 API 失败（权限拒绝等），继续走降级路径
+  }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.cssText = 'position:fixed; left:-9999px; top:0; opacity:0;'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+  } catch (e) {
+    console.warn('[terminal] 复制失败:', e)
+  }
+}
+
+// 右键「复制」：仅复制 xterm 选中区，无选中则静默忽略（避免打扰）
+function menuCopy() {
+  closeMenus()
+  if (!term) return
+  const sel = term.getSelection()
+  if (sel) copyToClipboard(sel)
+}
+
+// 读取剪贴板文本：安全上下文直接用 readText()；否则用「临时 textarea 接收系统粘贴事件」方式，
+// 兜底超时 800ms 防止 Promise 悬挂（部分浏览器拒绝以编程方式触发粘贴）。
+function readClipboardText() {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.readText().catch(() => readViaPasteFallback())
+  }
+  return readViaPasteFallback()
+}
+
+function readViaPasteFallback() {
+  return new Promise(resolve => {
+    const ta = document.createElement('textarea')
+    ta.style.cssText = 'position:fixed; left:-9999px; top:0; width:1px; height:1px; opacity:0;'
+    document.body.appendChild(ta)
+    let settled = false   // 防止粘贴事件与超时回调重复收尾
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      document.body.removeChild(ta)
+      try { if (term) term.focus() } catch (e) {}   // 收回终端焦点
+      resolve('')   // 读取失败按空处理，不阻塞后续输入
+    }, 800)
+    // 系统粘贴事件：取纯文本；仅触发一次后立即清理临时元素
+    const onPaste = ev => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      const text = ((ev.clipboardData || window.clipboardData).getData('text/plain') || '')
+      document.body.removeChild(ta)
+      try { if (term) term.focus() } catch (e) {}
+      resolve(text)
+    }
+    ta.addEventListener('paste', onPaste)
+    ta.focus()
+    try { document.execCommand('paste') } catch (e) { /* 异常走超时收尾 */ }
+  })
+}
+
+// 右键「粘贴」：读取剪贴板后写入终端。
+// 换行归一为回车符：剪贴板里的 \n 在终端里表示「回车换行」，与本地终端行为一致。
+function menuPaste() {
+  closeMenus()
+  readClipboardText().then(text => {
+    if (!text) return   // 剪贴板为空或读取失败：不产生任何输入
+    const normalized = text.replace(/\r?\n/g, '\r')
+    try {
+      if (term) { term.paste(normalized); term.focus() }
+    } catch (e) {
+      console.warn('[terminal] 粘贴失败:', e)
+    }
+  })
 }
 
 function setStatus(s) { statusText.value = s }
@@ -248,6 +368,7 @@ function clear() { term && term.clear() }
 
 onMounted(async () => {
   alive = true
+  document.addEventListener('mousedown', onDocMouseDown)   // 点击菜单外任意处收起右键菜单
   // 查询平台鼠标能力：Windows 10 及更早的 ConPTY 不支持 TUI 鼠标，
   // 查询失败时按「支持」处理（能力接口属增强信息，不阻塞终端使用）
   try {
@@ -287,6 +408,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   alive = false                     // 先标记已销毁，杜绝卸载后仍触发重连
+  document.removeEventListener('mousedown', onDocMouseDown)   // 解除全局点击监听，避免泄漏
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
   clearAutoTimer()
   stopHeartbeat()                   // 停止心跳定时器，避免泄漏
@@ -295,3 +417,29 @@ onBeforeUnmount(() => {
   if (term) { try { term.dispose() } catch (e) {} }   // 释放 xterm 占用的 DOM 与资源
 })
 </script>
+
+<style scoped>
+/* 终端右键菜单：深色主题贴合终端窗口（其余窗口的白色菜单在深色终端里会刺眼） */
+.term-ctx-menu {
+  position: fixed;
+  background: #2d2d30;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  z-index: 200;
+  min-width: 120px;
+  padding: 4px 0;
+  user-select: none;   /* 菜单项点击会触发选中，关闭避免误选文本 */
+}
+.term-ctx-menu .menu-item {
+  padding: 6px 16px;
+  font-size: 13px;
+  color: #d4d4d4;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.term-ctx-menu .menu-item:hover {
+  background: #0a3d7a;
+  color: #fff;
+}
+</style>

@@ -597,6 +597,8 @@ export default {
     mouseOnHint: 'Нажмите, чтобы отключить режим мыши',
     mouseOffHint: 'Включить режим мыши для TUI-кликов (vim/tmux/ranger...)',
     mouseUnsupported: 'Клики мыши TUI не поддерживаются в этой системе (ограничение ConPTY в Windows 10)',
+    copy: 'Копировать',
+    paste: 'Вставить',
   },
   // Защита базы данных Graw
   protection: {

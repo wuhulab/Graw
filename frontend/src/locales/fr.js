@@ -597,6 +597,8 @@ export default {
     mouseOnHint: 'Cliquez pour désactiver le mode souris',
     mouseOffHint: 'Activer le mode souris pour les clics TUI (vim/tmux/ranger...)',
     mouseUnsupported: 'Les clics souris TUI ne sont pas pris en charge sur ce système (limitation ConPTY de Windows 10)',
+    copy: 'Copier',
+    paste: 'Coller',
   },
   // Protection de base de données Graw
   protection: {

@@ -555,7 +555,9 @@ export const svcmonitorApi = {
   createItem: (body) => api.post('/svcmonitor/items', body).then(r => r.data),
   updateItem: (id, body) => api.put(`/svcmonitor/items/${id}`, body).then(r => r.data),
   deleteItem: (id) => api.delete(`/svcmonitor/items/${id}`).then(r => r.data),
-  test: (id) => api.post(`/svcmonitor/items/${id}/test`).then(r => r.data)
+  test: (id) => api.post(`/svcmonitor/items/${id}/test`).then(r => r.data),
+  // 服务处置：start/stop/restart/enable/disable（仅 kind=service）
+  action: (id, body) => api.post(`/svcmonitor/items/${id}/action`, body).then(r => r.data)
 }
 
 // SSH 密钥管理：生成/导入密钥并一键部署到节点
@@ -582,9 +584,16 @@ export const ftpusersApi = {
   delete: (id) => api.delete(`/ftpusers/${encodeURIComponent(id)}`).then(r => r.data)
 }
 
-// 工具箱：Base64 / 哈希 / 时间戳 / 端口扫描 / Whois（仅管理员）
+// 工具箱：Base64 / 哈希 / 时间戳 / 端口扫描 / Whois / 网络诊断（仅管理员）
 export const toolboxApi = {
-  exec: (body) => api.post('/toolbox/exec', body).then(r => r.data)
+  exec: (body) => api.post('/toolbox/exec', body).then(r => r.data),
+  // 端口排查看板：监听端口 -> 进程 -> 容器归属
+  portView: (filter) => api.get('/toolbox/portview', { params: { filter } }).then(r => r.data),
+  // 常用脚本片段库 CRUD
+  listScripts: () => api.get('/toolbox/scripts').then(r => r.data),
+  createScript: (body) => api.post('/toolbox/scripts', body).then(r => r.data),
+  updateScript: (id, body) => api.put(`/toolbox/scripts/${id}`, body).then(r => r.data),
+  deleteScript: (id) => api.delete(`/toolbox/scripts/${id}`).then(r => r.data)
 }
 
 // PHP 多版本管理：探测系统 PHP/FPM 版本 + 站点 PHP 版本关联（仅管理员）

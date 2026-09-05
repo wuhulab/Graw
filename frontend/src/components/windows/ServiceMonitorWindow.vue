@@ -60,6 +60,29 @@
             <td class="mono">{{ fmtTime(i.last_checked_at) }}</td>
             <td class="actions-cell">
               <button class="btn mini" :disabled="busy" @click="doTest(i)">测试</button>
+              <template v-if="i.kind === 'service'">
+                <!-- 服务处置（P0）：仅 systemd 服务条目可启停/重启/设置自启；启停用主色/危险色区分 -->
+                <button
+                  v-if="i.last_status !== 'ok'"
+                  class="btn mini primary"
+                  :disabled="busy"
+                  @click="doServiceAction(i, 'start')"
+                >启动</button>
+                <button
+                  v-else
+                  class="btn mini danger-text"
+                  :disabled="busy"
+                  @click="doServiceAction(i, 'stop')"
+                >停止</button>
+                <button class="btn mini" :disabled="busy" @click="doServiceAction(i, 'restart')">重启</button>
+                <button
+                  class="btn mini"
+                  :class="{ 'autostart-on': i.is_enabled === true }"
+                  :title="i.is_enabled === true ? '已设置开机自启，点击关闭' : '未开机自启，点击开启'"
+                  :disabled="busy"
+                  @click="toggleAutostart(i)"
+                >{{ i.is_enabled === true ? '已自启' : '自启' }}</button>
+              </template>
               <button class="btn mini" :disabled="busy" @click="toggleItem(i)">{{ i.enabled ? '停用' : '启用' }}</button>
               <button class="btn mini" :disabled="busy" @click="openEdit(i)">编辑</button>
               <button class="btn mini danger-text" :disabled="busy" @click="doDelete(i)">删除</button>
@@ -247,6 +270,44 @@ async function toggleItem(i) {
   }
 }
 
+// 服务处置（P0）：启动/停止/重启/自启（仅 kind=service 条目渲染对应按钮）
+// stop/restart 属影响面较大的操作，先弹确认；启动为正向恢复操作直接执行。
+async function doServiceAction(i, action) {
+  const label = { start: '启动', stop: '停止', restart: '重启' }[action] || action
+  if (action === 'stop' || action === 'restart') {
+    const warn = action === 'stop' ? '停止后服务将不可用。' : '重启期间服务会短暂中断。'
+    if (!window.confirm(`确认对服务「${i.target}」执行「${label}」？${warn}`)) return
+  }
+  busy.value = true
+  try {
+    const r = await svcmonitorApi.action(i.id, { action })
+    alert(r.detail || `${label}完成`)
+    await loadAll()
+  } catch (e) {
+    alert(e.response?.data?.detail || e.message || '操作失败')
+  } finally {
+    busy.value = false
+  }
+}
+
+// 开机自启开关：按当前已知状态取反（enable/disable），成功后回写 is_enabled
+async function toggleAutostart(i) {
+  const wantEnable = i.is_enabled !== true
+  const label = wantEnable ? '设置开机自启' : '取消开机自启'
+  if (!window.confirm(`确认对服务「${i.target}」${label}？`)) return
+  busy.value = true
+  try {
+    const r = await svcmonitorApi.action(i.id, { action: wantEnable ? 'enable' : 'disable' })
+    if (r && typeof r.is_enabled !== 'undefined') i.is_enabled = r.is_enabled
+    alert(r.detail || `${label}完成`)
+    await loadAll()
+  } catch (e) {
+    alert(e.response?.data?.detail || e.message || '操作失败')
+  } finally {
+    busy.value = false
+  }
+}
+
 // 点击删除：弹出高风险操作二次确认（输入面板密码），不直接删除
 function doDelete(i) {
   confirm.value = { show: true, target: i }
@@ -296,13 +357,14 @@ tbody tr:hover { background: #f9fafb; }
 .badge.danger { background: #fee2e2; color: #b91c1c; }
 .badge.off { background: #f3f4f6; color: #6b7280; }
 
-.btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
+.btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
 .btn:hover:not(:disabled) { background: #f9fafb; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn.primary { background: #0a84ff; border-color: #0a84ff; color: #fff; }
-.btn.primary:hover:not(:disabled) { background: #0a6ed1; }
-.btn.mini { padding: 3px 8px; font-size: 11.5px; }
+.btn.primary { background: #111827; border-color: #111827; color: #fff; }
+.btn.primary:hover:not(:disabled) { background: #1f2937; }
+.btn.mini { padding: 3px 8px; font-size: 12px; }
 .btn.danger-text { color: #b91c1c; }
+.btn.autostart-on { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
 
 .empty { text-align: center; color: #9ca3af; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: 13px; }
 

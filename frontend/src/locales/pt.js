@@ -829,6 +829,8 @@ export default {
     mouseOnHint: 'Clique para desativar o modo mouse',
     mouseOffHint: 'Ativar o modo mouse para cliques TUI (vim/tmux/ranger...)',
     mouseUnsupported: 'Este sistema não suporta cliques de mouse TUI (limitação do ConPTY no Windows 10)',
+    copy: 'Copiar',
+    paste: 'Colar',
   },
   // Mecanismo de proteção do banco de dados Graw
   protection: {

@@ -1232,6 +1232,8 @@ Document version: 1.1.0 | Updated: 2026-08-16`,
     mouseOnHint: 'Click to disable mouse mode',
     mouseOffHint: 'Enable mouse mode for TUI clicks (vim/tmux/ranger...)',
     mouseUnsupported: 'TUI mouse clicks are not supported on this system (Windows 10 ConPTY limitation)',
+    copy: 'Copy',
+    paste: 'Paste',
   },
   // Graw database protection mechanism
   protection: {

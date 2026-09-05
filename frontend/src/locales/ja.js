@@ -597,6 +597,8 @@ export default {
     mouseOnHint: 'クリックでマウスモードを無効化',
     mouseOffHint: 'TUI クリック操作を有効化（vim/tmux/ranger など）',
     mouseUnsupported: 'このシステムでは TUI マウスクリックは非対応（Windows 10 の ConPTY 制限）',
+    copy: 'コピー',
+    paste: '貼り付け',
   },
   // Graw データベース保護
   protection: {

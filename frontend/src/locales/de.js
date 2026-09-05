@@ -597,6 +597,8 @@ export default {
     mouseOnHint: 'Klicken, um den Mausmodus zu deaktivieren',
     mouseOffHint: 'Mausmodus für TUI-Klicks aktivieren (vim/tmux/ranger...)',
     mouseUnsupported: 'TUI-Mausklicks werden auf diesem System nicht unterstützt (Windows-10-ConPTY-Einschränkung)',
+    copy: 'Kopieren',
+    paste: 'Einfügen',
   },
   // Graw-Datenbankschutz
   protection: {

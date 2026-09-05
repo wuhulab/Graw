@@ -597,6 +597,8 @@ export default {
     mouseOnHint: '點擊關閉滑鼠模式',
     mouseOffHint: '點擊啟用滑鼠模式，支援 TUI（vim/tmux/ranger 等）點擊互動',
     mouseUnsupported: '目前系統不支援 TUI 滑鼠點擊（Windows 10 的 ConPTY 限制）',
+    copy: '複製',
+    paste: '貼上',
   },
   // Graw資料庫保護機制
   protection: {

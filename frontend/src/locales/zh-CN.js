@@ -743,6 +743,8 @@ export default {
     repoUrl: '仓库地址',
     branch: '分支',
     auth: '认证方式',
+    namePlaceholder: '如: my-site-deploy',
+    lastFail: '上次部署失败',
     authNone: '无需认证',
     authToken: 'Token 令牌',
     authSsh: 'SSH 密钥（预置）',
@@ -819,6 +821,8 @@ export default {
     mouseOnHint: '点击关闭鼠标模式',
     mouseOffHint: '点击启用鼠标模式，支持 TUI（vim/tmux/ranger 等）点击交互',
     mouseUnsupported: '当前系统不支持 TUI 鼠标点击（Windows 10 的 ConPTY 限制）',
+    copy: '复制',
+    paste: '粘贴',
   },
   // Graw数据库保护机制
   protection: {

@@ -597,6 +597,8 @@ export default {
     mouseOnHint: 'Alklaku por malŝalti muso-reĝimon',
     mouseOffHint: 'Enŝalti muso-reĝimon por TUI-alklakoj (vim/tmux/ranger...)',
     mouseUnsupported: 'TUI-musoalklakoj ne estas subtenataj en ĉi tiu sistemo (ConPTY-limigo de Windows 10)',
+    copy: 'Kopii',
+    paste: 'Alglui',
   },
   // Graw-datumbaza protekto
   protection: {
