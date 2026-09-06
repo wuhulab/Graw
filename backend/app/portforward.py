@@ -42,7 +42,6 @@ _HOST_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.\-:]*[A-Za-z0-9])?$")
 _LOCAL_PORT_MIN = 1024
 _LOCAL_PORT_MAX = 65535
 
-_lock = threading.Lock()
 _pf_lock = threading.Lock()
 
 # 运行中的隧道 registry：id -> tunnel dict
@@ -90,12 +89,12 @@ def _pump(src, dst, t: dict, key: str) -> None:
             dst.sendall(data)
             with _pf_lock:
                 t["stats"][key] += len(data)
-    except (OSError, EOFError):
+    except (OSError, EOFError):  # lgtm[py/empty-except] 对端关闭视为正常结束，泵线程退出
         pass
     finally:
         try:
             dst.shutdown(socket.SHUT_WR)
-        except OSError:
+        except OSError:  # lgtm[py/empty-except] 连接已关闭时 shutdown 抛错，忽略
             pass
 
 
@@ -131,11 +130,11 @@ def _handle_conn(t: dict, conn: socket.socket, node: dict) -> None:
         try:
             if chan is not None:
                 chan.close()
-        except Exception:
+        except Exception:  # lgtm[py/empty-except] 关闭 channel 失败忽略（连接已在断开流程）
             pass
         try:
             conn.close()
-        except Exception:
+        except Exception:  # lgtm[py/empty-except] 关闭本地连接失败忽略（操作系统回收）
             pass
 
 
@@ -166,7 +165,7 @@ def _tunnel_loop(t: dict, node: dict) -> None:
         threading.Thread(target=_handle_conn, args=(t, conn, node), daemon=True).start()
     try:
         listener.close()
-    except OSError:
+    except OSError:  # lgtm[py/empty-except] 监听套接字关闭失败忽略（进程退出时回收）
         pass
     with _pf_lock:
         t["status"] = "stopped"

@@ -927,5 +927,6 @@ async def delete_script(script_id: str):
     if len(data["scripts"]) == before:
         raise HTTPException(status_code=404, detail="脚本不存在")
     _save_scripts(data)
-    logger.info("删除脚本片段：%s", script_id)
+    # 日志注入防护：script_id 来自 URL 路径，repr 转义控制字符
+    logger.info("删除脚本片段：%s", repr(script_id))
     return {"ok": True}

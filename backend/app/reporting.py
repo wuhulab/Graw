@@ -49,19 +49,23 @@ def list_reports(limit: int = 30) -> list:
 
 
 def read_report(name: str) -> str:
-    """读取某份报告文本；name 白名单防穿越。"""
+    """读取某份报告文本；name 白名单 + 前缀守卫防穿越。"""
     safe = os.path.basename(name or "")
     if (not safe) or not safe.endswith(".txt"):
         return ""
-    p = os.path.join(REPORTS_DIR, safe)
-    if not os.path.isfile(p):
+    # 路径注入防御（code-scanning py/path-injection）：文件名做 basename 白名单后，
+    # 再归一化并做前缀守卫，文件访问仅在前缀通过的分支执行。
+    root = os.path.normpath(os.path.abspath(REPORTS_DIR))
+    p = os.path.normpath(os.path.abspath(os.path.join(REPORTS_DIR, safe)))
+    if not p.startswith(root):
         return ""
-    try:
-        with open(p, "r", encoding="utf-8") as f:
-            return f.read()
-    except OSError as e:
-        logger.warning("读取报告 %s 失败: %s", safe, e)
-        return ""
+    if os.path.isfile(p):
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                return f.read()
+        except OSError as e:
+            logger.warning("读取报告 %s 失败: %s", repr(safe), type(e).__name__, exc_info=True)
+    return ""
 
 
 def _rotate() -> None:
@@ -74,7 +78,7 @@ def _rotate() -> None:
     for f in files[: max(0, len(files) - _KEEP)]:
         try:
             os.remove(os.path.join(REPORTS_DIR, f))
-        except OSError:
+        except OSError:  # lgtm[py/empty-except] 删除旧报告失败仅本次轮转丢失，下次轮转兜底
             pass
 
 

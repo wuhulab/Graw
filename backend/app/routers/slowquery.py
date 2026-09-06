@@ -22,7 +22,6 @@ import asyncio
 import logging
 import re
 import shlex
-import threading
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -38,7 +37,6 @@ router = APIRouter()
 TAIL_BYTES = 8 * 1024 * 1024   # 只读慢日志尾部 8MB
 MAX_ITEMS = 50                 # TOP N
 SQL_MAX = 500                  # SQL 展示截断
-_PARSE_LOCK = threading.Lock()  # 并发扫描限流（解析较重）
 
 # 慢日志条目头部匹配（mysqld/mariadb 通用格式）
 _QUERY_TIME_RE = re.compile(
@@ -168,8 +166,9 @@ async def scan(req: ScanReq):
         # pymysql 连接查询慢日志开关与文件路径
         result = await asyncio.to_thread(_query_mysql_vars, host, port, user, password)
     except Exception as e:
-        logger.warning("慢查询扫描连接失败 %s: %s", req.connection_id, e)
-        raise HTTPException(status_code=502, detail=f"连接 MySQL 失败: {e}")
+        # 日志注入防护：connection_id 用户可控，repr 转义；异常细节经 exc_info 保留
+        logger.warning("慢查询扫描连接失败 conn=%s（%s）", repr(req.connection_id), type(e).__name__, exc_info=True)
+        raise HTTPException(status_code=502, detail="连接 MySQL 失败，请检查连接配置")
 
     auditlog.record("慢查询分析", "", "", f"conn={req.connection_id}")
     if not result["slow_query_log"]:

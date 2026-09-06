@@ -379,8 +379,9 @@ async def update_log():
     except FileNotFoundError:
         return {"log": "(暂无更新记录)"}
     except Exception as e:  # noqa: BLE001 - 日志读取失败不应当影响接口可用性
-        logger.warning("读取更新日志失败: %s", e)
-        return {"log": f"(读取更新日志失败: {e})"}
+        # 安全（code-scanning py/stack-trace-exposure）：错误详情仅记日志，不回传前端
+        logger.warning("读取更新日志失败（%s）", type(e).__name__, exc_info=True)
+        return {"log": "(读取更新日志失败)"}
 
 
 # ------------------------------------------------------------

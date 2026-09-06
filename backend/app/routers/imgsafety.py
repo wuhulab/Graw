@@ -70,8 +70,9 @@ async def list_containers():
         # Docker 引擎不可用时返回空列表 + 错误提示（前端展示引导）
         return {"containers": [], "error": e.detail}
     except Exception as e:  # 拒绝访问 / 引擎异常等
-        logger.warning("获取容器列表失败: %s", e)
-        return {"containers": [], "error": str(e)}
+        # 安全（code-scanning py/stack-trace-exposure）：错误详情仅记日志，不回传
+        logger.warning("获取容器列表失败（%s）", type(e).__name__, exc_info=True)
+        return {"containers": [], "error": "获取容器列表失败"}
     return {
         "containers": [
             {"id": c.get("id", ""), "name": c.get("name", ""), "image": (c.get("image") or c.get("name") or "")}

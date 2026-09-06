@@ -769,21 +769,28 @@ def _apply_nginx_config(site_id: str, site: dict, enabled: bool):
     if conf_dir is None:
         conf_dir = host_path(webserver.enabled_dir())
     conf = os.path.join(conf_dir, conf_name)
-    if enabled:
-        os.makedirs(conf_dir, exist_ok=True)
-        config_snapshot.capture_before("site", site_id, conf,
-                                       route="_apply_nginx_config")
-        if site.get("maintenance"):
-            # 维护模式：写维护页并生成「仅服务维护页」的 conf
-            _write_site_maint_file(site, True)
-            with open(conf, "w", encoding="utf-8") as f:
-                f.write(_maintenance_nginx_config(site))
+    # 路径注入防御（code-scanning py/path-injection）：site_id 白名单由调用方校验，
+    # 此处归一化 + 前缀守卫，文件操作仅在前缀通过的正分支执行。
+    norm_conf_dir = os.path.normpath(os.path.abspath(conf_dir))
+    norm_conf = os.path.normpath(os.path.abspath(conf))
+    if norm_conf.startswith(norm_conf_dir):
+        if enabled:
+            os.makedirs(conf_dir, exist_ok=True)
+            config_snapshot.capture_before("site", site_id, conf,
+                                           route="_apply_nginx_config")
+            if site.get("maintenance"):
+                # 维护模式：写维护页并生成「仅服务维护页」的 conf
+                _write_site_maint_file(site, True)
+                with open(conf, "w", encoding="utf-8") as f:
+                    f.write(_maintenance_nginx_config(site))
+            else:
+                with open(conf, "w", encoding="utf-8") as f:
+                    f.write(_nginx_site_config(site))
         else:
-            with open(conf, "w", encoding="utf-8") as f:
-                f.write(_nginx_site_config(site))
+            if os.path.exists(conf):
+                os.remove(conf)
     else:
-        if os.path.exists(conf):
-            os.remove(conf)
+        logger.warning("站点 conf 路径越界，拒绝写配置: %s", repr(norm_conf))
 
 
 def _reload_nginx():
@@ -844,15 +851,22 @@ def _load_maint_html(site_id: str) -> str:
 
 def _save_maint_html(site_id: str, html: str) -> None:
     """持久化站点维护页 HTML（原子写；清空/空串删除存档回退默认）。"""
-    p = _maint_html_path(site_id)
-    os.makedirs(os.path.dirname(p), exist_ok=True)
+    p = _maint_html_path(site_id)  # site_id 白名单已在 _maint_html_path 内校验
+    # 路径注入防御（code-scanning py/path-injection）：归一化 + 前缀守卫，
+    # 文件操作仅在前缀通过的正分支执行（_maint_html_path 校验的纵深兜底）。
+    root = os.path.normpath(os.path.abspath(MAINT_DIR))
+    np = os.path.normpath(os.path.abspath(p))
+    if not np.startswith(root):
+        logger.warning("维护页路径越界，拒绝写入: %s", repr(np))
+        return
+    os.makedirs(os.path.dirname(np), exist_ok=True)
     content = (html or "").strip()
     if not content:
         content = _DEFAULT_MAINT_HTML
-    tmp = p + ".tmp"
+    tmp = np + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(content)
-    os.replace(tmp, p)
+    os.replace(tmp, np)
 
 
 def _write_site_maint_file(site: dict, apply: bool) -> None:
@@ -862,16 +876,23 @@ def _write_site_maint_file(site: dict, apply: bool) -> None:
         return
     real_root = host_path(root)
     dst = os.path.join(real_root, MAINT_FILE)
+    # 路径注入防御（code-scanning py/path-injection）：归一化 + 前缀守卫，
+    # 确保维护页文件必须落在站点 root 之内。
+    norm_root = os.path.normpath(os.path.abspath(real_root))
+    norm_dst = os.path.normpath(os.path.abspath(dst))
+    if not norm_dst.startswith(norm_root):
+        logger.warning("维护页路径越界，跳过写入: %s", repr(dst))
+        return
     try:
         if apply:
-            os.makedirs(real_root, exist_ok=True)
-            with open(dst, "w", encoding="utf-8") as f:
+            os.makedirs(norm_root, exist_ok=True)
+            with open(norm_dst, "w", encoding="utf-8") as f:
                 f.write(_load_maint_html(site.get("id", "site")))
         else:
-            if os.path.exists(dst):
-                os.remove(dst)
+            if os.path.exists(norm_dst):
+                os.remove(norm_dst)
     except OSError as e:
-        logger.warning("写维护页文件失败 %s: %s", dst, e)
+        logger.warning("写维护页文件失败 %s: %s", repr(norm_dst), type(e).__name__, exc_info=True)
 
 
 def _maintenance_nginx_config(site: dict) -> str:

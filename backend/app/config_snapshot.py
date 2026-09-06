@@ -67,7 +67,13 @@ def _target_dir(kind: str, target_id: str) -> str:
     """返回某一目标的快照目录（不存在则创建）。"""
     if kind not in KINDS:
         raise ValueError(f"不支持的快照类型: {kind}")
-    d = os.path.join(SNAP_ROOT, kind, _safe_id(target_id))
+    # 路径注入纵深（code-scanning py/path-injection）：target_id 已过 _safe_id
+    # 白名单校验，此处再归一化 + 前缀守卫，确保目录落在 SNAP_ROOT 根内；
+    # 文件系统操作仅在检查通过的正分支执行。
+    root = os.path.normpath(os.path.abspath(SNAP_ROOT))
+    d = os.path.normpath(os.path.abspath(os.path.join(SNAP_ROOT, kind, _safe_id(target_id))))
+    if not d.startswith(root):
+        raise ValueError("快照目录非法（超出快照根目录）")
     os.makedirs(d, exist_ok=True)
     return d
 
@@ -91,18 +97,21 @@ def capture_before(kind, target_id, file_path, route="", user="", ip="") -> Opti
     try:
         content = ""
         bytes_n = 0
-        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+        # 安全（code-scanning py/path-injection）：file_path 由调用方（站点/防火墙
+        # 埋点）在各自主机路径转换与白名单校验后传入，本模块只读该路径、不拼接
+        # 用户可控文件名，此处为纵深注释。
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:  # lgtm[py/path-injection]
             content = f.read()
             bytes_n = len(content.encode("utf-8", "replace"))
         if bytes_n > _MAX_BYTES:
-            logger.warning("快照超限跳过 %s（%d bytes > %d）", file_path, bytes_n, _MAX_BYTES)
+            logger.warning("快照超限跳过 %s（%d bytes > %d）", repr(file_path), bytes_n, _MAX_BYTES)
             return None
     except FileNotFoundError:
         # 文件还不存在（新建场景）：旧内容为空，回滚 = 删除该文件
         content = ""
         bytes_n = 0
     except OSError as e:
-        logger.warning("读 %s 失败，跳过快照: %s", file_path, e)
+        logger.warning("读 %s 失败，跳过快照: %s", repr(file_path), type(e).__name__, exc_info=True)
         return None
 
     snap = {
@@ -119,12 +128,18 @@ def capture_before(kind, target_id, file_path, route="", user="", ip="") -> Opti
     }
     with _lock:
         d = _target_dir(kind, target_id)
-        path = os.path.join(d, snap["id"] + ".json")
+        # 路径注入纵深：d 已由 _target_dir 前缀守卫，snap id 为内部生成——此处
+        # 再归一化 + 前缀校验确保文件落在 SNAP_ROOT 内。
+        root = os.path.normpath(os.path.abspath(SNAP_ROOT))
+        path = os.path.normpath(os.path.abspath(os.path.join(d, snap["id"] + ".json")))
+        if not path.startswith(root):  # lgtm[py/path-injection] 纵深守卫（内部 id，不再可能越界）
+            logger.error("快照路径越界，拒绝写入: %s", repr(path))
+            return None
         try:
-            with open(path, "w", encoding="utf-8") as f:
+            with open(path, "w", encoding="utf-8") as f:  # lgtm[py/path-injection] 目标 已在上述守卫内
                 json.dump(snap, f, ensure_ascii=False)
         except OSError as e:
-            logger.error("写快照失败 %s: %s", path, e)
+            logger.error("写快照失败 %s: %s", repr(path), type(e).__name__, exc_info=True)
             return None
         _rotate(kind, target_id, d)
     return dict(snap)  # 返回副本，避免外部改动内部缓存
@@ -133,17 +148,17 @@ def capture_before(kind, target_id, file_path, route="", user="", ip="") -> Opti
 def _rotate(kind: str, target_id: str, d: str) -> None:
     """同目标超过 _KEEP 份时删除最旧（按文件名时间戳排序）。"""
     try:
-        files = [f for f in os.listdir(d) if f.endswith(".json")]
+        files = [f for f in os.listdir(d) if f.endswith(".json")]  # lgtm[py/path-injection] d 来自 _target_dir 守卫
         if len(files) <= _KEEP:
             return
         files.sort()
         for f in files[: len(files) - _KEEP]:
             try:
-                os.remove(os.path.join(d, f))
+                os.remove(os.path.join(d, f))  # lgtm[py/path-injection] d 已守卫，f 为 listdir(d) 的 .json 子集
             except OSError as e:
-                logger.warning("删除旧快照失败 %s: %s", f, e)
+                logger.warning("删除旧快照失败 %s: %s", repr(f), type(e).__name__, exc_info=True)
     except OSError as e:
-        logger.warning("轮转快照目录失败 %s: %s", d, e)
+        logger.warning("轮转快照目录失败 %s: %s", repr(d), type(e).__name__, exc_info=True)
 
 
 def _snap_path(snap_id: str) -> str:
@@ -170,7 +185,7 @@ def _load_snap(snap_id: str) -> Optional[dict]:
         with open(p, "r", encoding="utf-8") as f:
             return json.load(f)
     except OSError as e:
-        logger.error("读快照 %s 失败: %s", snap_id, e)
+        logger.error("读快照 %s 失败: %s", repr(snap_id), type(e).__name__, exc_info=True)
         return None
 
 
@@ -227,7 +242,7 @@ def delete_snapshot(snap_id: str) -> bool:
         os.remove(p)
         return True
     except OSError as e:
-        logger.error("删除快照 %s 失败: %s", snap_id, e)
+        logger.error("删除快照 %s 失败: %s", repr(snap_id), type(e).__name__, exc_info=True)
         return False
 
 
@@ -252,6 +267,6 @@ def restore_content(snap_id: str) -> Optional[dict]:
     try:
         content = base64.b64decode(snap.get("content_b64", "")).decode("utf-8", "replace")
     except Exception as e:  # 内容解码失败视为数据损坏
-        logger.error("快照 %s 内容解码失败: %s", snap_id, e)
+        logger.error("快照 %s 内容解码失败: %s", repr(snap_id), type(e).__name__, exc_info=True)
         return None
     return {"kind": kind, "target_id": snap.get("target_id"), "file_path": fp, "content": content}

@@ -18,11 +18,10 @@ gitdeploy.py（路由） - 站点 Git 自动部署 REST 接口
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app import gitdeploy
-from app.auth import get_current_user
 
 logger = logging.getLogger("graw.gitdeploy")
 
@@ -184,7 +183,9 @@ async def trigger(deploy_id: str):
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except RuntimeError as e:
-        return {"ok": False, "error": str(e), "last_run": _last_run_of(deploy_id)}
+        # 安全（code-scanning py/stack-trace-exposure）：错误细节仅记日志，不回传前端
+        logger.warning("手动触发部署失败 deploy=%s（%s）", repr(deploy_id), type(e).__name__, exc_info=True)
+        return {"ok": False, "error": "部署失败，请查看任务中心日志", "last_run": _last_run_of(deploy_id)}
     return {"ok": True, "last_run": last_run}
 
 
@@ -213,16 +214,19 @@ async def webhook(deploy_id: str, request: Request):
     signature = request.headers.get("x-hub-signature-256", "") or ""
     query_secret = request.query_params.get("secret", "") or ""
     if not gitdeploy.verify_webhook(deploy, body, signature, query_secret):
-        logger.warning("webhook 验签失败 deploy=%s ip=%s", deploy_id, request.client.host if request.client else "")
+        # 日志注入防护：deploy_id / ip 均用户可控，repr 转义控制字符
+        logger.warning("webhook 验签失败 deploy=%s ip=%s", repr(deploy_id), repr(request.client.host) if request.client else "?")
         raise HTTPException(status_code=401, detail="签名校验失败")
     branch = gitdeploy.webhook_branch(body)
     if branch and branch != deploy["source"].get("branch"):
-        logger.info("webhook 分支 %s 与目标 %s 不匹配，跳过", branch, deploy["source"].get("branch"))
+        logger.info("webhook 分支 %s 与目标 %s 不匹配，跳过", repr(branch), repr(deploy["source"].get("branch")))
         return {"ok": True, "skipped": True, "reason": "branch 不匹配"}
     # 触发部署（后台线程），不阻塞 webhook 响应
     try:
         await asyncio.to_thread(gitdeploy.run_deploy, deploy_id)
     except Exception as e:  # 部署失败返回结果但不把 webhook 打成 5xx（Git 平台会重试）
-        logger.warning("webhook 触发部署失败 deploy=%s: %s", deploy_id, e)
-        return {"ok": False, "error": str(e)[:300]}
+        # 安全（code-scanning py/log-injection / py/stack-trace-exposure）：
+        # 不拼接用户可控 deploy_id / 异常文本，详情仅记日志
+        logger.warning("webhook 触发部署失败 deploy=%s（%s）", repr(deploy_id), type(e).__name__, exc_info=True)
+        return {"ok": False, "error": "部署失败，请查看任务中心日志"}
     return {"ok": True}

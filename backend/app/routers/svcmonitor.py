@@ -507,7 +507,8 @@ async def service_action(item_id: str, req: ActionRequest):
 
     result = await asyncio.to_thread(_run_service_action, action, item.get("target", ""))
     if not result.get("ok"):
-        logger.warning("服务操作失败 %s %s: %s", item.get("target"), action, result.get("detail"))
+        # 日志注入防护：target/detail 均可含用户可控字符，repr 转义
+        logger.warning("服务操作失败 %s %s: %s", repr(item.get("target")), action, repr(result.get("detail")))
         raise HTTPException(status_code=400, detail=result.get("detail", "服务操作失败"))
 
     # 回验结果写回监控项，保持与后台探测一致
@@ -520,5 +521,6 @@ async def service_action(item_id: str, req: ActionRequest):
     if result.get("is_enabled") is not None:
         item["is_enabled"] = bool(result["is_enabled"])
     _save(data)
-    logger.info("服务处置成功：%s → %s（%s）", item.get("target"), action, result.get("status"))
+    # 日志注入防护：target/status 可含用户可控字符，repr 转义
+    logger.info("服务处置成功：%s → %s（%s）", repr(item.get("target")), action, repr(result.get("status")))
     return result

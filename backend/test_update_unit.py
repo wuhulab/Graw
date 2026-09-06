@@ -233,8 +233,6 @@ def test_apply():
 # 7. 后台更新执行（mock docker SDK）
 # ------------------------------------------------------------
 def json_dumps(obj):
-    import json
-
     return json.dumps(obj)
 
 

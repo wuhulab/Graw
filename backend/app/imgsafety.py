@@ -25,7 +25,7 @@ import re
 import threading
 import time
 import uuid
-from typing import List, Optional
+from typing import Optional
 
 logger = logging.getLogger("graw.imgsafety")
 

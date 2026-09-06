@@ -18,11 +18,10 @@ import logging
 import re
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app import portforward
-from app.auth import get_current_user
 
 logger = logging.getLogger("graw.portforward")
 
