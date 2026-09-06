@@ -38,17 +38,40 @@ DATA_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data"
 DEPLOY_FILE = os.path.join(DATA_DIR, "gitdeploy.json")
 
 # ID 白名单（同时用于路径命名/日志文件，防穿越）
-# 注：以下校验正则由 routers/gitdeploy.py 经 gitdeploy.<name> 属性访问调用，
-# CodeQL 的 unused-global-variable 不计跨模块属性读取，故逐行 lgtm 标注用途。
-_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")  # lgtm[py/unused-global-variable] 供路由层 _validate_deploy_id 使用
+_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 # Git 分支名（含斜杠，如 feature/foo）：字母/数字/._-/，防 shell 注入
-_BRANCH_RE = re.compile(r"^[A-Za-z0-9_.\-/]{1,128}$")  # lgtm[py/unused-global-variable] 供路由层 _validate_branch 使用
+_BRANCH_RE = re.compile(r"^[A-Za-z0-9_.\-/]{1,128}$")
 # 仓库地址白名单：https/http 或 git@ 或 ssh://（拒绝换行/分号等）
-_REPO_RE = re.compile(  # lgtm[py/unused-global-variable] 供路由层 _validate_repo_url 使用
+_REPO_RE = re.compile(
     r"^(https?://[^\r\n\x00]+|git@[A-Za-z0-9.\-]+:[^\r\n\x00]+|ssh://[^\r\n\x00]+)$"
 )
 # Linux 绝对路径 (/) 或 Windows 盘符路径；拒绝控制字符
-_DIR_RE = re.compile(r"^(/[^\r\n\x00]*|[A-Za-z]:[\\/][^\r\n\x00]*)$")  # lgtm[py/unused-global-variable] 供路由层 _validate_deploy_dir 使用
+_DIR_RE = re.compile(r"^(/[^\r\n\x00]*|[A-Za-z]:[\\/][^\r\n\x00]*)$")
+
+
+# ---------------------------------------------------------------------------
+# 输入白名单校验（供路由层复用；正则在本模块内被真正引用并单一维护）
+# ---------------------------------------------------------------------------
+def is_valid_deploy_id(value: str) -> bool:
+    """部署 ID 白名单：字母/数字/下划线/连字符，1-32 位。"""
+    return bool(_ID_RE.match(value or ""))
+
+
+def is_valid_branch(value: str) -> bool:
+    """Git 分支名白名单：普通字符 + 点/下划线/连字符/斜杠，防 shell 注入。"""
+    return bool(_BRANCH_RE.match(value or ""))
+
+
+def is_valid_repo_url(value: str) -> bool:
+    """仓库地址白名单：仅 http/https/git@/ssh://（拒绝换行/分号/控制字符）。"""
+    return bool(_REPO_RE.match(value or ""))
+
+
+def is_valid_deploy_dir(value: str) -> bool:
+    """部署目录白名单：Linux 绝对路径或 Windows 盘符路径，拒绝控制字符。"""
+    return bool(_DIR_RE.match(value or ""))
+
+
 # 每个仓库允许的 webhook body 上限（GitHub 大 payload 也仅数百 KB）
 MAX_BODY = 2 * 1024 * 1024
 # 部署超时（git 网络慢时拖住线程，避免无限等待）

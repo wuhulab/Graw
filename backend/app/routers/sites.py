@@ -770,25 +770,26 @@ def _apply_nginx_config(site_id: str, site: dict, enabled: bool):
         conf_dir = host_path(webserver.enabled_dir())
     conf = os.path.join(conf_dir, conf_name)
     # 路径注入防御（code-scanning py/path-injection）：site_id 白名单由调用方校验，
-    # 此处归一化 + 前缀守卫，文件操作仅在前缀通过的正分支执行。
+    # 此处归一化（CodeQL PathNormalization）并做前缀守卫（SafeAccessCheck），
+    # 文件操作一律使用被守卫的 norm_conf，且仅在前缀通过的正分支执行。
     norm_conf_dir = os.path.normpath(os.path.abspath(conf_dir))
     norm_conf = os.path.normpath(os.path.abspath(conf))
     if norm_conf.startswith(norm_conf_dir):
         if enabled:
             os.makedirs(conf_dir, exist_ok=True)
-            config_snapshot.capture_before("site", site_id, conf,
+            config_snapshot.capture_before("site", site_id, norm_conf,
                                            route="_apply_nginx_config")
             if site.get("maintenance"):
                 # 维护模式：写维护页并生成「仅服务维护页」的 conf
                 _write_site_maint_file(site, True)
-                with open(conf, "w", encoding="utf-8") as f:
+                with open(norm_conf, "w", encoding="utf-8") as f:
                     f.write(_maintenance_nginx_config(site))
             else:
-                with open(conf, "w", encoding="utf-8") as f:
+                with open(norm_conf, "w", encoding="utf-8") as f:
                     f.write(_nginx_site_config(site))
         else:
-            if os.path.exists(conf):
-                os.remove(conf)
+            if os.path.exists(norm_conf):
+                os.remove(norm_conf)
     else:
         logger.warning("站点 conf 路径越界，拒绝写配置: %s", repr(norm_conf))
 
@@ -885,7 +886,8 @@ def _write_site_maint_file(site: dict, apply: bool) -> None:
         return
     try:
         if apply:
-            os.makedirs(norm_root, exist_ok=True)
+            # 文件操作仅使用被守卫的 norm_dst（其父目录即站点 root）
+            os.makedirs(os.path.dirname(norm_dst), exist_ok=True)
             with open(norm_dst, "w", encoding="utf-8") as f:
                 f.write(_load_maint_html(site.get("id", "site")))
         else:

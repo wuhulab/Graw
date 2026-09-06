@@ -97,21 +97,25 @@ def capture_before(kind, target_id, file_path, route="", user="", ip="") -> Opti
     try:
         content = ""
         bytes_n = 0
-        # 安全（code-scanning py/path-injection）：file_path 由调用方（站点/防火墙
-        # 埋点）在各自主机路径转换与白名单校验后传入，本模块只读该路径、不拼接
-        # 用户可控文件名，此处为纵深注释。
-        with open(file_path, "r", encoding="utf-8", errors="replace") as f:  # lgtm[py/path-injection]
+        # 路径注入防御（code-scanning py/path-injection）：file_path 由调用方
+        # （站点/防火墙埋点）在各自主机路径转换与白名单校验后传入——此处先将
+        # 路径归一化（CodeQL PathNormalization：abspath+normpath 消除相对/
+        # ../穿越语义）再执行只读；本模块仅读取、不拼接任何用户可控文件名。
+        if not isinstance(file_path, str) or not file_path.strip():
+            return None
+        fp = os.path.normpath(os.path.abspath(file_path))
+        with open(fp, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
             bytes_n = len(content.encode("utf-8", "replace"))
         if bytes_n > _MAX_BYTES:
-            logger.warning("快照超限跳过 %s（%d bytes > %d）", repr(file_path), bytes_n, _MAX_BYTES)
+            logger.warning("快照超限跳过 %s（%d bytes > %d）", repr(fp), bytes_n, _MAX_BYTES)
             return None
     except FileNotFoundError:
         # 文件还不存在（新建场景）：旧内容为空，回滚 = 删除该文件
         content = ""
         bytes_n = 0
     except OSError as e:
-        logger.warning("读 %s 失败，跳过快照: %s", repr(file_path), type(e).__name__, exc_info=True)
+        logger.warning("读 %s 失败，跳过快照: %s", repr(fp), type(e).__name__, exc_info=True)
         return None
 
     snap = {

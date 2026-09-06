@@ -507,8 +507,9 @@ async def service_action(item_id: str, req: ActionRequest):
 
     result = await asyncio.to_thread(_run_service_action, action, item.get("target", ""))
     if not result.get("ok"):
-        # 日志注入防护：target/detail 均可含用户可控字符，repr 转义
-        logger.warning("服务操作失败 %s %s: %s", repr(item.get("target")), action, repr(result.get("detail")))
+        # 安全（code-scanning py/log-injection）：target/detail 为用户可控拼接物，
+        # 不回写日志；错误细节经 400 响应返回并持久化到监控项 last_detail
+        logger.warning("服务操作失败，详情见接口返回（可选动作：%s）", "/".join(SERVICE_ACTIONS))
         raise HTTPException(status_code=400, detail=result.get("detail", "服务操作失败"))
 
     # 回验结果写回监控项，保持与后台探测一致
@@ -521,6 +522,7 @@ async def service_action(item_id: str, req: ActionRequest):
     if result.get("is_enabled") is not None:
         item["is_enabled"] = bool(result["is_enabled"])
     _save(data)
-    # 日志注入防护：target/status 可含用户可控字符，repr 转义
-    logger.info("服务处置成功：%s → %s（%s）", repr(item.get("target")), action, repr(result.get("status")))
+    # 安全（code-scanning py/log-injection）：target/status 为用户可控拼接物，
+    # 不回写日志（处置结果已持久化到监控项字段，前端直接展示）
+    logger.info("服务处置成功")
     return result

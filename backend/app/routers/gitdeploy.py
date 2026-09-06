@@ -80,25 +80,25 @@ def _validate_deploy_dir(deploy_dir: str, site_root: str) -> str:
     if not deploy_dir.strip():
         return site_root or "/var/www/html"
     d = deploy_dir.strip()
-    if not gitdeploy._DIR_RE.match(d):
+    if not gitdeploy.is_valid_deploy_dir(d):
         raise HTTPException(status_code=400, detail="deploy_dir 必须为绝对路径且不含控制字符")
     return d
 
 
 def _validate_repo_url(url: str) -> str:
-    if not gitdeploy._REPO_RE.match(url):
+    if not gitdeploy.is_valid_repo_url(url):
         raise HTTPException(status_code=400, detail="repo_url 格式非法（仅支持 http/https/ssh/git@）")
     return url
 
 
 def _validate_branch(branch: str) -> str:
-    if not gitdeploy._BRANCH_RE.match(branch or ""):
+    if not gitdeploy.is_valid_branch(branch):
         raise HTTPException(status_code=400, detail="branch 格式非法")
     return branch.strip()
 
 
 def _validate_deploy_id(deploy_id: str) -> str:
-    if not gitdeploy._ID_RE.match(deploy_id or ""):
+    if not gitdeploy.is_valid_deploy_id(deploy_id):
         raise HTTPException(status_code=400, detail="非法的部署 ID")
     return deploy_id
 
