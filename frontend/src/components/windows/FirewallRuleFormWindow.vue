@@ -130,7 +130,7 @@ async function save() {
 </script>
 
 <style scoped>
-.rule-form-window { padding: 14px; }
+.rule-form-window { padding: 14px; overflow-y: auto; height: 100%; box-sizing: border-box; }
 .error-box {
   color: #b91c1c;
   font-size: 12.5px;

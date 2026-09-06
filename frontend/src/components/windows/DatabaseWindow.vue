@@ -46,7 +46,11 @@
           <button class="ui-btn mini danger" @click="removeConn(c)">{{ $t('database.delete') }}</button>
         </div>
       </div>
-      <div v-if="connections.length === 0" class="ui-empty">{{ $t('database.noConnections') }}</div>
+    </div>
+    <!-- 空状态独立于卡片网格：垂直水平居中于应用内容区中央 -->
+    <div v-if="connections.length === 0" class="conn-empty">
+      <Database :size="36" style="color:#9ca3af;" />
+      <div>{{ $t('database.noConnections') }}</div>
     </div>
 
     <!-- 「管理连接」与「创建数据库」已拆分为独立窗口（DatabaseManageWindow /
@@ -72,7 +76,7 @@ import { ref, onMounted, watch } from 'vue'   // 状态/挂载加载/共享信�
 import { useI18n } from 'vue-i18n'   // 翻译函数
 import { databasesApi } from '../../api'   // /api/databases：数据库管理接口
 import { dbVersion } from '../../store/databases'   // 共享版本信号：连接增改后触发本窗口刷新
-import { Plus } from 'lucide-vue-next'   // 添加连接按钮图标
+import { Plus, Database } from 'lucide-vue-next'   // 添加连接按钮 / 空状态图标
 import ConfirmDialog from '../ConfirmDialog.vue'   // 高风险操作的二次确认对话框
 
 const { t } = useI18n()
@@ -143,8 +147,12 @@ onMounted(load)   // 进入窗口即加载
 </script>
 
 <style scoped>
-.db-window { padding: 10px; }
-.connections { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.db-window { padding: 10px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; position: relative; }
+/* 「添加连接」工具栏下方的分隔线 */
+.db-window :deep(.ui-toolbar) { border-bottom: 1px solid #e5e7eb; padding-bottom: 10px; margin-bottom: 4px; }
+.connections { flex: 1; min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); align-content: start; gap: 10px; padding: 4px; }
+/* 空状态：绝对定位覆盖内容区，垂直水平居中于应用中央（不拦截工具栏点击） */
+.conn-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #9ca3af; font-size: 13px; pointer-events: none; }
 .conn-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; background: #fff; }
 .conn-head { margin-bottom: 8px; }
 .conn-title { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px; }
