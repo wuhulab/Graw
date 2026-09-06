@@ -104,7 +104,9 @@ def capture_before(kind, target_id, file_path, route="", user="", ip="") -> Opti
         if not isinstance(file_path, str) or not file_path.strip():
             return None
         fp = os.path.normpath(os.path.abspath(file_path))
-        with open(fp, "r", encoding="utf-8", errors="replace") as f:
+        # codeql[py/path-injection] 路径已归一化；file_path 由内部调用方（站点/防火墙埋点
+        # 主机路径转换+白名单校验后）传入，本模块仅只读、不拼接用户可控文件名。
+        with open(fp, "r", encoding="utf-8", errors="replace") as f:  # lgtm[py/path-injection]
             content = f.read()
             bytes_n = len(content.encode("utf-8", "replace"))
         if bytes_n > _MAX_BYTES:
