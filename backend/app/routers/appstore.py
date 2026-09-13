@@ -376,12 +376,43 @@ async def get_app_readme(app_id: str):
     return await asyncio.to_thread(_get_app_readme_sync, app_id)
 
 
+# README 内容大小上限（约 512KB）：GitHub 原始 README 远小于此。防止投毒的
+# 仓库返回超大内容，经 readme 接口原样回传前端造成内存/渲染 DoS（第十五轮
+# 审计加固，与 files.py 读取 2MB 上限同基线）。
+_README_MAX_BYTES = 512 * 1024
+
+
+def _read_readme_limited(resp, url: str) -> str:
+    """限长读取 README 响应体；超限抛 HTTPException(413) 中止拉取。
+
+    分块累计，超过上限即中断（先抛错后不再读，避免把超大响应整读进内存）。
+    """
+    chunks = []
+    total = 0
+    while True:
+        chunk = resp.read(65536)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > _README_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="README 过大，已中止拉取")
+        chunks.append(chunk)
+    return b"".join(chunks).decode("utf-8", "replace")
+
+
 def _get_app_readme_sync(app_id: str) -> dict:
     app = _find_app(app_id)
     repo = _parse_github_repo(app.get("source", ""))
     if not repo:
         raise HTTPException(status_code=400, detail="该应用未提供有效的 GitHub 开源社区地址")
     owner, name = repo
+    # 路径段白名单：owner/name 会拼入 GitHub API/raw URL 的路径，仅允许 GitHub
+    # 仓库名合法字符（字母/数字/._-），拒绝 ? # .. 等 URL 污染字符（第十五轮
+    # 审计加固，防 URL 语义被改写）。
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,99}", owner) or not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9_.-]{0,99}", name
+    ):
+        raise HTTPException(status_code=400, detail="仓库地址格式非法")
 
     content = None
     # 优先走 GitHub API（自动识别默认分支与 README 文件名）
@@ -394,7 +425,9 @@ def _get_app_readme_sync(app_id: str) -> dict:
             },
         )
         with urllib.request.urlopen(api_req, timeout=30) as resp:
-            content = resp.read().decode("utf-8", "replace")
+            content = _read_readme_limited(resp, api_req.full_url)
+    except HTTPException:
+        raise  # README 超限等业务校验异常原样上抛（413），不被降级为 502
     except Exception:
         content = None
 
@@ -405,8 +438,10 @@ def _get_app_readme_sync(app_id: str) -> dict:
             try:
                 raw_req = urllib.request.Request(url, headers={"User-Agent": "Graw-Panel/1.0"})
                 with urllib.request.urlopen(raw_req, timeout=30) as resp:
-                    content = resp.read().decode("utf-8", "replace")
+                    content = _read_readme_limited(resp, url)
                     break
+            except HTTPException:
+                raise  # README 超限：中止后续分支尝试，直接返回 413
             except Exception:
                 continue
 

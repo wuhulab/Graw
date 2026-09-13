@@ -120,9 +120,27 @@ const html = computed(() => {
   repoCtx.blobBase = repoCtx.owner && repoCtx.name ? `https://github.com/${repoCtx.owner}/${repoCtx.name}/blob/HEAD/` : ''
   return DOMPurify.sanitize(md.render(raw.value), {
     ADD_ATTR: ['target', 'rel'],        // 允许链接的 target/rel 属性
-    // URI 白名单：仅放行 http(s)/mailto 与相对地址；不放行 data:——
-    // data:image/svg+xml 可内嵌脚本，历史上多次出现 DOMPurify 相关绕过
-    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.-]|$))/i,
+    FORBID_ATTR: ['style'],             // 禁止 style 属性（见下方说明）
+    FORBID_TAGS: ['style', 'template'], // 禁止 style/template 元素（见下方说明）
+    // URI 安全：沿用 DOMPurify 官方默认白名单（http/https/mailto/tel 等 + 相对
+    // 地址），拦截 javascript: / data: / vbscript: / file: 等危险 scheme。
+    //
+    // 安全修复（第十五轮审计，High）：此前自定义 ALLOWED_URI_REGEXP 的排除字符
+    // 类漏掉了冒号——正则第三分支 [a-z+.-]+(?:[^a-z+.-]|$) 中 [^a-z+.-] 能匹配
+    // ":"，导致 "javascript:" / "data:" / "vbscript:" 全部被判定为合法 URI，
+    // 等于彻底关闭 DOMPurify 的 scheme 过滤。README 中的原始 HTML
+    // <a href="javascript:..."> 经 markdown-it（html:true）透传后原样存活，
+    // 管理员点击即在面板同源上下文执行脚本（存储型 XSS → 窃取 localStorage
+    // 中的 JWT → 提权调用全部管理员接口 → 宿主 RCE）。
+    // 移除自定义覆盖，直接使用 DOMPurify 默认 URI 正则（其排除字符类
+    // [^a-z+.\-:] 保留冒号，可正确拦截上述 scheme；data:image/svg+xml 等
+    // data: URI 同样被默认正则拦截）。
+    //
+    // 配套加固：DOMPurify 把 style 列为 URI 惰性属性（属性值不校验），其中的
+    // url(javascript:...) / expression() / data:image/svg+xml 背景图等向量会被
+    // 原样保留；<style> 元素内的 CSS 也可加载外部资源（数据外带面）。README
+    // 阅读排版不依赖内联样式/CSS 块，FORBID 掉 style 属性与 style/template 元素
+    // 以彻底封堵 CSS 注入面。
   })
 })
 
