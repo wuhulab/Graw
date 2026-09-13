@@ -1,6 +1,6 @@
 /* index.js — vue-i18n 实例与语言注册中心。
 
-  业务背景：面板支持 11 种界面语言。这里负责：
+  业务背景：面板支持 22 种界面语言。这里负责：
    1. 汇总所有语言包（messages），供 createI18n 使用；
    2. 维护支持语言清单 LANGUAGES（设置页下拉用它渲染）；
    3. 提供 setLocale() 切换语言，并把用户选择同步到 settings store 持久化。
@@ -11,7 +11,7 @@
 import { createI18n } from 'vue-i18n'       // 创建 i18n 实例（Composition API 模式）
 import { settings } from '../store/settings' // 读取/写入用户语言偏好（持久化在 localStorage）
 
-// 11 个语言包：结构一致（key 对齐），供 $t() 按当前 locale 取词
+// 22 个语言包：结构一致（key 对齐），供 $t() 按当前 locale 取词
 import zhCN from './zh-CN'   // 简体中文（源语言，缺失键的回退目标）
 import zhTW from './zh-TW'   // 繁体中文
 import en from './en'        // 英语
@@ -23,6 +23,17 @@ import fr from './fr'        // 法语
 import pt from './pt'        // 葡萄牙语
 import ko from './ko'        // 韩语
 import eo from './eo'        // 世界语
+import ar from './ar'        // 阿拉伯语
+import arz from './arz'      // 埃及语（埃及阿拉伯语）
+import egy from './egy'      // 古埃及语
+import ga from './ga'        // 爱尔兰语
+import vi from './vi'        // 越南文
+import el from './el'        // 希腊文
+import pl from './pl'        // 波兰语
+import it from './it'        // 意大利语
+import la from './la'        // 拉丁语
+import bo from './bo'        // 藏语
+import za from './za'        // 壮语
 
 // 支持的语言列表（设置页下拉使用）
 // code: i18n locale code；name: 该语言下自身的名称
@@ -38,6 +49,17 @@ export const LANGUAGES = [
   { code: 'pt', name: 'Português' },
   { code: 'ko', name: '한국어' },
   { code: 'eo', name: 'Esperanto' },
+  { code: 'ar', name: 'العربية' },
+  { code: 'arz', name: 'مصرى' },
+  { code: 'egy', name: '𓂋𓏤𓈖𓆎𓅓𓏏𓊖 (Medu Neter)' },
+  { code: 'ga', name: 'Gaeilge' },
+  { code: 'vi', name: 'Tiếng Việt' },
+  { code: 'el', name: 'Ελληνικά' },
+  { code: 'pl', name: 'Polski' },
+  { code: 'it', name: 'Italiano' },
+  { code: 'la', name: 'Latina' },
+  { code: 'bo', name: 'བོད་ཡིག' },
+  { code: 'za', name: 'Vahcuengh' },
 ]
 
 // 语言 code → 语言包 的映射（code 与 LANGUAGES 保持一致）
@@ -53,6 +75,17 @@ const messages = {
   pt,
   ko,
   eo,
+  ar,
+  arz,
+  egy,
+  ga,
+  vi,
+  el,
+  pl,
+  it,
+  la,
+  bo,
+  za,
 }
 
 // 合法性校验：非法 locale 回退到简体中文

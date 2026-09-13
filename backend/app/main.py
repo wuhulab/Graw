@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response
 from contextlib import asynccontextmanager
+import json as _json
 import os
 import asyncio
 
@@ -410,6 +411,108 @@ async def agent_proxy_middleware(request: Request, call_next):
             # 请求线程处理完复位请求级节点，避免串线程污染
             node_manager.set_request_node(prev_node)
     return await call_next(request)
+
+
+# ---------------------------------------------------------------------------
+# 请求体大小限制（纯 ASGI 中间件，最后注册=最外层，先于 agent 代理执行）
+# ---------------------------------------------------------------------------
+# 背景（第十五轮审计，High）：此前全链路对请求体大小没有任何限制——
+# uvicorn(h11) 在应用消费之前会把整个请求体缓冲进内存，FastAPI 解析 JSON
+# 时还会再复制一份。未认证攻击者只需向公开的 /api/auth/login 并发发送
+# 超大 JSON（PoC 实测 4 连接 × 32MB → RSS 峰值 +276MB，约 2.2 倍放大），
+# 即可低成本耗尽面板内存（未认证 pre-auth DoS）。
+#
+# 防护策略（拒绝均发生在读取请求体之前，内存占用不超过已在途数据）：
+#   1. 携带 Transfer-Encoding 的请求一律 411 Length Required：HTTP/1.1
+#      请求体必须用 Content-Length 声明大小，否则服务端无法在不缓冲的
+#      前提下判定边界。主流客户端（浏览器 / axios / requests / curl /
+#      本面板自身的 agent_client）都使用 Content-Length 框架，不受影响。
+#   2. Content-Length 超过限额直接 413，且不读取请求体：uvicorn 对
+#      未消费完请求体的连接会在响应后关闭，攻击者的发送被 TCP 层截断。
+#   3. 两级限额：普通请求（JSON 等小配置负载）默认 16MB；multipart
+#      文件上传（/api/files/upload、/api/panelbackup/import 等，管理员
+#      专用，Starlette 超过 1MB 自动落盘）默认 2GB。均可用环境变量
+#      GRAW_MAX_BODY_MB / GRAW_MAX_UPLOAD_MB 覆盖（最小 1MB）。
+#   4. 多个不一致的 Content-Length 头（请求走私经典手法）直接 400。
+# ---------------------------------------------------------------------------
+def _env_mb(name: str, default_mb: int) -> int:
+    """从环境变量读取 MB 数（非法/缺省回落默认值），换算为字节。"""
+    try:
+        return max(1, int(os.environ.get(name, "") or default_mb)) * 1024 * 1024
+    except (TypeError, ValueError):
+        return default_mb * 1024 * 1024
+
+
+_MAX_BODY_BYTES = _env_mb("GRAW_MAX_BODY_MB", 16)
+_MAX_UPLOAD_BYTES = _env_mb("GRAW_MAX_UPLOAD_MB", 2048)
+
+
+class _RequestBodyLimitMiddleware:
+    """全局请求体大小限制（防未认证超大请求体内存耗尽 DoS）。"""
+
+    def __init__(self, app, *, body_limit: int, upload_limit: int):
+        self.app = app
+        self.body_limit = body_limit
+        self.upload_limit = upload_limit
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            # WebSocket / lifespan 原样放行
+            await self.app(scope, receive, send)
+            return
+        headers: dict = {}
+        for k, v in scope.get("headers") or []:
+            headers.setdefault(
+                k.decode("latin-1", "replace").lower(), []
+            ).append(v.decode("latin-1", "replace"))
+
+        if headers.get("transfer-encoding"):
+            await self._reply(send, 411, "请求必须声明 Content-Length（不支持 chunked 传输）")
+            return
+        cls_ = headers.get("content-length")
+        if not cls_:
+            # 无请求体（GET / 无 body POST 等）或未声明大小：直接放行，
+            # 此时不可能有合法的请求体（HTTP 规定请求体必须有框架声明）。
+            await self.app(scope, receive, send)
+            return
+        if len(set(cls_)) > 1:
+            await self._reply(send, 400, "Content-Length 头不一致")
+            return
+        try:
+            cl = int(cls_[0])
+        except ValueError:
+            await self._reply(send, 400, "Content-Length 非法")
+            return
+        ctype = (headers.get("content-type") or [""])[0].lower()
+        limit = self.upload_limit if ctype.startswith("multipart/") else self.body_limit
+        if cl > limit:
+            await self._reply(
+                send, 413, f"请求体过大（上限 {limit // (1024 * 1024)} MB）"
+            )
+            return
+        await self.app(scope, receive, send)
+
+    @staticmethod
+    async def _reply(send, status: int, detail: str) -> None:
+        body = _json.dumps({"detail": detail}).encode("utf-8")
+        await send(
+            {
+                "type": "http.response.start",
+                "status": status,
+                "headers": [
+                    (b"content-type", b"application/json; charset=utf-8"),
+                    (b"content-length", str(len(body)).encode("latin-1")),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
+
+
+app.add_middleware(
+    _RequestBodyLimitMiddleware,
+    body_limit=_MAX_BODY_BYTES,
+    upload_limit=_MAX_UPLOAD_BYTES,
+)
 
 
 # 公开路由：登录、当前用户、改密、健康检查
