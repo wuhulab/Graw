@@ -8,6 +8,25 @@
 
 <template>
   <Login v-if="!loggedIn" @login="onLoggedIn" />
+  <!-- 标准面板模式（设置 → 面板模式 开启）：1Panel 式侧边栏布局替代桌面/窗口系统。
+       窗口打开/聚焦逻辑与桌面共用（openWindows/activeWindowId），仅外壳不同。
+       50 个 openXxx 事件经 winEvents 透传给 PanelLayout 内容区的 WindowContent。 -->
+  <PanelLayout
+    v-else-if="panelModeOn"
+    :windows="openWindows"
+    :active-id="activeWindowId"
+    :user="auth.user"
+    :menu-shortcuts="visibleShortcuts"
+    :host-name="hostBadgeText"
+    :host-remote="hostBadgeRemote"
+    :show-tabs="settings.panelTabs"
+    v-bind="winEvents"
+    @open="onPanelOpen"
+    @focus="focusWindow"
+    @close="handleCloseWindow"
+    @dirty="onPanelDirty"
+    @logout="doLogout"
+  />
   <div v-else class="desktop" :style="desktopBgStyle">
     <!-- 动态壁纸层：视频壁纸或图片轮播（置于桌面内容之下） -->
     <div v-if="wallpaperVideo" class="wallpaper-video">
@@ -76,7 +95,8 @@
       </div>
     </div>
 
-    <!-- Windows -->
+    <!-- Windows：窗口外壳 + 统一的内容组件（约 50 个 openXxx 事件由 winEvents 提供，
+         经 WindowFrame 作用域插槽 contentAttrs 透传给 WindowContent 的动态组件） -->
     <WindowFrame
       v-for="w in openWindows"
       :key="w.id"
@@ -88,8 +108,12 @@
       @maximize="toggleMaximize(w.id)"
       @move="(x, y) => moveWindow(w.id, x, y)"
       @resize="(width, height) => resizeWindow(w.id, width, height)"
+      v-bind="winEvents"
+      @dirty="(v) => setWinDirty(w.id, v)"
     >
-      <component :is="w.component" v-bind="w.props || {}" @close="handleCloseWindow(w.id)" @dirty="(v) => { const ww=openWindows.value.find(x=>x.id===w.id); if(ww) ww.dirty=v }" @openTerminal="openTerminalAt" @openEditor="openEditor" @openMedia="openMedia" @openUsers="openUsers" @openVip="openVip" @openUiSettings="openUiSettings" @openLogs="openContainerLogs" @openContainerTerminal="openContainerTerminal" @openContainerDetails="openContainerDetails" @openContainerStats="openContainerStats" @openContainerEdit="openContainerEdit" @openFiles="openFiles" @openDockerConfigEditor="openDockerConfigEditor" @openAppInstall="openAppStoreInstall" @openComposeEditor="openAppStoreComposeEditor" @openInstallLog="openAppStoreInstallLog" @openReadme="openAppStoreReadme" @openTaskCenter="openTasks" @openRuntimeCreate="openRuntimeCreate" @openConnectionForm="openConnectionForm" @openNetStorageBrowse="openNetStorageBrowse" @openNetStorageForm="openNetStorageForm" @openSiteEdit="openSiteEdit" @openFirewallRuleForm="openFirewallRuleForm" @openBackupTaskForm="openBackupTaskForm" @openBackupRemoteForm="openBackupRemoteForm" @openDatabaseManage="openDatabaseManage" @openDatabaseCreate="openDatabaseCreate" @openTamperForm="openTamperForm" @openSiteMaintenance="openSiteMaintenance" @openAppStoreConfig="openAppStoreConfig" @openCronTaskForm="openCronTaskForm" @openNotifyChannelForm="openNotifyChannelForm" @openNotifyRuleForm="openNotifyRuleForm" @openFrpProxyForm="openFrpProxyForm" @openGitDeployForm="openGitDeployForm" @openLogCollectForm="openLogCollectForm" @openServiceMonitorForm="openServiceMonitorForm" @openUptimeForm="openUptimeForm" @openFtpUserForm="openFtpUserForm" @openWafAclForm="openWafAclForm" @openSslUpload="openSslUpload" @openSslLeForm="openSslLeForm" @openSshKeyGen="openSshKeyGen" @openSshKeyImport="openSshKeyImport" @openSshKeyDeploy="openSshKeyDeploy" @openPortForwardForm="openPortForwardForm" />
+      <template #default="{ contentAttrs }">
+        <WindowContent :window="w" v-bind="contentAttrs" @close="handleCloseWindow(w.id)" />
+      </template>
     </WindowFrame>
 
     <!-- Dock -->
@@ -161,6 +185,9 @@ import RingCard from './components/cards/RingCard.vue'
 import MonitorCard from './components/cards/MonitorCard.vue'
 import InfoNotesCard from './components/cards/InfoNotesCard.vue'
 import WindowFrame from './components/WindowFrame.vue'
+import WindowContent from './components/WindowContent.vue'
+import PanelLayout from './components/PanelLayout.vue'
+import PanelHome from './components/PanelHome.vue'
 import DockerWindow from './components/windows/DockerWindow.vue'
 import ProcessWindow from './components/windows/ProcessWindow.vue'
 import FilesWindow from './components/windows/FilesWindow.vue'
@@ -257,7 +284,7 @@ import { startDocker, stopDocker, refresh as refreshDocker } from './store/docke
 import { nodes as nodesStore, refreshNodes } from './store/nodes'
 import { setRequestNode } from './store/requestNode'
 import { tamperState, startTamper, stopTamper } from './store/tamper'
-import { Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, Shield, ShieldAlert, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, BarChart3, FileCode2, History, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug, Pin, PinOff, EyeOff, Clock, BellRing, Gauge, KeyRound, FileUp, Send } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用）
+import { Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, Shield, ShieldAlert, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, BarChart3, FileCode2, History, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug, Pin, PinOff, EyeOff, Clock, BellRing, Gauge, KeyRound, FileUp, Send, Home } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用）
 
 // --- 桌面根状态：登录态、动态壁纸、底栏主机徽标 ---
 const loggedIn = computed(() => !!auth.token)
@@ -541,6 +568,9 @@ const startMenuOpen = ref(false)
 // 未授权（未解锁）时强制视为关闭，避免历史残留值绕过付费锁定。
 const unifiedPanelOn = computed(() => settings.unifiedPanel && !!vipStore.vip)
 
+// 标准面板模式：设置里开启后界面切换为 1Panel 式侧边栏布局（本地偏好，即改即生效）
+const panelModeOn = computed(() => !!settings.panelMode)
+
 // ShunX 安全入口：登录后检查是否已配置，未配置则强制设置。
 // 仅管理员触发（保存入口需要管理员权限）；后端对普通用户已脱敏
 // entry_path，普通用户凭 enabled 判断即可。
@@ -603,6 +633,84 @@ function doLogout() {
   location.reload()
 }
 
+// --- 窗口内容事件映射（winEvents）---
+// 桌面模式（WindowFrame 作用域插槽）与面板模式（PanelLayout 内容区）共用的一份
+// 「窗口内容 → openXxx」事件清单。onXxx 键等价模板 @xxx；各 openXxx 均为本组件内的
+// function 声明（会被提升），因此这里可以安全地直接引用。close/dirty 因需要按窗口
+// id 定位，不放进映射（桌面分支逐个绑定，面板分支统一冒泡后按 activeId 处理）。
+const winEvents = {
+  onOpenTerminal: openTerminalAt,
+  onOpenEditor: openEditor,
+  onOpenMedia: openMedia,
+  onOpenUsers: openUsers,
+  onOpenVip: openVip,
+  onOpenUiSettings: openUiSettings,
+  onOpenLogs: openContainerLogs,
+  onOpenContainerTerminal: openContainerTerminal,
+  onOpenContainerDetails: openContainerDetails,
+  onOpenContainerStats: openContainerStats,
+  onOpenContainerEdit: openContainerEdit,
+  onOpenFiles: openFiles,
+  onOpenDockerConfigEditor: openDockerConfigEditor,
+  onOpenAppInstall: openAppStoreInstall,
+  onOpenComposeEditor: openAppStoreComposeEditor,
+  onOpenInstallLog: openAppStoreInstallLog,
+  onOpenReadme: openAppStoreReadme,
+  onOpenTaskCenter: openTasks,
+  onOpenRuntimeCreate: openRuntimeCreate,
+  onOpenConnectionForm: openConnectionForm,
+  onOpenNetStorageBrowse: openNetStorageBrowse,
+  onOpenNetStorageForm: openNetStorageForm,
+  onOpenSiteEdit: openSiteEdit,
+  onOpenFirewallRuleForm: openFirewallRuleForm,
+  onOpenBackupTaskForm: openBackupTaskForm,
+  onOpenBackupRemoteForm: openBackupRemoteForm,
+  onOpenDatabaseManage: openDatabaseManage,
+  onOpenDatabaseCreate: openDatabaseCreate,
+  onOpenTamperForm: openTamperForm,
+  onOpenSiteMaintenance: openSiteMaintenance,
+  onOpenAppStoreConfig: openAppStoreConfig,
+  onOpenCronTaskForm: openCronTaskForm,
+  onOpenNotifyChannelForm: openNotifyChannelForm,
+  onOpenNotifyRuleForm: openNotifyRuleForm,
+  onOpenFrpProxyForm: openFrpProxyForm,
+  onOpenGitDeployForm: openGitDeployForm,
+  onOpenLogCollectForm: openLogCollectForm,
+  onOpenServiceMonitorForm: openServiceMonitorForm,
+  onOpenUptimeForm: openUptimeForm,
+  onOpenFtpUserForm: openFtpUserForm,
+  onOpenWafAclForm: openWafAclForm,
+  onOpenSslUpload: openSslUpload,
+  onOpenSslLeForm: openSslLeForm,
+  onOpenSshKeyGen: openSshKeyGen,
+  onOpenSshKeyImport: openSshKeyImport,
+  onOpenSshKeyDeploy: openSshKeyDeploy,
+  onOpenPortForwardForm: openPortForwardForm,
+}
+
+// 更新指定窗口的 dirty 标记（编辑器未保存时关闭前提示）
+function setWinDirty(id, value) {
+  const w = openWindows.value.find((x) => x.id === id)
+  if (w) w.dirty = value
+}
+
+// 面板模式侧边栏/用户菜单点击：已打开同 key 窗口则聚焦（即切页），否则走 openWindow
+// （openWindow 内部已含 adminOnly / remoteCap / VIP 三层守卫与统一面板节点绑定）
+function onPanelOpen(key) {
+  const existing = openWindows.value.find((w) => w.key === key)
+  if (existing) {
+    if (existing.minimized) existing.minimized = false
+    focusWindow(existing.id)
+    return
+  }
+  openWindow(key)
+}
+
+// 面板模式内容区窗口 dirty 标记：按 { id, value } 更新
+function onPanelDirty({ id, value }) {
+  setWinDirty(id, value)
+}
+
 function onDocClick(e) {
   // 右键菜单：点击菜单外部（含桌面空白、窗口、任务栏）任意处即关闭。
   // 必须在开始菜单判断之前执行——开始菜单关闭时若提前 return，右键菜单会残留。
@@ -641,7 +749,9 @@ function openWindow(key) {
       users: { label: '账号管理', titleKey: 'app.winTitle.users', icon: markRaw(UserCircle2), component: markRaw(UserWindow), w: 600, h: 460, adminOnly: true },
       changepwd: { label: '修改密码', titleKey: 'app.winTitle.changepwd', icon: markRaw(UserCircle2), component: markRaw(ChangePasswordWindow), w: 420, h: 360 },
       settings: { label: '设置', titleKey: 'app.winTitle.settings', icon: markRaw(Settings), component: markRaw(SettingsWindow), w: 520, h: 480 },
-      vip: { label: 'VIP', titleKey: 'app.winTitle.vip', icon: markRaw(Lock), component: markRaw(VipWindow), w: 440, h: 400, adminOnly: false, remoteCap: 'local' }
+      vip: { label: 'VIP', titleKey: 'app.winTitle.vip', icon: markRaw(Lock), component: markRaw(VipWindow), w: 440, h: 400, adminOnly: false, remoteCap: 'local' },
+      // 面板模式「主页」：系统概览 + 实时监控 + 系统信息/备忘录（非窗口外壳的全屏视图）
+      panelhome: { label: '主页', titleKey: 'panel.home', icon: markRaw(Home), component: markRaw(PanelHome), w: 900, h: 620 }
     }
     def = extras[key]
     if (!def) return

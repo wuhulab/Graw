@@ -124,6 +124,14 @@ export default {
     shortcutLabelColor: 'Desktop app text color',
     shortcutLabelStroke: 'Add black outline to desktop app text',
     shortcutLabelStrokeHint: 'When enabled, the text gets a black outline, making it clearer on light wallpapers.',
+    // Standard panel mode (1Panel-style sidebar layout)
+    panelModeTitle: 'Panel Mode',
+    panelModeHint: 'Switch the interface to a 1Panel-style sidebar layout instead of the desktop/window system. Applies immediately.',
+    panelMode: 'Enable panel mode',
+    panelModeOn: 'Enabled',
+    panelModeOff: 'Disabled',
+    panelTabs: 'Use tab caching in panel mode',
+    panelTabsHint: 'When enabled, opened apps are kept as tabs (state preserved when switching back); when disabled, pages switch without caching.',
   },
   nodes: {
     title: 'Multi-server',
@@ -1152,6 +1160,27 @@ Document version: 1.1.0 | Updated: 2026-08-16`,
     saved: 'Recycle Bin settings saved',
     saveFailed: 'Save failed: {error}',
     daysInvalid: 'Retention days must be an integer between 1 and 365',
+  },
+  // Standard panel mode (1Panel-style sidebar layout) UI texts
+  panel: {
+    home: 'Home',
+    toggleSidebar: 'Toggle sidebar',
+    searchPlaceholder: 'Search apps…',
+    closeTab: 'Close',
+    emptyHint: 'Select a feature from the left',
+    emptySub: 'Open an app from the sidebar menu',
+    menu: {
+      monitor: 'Monitor',
+      site: 'Websites',
+      database: 'Databases',
+      container: 'Containers',
+      file: 'Files',
+      network: 'Network',
+      security: 'Security',
+      task: 'Tasks',
+      store: 'Store',
+      system: 'System',
+    },
   },
   // Desktop shortcuts (hide / pin to taskbar)
   desktop: {

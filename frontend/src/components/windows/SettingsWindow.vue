@@ -305,6 +305,26 @@
         <button class="btn" @click="emit('openUiSettings')">{{ $t('settings.openUiSettings') }}</button>
       </div>
 
+      <!-- 标准面板模式（仅管理员）：1Panel 式侧边栏布局替代桌面/窗口系统（即改即存） -->
+      <div class="block" v-if="isAdmin()">
+        <div class="block-title">{{ $t('settings.panelModeTitle') }}</div>
+        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:6px;">{{ $t('settings.panelModeHint') }}</div>
+        <div class="row" style="justify-content:space-between; padding:2px 0;">
+          <label class="switch-label">
+            <input type="checkbox" v-model="settings.panelMode" />
+            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('settings.panelMode') }}</span>
+          </label>
+          <span :class="['tag', settings.panelMode ? 'tag-current' : 'tag-local']">{{ settings.panelMode ? $t('settings.panelModeOn') : $t('settings.panelModeOff') }}</span>
+        </div>
+        <div class="row" style="justify-content:space-between; padding:2px 0;">
+          <label class="switch-label">
+            <input type="checkbox" v-model="settings.panelTabs" />
+            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('settings.panelTabs') }}</span>
+          </label>
+        </div>
+        <div style="font-size:11px;color:#8e8e93;line-height:1.6;">{{ $t('settings.panelTabsHint') }}</div>
+      </div>
+
       <!-- 回收站设置（仅管理员）：删除的文件是否进入回收站、到期自动清理天数 -->
       <div class="block" v-if="isAdmin()">
         <div class="block-title">{{ $t('recycle.settingsTitle') }}</div>

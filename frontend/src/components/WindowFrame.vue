@@ -31,7 +31,9 @@
       </div>
     </div>
     <div class="content">
-      <slot />
+      <!-- 作用域插槽透传父级未声明的 attrs（即 App.vue 绑定的约 50 个 openXxx 事件），
+           由调用方把它们绑定到 WindowContent 的动态组件上，避免重复书写事件清单 -->
+      <slot :contentAttrs="$attrs" />
     </div>
     <div
       v-if="!window.maximized"
@@ -48,6 +50,10 @@ import { X, Minus, Square } from 'lucide-vue-next'                        // 标
 import { nodes as nodesStore } from '../store/nodes'                      // 子节点列表（统一面板用）
 import { settings } from '../store/settings'                              // 界面 / 统一面板开关
 import { isVip } from '../store/vip'                                      // VIP 付费门控
+
+// 关闭 attrs 自动 fallthrough：未声明的 @openXxx 等监听器不进根元素 DOM，
+// 统一经作用域插槽 contentAttrs 交给调用方绑定到窗口内容动态组件
+defineOptions({ inheritAttrs: false })
 
 const props = defineProps({
   window: { type: Object, required: true },

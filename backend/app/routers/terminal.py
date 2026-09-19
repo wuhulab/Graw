@@ -653,10 +653,24 @@ async def _windows_conpty_terminal(websocket: WebSocket, shell: str):
             pass
 
 
+def _windows_pipe_args(shell: str) -> list:
+    """构造管道回退启动参数，参数必须与 shell 类型匹配。
+
+    /Q /K 是 cmd.exe 专属参数；当默认 shell 检测到的是 PowerShell 时，
+    直接拼接 /Q /K 会被 PowerShell 当作命令执行（报 '/Q' 不是 cmdlet），
+    因此按 shell 类型分发正确参数，保证管道回退能正常开启交互 shell。
+    """
+    base = os.path.basename(shell).lower()
+    if "power" in base or base == "pwsh.exe":
+        # PowerShell-NoExit 保持会话（管道模式读取 stdin 后不退出）
+        return ["-NoExit"]
+    return ["/Q", "/K"]  # cmd.exe：静音启动并保持窗口不退出
+
+
 async def _windows_pipe_terminal(websocket: WebSocket, shell: str):
-    """Fallback: plain cmd.exe subprocess over pipes (no echo, no PTY)."""
+    """Fallback: plain cmd/powershell subprocess over pipes (no echo, no PTY)."""
     proc = subprocess.Popen(
-        [shell, "/Q", "/K"],
+        [shell, *_windows_pipe_args(shell)],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,

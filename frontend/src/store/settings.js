@@ -9,6 +9,8 @@
     locale     —— 界面语言（与 locales/index.js 的 LANGUAGES 对应）
     unifiedPanel —— 统一面板兼容：开启后每个窗口绑定打开时的节点
     hideFoxcode  —— 是否隐藏桌面上的 Foxcode 快捷方式
+    panelMode    —— 标准面板模式：启用后界面切换为 1Panel 式侧边栏布局
+    panelTabs    —— 面板模式多标签缓存：开=标签页保留窗口状态，关=单页切换
     shortcutFontSize / shortcutLabelColor / shortcutLabelStroke ——
         桌面图标下方文字的样式：字号(px)、颜色(#RRGGBB)、是否加黑色描边
 
@@ -29,6 +31,10 @@ const defaults = {
   unifiedPanel: false,
   // 隐藏桌面上的 Foxcode 快捷方式
   hideFoxcode: false,
+  // 标准面板模式：开启后界面切换为 1Panel 式侧边栏布局（替代桌面/窗口系统）
+  panelMode: false,
+  // 面板模式多标签缓存：开启后切换应用保留窗口状态（标签页），关闭则为单页切换
+  panelTabs: true,
   // 桌面图标下方文字的样式：字号（px，8-24）/ 颜色 / 是否加黑边描边
   shortcutFontSize: 12,
   shortcutLabelColor: '#ffffff',
@@ -57,6 +63,8 @@ watch(
     locale: settings.locale,
     unifiedPanel: settings.unifiedPanel,
     hideFoxcode: settings.hideFoxcode,
+    panelMode: settings.panelMode,
+    panelTabs: settings.panelTabs,
     shortcutFontSize: settings.shortcutFontSize,
     shortcutLabelColor: settings.shortcutLabelColor,
     shortcutLabelStroke: settings.shortcutLabelStroke,

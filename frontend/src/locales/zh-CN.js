@@ -590,6 +590,27 @@ export default {
     saveFailed: '保存失败：{error}',
     daysInvalid: '保留天数需为 1-365 的整数',
   },
+  // 标准面板模式（1Panel 式侧边栏布局）界面文案
+  panel: {
+    home: '主页',
+    toggleSidebar: '收起 / 展开侧边栏',
+    searchPlaceholder: '搜索应用…',
+    closeTab: '关闭',
+    emptyHint: '从左侧选择功能',
+    emptySub: '在侧边栏菜单中打开一个应用',
+    menu: {
+      monitor: '概览监控',
+      site: '网站',
+      database: '数据库',
+      container: '容器',
+      file: '文件',
+      network: '网络',
+      security: '安全',
+      task: '任务',
+      store: '商店',
+      system: '系统',
+    },
+  },
   // 桌面快捷方式（隐藏/固定到任务栏）
   desktop: {
     title: '桌面应用',
@@ -1612,6 +1633,14 @@ Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队
     shortcutLabelColor: '桌面应用文字颜色',
     shortcutLabelStroke: '桌面应用文字添加黑边',
     shortcutLabelStrokeHint: '开启后文字带黑色描边，在浅色壁纸上更清晰。',
+    // 标准面板模式（1Panel 式侧边栏布局）
+    panelModeTitle: '标准面板模式',
+    panelModeHint: '启用后界面切换为 1Panel 式侧边栏布局，替代桌面/窗口系统，即改即生效。',
+    panelMode: '启用面板模式',
+    panelModeOn: '已启用',
+    panelModeOff: '未启用',
+    panelTabs: '面板模式使用标签页缓存',
+    panelTabsHint: '开启后打开过的应用以标签页保留状态（切回不丢内容）；关闭则为单页切换。',
     language: '界面语言',
     // Web 服务器引擎（NGINX / OpenResty）
     webmode: {
