@@ -4,7 +4,20 @@
 
 除本机外，Graw 还能通过 **Agent 隧道 + 成对访问密钥** 把其它主机作为「子节点」纳入统一面板管理：在一处即可切换主机，管理多台服务器的容器、网站、文件、终端与防火墙。
 
-> 当前版本 `1.6.1`（以 `backend/app/main.py` 的 `APP_VERSION` 为准，历史变更见 [CHANGELOG.md](./CHANGELOG.md)）。界面支持 22 种语言。
+### 多语言 README
+
+[简体中文](./README.md) ·
+[繁體中文](./readme-i18n/README.zh-TW.md) ·
+[English](./readme-i18n/README.en.md) ·
+[日本語](./readme-i18n/README.ja.md) ·
+[한국어](./readme-i18n/README.ko.md) ·
+[Русский](./readme-i18n/README.ru.md) ·
+[Español](./readme-i18n/README.es.md) ·
+[Français](./readme-i18n/README.fr.md) ·
+[Deutsch](./readme-i18n/README.de.md) ·
+[Português](./readme-i18n/README.pt.md) ·
+[Esperanto](./readme-i18n/README.eo.md)
+
 
 ## 相关链接
 
@@ -277,19 +290,6 @@ server: {
 - [app-store/](./app-store/) —— 应用商店配方（YAML）
 - [plugin-examples/](./plugin-examples/) —— 插件示例
 
-### 多语言 README
-
-[简体中文](./README.md) ·
-[繁體中文](./readme-i18n/README.zh-TW.md) ·
-[English](./readme-i18n/README.en.md) ·
-[日本語](./readme-i18n/README.ja.md) ·
-[한국어](./readme-i18n/README.ko.md) ·
-[Русский](./readme-i18n/README.ru.md) ·
-[Español](./readme-i18n/README.es.md) ·
-[Français](./readme-i18n/README.fr.md) ·
-[Deutsch](./readme-i18n/README.de.md) ·
-[Português](./readme-i18n/README.pt.md) ·
-[Esperanto](./readme-i18n/README.eo.md)
 
 ## 贡献
 
