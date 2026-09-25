@@ -21,9 +21,32 @@
       </button>
       <div class="pnl-topbar-title" title="Graw">Graw</div>
       <div class="pnl-topbar-right">
-        <span v-if="hostName && isAdmin()" class="pnl-host" :class="{ remote: hostRemote }" :title="hostName">
-          <span class="pnl-host-dot"></span>{{ hostName }}
-        </span>
+        <!-- 主机切换：点击当前主机名弹出节点列表，选择即切换当前管理主机 -->
+        <div v-if="hostName && isAdmin()" class="pnl-hostswitch" @click.stop>
+          <button class="pnl-host" :class="{ remote: hostRemote }" :title="hostName" @click="onHostToggle">
+            <span class="pnl-host-dot"></span>{{ hostName }}
+            <ChevronDown :size="12" class="pnl-host-chev" :class="{ open: hostMenuOpen }" />
+          </button>
+          <Transition name="pnl-drop">
+            <div v-if="hostMenuOpen" class="pnl-dropdown pnl-host-menu">
+              <div class="pnl-drop-head">{{ $t('panel.switchHost') }}</div>
+              <button
+                v-for="n in nodeList"
+                :key="n.id"
+                class="pnl-drop-item"
+                :class="{ check: n.id === nodeCurrentId }"
+                @click="switchHost(n)"
+              >
+                <span class="pnl-item-icon"><Server :size="14" /></span>
+                <span class="pnl-drop-check">{{ n.id === nodeCurrentId ? '✓' : '' }}</span>
+                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ n.name || n.id }}</span>
+              </button>
+              <button v-if="!nodeList.length" class="pnl-drop-item" disabled style="color:#8e8e93;">
+                {{ $t('panel.noNodes') }}
+              </button>
+            </div>
+          </Transition>
+        </div>
         <div class="pnl-usermenu" @click.stop>
           <button class="pnl-iconbtn" :title="userName" @click="userMenuOpen = !userMenuOpen">
             <UserCircle2 :size="20" />
@@ -130,14 +153,13 @@
         <!-- 内容区：仅挂载激活窗口 -->
         <div class="pnl-content">
           <template v-if="activeWindow">
-            <!-- 多标签模式：KeepAlive 缓存失活窗口实例（DOM 卸载、状态保留），限制缓存数量防膨胀 -->
+            <!-- 多标签模式：KeepAlive 缓存失活窗口实例（DOM 卸载、状态保留），限制缓存数量防膨胀。
+                 窗口内容事件统一由 mergedContentEvents（含 openXxx / close / dirty）显式下发，不依赖隐式 attrs -->
             <KeepAlive v-if="showTabs" :max="20">
               <WindowContent
                 :key="'w' + activeWindow.id"
                 :window="activeWindow"
-                v-bind="$attrs"
-                @close="onContentClose"
-                @dirty="onContentDirty"
+                :content-events="mergedContentEvents"
               />
             </KeepAlive>
             <!-- 单页切换模式：直接渲染（切换即销毁重建，不缓存） -->
@@ -145,9 +167,7 @@
               v-else
               :key="'s' + activeWindow.id"
               :window="activeWindow"
-              v-bind="$attrs"
-              @close="onContentClose"
-              @dirty="onContentDirty"
+              :content-events="mergedContentEvents"
             />
           </template>
           <div v-else class="pnl-empty">
@@ -166,10 +186,11 @@ import { ref, reactive, computed, onMounted, onUnmounted, markRaw, watch } from 
 import { useI18n } from 'vue-i18n'
 import {
   Menu, X, Search, LogOut, Settings, UserCircle2, KeyRound, Palette,
-  ChevronDown, LayoutGrid, Home,
+  ChevronDown, LayoutGrid, Home, Server,
 } from 'lucide-vue-next'
 import WindowContent from './WindowContent.vue'
 import { isAdmin } from '../store/auth'
+import { nodes, refreshNodes, setCurrentNode } from '../store/nodes'   // 多节点状态与当前主机切换
 
 // 主窗口面板模式：菜单分组定义（组标题 i18n key + 成员 key 清单）。
 // 成员 key 与 App.vue shortcuts/extras（openWindow）保持一致，缺失的项自动跳过。
@@ -201,6 +222,7 @@ const props = defineProps({
   hostName: { type: String, default: '' },                // 当前管理主机名称（空则不显示徽标）
   hostRemote: { type: Boolean, default: false },          // 当前主机是否为远程（SSH）节点
   showTabs: { type: Boolean, default: true },             // 多标签缓存模式（false = 单页切换）
+  contentEvents: { type: Object, default: () => ({}) },   // 窗口内容事件（App 的 winEvents：openXxx 处理器），显式透传给内容区
 })
 const emit = defineEmits(['open', 'focus', 'close', 'dirty', 'logout'])
 // 不把 attrs 落到根元素：openXxx 事件全部由内容区 WindowContent 显式接收后再转给具体窗口组件
@@ -215,6 +237,28 @@ const userRole = computed(() => {
   return isAdm ? t('app.admin') : t('app.normalUser')
 })
 const userMenuOpen = ref(false)
+
+// ---- 顶栏主机切换 ----
+const hostMenuOpen = ref(false)                    // 主机切换下拉可见性
+const nodeList = computed(() => nodes.list)         // 已配置节点列表（本机 + SSH 子节点）
+const nodeCurrentId = computed(() => nodes.currentId)
+// 打开主机切换下拉：节点列表未加载则先拉取（非管理员不会触达此处）
+async function onHostToggle() {
+  if (!nodes.loaded && isAdmin()) {
+    try { await refreshNodes() } catch (e) { /* 拉取失败时以下拉现有数据为准 */ }
+  }
+  hostMenuOpen.value = !hostMenuOpen.value
+}
+// 选择目标主机：切换当前管理主机（后端持久化），切换后关闭下拉
+async function switchHost(n) {
+  if (n.id === nodeCurrentId.value) { hostMenuOpen.value = false; return }
+  try {
+    await setCurrentNode(n.id)
+    hostMenuOpen.value = false
+  } catch (e) {
+    alert((e?.response?.data?.detail) || `${n.name || n.id} 切换失败`)
+  }
+}
 
 // 当前激活窗口（内容区渲染对象）；顶栏标题始终固定为品牌名 Graw，不随窗口变化
 const activeWindow = computed(() => props.windows.find((x) => x.id === props.activeId) || null)
@@ -238,6 +282,14 @@ function onContentDirty(value) {
   if (!activeWindow.value) return
   emit('dirty', { id: activeWindow.value.id, value })
 }
+
+// 统一的内容事件字典：App 传入的 openXxx 处理器 + 按当前激活窗口定位的 close/dirty，
+// 一并显式下发给 WindowContent（不依赖 attrs 自动继承，兼容多根窗口组件）
+const mergedContentEvents = computed(() => ({
+  ...props.contentEvents,
+  onClose: () => onContentClose(),
+  onDirty: (v) => onContentDirty(v),
+}))
 
 // ---- 侧边栏（分组菜单 + 搜索 + 折叠/抽屉） ----
 // UI 折叠状态本地持久化：侧边栏折叠（汉堡）与分组展开/收起的记录存 localStorage，
@@ -292,6 +344,8 @@ function updateViewport() {
 onMounted(() => {
   updateViewport()
   window.addEventListener('resize', updateViewport)
+  // 面板模式默认打开「主页」：进入时若尚无已打开窗口（如直刷进入），自动打开主页
+  if (!props.windows.length) emit('open', 'panelhome')
 })
 onUnmounted(() => window.removeEventListener('resize', updateViewport))
 
@@ -353,9 +407,10 @@ function onLogout() {
   emit('logout')
 }
 
-// 点击侧边栏/页面任意处关闭用户下拉菜单
+// 点击侧边栏/页面任意处关闭下拉菜单（用户菜单 / 主机切换）
 function onDocClick(e) {
   if (userMenuOpen.value && !e.target.closest('.pnl-usermenu')) userMenuOpen.value = false
+  if (hostMenuOpen.value && !e.target.closest('.pnl-hostswitch')) hostMenuOpen.value = false
 }
 onMounted(() => document.addEventListener('mousedown', onDocClick))
 onUnmounted(() => document.removeEventListener('mousedown', onDocClick))
@@ -414,6 +469,7 @@ watch(searching, (v) => {
   white-space: nowrap;
 }
 .pnl-topbar-right { display: flex; align-items: center; gap: 10px; }
+.pnl-hostswitch { position: relative; }
 .pnl-host {
   display: inline-flex;
   align-items: center;
@@ -428,8 +484,14 @@ watch(searching, (v) => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: inherit;
+  cursor: pointer;
 }
+.pnl-host:hover { background: rgba(10, 132, 255, 0.14); }
+.pnl-host-chev { flex-shrink: 0; transition: transform 0.2s; }
+.pnl-host-chev.open { transform: rotate(180deg); }
 .pnl-host.remote { color: #7a3ce8; background: rgba(122, 60, 232, 0.08); border-color: rgba(122, 60, 232, 0.25); }
+.pnl-host.remote:hover { background: rgba(122, 60, 232, 0.14); }
 .pnl-host-dot {
   width: 7px;
   height: 7px;
@@ -438,6 +500,10 @@ watch(searching, (v) => {
   flex-shrink: 0;
 }
 .pnl-host.remote .pnl-host-dot { background: #7a3ce8; }
+.pnl-host-menu { min-width: 200px; max-height: 300px; overflow-y: auto; }
+.pnl-host-menu .pnl-drop-item { justify-content: flex-start; gap: 8px; }
+.pnl-host-menu .pnl-drop-item.check > span.pnl-item-icon { color: #0a84ff; }
+.pnl-drop-check { width: 14px; font-size: 12px; color: #0a84ff; flex-shrink: 0; }
 
 /* ---- 用户下拉菜单 ---- */
 .pnl-usermenu { position: relative; }

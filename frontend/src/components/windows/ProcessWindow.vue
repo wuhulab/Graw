@@ -67,7 +67,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'   // 响应式、计算属性、挂载/卸载（清理轮询）
+import { ref, computed, onMounted, onUnmounted, onDeactivated } from 'vue'   // 响应式、计算属性、挂载/卸载（清理轮询）、切出标签清理弹层
 import { useI18n } from 'vue-i18n'                            // 国际化：取 t() 生成动态文案
 import { processApi, formatBytes } from '../../api'           // 进程接口 + 字节格式化工具
 import ConfirmDialog from '../ConfirmDialog.vue'              // 高危操作二次确认弹窗（输入面板密码）
@@ -101,6 +101,13 @@ async function refresh() {
 
 function closeMenus() {
   contextMenu.value.show = false
+}
+
+// 面板模式（KeepAlive）切出本标签时自动关闭右键菜单与二次确认弹窗，
+// 避免 Teleport 到 body 的菜单/弹窗残留悬挂在其它页面之上
+function onViewLeaved() {
+  contextMenu.value.show = false
+  if (confirm.value) confirm.value.show = false
 }
 
 function onContextMenu(e, p) {
@@ -143,6 +150,8 @@ onMounted(() => {
   timer = setInterval(refresh, 3000)   // 每 3 秒轮询刷新，兼顾实时性与后端负载
 })
 onUnmounted(() => clearInterval(timer))
+// 面板模式（KeepAlive）切出本标签时关闭右键菜单，避免 body 级 Teleport 菜单残留
+onDeactivated(onViewLeaved)
 </script>
 
 <style scoped>

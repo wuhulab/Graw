@@ -11,7 +11,7 @@
   <div class="win7-card" style="display:flex; flex-direction:column;">
     <div class="card-title">
       <span>{{ $t(mode === 'info' ? 'cards.systemInfo' : 'cards.notes') }}</span>
-      <div class="tabs">
+      <div v-if="!fixed" class="tabs">
         <button :class="{ active: mode === 'info' }" @click="mode = 'info'">{{ $t('cards.systemInfo') }}</button>
         <button :class="{ active: mode === 'notes' }" @click="mode = 'notes'">{{ $t('cards.notes') }}</button>
       </div>
@@ -40,12 +40,21 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'   // Vue 响应式与生命周期
+import { ref, onMounted, computed, watch } from 'vue'   // Vue 响应式与生命周期
 import { notesApi } from '../../api'             // 备忘录 API
 import { systemState } from '../../store/systemMetrics'   // 共享系统指标状态（单条 WS 驱动）
 import MetricsFallback from './MetricsFallback.vue'       // 监控数据降级提示组件
 
+// 面板模式「主页」将系统信息 / 备忘录拆成两张独立卡片：传入 fixed 固定展示单一页
+const props = defineProps({
+  fixed: { type: String, default: '' },   // ''=桌面模式可切换；'info'/'notes'=固定展示对应页
+})
+
 const mode = ref('info')   // 当前标签页：info=系统信息 / notes=备忘录
+// fixed 模式下固定对应页；切换 fixed 值（如重建时）也能及时跟随
+watch(() => props.fixed, (v) => {
+  if (v === 'info' || v === 'notes') mode.value = v
+}, { immediate: true })
 // 系统信息由共享「单条 WS」指标推送驱动（见 store/systemMetrics.js），
 // 无需再单独 5s 轮询 /api/system/info。
 const info = computed(() => systemState.info)

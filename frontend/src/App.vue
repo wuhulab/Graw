@@ -20,7 +20,7 @@
     :host-name="hostBadgeText"
     :host-remote="hostBadgeRemote"
     :show-tabs="settings.panelTabs"
-    v-bind="winEvents"
+    :content-events="winEvents"
     @open="onPanelOpen"
     @focus="focusWindow"
     @close="handleCloseWindow"
@@ -112,7 +112,7 @@
       @dirty="(v) => setWinDirty(w.id, v)"
     >
       <template #default="{ contentAttrs }">
-        <WindowContent :window="w" v-bind="contentAttrs" @close="handleCloseWindow(w.id)" />
+        <WindowContent :window="w" :content-events="{ ...contentAttrs, onClose: () => handleCloseWindow(w.id) }" />
       </template>
     </WindowFrame>
 
@@ -1026,6 +1026,9 @@ function openFrpProxyForm(payload) {
 
 // Git 部署：新增/编辑「部署绑定」的独立表单窗口（binding.isNew 为创建）
 function openGitDeployForm(payload) {
+  // 探针日志：排查面板模式下「新建」点击无反应时事件是否到达本函数（输出则链路通）
+  // eslint-disable-next-line no-console
+  console.debug('[panel] openGitDeployForm', payload)
   const id = ++windowSeq
   const isCreate = !!payload?.binding?.isNew
   const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
