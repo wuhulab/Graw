@@ -3,7 +3,7 @@
 本文件为 AI 编码助手（以及新加入的人类开发者）提供 Graw 代码库的结构、约定与常见陷阱速查。
 改动代码前请先通读本文件，确保改动符合既有架构与安全约束。
 
-你可以读取项目skills：agent文件夹下
+项目内技能放在 `agent/skills/`（`hop`：面向人类编程的代码规范；`secreview`：安全审查），可读取其中的 `SKILL.md`。
 
 ---
 
@@ -13,9 +13,13 @@
 它不仅能管理本机，还支持通过 **Agent 隧道 + 成对访问密钥** 把其它主机作为「子节点」纳入统一面板管理。
 
 核心能力：实时系统监控、Docker 管理、网站（Nginx/OpenResty）管理、数据库管理、计划任务、防火墙、SSL、
-日志、文件管理、Web 终端、应用商店、备份、通知中心、防篡改、WAF、多节点/SSH 密钥、内网穿透（Frp）等。
+日志、文件管理、Web 终端、应用商店、备份、通知中心、防篡改、WAF、多节点/SSH 密钥、内网穿透（Frp）、
+插件开放协议（GPOP）、批量操作、SSH 端口转发、每日巡检报告、站点 Git 自动部署、镜像漏洞扫描、慢查询分析等。
 
-- 当前版本：`backend/app/main.py` 中的 `APP_VERSION = "1.4.1"`
+界面有两套壳（同一套功能）：类桌面（窗口/任务栏，默认）与 **标准面板模式**（1Panel 风格侧边栏 + 多标签，`settings.panelMode` 切换）；
+界面文案支持 **22 个语言包**（`frontend/src/locales/`）。
+
+- 当前版本：`backend/app/main.py` 中的 `APP_VERSION = "1.6.1"`
 - 许可证：AGPLv3
 - Docker 镜像命名空间：`shunx/graw`
 
@@ -48,8 +52,13 @@ Graw/
 │   │   ├── node_manager.py      # 多节点管理：当前节点上下文、请求级 X-Graw-Node 覆盖
 │   │   ├── remote_cap.py        # 远端子节点能力门控（local-only 接口防护）
 │   │   ├── hostfs.py            # 宿主机文件系统适配层（chroot /host 读写宿主文件/命令）
+│   │   ├── reporting.py         # 每日巡检报告（08:00 生成 + 推送，data/reports/）
+│   │   ├── portforward.py       # SSH 端口转发隧道（本地 127.0.0.1 监听，data/portforwards.json）
+│   │   ├── plugin_protocol.py   # 插件开放协议核心（清单校验/令牌哈希/注册表/插件配置）
+│   │   ├── trash.py             # 回收站核心逻辑（跨节点，data/recycle.json）
 │   │   ├── routers/             # 各业务模块路由（见下方清单）
 │   │   └── data/                # 运行时数据（用户、密钥、节点凭据等，gitignore，权限收紧）
+│   ├── test_*_unit.py / test_*_e2e.py  # pytest 单测与端到端用例
 │   ├── reset_password.py        # 离线重置管理员密码脚本（读 data/users.json）
 │   └── requirements.txt
 ├── frontend/
@@ -65,9 +74,16 @@ Graw/
 │   ├── vite.config.js           # 开发代理 /api(含 ws) → http://localhost:8000
 │   └── package.json
 ├── app-store/                   # 社区应用商店的 YAML 配方与图标（安装即 docker compose）
+├── plugin-examples/hello-graw/  # 插件开放协议（GPOP）示例插件
+├── docs/                        # 开发者/运维文档（部署、子节点 Agent、API 概览、插件协议…）
+├── GETMEREAD/                   # 「大白话 + Mermaid」运行逻辑文档（11 篇）
+├── readme-i18n/                 # 多语言 README（10 个语种）
+├── agent/skills/                # 项目内技能（hop / secreview）
 ├── Dockerfile                   # 多阶段构建（前端构建 → 后端运行时）
 ├── docker-compose.yml           # 「完整管理宿主机」高权限编排
 ├── start.sh / start.bat         # 本地开发一键启动（后端 + 前端）
+├── AGENTS.md                    # 本文件：架构、约定与陷阱（改代码前必读）
+├── CHANGELOG.md / SECURITY.md / CONTRIBUTING.md
 └── README.md
 ```
 
@@ -76,24 +92,29 @@ Graw/
 | 前缀 | 模块 | 鉴权 |
 |------|------|------|
 | `/api/auth` | 登录/当前用户/改密/用户管理 | 登录/管理员（公开登录） |
-| `/api/agent` | 子节点 Agent 机器间鉴权（/issue 换 JWT） | 成对密钥 |
+| `/api/agent` | 子节点 Agent 机器间鉴权（`/issue` 换 JWT、`/cfg` 收取模式配置） | 成对密钥（`/cfg` 内部要求管理员） |
 | `/api/system` | CPU/内存/磁盘/网络/负载 + WS 实时流 | 端点内自行鉴权（WS 用 `?token=`） |
-| `/api/notes` | 备忘录 CRUD | PROTECTED（登录即可） |
+| `/api/notes` | 备忘录 CRUD | PROTECTED（登录即可；写操作为管理员） |
 | `/api/docker` `/api/dockervolumes` `/api/containeredit` | Docker 容器/镜像/卷/编辑 | ADMIN |
+| `/api/process` `/api/disks` `/api/files` `/api/recycle` | 进程 / 磁盘 / 文件管理 / 回收站 | ADMIN |
 | `/api/terminal` | WebSocket 终端（paramiko） | 处理函数内 `?token=` + 强制管理员 |
-| `/api/sites` `/api/sitesopts` `/api/rewrite` `/api/waf` `/api/webmode` `/api/webstats` | 网站/伪静态/缓存/WAF/引擎/统计 | ADMIN |
-| `/api/databases` | MySQL/MariaDB/Redis 连接与查询 | ADMIN |
-| `/api/cron` `/api/firewall` `/api/ssl` `/api/logs` `/api/backup` | 计划任务/防火墙/证书/日志/备份 | ADMIN |
+| `/api/sites` `/api/sitesopts` `/api/rewrite` `/api/waf` `/api/webmode` `/api/webstats` | 网站/站点增强/伪静态/WAF/引擎模式/访问统计 | ADMIN |
+| `/api/databases` | MySQL/MariaDB/Redis/PostgreSQL/MongoDB 连接与查询 | ADMIN |
+| `/api/cron` `/api/firewall` `/api/protection` `/api/ssl` `/api/logs` `/api/backup` | 计划任务/防火墙/防护中心/证书/日志/备份 | ADMIN |
 | `/api/shunx` `/api/tamper` | ShunX 安全入口 / 网页防篡改（含 WS 告警） | 端点内自行鉴权 |
-| `/api/appstore` `/api/tasks` `/api/runtime` | 应用商店 / 任务中心 / 运行时容器 | ADMIN |
+| `/api/appstore` `/api/tasks` `/api/runtime` | 应用商店 / 任务中心 / 运行时容器（应用图标路由公开） | ADMIN（图标公开） |
 | `/api/plugins` `/api/op` | 应用接口开放协议：插件管理（ADMIN，按 enabled 条件注册）/ 插件开放接口（端点内令牌鉴权）。`/api/plugins/settings` 总开关始终注册 | ADMIN / 令牌 |
 | `/api/nodes` `/api/sshkeys` | 多节点管理 / SSH 密钥部署 | ADMIN |
-| `/api/ui` `/api/vip` | 界面设置（公开/public + 管理员/config）/ VIP | 端点内自行鉴权 |
+| `/api/ui` | 界面设置（公开/public + 管理员/config） | 端点内自行鉴权 |
 | `/api/frp` `/api/netstorage` `/api/update` `/api/notify` `/api/uptime` `/api/certcheck` | 内网穿透/网络储存/更新/通知/可用性/证书 | ADMIN |
-| `/api/healthcheck` `/api/ftpusers` `/api/toolbox` `/api/phpversions` `/api/panelbackup` `/api/loginlog` `/api/svcmonitor` `/api/protected` | 体检/FTP用户/工具箱/PHP版本/面板备份/登录日志/服务监控 | ADMIN 或 PROTECTED |
+| `/api/batch` `/api/gitdeploy` `/api/portforward` | 批量操作中心 / 站点 Git 自动部署 / SSH 端口转发（**三者永不经 Agent 代理**） | ADMIN（gitdeploy webhook 端点内验签） |
+| `/api/report` `/api/rollback` `/api/imgsafety` `/api/slowquery` | 巡检报告 / 配置快照回滚 / 镜像漏洞扫描 / 慢查询分析 | ADMIN |
+| `/api/svcmonitor` `/api/healthcheck` | 服务与端口监控 / 一键体检 | ADMIN |
+| `/api/ftpusers` `/api/toolbox` `/api/phpversions` `/api/panelbackup` `/api/loginlog` | FTP 用户/工具箱/PHP 版本/面板备份/登录日志 | ADMIN（loginlog 为 PROTECTED，管理接口内部再验管理员） |
 | `/api/health` | 公开健康检查（版本号） | 公开 |
 
-> 除 `/api/auth/login`、`/api/health` 外，所有接口均需 `Authorization: Bearer <token>`。
+> 除 `/api/auth/login`、`/api/health` 外，所有接口均需 `Authorization: Bearer <token>`；
+> WebSocket 与少数公开/机器间端点（system/terminal/tamper/shunx/ui/agent/appstore 图标/gitdeploy webhook/op）**不挂全局依赖**，在端点内部自行鉴权。
 
 ---
 
@@ -142,8 +163,9 @@ cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 - 鉴权分级（定义在 `main.py` 顶部）：
   - `PROTECTED = [Depends(get_current_user), Depends(require_non_default_password)]` —— 仅需登录（只读信息类）。
   - `ADMIN = [Depends(require_admin)]` —— 管理员（写操作/命令执行）。
-  - 部分路由（WebSocket、终端、`/api/ui` 的 public、ShunX、VIP）在**端点内部**自行鉴权，不挂全局依赖，不要误加。
+  - 部分路由**必须**在端点内部自行鉴权、不要挂全局依赖：`system`/`terminal`（WS 用 `?token=`）、`tamper`、`shunx`（/status 公开）、`ui`（/public 公开）、`agent`（机器间密钥）、`appstore` 的图标路由、`gitdeploy` 的 webhook、`op`（插件令牌）。
 - `require_admin` 已级联 `require_non_default_password` + `get_current_user`，无需重复声明。
+- **local-only 标记**：新增面板自身管理类接口时，同步在 `remote_cap.LOCAL_PREFIX` 登记，否则它在裸 SSH 远端节点上会被放行到没有意义的本机数据上。
 
 ### 5.2 数据持久化
 - 面板所有配置/凭据以 **JSON 文件** 存于 `backend/data/`（如 `users.json`、`nodes.json`、`databases.json`、`agent.json`、`ftp_users.json`）。
@@ -157,17 +179,20 @@ cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
   - `agent_client.py`：`agent_proxy()` 把请求经隧道转发到子节点；`agent_ready()` 判断可用性。
   - `node_manager.py`：维护「当前管理节点」上下文；支持请求级 `X-Graw-Node` 头覆盖（统一面板按窗口聚焦节点下发）。
   - `remote_cap.py`：把某些接口标记为 local-only，防止远端子节点越权调用。
-- 请求流向（`main.py` 中间件，由外到内）：
-  1. `agent_proxy_middleware`（最外层）：当前节点为远程且已配 Agent 时，业务 HTTP 请求优先经隧道代理到子节点（WebSocket 升级不代理）。
-  2. `remote_capability_guard`：local-only 接口门控（纵深防御）。
-  3. 业务路由。
-- **新增业务接口若需对子节点透传**，确认它不在 `_AGENT_PROXY_EXCLUDE_PREFIX`（auth/nodes/terminal/agent/ui/shunx/vip/health）中即可自动被代理，无需额外改动。
+- 请求流向（`main.py` 中间件，由外到内；`main.py` 里**最后注册的最先执行**）：
+  1. `_RequestBodyLimitMiddleware`（最外层）：请求体大小限制——`Transfer-Encoding` 411、`Content-Length` 超限 413（普通 16MB / multipart 2GB，可用 `GRAW_MAX_BODY_MB`/`GRAW_MAX_UPLOAD_MB` 覆盖）、多个不一致 `Content-Length` 400。
+  2. `agent_proxy_middleware`：当前节点为远程且已配 Agent 时，业务 HTTP 请求优先经隧道代理到子节点（WebSocket 升级不代理），代理前先在本机做与业务路由等价的鉴权。
+  3. `remote_capability_guard`：local-only 接口门控（纵深防御；远端配了 Agent 时请求已在上一层被代理走，不会到这里）。
+  4. `security_headers` / `CORSMiddleware`：安全响应头与同源策略。
+  5. 业务路由 + 鉴权依赖。
+- **新增业务接口若需对子节点透传**，确认它不在 `_AGENT_PROXY_EXCLUDE_PREFIX`（auth/nodes/terminal/agent/ui/shunx/health/batch/gitdeploy/portforward）中即可自动被代理，无需额外改动。
 
 ### 5.4 后台任务
-- 在 `lifespan()` 中启停的常驻协程：系统指标采集（`system.start_metrics_producer`）、防篡改监控、通知、站点可用性、证书到期、服务监控。**新增常驻监控请在此配对启停**，避免泄漏协程。
+- 在 `lifespan()` 中启停的 7 个常驻协程：系统指标采集（`system.start_metrics_producer`）、防篡改监控、通知中心、站点可用性、证书到期、服务/端口监控、回收站过期清理（`trash.start_auto_purge`）。另有每日巡检报告协程（`reporting.start_daily`，08:00 生成并推送）与启动时恢复的 SSH 端口转发隧道（`portforward.restore_all`）。**新增常驻监控请在此配对启停**，避免泄漏协程。
 
 ### 5.5 安全中间件
 - `security_headers` 给所有响应附加 CSP / `X-Content-Type-Options: nosniff` / `X-Frame-Options: DENY` / `Referrer-Policy: same-origin`。改动前端注入资源（如新 CDN）时需注意 CSP 限制（`script-src` 已放行 `unsafe-inline` + `unsafe-eval`）。
+- 请求体大小限制见 5.3；未认证的大 body 在进业务前就被拒，新增「接收上传」的端点时注意 `multipart/` 与非 multipart 走的是两档限额。
 
 ---
 
@@ -176,16 +201,20 @@ cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ### 6.1 状态管理（无 Pinia）
 - 状态使用**自定义 `reactive` 单例**，位于 `src/store/*.js`（如 `auth.js` 导出 `reactive` 的 `auth`，含 `setAuth/clearAuth/isAdmin`）。**不要引入 Pinia**，沿用该模式：新增全局状态就新建一个 `store/xxx.js` 导出 `reactive` 对象。
 
-### 6.2 桌面式 UI
-- `App.vue` 是桌面根；`components/Desktop.vue`、`Taskbar.vue`、`WinWindow.vue` 构成窗口系统。
-- 每个功能是一个**独立窗口组件** `src/components/windows/*Window.vue`，由桌面/任务栏按需打开，支持拖拽、最大化/最小化。新增功能页应新建对应 `*Window.vue` 并在桌面注册入口。
+### 6.2 双界面形态与窗口系统
+- `App.vue` 是根组件，按 `settings.panelMode` 二选一渲染：**桌面模式**（`Desktop.vue` + `Taskbar.vue` + `WindowFrame.vue`）或**标准面板模式**（`PanelLayout.vue`：顶栏 + 分组侧边栏 + 可选标签栏 + 内容区）。
+- 每个功能是一个**独立窗口组件** `src/components/windows/*Window.vue`，支持拖拽、最大化/最小化。新增功能页应新建对应 `*Window.vue`，在 `App.vue` 的 shortcuts 里注册入口（`DESKTOP_SC_DEFS` 等展示名映射需同步）。
+- 两种壳共用 `WindowContent.vue` 渲染内容；面板模式下约 50 个 `openXxx` 事件经 `inheritAttrs:false` + `$attrs` 透传，**新增窗口事件时两条链路都要照顾**。
+- 全局搜索 `CommandPalette.vue`（Ctrl/⌘+K）的入口来自 `visibleShortcuts`，选中后统一走 `openWindow()`（内含 adminOnly 与远端 local 类守卫）。
 
 ### 6.3 API 调用
 - 统一经 `src/api.js`（或各 store 内的 axios 封装）调用 `/api/*`，请求拦截器注入 `Authorization: Bearer <token>`（token 来自 `store/auth`）。
 - 开发期 Vite 代理（`vite.config.js`）把 `/api` 与 WebSocket 转发到 `http://localhost:8000`；**生产无跨域**（前端由后端同源托管）。
 
 ### 6.4 国际化
-- 使用 `vue-i18n`，语种文件在 `src/locales/`。新增界面文案应走 i18n key，**不要硬编码中文到模板**。
+- 使用 `vue-i18n`，语种文件在 `src/locales/`（当前 **22 个语言包**，zh-CN 为源语言与 `fallbackLocale`）。
+- 新增界面文案应走 i18n key，**不要硬编码中文到模板**；语言清单、locale 兜底与古语言「括号注释」样式统一在 `src/locales/index.js` 维护（`LANGUAGES` / `normalizeLocale` / `applyBracketStyle`）。
+- 改完注意跑 `frontend/scripts/check-i18n-keys.mjs` 与 `check-imports.mjs`（漏 key 或漏 import 会导致界面白屏/显示 key）。
 
 ---
 
@@ -198,7 +227,9 @@ cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 5. **容器高权限（仅可信环境）**：`docker-compose.yml` 使用 `privileged` + `network_mode: host` + `pid: host` + `-v /:/host:rslave` + docker.sock。目的是让面板完整管理宿主机；**Docker Desktop for Windows 上这些无法完整生效**。开发阶段建议本地直接跑前后端，而非依赖该 compose。
 6. **前端构建产物由后端托管**：`npm run build` 输出 `frontend/dist`，`main.py` 自动挂载 `/assets` 与 SPA 回退。改了前端后若生产不生效，先确认 `frontend/dist` 已生成。
 7. **版本号单一来源**：升级版本只改 `main.py` 的 `APP_VERSION`；`/api/health` 在容器部署时优先读镜像 tag/label。
-8. **不要绕过 remote_cap / Agent 代理**：设计新接口时明确它是 local-only 还是需要子节点透传，避免越权或代理失效。
+8. **不要绕过 remote_cap / Agent 代理**：设计新接口时明确它是 local-only 还是需要子节点透传，避免越权或代理失效。`batch` / `gitdeploy` / `portforward` 三类**永远留在主面板执行**（已进 `_AGENT_PROXY_EXCLUDE_PREFIX`），别把它们改成可代理。
+9. **请求体大小受限**：全局中间件对 `Transfer-Encoding` 返回 411、超限返回 413（普通 16MB / multipart 2GB）。新增接收大负载的端点时不能用 chunked 上传，必要时改环境变量而不是改代码常量。
+10. **文档要跟着改**：功能变更后同步更新 `docs/`（面向开发者/运维）与 `GETMEREAD/`（大白话运行逻辑，规矩见 `GETMEREAD/README.md`：在对应模块文件里追加一节并刷新文字与图，别新建同名文件）。
 
 ---
 
@@ -214,11 +245,14 @@ cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 | 我想做的事 | 去哪里 |
 |-----------|--------|
-| 加一个新 REST 业务模块 | 新建 `backend/app/routers/xxx.py`，在 `main.py` 注册并选 `PROTECTED`/`ADMIN` |
-| 加一个前端功能页 | 新建 `frontend/src/components/windows/XxxWindow.vue` 并在桌面注册 |
+| 加一个新 REST 业务模块 | 新建 `backend/app/routers/xxx.py`，在 `main.py` 注册并选 `PROTECTED`/`ADMIN`，必要时登记 `remote_cap.LOCAL_PREFIX` |
+| 加一个前端功能页 | 新建 `frontend/src/components/windows/XxxWindow.vue` 并在 `App.vue` 的 shortcuts 注册 |
 | 改登录/鉴权/用户 | `backend/app/auth.py`、`routers/auth.py` |
-| 调 Agent / 子节点接入 | `agent_auth.py`、`agent_cfg.py`、`agent_client.py`、`node_manager.py` |
+| 调 Agent / 子节点接入 | `agent_auth.py`、`agent_cfg.py`、`agent_client.py`、`node_manager.py`（实操见 `docs/node-agent.md`） |
 | 改监控/指标采集 | `routers/system.py`、`store/systemMetrics.js` |
-| 调应用商店配方 | `app-store/` 目录（YAML） |
-| 改 Docker 构建 | `Dockerfile`、`docker-compose.yml` |
+| 调应用商店配方 | `app-store/` 目录（YAML），机制见 `docs/app-store-recipe.md` |
+| 写插件（GPOP） | `plugin_protocol.py`、`routers/plugins.py`，规范见 `docs/plugin-protocol.md` |
+| 改网站 / WAF / 引擎模式 | `routers/sites.py`、`waf.py`、`webmode.py`、`webserver.py`（原理见 `GETMEREAD/09`） |
+| 改部署方式 / 环境变量 | `docker-compose.yml`、`Dockerfile`、`docs/deployment.md` |
 | 重置/查凭据/用户数据 | `backend/data/`、`reset_password.py` |
+| 升级版本号 | 只改 `main.py` 的 `APP_VERSION`，并在 `CHANGELOG.md` 记一笔 |

@@ -138,9 +138,10 @@ Graw/
 │   └── requirements.txt
 ├── app-store/                # 社区应用商店 YAML 配方与图标
 ├── plugin-examples/          # 插件开放协议（GPOP）示例
-├── readme-i18n/              # 多语言 README
-├── docs/                     # 补充文档（插件协议等）
-├── agent/                    # 子节点 Agent 相关资源与技能
+├── readme-i18n/              # 多语言 README（10 个语种）
+├── docs/                     # 开发者/运维文档（文档中心见 docs/README.md）
+├── GETMEREAD/                # 「大白话 + Mermaid」运行逻辑文档
+├── agent/skills/             # 项目内技能（hop / secreview）
 ├── Dockerfile                # 多阶段构建（前端构建 → 后端运行时）
 ├── docker-compose.yml        # 「完整管理宿主机」高权限编排
 ├── start.sh / start.bat      # 本地开发一键启动（后端 + 前端）
@@ -221,6 +222,7 @@ npm run build
 | Terminal | `/api/terminal` | WebSocket 终端会话（通过 `?token=` 鉴权） |
 | App Store | `/api/appstore` | 应用商店配方安装与管理 |
 | Cron / Firewall / SSL | `/api/cron`、`/api/firewall`、`/api/ssl` | 计划任务 / 防火墙 / 证书 |
+| 运维与安全工具 | `/api/protection`、`/api/portforward`、`/api/report`、`/api/rollback`、`/api/imgsafety`、`/api/slowquery`、`/api/batch`、`/api/gitdeploy` | 防护中心 / SSH 端口转发 / 巡检报告 / 配置快照回滚 / 镜像漏洞扫描 / 慢查询 / 批量操作 / 站点 Git 部署 |
 | Plugins | `/api/plugins`、`/api/op` | 插件管理与插件开放接口（GPOP） |
 
 完整路由清单与鉴权分级（`PROTECTED` / `ADMIN` / 端点内自鉴权）见 [AGENTS.md](./AGENTS.md) 第 3 节。接口文档默认关闭，调试时设置环境变量 `GRAW_ENABLE_DOCS=1` 后访问 `/docs`。
@@ -278,16 +280,25 @@ server: {
 | `GRAW_HOST_DATA` | 面板 `data` 目录在宿主机上的实际路径，应用商店安装所需 |
 | `GRAW_ENABLE_DOCS` | 设为 `1` 时开放 `/docs`、`/redoc`、`/openapi.json` |
 | `GRAW_SESSION_ONLINE_SECONDS` | 会话在线判定空闲阈值（秒），默认 2 小时 |
+| `GRAW_MAX_BODY_MB` / `GRAW_MAX_UPLOAD_MB` | 普通请求体 / 文件上传大小上限（MB），默认 16 / 2048 |
 | `TZ` | 容器时区，如 `Asia/Shanghai` |
+
+完整环境变量（含 `GRAW_AGENT_*`、`TRUSTED_PROXY_DEPTH` 等）见 [docs/deployment.md](./docs/deployment.md)。
 
 ## 项目文档
 
+- [docs/README.md](./docs/README.md) —— **文档中心**：全部文档的定位与建议阅读顺序
 - [AGENTS.md](./AGENTS.md) —— 架构、约定与常见陷阱（**改动代码前请先通读**）
 - [CONTRIBUTING.md](./CONTRIBUTING.md) —— 贡献指南与贡献者许可协议（CLA）
 - [SECURITY.md](./SECURITY.md) —— 安全问题报告流程
 - [CHANGELOG.md](./CHANGELOG.md) —— 版本变更记录
+- [GETMEREAD/](./GETMEREAD/) —— 「大白话 + 流程图」讲清各模块怎么跑起来的
+- [docs/deployment.md](./docs/deployment.md) —— 部署与运维（启动方式、环境变量、数据目录、排障）
+- [docs/node-agent.md](./docs/node-agent.md) —— 子节点 Agent 部署与接入实操
+- [docs/api-overview.md](./docs/api-overview.md) —— API 概览与鉴权模型
 - [docs/plugin-protocol.md](./docs/plugin-protocol.md) —— 插件开放协议（GPOP）
-- [app-store/](./app-store/) —— 应用商店配方（YAML）
+- [docs/app-store-recipe.md](./docs/app-store-recipe.md) —— 应用商店机制与配方要点
+- [app-store/](./app-store/) —— 应用商店配方（YAML）字段规范
 - [plugin-examples/](./plugin-examples/) —— 插件示例
 
 

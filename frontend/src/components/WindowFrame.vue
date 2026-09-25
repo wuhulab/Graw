@@ -3,7 +3,7 @@
   作用：所有功能窗口的「外框」组件。负责标题栏（标题 / 节点徽标 / 最小化·最大化·关闭）、
         拖拽移动、右下角缩放手柄，内容通过 <slot> 由具体功能组件注入。
   数据：窗口的位置 / 尺寸 / 激活态来自 desktop 状态；标题可走 i18n（titleKey）或
-        直接文本（title）。统一面板（VIP）下可在标题前显示绑定的子节点名。
+        直接文本（title）。统一面板下可在标题前显示绑定的子节点名。
   打开方式：由 WinWindow.vue 按窗口列表逐个渲染。
 -->
 <template>
@@ -49,7 +49,6 @@ import { useI18n } from 'vue-i18n'                                        // 国
 import { X, Minus, Square } from 'lucide-vue-next'                        // 标题栏按钮图标
 import { nodes as nodesStore } from '../store/nodes'                      // 子节点列表（统一面板用）
 import { settings } from '../store/settings'                              // 界面 / 统一面板开关
-import { isVip } from '../store/vip'                                      // VIP 付费门控
 
 // 关闭 attrs 自动 fallthrough：未声明的 @openXxx 等监听器不进根元素 DOM，
 // 统一经作用域插槽 contentAttrs 交给调用方绑定到窗口内容动态组件
@@ -67,8 +66,7 @@ const { t } = useI18n()
 // --- 窗口标题与节点徽标 ---
 const nodeLabel = computed(() => {
   const w = props.window
-  // 付费门控：未授权（未开通/已过期）时强制不生效，避免残留绑定值绕过锁定
-  if (!settings.unifiedPanel || !isVip() || !w || !w.nodeId) return ''
+  if (!settings.unifiedPanel || !w || !w.nodeId) return ''
   const n = nodesStore.list.find(x => x.id === w.nodeId)
   return n ? n.name : ''
 })

@@ -34,16 +34,17 @@ AI 改动代码前请通读根目录 `AGENTS.md`，它描述了整体架构、�
 | 想做什么 | 去哪里 |
 |---------|--------|
 | 新增一个 REST 业务模块 | `backend/app/routers/xxx.py`，并在 `main.py` 用 `include_router` 注册，按需选 `PROTECTED` / `ADMIN` 依赖 |
-| 新增一个前端功能页 | `frontend/src/components/windows/XxxWindow.vue`，并在桌面注册入口 |
+| 新增一个前端功能页 | `frontend/src/components/windows/XxxWindow.vue`，并在 `App.vue` 的 shortcuts 注册入口（桌面/标准面板两种模式共用） |
 | 登录 / 鉴权 / 用户 | `backend/app/auth.py`、`routers/auth.py` |
-| 多节点 / 子节点 Agent | `agent_auth.py`、`agent_cfg.py`、`agent_client.py`、`node_manager.py` |
+| 多节点 / 子节点 Agent | `agent_auth.py`、`agent_cfg.py`、`agent_client.py`、`node_manager.py`（实操见 `docs/node-agent.md`） |
 | 实时监控 / 指标采集 | `routers/system.py`、`store/systemMetrics.js` |
-| 应用商店配方 | `app-store/`（YAML） |
+| 应用商店配方 | `app-store/`（YAML），面板侧机制见 `docs/app-store-recipe.md` |
+| 改文档 | 开发者/运维文档在 `docs/`，运行逻辑在 `GETMEREAD/`（更新规矩见其 README），文档总索引 `docs/README.md` |
 
 ### 必须遵守的约束
 - **不要引入 Pinia**：前端全局状态使用 `store/*.js` 的 `reactive` 单例模式。
 - **数据持久化**：配置/凭据以 JSON 文件存于 `backend/data/`，写入用「临时文件 + `os.replace()`」原子写；不要放宽该目录权限、不要明文回传凭据。
-- **接口鉴权分级**：只读类挂 `PROTECTED`（登录即可），写操作/命令执行挂 `ADMIN`；WebSocket 与部分端点（`/api/ui` public、ShunX、VIP）在端点内自行鉴权。
+- **接口鉴权分级**：只读类挂 `PROTECTED`（登录即可），写操作/命令执行挂 `ADMIN`；WebSocket 与部分端点（`/api/ui` public、ShunX）在端点内自行鉴权。
 - **API 文档与 CORS 默认关闭**：同源部署，不要为联调方便放开 `*`。
 - **多节点透传**：新增接口若需对子节点透传，确认它不在 `_AGENT_PROXY_EXCLUDE_PREFIX` 内；涉及本地宿主机能力时用 `remote_cap.py` 门控。
 

@@ -47,7 +47,7 @@ import { sitesApi, dockerApi } from '../api'
 import { nodes, setCurrentNode } from '../store/nodes'
 
 const props = defineProps({
-  appItems: { type: Array, default: () => [] }   // 功能入口（App.vue 已做 adminOnly/remoteCap/vip 门控）
+  appItems: { type: Array, default: () => [] }   // 功能入口（App.vue 已做 adminOnly/remoteCap 门控）
 })
 const emit = defineEmits(['close', 'open'])
 

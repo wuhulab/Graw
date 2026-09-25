@@ -1,18 +1,27 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 import asyncio
+import json
+import logging
 import os
 import platform
 import re
 import threading
 import subprocess
 
-from app.auth import get_current_user, get_current_user_ws_admin, ws_session_still_valid
+from app.auth import (
+    get_current_user,
+    get_current_user_ws_admin,
+    require_admin,
+    ws_session_still_valid,
+)
 from app.hostfs import get_host_root
 from app import node_manager
 from app import auditlog
 from app.routers.docker_api import get_backend, _find_podman
 
 router = APIRouter()
+
+logger = logging.getLogger("graw.terminal")
 
 IS_WINDOWS = platform.system() == "Windows"
 
@@ -162,6 +171,39 @@ async def terminal_mouse_capability(user=Depends(get_current_user)):
     return {"supported": supported, "reason": reason}
 
 
+@router.get("/persist")
+async def list_persist_sessions(user=Depends(require_admin)):
+    """列出当前常驻的「持久化终端」会话。
+
+    仅返回脱敏状态（节点、创建时间、接入客户端数、缓冲字节数），不含任何
+    命令输出与凭据。前端据此展示「持久终端」运行情况。
+    """
+    from app.tty_persist import get_manager
+
+    return {"sessions": get_manager().list()}
+
+
+@router.delete("/persist")
+async def destroy_persist_session(node: str = "", user=Depends(require_admin)):
+    """结束指定节点的持久化终端会话（进程随之退出）。
+
+    前端在用户取消勾选「保留持久化终端」时调用：删除后该节点的常驻 shell
+    被终止、回放缓冲丢弃，下次连接将创建全新会话。node 为空表示当前节点。
+    """
+    from app.tty_persist import get_manager
+
+    nid = (node or "").strip() or node_manager.current_node_id()
+    manager = get_manager()
+    destroyed = manager.destroy(manager.key(nid))
+    auditlog.record(
+        "关闭持久终端",
+        (user or {}).get("username", ""),
+        "",
+        nid,
+    )
+    return {"ok": destroyed, "node": nid}
+
+
 @router.websocket("/ws/container")
 async def container_terminal_ws(
     websocket: WebSocket,
@@ -215,8 +257,15 @@ async def container_terminal_ws(
 async def terminal_ws(
     websocket: WebSocket,
     node: str = "",
+    persist: int = 0,
     user=Depends(get_current_user_ws_admin),
 ):
+    """交互终端 WebSocket。
+
+    persist=1 时走「持久化终端」：shell 进程常驻后端，WS 断开（刷新面板 /
+    重开窗口）只摘除客户端，重连按「节点」键接回同一会话并回放最近输出，
+    用于长时间任务不因刷新而中断（实现见 app/tty_persist.py）。
+    """
     # get_current_user_ws_admin 在鉴权失败时会关闭连接并返回 None
     if user is None:
         return
@@ -227,6 +276,11 @@ async def terminal_ws(
     if node and node.strip():
         node_manager.set_request_node(node.strip())
     try:
+        if persist:
+            # 持久化终端：会话生命周期与会话连接解耦（不在此处记录普通终端审计，
+            # 由 _persistent_terminal 按「创建 / 接入」分别记录，避免重连刷屏）
+            await _persistent_terminal(websocket, user)
+            return
         # 记录远程终端开启：是否作用于远程节点由 node_manager 运行时决定
         target = "远程节点终端" if node_manager.is_remote() else "本机终端"
         auditlog.record(
@@ -827,4 +881,405 @@ async def _interactive_tty(websocket: WebSocket, fd, pid):
             # fd 可能已被子进程继承关闭，close 失败无害
             os.close(fd)
         except Exception:  # lgtm[py/empty-except]
+            pass
+
+
+# ======================================================================
+# 持久化终端（终端工具栏「保留持久化终端」）
+#
+# 与上面的一次性终端不同：这里创建的 shell 进程不随 WebSocket 断开而退出，而是
+# 常驻在面板进程内（会话管理见 app/tty_persist.py）。刷新页面 / 重开窗口会接回
+# 同一会话并回放最近 256KB 输出，用于「长时间任务不因刷新而中断」的场景。
+# ======================================================================
+
+
+def _persist_title() -> str:
+    """持久会话的展示标题（用于 GET /api/terminal/persist 列表）。"""
+    node = node_manager.get_current_node() or {}
+    name = node.get("name") or node.get("id") or "本机"
+    return f"{name} · 持久终端"
+
+
+def _pty_read(fd) -> bytes:
+    """阻塞读 pty 主端；子进程退出后读取会 EIO，按 EOF（b""）处理。"""
+    try:
+        return os.read(fd, 4096)
+    except OSError:
+        return b""
+
+
+def _pty_resize(fd, rows: int, cols: int) -> None:
+    """设置 pty 窗口尺寸（TIOCSWINSZ）；fd 已失效等异常忽略。"""
+    import fcntl
+    import struct
+    import termios
+
+    try:
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+    except Exception:
+        logger.debug("持久终端设置 pty 尺寸失败", exc_info=True)
+
+
+def _pty_close(pid: int, fd: int) -> None:
+    """结束持久会话的子进程并关闭 pty（已退出 / 已关闭的情况一律忽略）。"""
+    import signal
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except Exception:
+        # 进程可能已自行退出：忽略
+        pass
+    try:
+        os.close(fd)
+    except Exception:
+        # fd 可能已被子进程继承关闭：忽略
+        pass
+    try:
+        # WNOHANG 回收僵尸进程：已退出则立即回收，未退出不阻塞
+        os.waitpid(pid, os.WNOHANG)
+    except Exception:
+        # 非本进程子进程 / 已被回收：忽略
+        pass
+
+
+def _local_pty_persist_io():
+    """本机 Linux/macOS 持久终端：pty.fork 出一个常驻交互 shell。"""
+    import pty
+
+    from app.tty_persist import SessionIO
+
+    shell = os.environ.get("SHELL", "/bin/bash")
+    pid, fd = pty.fork()
+    if pid == 0:
+        # 子进程分支：容器模式下 chroot 到宿主机根目录，让终端直接操作宿主机
+        host_root = get_host_root()
+        if host_root:
+            try:
+                os.chroot(host_root)
+                os.chdir("/")
+            except OSError:
+                # chroot 失败（非特权）时退回容器内 shell
+                pass
+        try:
+            os.execv(shell, [shell])
+        except OSError:
+            # exec 失败（shell 不存在等）时走下面的强制退出
+            pass
+        os._exit(1)   # execv 失败必须立刻结束子进程，绝不能继续执行父进程逻辑
+    return SessionIO(
+        read=lambda: _pty_read(fd),
+        write=lambda data: os.write(fd, data),
+        resize=lambda rows, cols: _pty_resize(fd, rows, cols),
+        close=lambda: _pty_close(pid, fd),
+    )
+
+
+def _ssh_pty_persist_io(node: dict):
+    """远程节点持久终端（Unix 控制端）：pty 承载常驻 `ssh -tt` 连接。"""
+    import pty
+
+    from app.tty_persist import SessionIO
+
+    argv = node_manager.remote_terminal_argv(node)
+    pid, fd = pty.fork()
+    if pid == 0:
+        try:
+            os.execv(argv[0], argv)
+        except OSError:
+            # exec 失败（缺少 ssh 客户端等）时走下面的强制退出
+            pass
+        os._exit(1)   # execv 失败必须立刻结束子进程
+    return SessionIO(
+        read=lambda: _pty_read(fd),
+        write=lambda data: os.write(fd, data),
+        resize=lambda rows, cols: _pty_resize(fd, rows, cols),
+        close=lambda: _pty_close(pid, fd),
+    )
+
+
+def _conpty_persist_io(command: str):
+    """Windows 持久终端：ConPTY 承载常驻 shell 或 `ssh -tt` 命令行。"""
+    from app.tty_persist import SessionIO
+
+    console = ConPTY(rows=24, cols=80)
+    console.start(command)
+    return SessionIO(
+        read=lambda: console.read(4096),
+        write=lambda data: console.write(data),
+        resize=lambda rows, cols: console.resize(rows, cols),
+        close=lambda: console.close(),
+    )
+
+
+def _pipe_persist_io(shell: str):
+    """ConPTY 不可用时的兜底持久终端：管道驱动常驻 shell（无回显，语义较弱）。
+
+    仅作为最后退路：管道模式下 shell 处于重定向输入状态，不回显输入、不显式
+    输出提示符（与一次性终端的管道回退一致），但常驻与回放能力仍然成立。
+    """
+    from app.tty_persist import SessionIO
+
+    proc = subprocess.Popen(
+        [shell, *_windows_pipe_args(shell)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=0,
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+    )
+
+    def _read_proc() -> bytes:
+        try:
+            if hasattr(proc.stdout, "read1"):
+                return proc.stdout.read1(1024)
+            return proc.stdout.read(1024)
+        except Exception:
+            # 进程退出 / 管道关闭：按 EOF 处理
+            return b""
+
+    def _write_proc(data: bytes) -> None:
+        # 管道模式下 cmd.exe 需要 CRLF 行尾（与 _windows_pipe_terminal 一致）
+        text = data.decode("utf-8", "replace")
+        text = text.replace("\r", "\r\n").replace("\r\n\r\n", "\r\n")
+        proc.stdin.write(text.encode("utf-8"))
+        proc.stdin.flush()
+
+    def _close_proc() -> None:
+        try:
+            proc.stdin.close()
+        except Exception:
+            # stdin 已关闭：忽略
+            pass
+        try:
+            proc.kill()
+        except Exception:
+            # 进程已退出：忽略
+            pass
+
+    return SessionIO(read=_read_proc, write=_write_proc, resize=lambda rows, cols: None, close=_close_proc)
+
+
+def _paramiko_persist_io(node: dict):
+    """远程节点持久终端（Windows 控制端）：paramiko 交互通道。
+
+    复用面板已存的节点凭据（无需用户再次输入密码），并沿用 TOFU 主机密钥
+    校验（app.ssh_host_keys.HostKeyPolicy），避免 MITM 收割节点密码。
+    """
+    import paramiko
+
+    from app.ssh_host_keys import HostKeyPolicy
+    from app.tty_persist import SessionIO
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(HostKeyPolicy())
+    connect_kw = {
+        "hostname": str(node.get("host") or ""),
+        "port": int(node.get("port") or 22),
+        "username": str(node.get("user") or ""),
+        "timeout": 10,
+        "look_for_keys": False,
+        "allow_agent": False,
+    }
+    if node.get("auth") == "key" and node.get("key_path"):
+        connect_kw["key_filename"] = node.get("key_path")
+        connect_kw["password"] = None
+    else:
+        connect_kw["password"] = node.get("password") or ""
+    try:
+        client.connect(**connect_kw)
+        channel = client.invoke_shell(term="xterm", width=80, height=24)
+    except Exception:
+        # 连接或开通道失败：先关掉可能已建立的 SSH 客户端再抛给上层回退
+        try:
+            client.close()
+        except Exception:
+            pass
+        raise
+    channel.settimeout(10)
+
+    def _read_channel() -> bytes:
+        """阻塞读通道：空闲超时（长时间无输出）≠ 断开，继续等待。
+
+        远端正跑长任务时可能几十分钟没有输出；若把 timeout 当断开处理，
+        持久会话会被误判为结束，正好违背本功能「长任务常驻」的目的。
+        """
+        import socket as _socket
+
+        while True:
+            try:
+                return channel.recv(4096)
+            except _socket.timeout:
+                continue
+
+    def _close_channel() -> None:
+        try:
+            channel.close()
+        except Exception:
+            # 通道已断开：忽略
+            pass
+        try:
+            client.close()
+        except Exception:
+            # 客户端已关闭：忽略
+            pass
+
+    return SessionIO(
+        read=_read_channel,
+        write=lambda data: channel.sendall(data),
+        resize=lambda rows, cols: channel.resize_pty(width=max(cols, 1), height=max(rows, 1)),
+        close=_close_channel,
+    )
+
+
+def _create_persist_io():
+    """按当前节点上下文与平台创建持久会话底层通道。
+
+    分支（能力范围与一次性终端保持一致）：
+      - 本机 Linux/macOS：pty.fork 常驻交互 shell（容器内可 chroot 宿主）；
+      - 本机 Windows：ConPTY 常驻 PowerShell / cmd；
+      - 远程节点 + Unix 控制端：pty 承载常驻 `ssh -tt`；
+      - 远程节点 + Windows 控制端：优先 paramiko，失败回退 ConPTY 驱动 `ssh -tt`。
+    创建失败抛 RuntimeError，由调用方回传前端展示可读原因。
+    """
+    if node_manager.is_remote():
+        node = node_manager.get_current_node()
+        if IS_WINDOWS:
+            try:
+                return _paramiko_persist_io(node)
+            except Exception as e:  # noqa: BLE001 - 需要回退到 ssh -tt，需捕获全部异常
+                logger.warning("持久终端 paramiko 通道失败，回退 ssh -tt: %s", e)
+                if not _CONPTY_AVAILABLE:
+                    raise RuntimeError(f"无法建立远程终端通道: {e}") from e
+                cmdline = _windows_quote_argv(node_manager.remote_terminal_argv(node))
+                return _conpty_persist_io(cmdline)
+        return _ssh_pty_persist_io(node)
+    if IS_WINDOWS:
+        if _CONPTY_AVAILABLE:
+            try:
+                return _conpty_persist_io(_windows_shell_cmd())
+            except Exception as e:  # noqa: BLE001 - 启动失败需回退管道，保证终端仍可用
+                logger.warning("持久终端 ConPTY 启动失败，回退管道模式: %s", e)
+        return _pipe_persist_io(_windows_shell_cmd())
+    return _local_pty_persist_io()
+
+
+async def _persistent_terminal(websocket: WebSocket, user: dict):
+    """接入（或创建）持久化终端会话，直到本客户端断开。
+
+    流程：
+      1. 按「节点」取会话；不存在则创建常驻通道（本地 PTY / ConPTY / 远程
+         ssh / paramiko）并启动进程；
+      2. 接入：注册输出队列，先发控制帧（JSON，前端不写入 xterm）再回放
+         最近输出快照；
+      3. 双向泵：输入写进程、输出发 WS，任一方向结束即摘除客户端并关闭 WS。
+         注意 WS 断开只摘客户端，**进程继续在后台运行**（本功能的核心语义），
+         下次连接按同一会话键接回。
+    """
+    from app.tty_persist import get_manager
+
+    manager = get_manager()
+    key = manager.key(node_manager.current_node_id())
+    session = manager.get(key)
+    fresh = session is None
+    if session is None:
+        try:
+            io = _create_persist_io()
+        except Exception as e:  # noqa: BLE001 - 创建失败需回传可读原因给前端
+            logger.warning("持久终端创建失败 key=%s: %s", key, e)
+            try:
+                await websocket.send_text(f"\r\n[持久终端创建失败] {e}\r\n")
+                await websocket.close()
+            except Exception:
+                # 提示发送失败（连接已断开）时忽略
+                pass
+            return
+        session = manager.create(key, _persist_title(), io)
+        auditlog.record(
+            "创建持久终端",
+            (user or {}).get("username", ""),
+            websocket.client.host if websocket.client else "",
+            key,
+        )
+
+    qid, out_queue, replay = session.attach()
+    # 鼠标注入能力（Windows 10 ConPTY 不支持）：决定输入侧是否剔除鼠标序列
+    mouse_ok = _conpty_mouse_supported()[0]
+
+    async def _pump_input() -> None:
+        """输入泵：WS -> 常驻进程。"""
+        try:
+            while True:
+                data = await websocket.receive_text()
+                # 会话复检（与一次性终端一致）：改密 / 踢出后立即中断本客户端
+                if not ws_session_still_valid(websocket):
+                    return
+                # 应用层心跳：回 pong 且不写入 pty
+                if await _consume_heartbeat(websocket, data):
+                    continue
+                if not session.alive():
+                    # 常驻进程已退出：结束本客户端，由重连创建新会话
+                    return
+                if data.startswith("\x1bRESIZE:"):
+                    try:
+                        _, dims = data.split(":", 1)
+                        rows, cols = (int(x) for x in dims.split(","))
+                        session.resize(rows, cols)
+                    except Exception:
+                        # 畸形尺寸消息（客户端可能发送异常数据）：忽略本次调整
+                        pass
+                    continue
+                if not mouse_ok:
+                    # 剔除鼠标序列；整帧都是鼠标字节时直接跳过
+                    data = _MOUSE_INPUT_RE.sub("", data)
+                    if not data:
+                        continue
+                session.write(data.encode("utf-8"))
+        except WebSocketDisconnect:
+            # 客户端正常断开：交由外层收尾（会话保留，进程继续跑）
+            return
+        except Exception:
+            logger.debug("持久终端输入循环结束 key=%s", key, exc_info=True)
+            return
+
+    try:
+        # 控制帧：告知前端已接入持久会话（前端据此更新状态栏，不写入终端）
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "persist",
+                    "key": key,
+                    "fresh": fresh,
+                    "replay": len(replay),
+                    "clients": session.client_count,
+                },
+                ensure_ascii=False,
+            )
+        )
+        # 回放最近输出：刷新 / 重开窗口后立刻看到历史与长任务当前进度
+        if replay:
+            await websocket.send_text(replay.decode("utf-8", "replace"))
+    except Exception:
+        # 回放发送失败（连接已断开）：摘除客户端即可，会话与进程保留
+        session.detach(qid)
+        return
+
+    output_task = asyncio.create_task(_pump_output(out_queue, websocket))
+    input_task = asyncio.create_task(_pump_input())
+    try:
+        # 任一方向结束即收尾：输出结束 = 常驻进程退出；输入结束 = 客户端断开
+        await asyncio.wait({input_task, output_task}, return_when=asyncio.FIRST_COMPLETED)
+    except Exception:
+        # 等待期间异常（事件循环关停等）：走统一清理
+        logger.debug("持久终端会话循环异常 key=%s", key, exc_info=True)
+    finally:
+        # 只摘除本客户端：进程继续常驻，供下次接入（本功能的核心语义）
+        session.detach(qid)
+        for task in (input_task, output_task):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(input_task, output_task, return_exceptions=True)
+        try:
+            await websocket.close()
+        except Exception:
+            # 连接可能已断开：关闭失败忽略
             pass

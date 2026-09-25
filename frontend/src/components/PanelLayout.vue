@@ -422,7 +422,7 @@ const groups = computed(() => {
 // 当前菜单高亮：激活窗口对应 key 的菜单项；无窗口时不高亮
 const currentMenuKey = computed(() => (activeWindow.value ? activeWindow.value.key : ''))
 
-// 菜单动作：统一冒泡给 App（App 侧 openWindow 内含 adminOnly/remoteCap/VIP 守卫），
+// 菜单动作：统一冒泡给 App（App 侧 openWindow 内含 adminOnly/remoteCap 守卫），
 // 移动端点选后自动收起抽屉；点用户菜单项时关闭下拉
 function menuAction(key) {
   userMenuOpen.value = false

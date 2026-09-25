@@ -2,7 +2,7 @@
      登录前显示 Login 视图；登录后渲染桌面（动态壁纸 + 快捷方式 + 右侧监控卡片）、
      窗口系统（独立窗口组件，支持拖拽 / 最小化 / 最大化）、Dock 式任务栏与开始菜单。
      核心状态：登录态 auth、已打开窗口列表 openWindows、当前聚焦窗口、管理节点（多机）、
-     VIP / 统一面板兼容门控、ShunX 安全入口与网页防篡改告警。
+     统一面板兼容（免费）、ShunX 安全入口与网页防篡改告警。
      窗口按 shortcuts 清单打开各自功能组件；多节点经 X-Graw-Node 透传（见 api.js）。
      打开 / 聚焦窗口即同步请求目标节点，避免切换主机后首个请求打到旧节点。 -->
 
@@ -203,7 +203,6 @@ import EditorWindow from './components/windows/EditorWindow.vue'
 import MediaWindow from './components/windows/MediaWindow.vue'
 import UserWindow from './components/windows/UserWindow.vue'
 import ChangePasswordWindow from './components/windows/ChangePasswordWindow.vue'
-import VipWindow from './components/windows/VipWindow.vue'
 import FrpWindow from './components/windows/FrpWindow.vue'
 import LogsWindow from './components/windows/LogsWindow.vue'
 import SettingsWindow from './components/windows/SettingsWindow.vue'
@@ -281,7 +280,6 @@ import { auth, clearAuth, isAdmin } from './store/auth'
 import { uiState, loadUi, loadUiEffective } from './store/ui'
 import { settings } from './store/settings'
 import { desktopPrefs, bindUser as bindDesktopUser, hideShortcut, pinShortcut, unpinShortcut } from './store/desktopPrefs'
-import { vip as vipStore, refreshVip } from './store/vip'
 import { systemState, startMetrics, stopMetrics } from './store/systemMetrics'
 import { startDocker, stopDocker, refresh as refreshDocker } from './store/docker'
 import { nodes as nodesStore, refreshNodes } from './store/nodes'
@@ -394,7 +392,7 @@ const shortcuts = ref([
   // 容器资源与端口编辑（CPU/内存/环境变量/端口映射，管理员专属）
   // 已从桌面隐藏，仅保留 Docker 容器右键「编辑」入口（openContainerEdit）
   // { key: 'containeredit', label: '容器编辑', titleKey: 'app.shortcut.containeredit', icon: markRaw(Settings2), component: markRaw(ContainerEditWindow), w: 760, h: 660, adminOnly: true },
-  { key: 'appstore', label: '应用商店', titleKey: 'app.shortcut.appstore', icon: markRaw(Store), component: markRaw(AppStoreWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local', vip: true },
+  { key: 'appstore', label: '应用商店', titleKey: 'app.shortcut.appstore', icon: markRaw(Store), component: markRaw(AppStoreWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local' },
   // 任务 = 计划任务 + 任务中心 合并
   { key: 'tasks', label: '任务', titleKey: 'app.shortcut.tasks', icon: markRaw(ListChecks), component: markRaw(TasksWindow), w: 900, h: 560, adminOnly: true, remoteCap: 'local' },
   // ShunX保护机制 = 防火墙 + 应用防火墙 + 网页防篡改 + 数据库保护 + 系统体检 + 面板备份 + 备份中心 + 通知中心 + SSH密钥 合并
@@ -408,7 +406,7 @@ const shortcuts = ref([
   { key: 'files', label: '文件管理', titleKey: 'app.shortcut.files', icon: markRaw(Folder), component: markRaw(FilesWindow), w: 820, h: 540, adminOnly: true },
   { key: 'recycle', label: '回收站', titleKey: 'app.shortcut.recycle', icon: markRaw(Trash2), component: markRaw(RecycleBinWindow), w: 760, h: 480, adminOnly: true },
   { key: 'netstorage', label: '网络储存', titleKey: 'app.shortcut.netstorage', icon: markRaw(Cloud), component: markRaw(NetStorageWindow), w: 860, h: 540, adminOnly: true, remoteCap: 'local' },
-  { key: 'uisettings', label: '界面设置', titleKey: 'app.shortcut.uisettings', icon: markRaw(Palette), component: markRaw(UISettingsWindow), w: 520, h: 540, adminOnly: true, remoteCap: 'local', vip: true },
+  { key: 'uisettings', label: '界面设置', titleKey: 'app.shortcut.uisettings', icon: markRaw(Palette), component: markRaw(UISettingsWindow), w: 520, h: 540, adminOnly: true, remoteCap: 'local' },
   { key: 'disks', label: '磁盘管理', titleKey: 'app.shortcut.disks', icon: markRaw(HardDrive), component: markRaw(DisksWindow), w: 900, h: 560, adminOnly: true },
   // 备份中心已合并进「ShunX保护机制」应用，桌面不再单独保留
   // { key: 'backup', label: '备份中心', titleKey: 'app.shortcut.backup', icon: markRaw(DatabaseBackup), component: markRaw(BackupWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local' },
@@ -567,9 +565,8 @@ const openWindows = ref([])
 const activeWindowId = ref(null)
 const startMenuOpen = ref(false)
 
-// 统一面板兼容的实际生效值：设定开启且为生效 VIP 才启用。
-// 未授权（未解锁）时强制视为关闭，避免历史残留值绕过付费锁定。
-const unifiedPanelOn = computed(() => settings.unifiedPanel && !!vipStore.vip)
+// 统一面板兼容的实际生效值：跟随界面设置开关（完全免费，无付费门控）。
+const unifiedPanelOn = computed(() => !!settings.unifiedPanel)
 
 // 标准面板模式：设置里开启后界面切换为 1Panel 式侧边栏布局（本地偏好，即改即生效）
 const panelModeOn = computed(() => !!settings.panelMode)
@@ -619,9 +616,7 @@ function toggleStartMenu() { startMenuOpen.value = !startMenuOpen.value }
 function openUsers() { openWindow('users') }
 function openChangePwd() { openWindow('changepwd') }
 function openSettings() { openWindow('settings') }
-function openVip() { openWindow('vip') }
-// 「设置」窗口 →「界面设置」入口：复用桌面快捷方式门控（adminOnly + VIP），
-// 未解锁 VIP 时 openWindow 内部会提示并跳转「付费解锁」窗口。
+// 「设置」窗口 →「界面设置」入口：复用桌面快捷方式门控（adminOnly + 远程能力）。
 function openUiSettings() { openWindow('uisettings') }
 function openTasks() { openWindow('tasks') }
 
@@ -665,7 +660,6 @@ const winEvents = {
   onOpenEditor: openEditor,
   onOpenMedia: openMedia,
   onOpenUsers: openUsers,
-  onOpenVip: openVip,
   onOpenUiSettings: openUiSettings,
   onOpenLogs: openContainerLogs,
   onOpenContainerTerminal: openContainerTerminal,
@@ -717,7 +711,7 @@ function setWinDirty(id, value) {
 }
 
 // 面板模式侧边栏/用户菜单点击：已打开同 key 窗口则聚焦（即切页），否则走 openWindow
-// （openWindow 内部已含 adminOnly / remoteCap / VIP 三层守卫与统一面板节点绑定）
+// （openWindow 内部已含 adminOnly / remoteCap 两层守卫与统一面板节点绑定）
 function onPanelOpen(key) {
   const existing = openWindows.value.find((w) => w.key === key)
   if (existing) {
@@ -752,7 +746,7 @@ const paletteItems = computed(() =>
   visibleShortcuts.value.map(s => ({ key: s.key, label: s.titleKey ? t(s.titleKey) : (s.label || s.key) }))
 )
 function onPaletteOpen(key) {
-  openWindow(key) // openWindow 内部已做 adminOnly / remoteCap / VIP 三层守卫
+  openWindow(key) // openWindow 内部已做 adminOnly / remoteCap 两层守卫
 }
 function onPaletteGlobalKey(e) {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -763,7 +757,7 @@ function onPaletteGlobalKey(e) {
   }
 }
 
-// --- 通用窗口打开：含 adminOnly / remoteCap / VIP 三重门控 ---
+// --- 通用窗口打开：含 adminOnly / remoteCap 双重门控 ---
 function openWindow(key) {
   let def = shortcuts.value.find(s => s.key === key)
   if (!def) {
@@ -771,7 +765,6 @@ function openWindow(key) {
       users: { label: '账号管理', titleKey: 'app.winTitle.users', icon: markRaw(UserCircle2), component: markRaw(UserWindow), w: 600, h: 460, adminOnly: true },
       changepwd: { label: '修改密码', titleKey: 'app.winTitle.changepwd', icon: markRaw(UserCircle2), component: markRaw(ChangePasswordWindow), w: 420, h: 360 },
       settings: { label: '设置', titleKey: 'app.winTitle.settings', icon: markRaw(Settings), component: markRaw(SettingsWindow), w: 520, h: 480 },
-      vip: { label: 'VIP', titleKey: 'app.winTitle.vip', icon: markRaw(Lock), component: markRaw(VipWindow), w: 440, h: 400, adminOnly: false, remoteCap: 'local' },
       // 面板模式「主页」：系统概览 + 实时监控 + 系统信息/备忘录（非窗口外壳的全屏视图）
       panelhome: { label: '主页', titleKey: 'panel.home', icon: markRaw(Home), component: markRaw(PanelHome), w: 900, h: 620 }
     }
@@ -786,13 +779,6 @@ function openWindow(key) {
   // 已配置 Agent 时 local 类经 Agent 代理在子节点可用，正常打开。
   if (def.remoteCap === 'local' && isCurrentHostRemote.value && !currentHostAgentReady.value) {
     alert(t('nodes.localOnlyOnRemote'))
-    return
-  }
-  // 付费门控：vip 标记的功能（应用商店/界面管理）需生效 VIP。未解锁时拦截并
-  // 提示，转入「付费解锁」窗口；加载中（vip.loaded=false）暂不误拦，待状态明确。
-  if (def.vip && vipStore.loaded && !vipStore.vip) {
-    alert(t('vip.gateMsg'))
-    openWindow('vip')
     return
   }
   const id = ++windowSeq
@@ -2094,8 +2080,6 @@ onMounted(() => {
   if (loggedIn.value) {
     startRealtime()
     checkShunxRequired()
-    // 付费功能：启动即加载当前账号 VIP 状态，供「统一面板兼容」/应用商店等门控使用
-    refreshVip()
     // 已登录态（如页面刷新）也重新检测安装环境，确保缺失时弹窗提醒
     checkInstallCheck()
     // 加载当前账号生效的动态壁纸 / 环形图（「仅用于这个账号」优先）
@@ -2132,8 +2116,6 @@ watch(activeWindowId, (id) => {
 watch(loggedIn, (v) => {
   if (v) {
     startRealtime()
-    // 付费功能：登录后刷新当前账号 VIP 状态，保证门控（应用商店/界面管理）准确
-    refreshVip()
     loadUiEffective().catch(() => {})
   } else {
     stopRealtime()

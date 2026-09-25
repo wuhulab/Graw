@@ -13,6 +13,10 @@
     panelTabs    —— 面板模式多标签缓存：开=标签页保留窗口状态，关=单页切换
     shortcutFontSize / shortcutLabelColor / shortcutLabelStroke ——
         桌面图标下方文字的样式：字号(px)、颜色(#RRGGBB)、是否加黑色描边
+    bracketEnabled / bracketLang —— 语言括号提示：
+        古代语言（古埃及语、苏美尔语、阿卡德语…）的语言包约定所有文案写成
+        `本语言书写形式 (中文原文/拉丁转写)`。这两个开关控制该括号注释是否展示、
+        以及展示括号内的哪种内容，由 locales/index.js 的 postTranslation 钩子生效。
 
   用法：任意组件直接读 settings 的响应式字段即可；修改会自动被 watch 落盘，
   无需手动保存。
@@ -39,6 +43,10 @@ const defaults = {
   shortcutFontSize: 12,
   shortcutLabelColor: '#ffffff',
   shortcutLabelStroke: false,
+  // 语言括号提示：是否展示「(中文原文/拉丁转写)」括号注释
+  bracketEnabled: true,
+  // 括号内展示的内容：both=中文+转写（默认）/ zh=仅中文原文 / latin=仅拉丁转写
+  bracketLang: 'both',
 }
 
 // 启动时读取本地偏好；没有缓存 / 内容损坏时回退默认值
@@ -68,6 +76,8 @@ watch(
     shortcutFontSize: settings.shortcutFontSize,
     shortcutLabelColor: settings.shortcutLabelColor,
     shortcutLabelStroke: settings.shortcutLabelStroke,
+    bracketEnabled: settings.bracketEnabled,
+    bracketLang: settings.bracketLang,
   }),
   (val) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(val))   // 整份快照覆盖写，保持存储结构与 defaults 对齐

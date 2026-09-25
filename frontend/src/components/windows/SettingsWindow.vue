@@ -1,7 +1,7 @@
 <!--
   综合设置中心窗口
-  业务：聚合面板级设置——用户管理、VIP 状态、ShunX 安全入口、多节点（SSH/Agent）管理、Web 引擎模式、两步验证、界面偏好、语言、版本更新。
-  后端模块：/api/ui、/api/vip、/api/nodes、/api/agent、/api/webmode、/api/auth（2FA）、/api/update、/api/shunx、/api/health
+  业务：聚合面板级设置——用户管理、ShunX 安全入口、多节点（SSH/Agent）管理、Web 引擎模式、两步验证、界面偏好、语言、版本更新。
+  后端模块：/api/ui、/api/nodes、/api/agent、/api/webmode、/api/auth（2FA）、/api/update、/api/shunx、/api/health
   关键状态：节点/Web模式/2FA/更新/版本等多区块响应式数据；dangerConfirm（删除节点/清除入口高危二次确认）
   打开方式：桌面「设置」入口挂载
 -->
@@ -12,16 +12,6 @@
         <div class="block-title">{{ $t('settings.title') }}</div>
         <button class="btn" @click="emit('openUsers')" :disabled="!isAdmin()">{{ $t('settings.openUsers') }}</button>
         <span v-if="!isAdmin()" style="font-size:11px;color:#6e6e73;margin-left:8px;">{{ $t('common.adminOnly') }}</span>
-      </div>
-
-      <!-- 付费功能：当前月卡/年卡状态 + 续费月卡（授权地址在后端固定，前端不可改） -->
-      <div class="block">
-        <div class="block-title">{{ $t('vip.title') }}</div>
-        <div class="row" style="justify-content:space-between; padding:2px 0;">
-          <span :class="['tag', isVip() ? 'tag-current' : '']" style="font-size:12px;">{{ vipStatusText }}</span>
-          <button class="btn btn-mini" @click="emit('openVip')">{{ $t('vip.renew') }}</button>
-        </div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;">{{ $t('vip.renewHint') }}</div>
       </div>
 
       <!-- ShunX 安全入口管理（仅管理员） -->
@@ -67,20 +57,17 @@
           <span :class="['tag', current.type === 'ssh' ? 'tag-remote' : 'tag-local']">{{ current.type === 'ssh' ? $t('nodes.remoteBadge') : $t('nodes.localBadge') }}</span>
         </div>
 
-        <!-- 统一面板兼容开关（付费功能）：开启后每个窗口绑定打开时对应的节点，聚焦窗口即操作该节点。
-             非付费用户该选项锁定，需「付费解锁」开通 VIP 后方可开启。 -->
+        <!-- 统一面板兼容开关：开启后每个窗口绑定打开时对应的节点，聚焦窗口即操作该节点 -->
         <div class="row" style="justify-content:space-between; padding:2px 0;">
-          <label class="switch-label" :style="!isVip() ? { opacity: 0.5, cursor: 'not-allowed' } : {}">
-            <input type="checkbox" v-model="settings.unifiedPanel" :disabled="!isVip()" />
+          <label class="switch-label">
+            <input type="checkbox" v-model="settings.unifiedPanel" />
             <span style="font-size:12px;font-weight:600;color:#1d1d1f;">
-              {{ $t('nodes.unifiedPanel') }} <span v-if="!isVip()" style="color:#c0392b;">· {{ $t('vip.paid') }}</span>
+              {{ $t('nodes.unifiedPanel') }}
             </span>
           </label>
-          <span v-if="isVip()" class="tag tag-current">{{ $t('vip.active') }}</span>
-          <button v-else class="btn btn-mini" @click="emit('openVip')">{{ $t('vip.unlock') }}</button>
         </div>
         <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:6px;">
-          {{ isVip() ? $t('nodes.unifiedPanelHint') : $t('vip.lockedHint') }}
+          {{ $t('nodes.unifiedPanelHint') }}
         </div>
 
         <!-- 测试连接独立反馈区 -->
@@ -383,6 +370,38 @@
         </div>
       </div>
 
+      <!-- 语言括号提示：古代语言（古埃及语、苏美尔语等）的文案约定写成
+           「本语言书写 (中文原文/拉丁转写)」，这里控制该括号注释的显示与内容 -->
+      <div class="block">
+        <div class="block-title">{{ $t('settings.bracketTitle') }}</div>
+        <div class="row">
+          <label class="switch-label">
+            <input type="checkbox" v-model="settings.bracketEnabled" />
+            <span>{{ $t('settings.bracketEnabled') }}</span>
+          </label>
+        </div>
+        <div class="row" style="flex-wrap:wrap; gap:10px;">
+          <span class="row-label">{{ $t('settings.bracketLang') }}</span>
+          <label
+            class="switch-label"
+            v-for="opt in BRACKET_LANGS"
+            :key="opt.code"
+            :style="{ fontWeight: settings.bracketLang === opt.code ? 700 : 400, opacity: settings.bracketEnabled ? 1 : 0.45 }"
+          >
+            <input
+              type="radio"
+              name="bracketLang"
+              :value="opt.code"
+              :checked="settings.bracketLang === opt.code"
+              :disabled="!settings.bracketEnabled"
+              @change="settings.bracketLang = opt.code"
+            />
+            <span>{{ $t(opt.label) }}</span>
+          </label>
+        </div>
+        <div class="hint">{{ $t('settings.bracketHint') }}</div>
+      </div>
+
       <!-- 关于：项目与社区相关链接（外链新窗口打开，rel=noopener 防钓鱼） -->
       <div class="block">
         <div class="block-title">{{ $t('settings.about.title') }}</div>
@@ -432,24 +451,31 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'   // 响应式、计算属性、挂载、监听 VIP 变化
+import { ref, reactive, computed, onMounted } from 'vue'         // 响应式、计算属性、挂载
 import { useI18n } from 'vue-i18n'                               // 国际化：取 t() 生成动态文案
 import { settings } from '../../store/settings'                 // 全局界面设置（任务栏/语言等）
 import { isAdmin } from '../../store/auth'                      // 管理员门控：限定敏感区块
-import { vip as vipStore, refreshVip, isVip } from '../../store/vip'   // VIP 状态：解锁付费功能
 import { nodesApi, shunxApi, panelApi, updateApi, webmodeApi, authApi, agentApi, recycleApi, pluginApi } from '../../api'   // 各设置区块后端接口
 import { nodes as nodesStore, refreshNodes, setCurrentNode } from '../../store/nodes'   // 多节点状态与当前节点切换
 import { LANGUAGES, setLocale } from '../../locales'            // 语言清单与切换函数
 import ConfirmDialog from '../ConfirmDialog.vue'                // 高危操作二次确认弹窗（输入面板密码）
 
 const { t } = useI18n()
+
+// 语言括号提示的「括号内语言」选项：code 对应 settings.bracketLang，
+// label 为 i18n key（在模板里用 $t(opt.label) 渲染，保证随语言切换实时更新）
+const BRACKET_LANGS = [
+  { code: 'both', label: 'settings.bracketLangBoth' },    // 中文原文 + 拉丁转写
+  { code: 'zh', label: 'settings.bracketLangZh' },        // 仅中文原文
+  { code: 'latin', label: 'settings.bracketLangLatin' },  // 仅拉丁转写
+]
 // 声明父组件（App.vue 窗口插槽）统一绑定的监听事件。本组件模板为双根
 // （内容区 + ConfirmDialog），无法自动继承属性；全部声明为组件自定义事件后，
 // Vue 不再尝试把它们落到 DOM 上，从而消除「Extraneous non-emits listener」告警。
-// 其中仅 openUsers / openVip 会被本组件实际触发，其余为窗口系统公共事件。
+// 其中仅 openUsers 会被本组件实际触发，其余为窗口系统公共事件。
 const emit = defineEmits([
   'close', 'dirty',
-  'openUsers', 'openVip', 'openUiSettings',
+  'openUsers', 'openUiSettings',
   'openTerminal', 'openEditor', 'openMedia', 'openLogs',
   'openContainerTerminal', 'openContainerDetails', 'openContainerStats', 'openContainerEdit',
   'openFiles', 'openDockerConfigEditor',
@@ -457,27 +483,6 @@ const emit = defineEmits([
   'openTaskCenter', 'openRuntimeCreate', 'openConnectionForm',
   'openNetStorageBrowse', 'openNetStorageForm', 'openSiteEdit',
 ])
-
-// 付费功能：计算当前 VIP 剩余天数，用于「月卡生效中：45天」样式的状态展示
-const remainingVipDays = computed(() => {
-  if (!vipStore.vip_until) return 0
-  const end = new Date(vipStore.vip_until).getTime()
-  const diff = end - Date.now()
-  return diff > 0 ? Math.max(1, Math.ceil(diff / 86400000)) : 0
-})
-const vipStatusText = computed(() => {
-  if (!vipStore.vip) return t('vip.inactive')
-  const plan = vipStore.plan === 'year' ? t('vip.year') : t('vip.month')
-  return remainingVipDays.value > 0
-    ? t('vip.activeDays', { plan, days: remainingVipDays.value })
-    : t('vip.inactive')
-})
-
-// 付费门控：VIP 失效/未解锁时强制关闭「统一面板兼容」，保持默认关闭 + 锁定，
-// 避免历史开启值在无授权状态下继续生效。
-watch(() => vipStore.vip, (active) => {
-  if (!active) settings.unifiedPanel = false
-})
 
 // 高风险操作二次确认状态（删除远程节点 / 清除安全入口等需输入面板密码）
 // 注意：不能命名为 confirm，否则会遮蔽全局 window.confirm（doUpdate 仍在用）
@@ -1142,8 +1147,6 @@ onMounted(() => {
   if (isAdmin()) loadAgentCfg()
   if (isAdmin()) loadRecycle()
   if (isAdmin()) loadPluginSettings()
-  // 付费功能：刷新当前账号 VIP 状态（决定「统一面板兼容」是否可解锁）
-  refreshVip()
 })
 
 // 切换界面语言
@@ -1254,6 +1257,16 @@ async function clearEntryNow() {
   width: 16px;
   height: 16px;
   cursor: pointer;
+}
+/* 语言括号提示区块：行内小标签与灰色说明文字 */
+.row-label {
+  color: #6b7280;
+}
+.hint {
+  font-size: 11px;
+  color: #6b7280;
+  line-height: 1.6;
+  margin-top: 2px;
 }
 .btn {
   padding: 6px 14px;

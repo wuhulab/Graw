@@ -8,17 +8,27 @@
     断线自动重连（指数退避），以及 SGR 鼠标模式（供 vim / tmux / htop 等
     TUI 程序点击交互）。
 
+  「保留持久化终端」（勾选框，容器内终端不提供）：
+    勾选后 WebSocket 带上 persist=1，后端把 shell 进程常驻（会话生命周期与
+    连接解耦），断开只摘客户端、进程继续跑；刷新面板 / 重开窗口会按「节点」
+    会话键接回同一终端并回放最近输出快照，用于长时间任务不因刷新而中断。
+    偏好按节点记在 localStorage：刷新页面后自动恢复勾选 → 自动接回会话。
+    取消勾选会调 DELETE /api/terminal/persist 结束该节点的常驻会话（杀进程）。
+
   用到的后端模块：
-    /api/terminal/ws（强制管理员，WebSocket，token 走查询参数）——普通终端；
+    /api/terminal/ws（强制管理员，WebSocket，token 走查询参数）——普通/持久终端；
     /api/terminal/ws/container?container=xx——容器内终端；
     /api/terminal/mouse-capability——查询平台是否支持 TUI 鼠标
-    （Windows 10 及更早的 ConPTY 不支持）。终端会话固定绑定打开时的管理节点。
+    （Windows 10 及更早的 ConPTY 不支持）。终端会话固定绑定打开时的管理节点；
+    /api/terminal/persist——查询 / 结束后端常驻的持久终端会话。
 
   关键状态：
     term / fit      xterm 实例与 FitAddon 插件
     ws              当前 WebSocket 连接
     termNode        会话绑定的目标节点（打开窗口时由 App.vue 同步）
     mouseOn         SGR 鼠标模式开关
+    persistOn       是否启用「保留持久化终端」（按节点持久化偏好）
+    persistActive / persistClients   后端已确认接入持久会话 / 接入端数量
     reconnectTimer / backoff   断线重连与指数退避
 
   怎么被打开：
@@ -28,6 +38,12 @@
   <div style="display:flex; flex-direction:column; height:100%; background:#1e1e1e; overflow:hidden;">
     <div class="toolbar">
       <span style="color:#0a3d7a;">{{ $t('terminal.title') }}{{ container ? ' · ' + $t('terminal.inContainer', { name: container }) : '' }} · {{ statusText }}</span>
+      <!-- 持久化终端开关（容器内终端不支持）：勾选后终端进程常驻后端，
+           刷新面板 / 重开窗口会接回同一会话；取消勾选则结束该常驻会话 -->
+      <label v-if="!container" class="persist-toggle" :title="$t('terminal.persistHint')">
+        <input type="checkbox" :checked="persistOn" :disabled="persistBusy" @change="onPersistToggle($event)" />
+        <span>{{ $t('terminal.persistTerminal') }}</span>
+      </label>
       <button class="btn" style="margin-left:auto;" @click="reconnect">{{ $t('terminal.reconnect') }}</button>
       <button class="btn" @click="clear">{{ $t('terminal.clear') }}</button>
       <!-- 鼠标模式开关：开启后向 TUI 与应用写入鼠标启用序列，支持 vim/tmux/ranger/htop 等点击交互 -->
@@ -88,6 +104,95 @@ let lastPongAt = 0         // 最近一次「连接建立 / 收到后端 pong」
 let lastDataAt = 0         // 最近一次「收到后端任何数据」的时间戳（含 shell 输出）
 // 鼠标模式开关状态（默认关闭，避免干扰普通 shell 与下拉选文本）
 const mouseOn = ref(false)
+
+// ---------- 持久化终端（保留持久化终端）----------
+// 勾选后：后端把 shell 进程常驻（会话生命周期与 WebSocket 解耦），刷新面板 /
+// 重开窗口会按同一「节点」会话键接回，并回放最近 256KB 输出，长时间任务不中断。
+// 偏好按节点存 localStorage，刷新页面后自动恢复勾选状态，从而自动接回会话。
+const PERSIST_STORAGE_PREFIX = 'graw.terminal.persist'   // 存储键前缀（按节点追加后缀）
+const persistOn = ref(false)        // 是否启用持久化终端（来自上次偏好）
+const persistActive = ref(false)    // 后端是否已确认本次接入持久会话（来自控制帧）
+const persistClients = ref(0)       // 同一常驻会话的接入端数量（多窗口共享时 > 1）
+const persistBusy = ref(false)      // 切换开关请求进行中：禁用复选框避免并发操作
+// 控制帧前缀：后端下发的 JSON 状态帧（如 {"type":"persist",...}）不写入 xterm，
+// 仅用于前端状态展示；与心跳 pong 帧共用同一「JSON 前缀」约定。
+const CONTROL_FRAME_PREFIX = '{"type":"'
+const CONTROL_FRAME_MAX = 4096      // 超长文本不按控制帧解析（shell 输出可能以 { 开头）
+
+// 持久化偏好的存储键：按节点隔离，避免多节点互相覆盖勾选状态
+function persistKey() {
+  return `${PERSIST_STORAGE_PREFIX}.${termNode || 'local'}`
+}
+
+// 读取上次的持久化偏好（localStorage 不可用时按未勾选处理）
+function loadPersistPref() {
+  try {
+    return localStorage.getItem(persistKey()) === '1'
+  } catch (e) {
+    return false
+  }
+}
+
+// 保存持久化偏好（隐私模式等写入失败时仅本次生效，不阻塞功能）
+function savePersistPref(on) {
+  try {
+    localStorage.setItem(persistKey(), on ? '1' : '0')
+  } catch (e) {
+    console.warn('[terminal] 保存持久终端偏好失败:', e)
+  }
+}
+
+// 切换「保留持久化终端」：
+//   勾选 → 记录偏好并重连（后端创建/接回该节点的常驻会话）；
+//   取消 → 先请求后端结束常驻会话（终止进程、丢弃回放缓冲），再以普通终端重连。
+async function onPersistToggle(e) {
+  if (persistBusy.value) return
+  const next = !!e.target.checked
+  persistBusy.value = true
+  persistOn.value = next
+  savePersistPref(next)
+  if (!next) {
+    // 取消勾选：结束该节点的常驻会话，避免 shell 进程残留
+    try {
+      await api.delete('/terminal/persist', { params: termNode ? { node: termNode } : {} })
+    } catch (err) {
+      console.warn('[terminal] 结束持久终端失败:', err)
+    }
+  }
+  persistActive.value = false
+  persistClients.value = 0
+  persistBusy.value = false
+  backoff = 500   // 重置退避：切换模式后立即重连
+  connect()
+}
+
+// 解析后端控制帧（持久会话接入通知）：命中返回 true，调用方不得写入 xterm。
+function handleControlFrame(text) {
+  let msg = null
+  try {
+    msg = JSON.parse(text)
+  } catch (e) {
+    return false   // 非 JSON：按普通输出处理
+  }
+  if (!msg || msg.type !== 'persist') return false
+  persistActive.value = true
+  persistClients.value = Number(msg.clients) || 1
+  persistOn.value = true   // 后端确认已接入持久会话（勾选框与真实状态对齐）
+  // 回放会重绘历史输出：先复位终端，避免与既有画面叠加
+  try { if (term) term.reset() } catch (e) {}
+  refreshStatusText()
+  return true
+}
+
+// 状态栏文案：持久会话接入时显示「持久终端已接入」，多窗口共享时附加 ×N
+function refreshStatusText() {
+  if (!persistActive.value) {
+    setStatus(t('terminal.connected'))
+    return
+  }
+  const n = persistClients.value
+  setStatus(n > 1 ? `${t('terminal.persistActive')} ×${n}` : t('terminal.persistActive'))
+}
 
 // SGR 扩展鼠标模式启用/停用序列：?1000 启用 X10 鼠标追踪（点击），?1006 使用 SGR 坐标格式（兼容性更好）
 const MOUSE_ON_SEQ = '\x1b[?1000h\x1b[?1006h'
@@ -235,6 +340,8 @@ function connect() {
   const qs = []
   if (auth.token) qs.push(`token=${encodeURIComponent(auth.token)}`)
   if (termNode) qs.push(`node=${encodeURIComponent(termNode)}`)
+  // 持久化终端：后端按「节点」键创建 / 接回常驻会话（容器终端不支持该模式）
+  if (persistOn.value && !props.container) qs.push('persist=1')
   const qstr = qs.length ? '?' + qs.join('&') : ''
   try {
     if (props.container) {
@@ -280,14 +387,25 @@ function connect() {
       lastPongAt = Date.now()
       return
     }
+    // 其他 JSON 控制帧（持久会话接入通知等）：命中即消费，绝不能写入 xterm
+    if (typeof e.data === 'string' && e.data.length < CONTROL_FRAME_MAX
+      && e.data.startsWith(CONTROL_FRAME_PREFIX) && handleControlFrame(e.data)) {
+      return
+    }
     if (term) term.write(e.data)
     // 收到 shell 首次输出（提示符出现）后再发送自动命令，连接就绪判断更可靠
     if (props.autoCommand && !autoSent) doAutoSend()
   }
+  // 本次连接的局部引用：已被新连接取代的旧连接，其 close 事件不应再排一次重连
+  const sock = ws
   ws.onclose = () => {
+    if (ws !== sock) return
     setStatus(t('terminal.disconnectedShort'))
     clearAutoTimer()
     stopHeartbeat()   // 连接关闭后停止心跳，等待重连的 onopen 重新启动
+    // 注意：这里不修改 persistOn——持久会话的连接断开后会自动重连并接回同一会话
+    persistActive.value = false
+    persistClients.value = 0
     if (alive) scheduleReconnect()
   }
   ws.onerror = () => { setStatus(t('terminal.error')) }
@@ -401,6 +519,8 @@ onMounted(async () => {
     }
     ws.send(data)   // 键盘输入原样转发给后端 shell
   })
+  // 恢复持久化偏好：勾选过「保留持久化终端」时，刷新面板后会自动接回原常驻会话
+  persistOn.value = !props.container && loadPersistPref()
   connect()
   resizeObserver = new ResizeObserver(() => sendResize())   // 容器大小变化时同步后端行列
   resizeObserver.observe(termEl.value)
@@ -419,6 +539,21 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* 「保留持久化终端」开关：深色工具栏上的浅色小标签，与终端配色一致 */
+.persist-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 10px;
+  font-size: 12px;
+  color: #d4d4d4;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.persist-toggle input { cursor: pointer; margin: 0; }
+.persist-toggle input:disabled { cursor: wait; }
+
 /* 终端右键菜单：深色主题贴合终端窗口（其余窗口的白色菜单在深色终端里会刺眼） */
 .term-ctx-menu {
   position: fixed;

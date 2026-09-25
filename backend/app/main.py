@@ -60,7 +60,6 @@ from app.routers import (
     toolbox,
     phpversions,
     recycle,
-    vip,
     plugins,
 )
 from app.auth import (
@@ -77,6 +76,7 @@ from app import trash
 from app import plugin_protocol
 from app import reporting
 from app import portforward as pf_store
+from app import tty_persist
 
 # 权限分级：
 #   PROTECTED - 仅需登录（只读信息类接口，如系统概览/备忘录，供桌面展示）
@@ -142,6 +142,8 @@ async def lifespan(app: FastAPI):
     await trash.stop_auto_purge()
     reporting.stop_daily()
     pf_store.stop_all()
+    # 关闭全部「持久化终端」会话：结束常驻 shell，避免面板退出后留下孤儿进程
+    tty_persist.get_manager().shutdown_all()
 
 
 # 安全：默认关闭交互式 API 文档（/docs、/redoc、/openapi.json）。
@@ -210,7 +212,6 @@ _AGENT_PROXY_EXCLUDE_PREFIX = (
     "/api/agent",
     "/api/ui",
     "/api/shunx",
-    "/api/vip",
     "/api/health",
     "/api/batch",
     "/api/gitdeploy",
@@ -726,11 +727,6 @@ app.include_router(
     tags=["phpversions"],
     dependencies=ADMIN,
 )
-
-# 付费功能（VIP/月卡/年卡）：查询当前用户 VIP 状态 + 用授权码激活 +
-# 配置授权码服务地址。status/activate 需登录，config 需管理员，
-# 均在各端点内部自行鉴权（参照 ui/tamper 路由），故不挂全局依赖。
-app.include_router(vip.router, prefix="/api/vip", tags=["vip"])
 
 # 应用接口开放协议（GPOP）：
 # - /api/plugins/settings 为插件功能总开关（始终注册，否则关闭后无法重新打开）；
