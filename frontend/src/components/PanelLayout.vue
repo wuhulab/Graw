@@ -69,6 +69,15 @@
               <button v-if="isAdmin()" class="pnl-drop-item" @click="menuAction('uisettings')">
                 <Palette :size="14" /> {{ $t('app.shortcut.uisettings') }}
               </button>
+              <!-- 关于外链：源码仓库 / 捐赠（置于退出登录上方，文案复用 settings.about 既有 i18n 键） -->
+              <div class="pnl-drop-sep"></div>
+              <button class="pnl-drop-item" @click="openExternal(SOURCE_REPO_URL)">
+                <Github :size="14" /> {{ $t('settings.about.githubSource') }}
+              </button>
+              <button class="pnl-drop-item" @click="openExternal(DONATE_URL)">
+                <Heart :size="14" /> {{ $t('settings.about.donate') }}
+              </button>
+              <div class="pnl-drop-sep"></div>
               <button class="pnl-drop-item danger" @click="onLogout">
                 <LogOut :size="14" /> {{ $t('app.logout') }}
               </button>
@@ -186,7 +195,7 @@ import { ref, reactive, computed, onMounted, onUnmounted, markRaw, watch } from 
 import { useI18n } from 'vue-i18n'
 import {
   Menu, X, Search, LogOut, Settings, UserCircle2, KeyRound, Palette,
-  ChevronDown, LayoutGrid, Home, Server,
+  ChevronDown, LayoutGrid, Home, Server, Github, Heart,
 } from 'lucide-vue-next'
 import WindowContent from './WindowContent.vue'
 import { isAdmin } from '../store/auth'
@@ -229,6 +238,26 @@ const emit = defineEmits(['open', 'focus', 'close', 'dirty', 'logout'])
 defineOptions({ inheritAttrs: false })
 
 const { t } = useI18n()
+
+// ---- 关于外链（源码仓库 / 捐赠）----
+// 集中常量便于后续更换地址；点击后新标签页打开，失败仅提示不中断界面
+const SOURCE_REPO_URL = 'https://github.com/wuhulab/Graw'   // 源码仓库
+const DONATE_URL = 'https://afdian.com/a/shunianssy'        // 捐赠（爱发电）
+
+/**
+ * 新标签页打开外部链接
+ * @param {string} url - 目标地址
+ */
+function openExternal(url) {
+  userMenuOpen.value = false   // 先收起用户菜单，避免新标签页打开后菜单残留
+  try {
+    window.open(url, '_blank', 'noopener')
+  } catch (e) {
+    // 浏览器拦截弹窗等异常：仅提示，不影响面板其余操作
+    console.error('[panel] 打开外链失败:', url, e)
+    alert(`${url}`)
+  }
+}
 
 // ---- 顶栏/用户信息 ----
 const userName = computed(() => props.user?.username || 'admin')
@@ -526,6 +555,8 @@ watch(searching, (v) => {
 }
 .pnl-drop-user { font-size: 13px; font-weight: 600; color: #1d1d1f; }
 .pnl-drop-role { font-size: 11px; color: #8e8e93; }
+/* 用户菜单分组分隔线：用于「关于外链」与「退出登录」之间 */
+.pnl-drop-sep { height: 1px; margin: 4px 6px; background: rgba(0, 0, 0, 0.07); }
 .pnl-drop-item {
   display: flex;
   align-items: center;

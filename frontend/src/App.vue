@@ -129,6 +129,9 @@
           <button class="start-item" @click="openChangePwd(); startMenuOpen = false"><UserCircle2 :size="16" /> {{ $t('app.changePassword') }}</button>
           <button class="start-item" @click="openSettings(); startMenuOpen = false"><Settings :size="16" /> {{ $t('app.settings') }}</button>
           <button class="start-item" @click="reportIssue(); startMenuOpen = false"><Bug :size="16" /> {{ $t('app.reportIssue') }}</button>
+          <!-- 关于外链：源码仓库 / 捐赠（置于退出登录上方，文案复用 settings.about 既有 i18n 键） -->
+          <button class="start-item" @click="openExternal(SOURCE_REPO_URL); startMenuOpen = false"><Github :size="16" /> {{ $t('settings.about.githubSource') }}</button>
+          <button class="start-item" @click="openExternal(DONATE_URL); startMenuOpen = false"><Heart :size="16" /> {{ $t('settings.about.donate') }}</button>
           <button class="start-item danger" @click="doLogout"><LogOut :size="16" /> {{ $t('app.logout') }}</button>
         </div>
       </div>
@@ -284,7 +287,7 @@ import { startDocker, stopDocker, refresh as refreshDocker } from './store/docke
 import { nodes as nodesStore, refreshNodes } from './store/nodes'
 import { setRequestNode } from './store/requestNode'
 import { tamperState, startTamper, stopTamper } from './store/tamper'
-import { Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, Shield, ShieldAlert, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, BarChart3, FileCode2, History, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug, Pin, PinOff, EyeOff, Clock, BellRing, Gauge, KeyRound, FileUp, Send, Home } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用）
+import { Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, Shield, ShieldAlert, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, BarChart3, FileCode2, History, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug, Pin, PinOff, EyeOff, Clock, BellRing, Gauge, KeyRound, FileUp, Send, Home, Github, Heart } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用）
 
 // --- 桌面根状态：登录态、动态壁纸、底栏主机徽标 ---
 const loggedIn = computed(() => !!auth.token)
@@ -625,6 +628,25 @@ function openTasks() { openWindow('tasks') }
 // 报告问题：跳转到项目 GitHub Issues 新建页（新窗口，noopener 防钓鱼）
 function reportIssue() {
   window.open('https://github.com/wuhulab/Graw/issues/new', '_blank', 'noopener')
+}
+
+// ---- 关于外链（源码仓库 / 捐赠）----
+// 集中常量便于后续更换地址；点击后新标签页打开，异常仅提示不中断桌面
+const SOURCE_REPO_URL = 'https://github.com/wuhulab/Graw'   // 源码仓库
+const DONATE_URL = 'https://afdian.com/a/shunianssy'        // 捐赠（爱发电）
+
+/**
+ * 新标签页打开外部链接
+ * @param {string} url - 目标地址
+ */
+function openExternal(url) {
+  try {
+    window.open(url, '_blank', 'noopener')
+  } catch (e) {
+    // 浏览器拦截弹窗等异常：仅提示，不影响桌面其余操作
+    console.error('[app] 打开外链失败:', url, e)
+    alert(`${url}`)
+  }
 }
 
 function doLogout() {

@@ -30,6 +30,8 @@
 
 ## 自查清单
 
+- [ ] 已阅读并同意 [CONTRIBUTING.md 第 7 节《贡献者许可协议（CLA）》](../CONTRIBUTING.md#7-贡献者许可协议cla)
+      （提交本 PR 即视为默认同意 CLA，含 WuHuLaB 保留商业闭源授权）
 - [ ] 已通读 `AGENTS.md`，改动符合鉴权 / 持久化 / 多节点约定
 - [ ] 新增后端接口已在 `main.py` 注册，且鉴权依赖（`PROTECTED`/`ADMIN`）选择正确
 - [ ] 前端界面文案走 `src/locales/` i18n，无硬编码

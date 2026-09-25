@@ -1169,6 +1169,8 @@ Document version: 1.1.0 | Updated: 2026-08-16`,
     closeTab: 'Close',
     emptyHint: 'Select a feature from the left',
     emptySub: 'Open an app from the sidebar menu',
+    switchHost: 'Switch host',    // Topbar host-switch dropdown title
+    noNodes: 'No SSH nodes yet',  // Placeholder when no sub-node is configured
     menu: {
       monitor: 'Monitor',
       site: 'Websites',

@@ -598,6 +598,8 @@ export default {
     closeTab: '关闭',
     emptyHint: '从左侧选择功能',
     emptySub: '在侧边栏菜单中打开一个应用',
+    switchHost: '切换主机',       // 顶栏主机切换下拉标题
+    noNodes: '暂无 SSH 节点',     // 未配置任何子节点时的占位文案
     menu: {
       monitor: '概览监控',
       site: '网站',
