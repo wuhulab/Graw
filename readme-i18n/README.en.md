@@ -113,7 +113,7 @@ Meaning of each parameter (required for the panel to fully manage the host):
 - `-v /var/run/docker.sock:/var/run/docker.sock`: connects to the host Docker engine (container/image/log management).
 - `/opt/graw/data` is the panel data directory (bound to the host); `GRAW_HOST_DATA=/opt/graw/data` tells the host where the docker-compose file is located, which is required for the Docker App Store to complete installations.
 
-> ⚠️ **Security warning**: The container above effectively has host root-level operational capability, so it should only be deployed in trusted environments. Please **change the default password immediately** after your first login, and properly safeguard the credential files under `backend/data/`.
+> y warning**: The container above effectively has host root-level operational capability, so it should only be deployed in trusted environments. Please **change the default password immediately** after your first login, and properly safeguard the credential files under `backend/data/`.
 
 ## Features
 

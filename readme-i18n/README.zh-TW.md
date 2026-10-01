@@ -83,7 +83,7 @@ docker compose up -d --build
 - `-v /var/run/docker.sock:/var/run/docker.sock`：對接實體主機 Docker 引擎（容器/映像檔/日誌管理）。
 - `/opt/graw/data` 為面板資料目錄（綁定到實體主機）；`GRAW_HOST_DATA=/opt/graw/data` 告知實體主機上的 docker-compose 檔案所在位置，Docker 應用程式商店才能完成安裝。
 
-> ⚠️ **安全警告**：上述容器實質擁有實體主機 root 等級的操作能力，僅建議部署於可信任環境。請在首次登入後**立即修改預設密碼**，並妥善保護 `backend/data/` 下的憑證檔案。
+> **安全警告**：上述容器實質擁有實體主機 root 等級的操作能力，僅建議部署於可信任環境。請在首次登入後**立即修改預設密碼**，並妥善保護 `backend/data/` 下的憑證檔案。
 
 ## 功能特性
 

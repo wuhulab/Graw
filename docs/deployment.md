@@ -94,7 +94,7 @@ docker compose up -d --build
 | `-v /var/run/docker.sock:...` | 对接宿主 Docker 引擎 | 容器 / 镜像 / 日志管理不可用 |
 | `-v /opt/graw/data:/app/backend/data` + `GRAW_HOST_DATA=/opt/graw/data` | 数据目录 bind 到宿主，且告知其宿主路径 | 应用商店安装（宿主 docker 需读到 compose 文件）会失败 |
 
-> ⚠️ 上述容器实质拥有宿主机 root 级操作能力，**仅建议部署于可信环境**。首次登录后请立即修改默认密码（首次启动播种 `admin` / `admin123`，强制改密），并妥善保护 `backend/data/`。
+> 上述容器实质拥有宿主机 root 级操作能力，**仅建议部署于可信环境**。首次登录后请立即修改默认密码（首次启动播种 `admin` / `admin123`，强制改密），并妥善保护 `backend/data/`。
 
 ## 2. 环境变量全表
 

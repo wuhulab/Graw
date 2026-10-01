@@ -83,7 +83,7 @@ Significado de cada parámetro (todos necesarios para que el panel administre el
 - `-v /var/run/docker.sock:/var/run/docker.sock`: conecta con el motor Docker del host (gestión de contenedores/imágenes/registros).
 - `/opt/graw/data` es el directorio de datos del panel (montado desde el host); `GRAW_HOST_DATA=/opt/graw/data` indica dónde está el archivo docker-compose en el host, requisito para que la tienda de aplicaciones Docker complete la instalación.
 
-> ⚠️ **Advertencia de seguridad**: este contenedor tiene en la práctica capacidad de operar como root en el host, por lo que solo se recomienda desplegarlo en entornos de confianza. **Cambia la contraseña por defecto inmediatamente** tras el primer inicio de sesión y protege bien los archivos de credenciales de `backend/data/`.
+> dvertencia de seguridad**: este contenedor tiene en la práctica capacidad de operar como root en el host, por lo que solo se recomienda desplegarlo en entornos de confianza. **Cambia la contraseña por defecto inmediatamente** tras el primer inicio de sesión y protege bien los archivos de credenciales de `backend/data/`.
 
 ## Características
 

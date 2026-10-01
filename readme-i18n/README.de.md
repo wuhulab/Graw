@@ -83,7 +83,7 @@ Bedeutung der einzelnen Parameter (erforderlich, damit das Panel den Host vollst
 - `-v /var/run/docker.sock:/var/run/docker.sock`: verbindet sich mit der Docker-Engine des Hosts (Verwaltung von Containern/Images/Logs).
 - `/opt/graw/data` ist das Datenverzeichnis des Panels (an den Host gebunden); `GRAW_HOST_DATA=/opt/graw/data` teilt dem Host mit, wo die docker-compose-Datei liegt, was der Docker-App-Store für eine erfolgreiche Installation benötigt.
 
-> ⚠️ **Sicherheitswarnung**: Der obige Container besitzt faktisch Betriebsfähigkeiten auf Root-Ebene des Hosts und sollte daher nur in einer vertrauenswürdigen Umgebung eingesetzt werden. Bitte **ändern Sie nach der ersten Anmeldung sofort das Standardpasswort** und schützen Sie die Anmeldedateien unter `backend/data/` sorgfältig.
+> icherheitswarnung**: Der obige Container besitzt faktisch Betriebsfähigkeiten auf Root-Ebene des Hosts und sollte daher nur in einer vertrauenswürdigen Umgebung eingesetzt werden. Bitte **ändern Sie nach der ersten Anmeldung sofort das Standardpasswort** und schützen Sie die Anmeldedateien unter `backend/data/` sorgfältig.
 
 ## Funktionen
 

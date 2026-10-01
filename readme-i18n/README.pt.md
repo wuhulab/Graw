@@ -83,7 +83,7 @@ Significado de cada parâmetro (todos necessários para o painel gerenciar o hos
 - `-v /var/run/docker.sock:/var/run/docker.sock`: conecta ao motor Docker do host (gerenciamento de contêineres/imagens/logs).
 - `/opt/graw/data` é o diretório de dados do painel (montado a partir do host); `GRAW_HOST_DATA=/opt/graw/data` informa onde está o arquivo docker-compose no host, requisito para a loja de aplicativos Docker concluir a instalação.
 
-> ⚠️ **Aviso de segurança**: esse contêiner tem, na prática, capacidade de operar como root no host, por isso só é recomendado implantá-lo em ambientes confiáveis. **Altere a senha padrão imediatamente** após o primeiro login e proteja bem os arquivos de credenciais em `backend/data/`.
+> **Aviso de segurança**: esse contêiner tem, na prática, capacidade de operar como root no host, por isso só é recomendado implantá-lo em ambientes confiáveis. **Altere a senha padrão imediatamente** após o primeiro login e proteja bem os arquivos de credenciais em `backend/data/`.
 
 ## Recursos
 

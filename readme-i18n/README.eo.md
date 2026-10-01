@@ -83,7 +83,7 @@ Signifo de ĉiu parametro (necesaj por ke la panelo plene administru la gastigon
 - `-v /var/run/docker.sock:/var/run/docker.sock`: konektiĝas al la Docker-motoro de la gastigo (administrado de ujoj/bildoj/protokoloj).
 - `/opt/graw/data` estas la datumdosierujo de la panelo (ligita al la gastigo); `GRAW_HOST_DATA=/opt/graw/data` informas la gastigon kie troviĝas la dosiero docker-compose, kio necesas por ke la Docker-aplikaĵ-butiko povu fini instaladon.
 
-> ⚠️ **Sekureca averto**: la supra ujo fakte posedas operacian kapablon je radika nivelo de la gastigo, do oni rekomendas disfaldi ĝin nur en fidinda medio. Bonvolu **tuj ŝanĝi la defaŭltan pasvorton** post la unua ensaluto kaj zorge protekti la identigilajn dosierojn sub `backend/data/`.
+> ekureca averto**: la supra ujo fakte posedas operacian kapablon je radika nivelo de la gastigo, do oni rekomendas disfaldi ĝin nur en fidinda medio. Bonvolu **tuj ŝanĝi la defaŭltan pasvorton** post la unua ensaluto kaj zorge protekti la identigilajn dosierojn sub `backend/data/`.
 
 ## Funkcioj
 

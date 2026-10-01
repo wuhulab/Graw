@@ -114,7 +114,7 @@ docker compose up -d --build
 - `-v /var/run/docker.sock:/var/run/docker.sock`：对接宿主机 Docker 引擎（容器/镜像/日志管理）。
 - `/opt/graw/data` 为面板数据目录（绑定到宿主）；`GRAW_HOST_DATA=/opt/graw/data` 告知宿主机 docker-compose 文件所在，Docker 应用商店才能完成安装。
 
-> ⚠️ **安全警告**：上述容器实质拥有宿主机 root 级操作能力，仅建议部署于可信环境。请在首次登录后**立即修改默认密码**，并妥善保护 `backend/data/` 下的凭据文件。
+> **安全警告**：上述容器实质拥有宿主机 root 级操作能力，仅建议部署于可信环境。请在首次登录后**立即修改默认密码**，并妥善保护 `backend/data/` 下的凭据文件。
 
 ## 功能特性
 

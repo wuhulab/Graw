@@ -83,7 +83,7 @@ Signification de chaque paramètre (nécessaires pour que le panneau gère compl
 - `-v /var/run/docker.sock:/var/run/docker.sock` : se connecte au moteur Docker de l'hôte (gestion des conteneurs/images/journaux).
 - `/opt/graw/data` est le répertoire de données du panneau (lié à l'hôte) ; `GRAW_HOST_DATA=/opt/graw/data` indique à l'hôte où se trouve le fichier docker-compose, ce qui est nécessaire au magasin d'applications Docker pour mener à bien une installation.
 
-> ⚠️ **Avertissement de sécurité** : le conteneur décrit ci-dessus possède en pratique une capacité d'opération de niveau root sur l'hôte ; il ne devrait donc être déployé que dans un environnement de confiance. Veuillez **changer immédiatement le mot de passe par défaut** après votre première connexion et protéger correctement les fichiers d'identification sous `backend/data/`.
+> vertissement de sécurité** : le conteneur décrit ci-dessus possède en pratique une capacité d'opération de niveau root sur l'hôte ; il ne devrait donc être déployé que dans un environnement de confiance. Veuillez **changer immédiatement le mot de passe par défaut** après votre première connexion et protéger correctement les fichiers d'identification sous `backend/data/`.
 
 ## Fonctionnalités
 
