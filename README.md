@@ -1,10 +1,10 @@
 # Graw
 
-一个基于 Web 的服务器管理面板，采用「类桌面操作系统」的交互设计（窗口、任务栏、桌面快捷方式），并内置一套 1Panel 风格的标准面板模式。前端使用 Vue 3 + Vite，后端使用 FastAPI。
+一个基于 Web 的服务器管理面板，采用「类桌面操作系统」的交互设计（窗口、任务栏、桌面快捷方式），并内置一套经典侧边栏风格的标准面板模式。前端使用 Vue 3 + Vite，后端使用 FastAPI。
 
 除本机外，Graw 还能通过 **Agent 隧道 + 成对访问密钥** 把其它主机作为「子节点」纳入统一面板管理：在一处即可切换主机，管理多台服务器的容器、网站、文件、终端与防火墙。
 
-**English** — Graw is an open-source, self-hosted **server management panel** with a desktop-like UI: a modern alternative to 1Panel / Baota (宝塔) / Cockpit. Real-time monitoring, Docker & App Store, websites, databases, web terminal and multi-node management — all in one panel, built with Vue 3 + FastAPI and deployable with one Docker command.
+**English** — Graw is an open-source, self-hosted **server management panel** with a desktop-like UI: a modern alternative to Cockpit. Real-time monitoring, Docker & App Store, websites, databases, web terminal and multi-node management — all in one panel, built with Vue 3 + FastAPI and deployable with one Docker command.
 
 <p align="center">
   <a href="https://github.com/wuhulab/Graw/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/wuhulab/Graw?style=flat-square&logo=github&color=4c8bf5&label=Stars"></a>
@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img src="graw_site/assets/graw-hero.jpg" alt="Graw 桌面式服务器管理界面：Docker 容器管理、Web 终端与实时系统监控同屏" width="100%" />
+  <img src="demo-photo/graw-hero.jpg" alt="Graw 桌面式服务器管理界面：Docker 容器管理、Web 终端与实时系统监控同屏" width="100%" />
 </p>
 
 ### 多语言 README
@@ -47,15 +47,15 @@
 
 ## 界面预览
 
-同一套功能，两种外壳：**类桌面模式**（窗口 / 任务栏 / 桌面快捷方式）与 **1Panel 风格标准面板模式**，在设置中随时切换。
+同一套功能，两种外壳：**类桌面模式**（窗口 / 任务栏 / 桌面快捷方式）与 **经典侧边栏风格的标准面板模式**，在设置中随时切换。
 
 **类桌面模式** —— 多窗口工作区，访问统计、文件管理、终端等应用并行操作：
 
 <p align="center">
-  <img src="graw_site/assets/graw-desktop.jpg" alt="Graw 类桌面模式：访问统计、文件管理与终端多窗口工作区" width="100%" />
+  <img src="demo-photo/graw-desktop.jpg" alt="Graw 类桌面模式：访问统计、文件管理与终端多窗口工作区" width="100%" />
 </p>
 
-**标准面板模式** —— 侧边栏分组菜单 + 多标签页，1Panel 用户零成本上手：
+**标准面板模式** —— 侧边栏分组菜单 + 多标签页，熟悉传统面板的用户零成本上手：
 
 <p align="center">
   <img src="demo-photo/传统服务器面板-demo.png" alt="Graw 标准面板模式：侧边栏分组菜单、多标签页与系统概览" width="100%" />
@@ -119,10 +119,10 @@ docker compose up -d --build
 ## 功能特性
 
 - **账号与权限系统** —— 基于 JWT 的用户登录、角色（管理员/普通用户）、账号管理、强制改密、登录日志、在线会话管理（按 token 有效期与最后活跃时间判定在线）
-- **双界面形态** —— 类桌面模式（窗口/任务栏/桌面快捷方式，支持拖拽、最大化/最小化）与 1Panel 风格标准面板模式（侧边栏分组菜单 + 多标签）
+- **双界面形态** —— 类桌面模式（窗口/任务栏/桌面快捷方式，支持拖拽、最大化/最小化）与经典侧边栏风格的标准面板模式（分组菜单 + 多标签）
 - **多节点管理** —— 主面板通过 Agent 隧道 + 成对访问密钥纳管子节点，支持 SSH 密钥部署、请求级主机切换与远端子节点能力门控
 - **实时系统监控** —— CPU、内存、磁盘、网络、负载，通过 WebSocket 实时推送数据与图表，支持历史指标查询
-- **网站管理** —— Nginx / OpenResty / Apache 虚拟主站增删改查、启停、配置生成与查看；可与 1Panel/OpenResty 共存并自动发现外部站点
+- **网站管理** —— Nginx / OpenResty / Apache 虚拟主站增删改查、启停、配置生成与查看；可与现成的 OpenResty 环境共存并自动发现外部站点
 - **WAF 与网站增强** —— Web 应用防火墙、伪静态/rewrite、缓存与站点增强配置、站点统计
 - **数据库管理** —— MySQL / MariaDB / Redis / PostgreSQL / MongoDB 连接管理、库表浏览、SQL / Redis 命令执行、慢查询分析
 - **Docker 管理** —— 容器与镜像的查看、启动、停止、日志、资源统计，兼容 docker 与 podman 输出格式

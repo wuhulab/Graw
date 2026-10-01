@@ -1,10 +1,10 @@
 # Graw
 
-A web-based server management panel with an operating-system-like desktop interaction design (windows, taskbar, desktop shortcuts), and it also ships a 1Panel-style standard panel mode. The frontend uses Vue 3 + Vite; the backend uses FastAPI.
+A web-based server management panel with an operating-system-like desktop interaction design (windows, taskbar, desktop shortcuts), and it also ships a classic sidebar-style standard panel mode. The frontend uses Vue 3 + Vite; the backend uses FastAPI.
 
 Beyond the local machine, Graw can also bring other hosts into a unified panel as "child nodes" through an **Agent tunnel + paired access keys**: switch hosts in one place and manage the containers, websites, files, terminals and firewalls of multiple servers.
 
-Graw is an open-source, self-hosted **server management panel** — a desktop-like alternative to 1Panel / Baota (aaPanel) / Cockpit — covering real-time monitoring, Docker, websites, databases, web terminal and multi-server management, built with Vue 3 + FastAPI and deployable with one Docker command.
+Graw is an open-source, self-hosted **server management panel** — a desktop-like alternative to Cockpit — covering real-time monitoring, Docker, websites, databases, web terminal and multi-server management, built with Vue 3 + FastAPI and deployable with one Docker command.
 
 <p align="center">
   <a href="https://github.com/wuhulab/Graw/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/wuhulab/Graw?style=flat-square&logo=github&color=4c8bf5&label=Stars"></a>
@@ -16,7 +16,7 @@ Graw is an open-source, self-hosted **server management panel** — a desktop-li
 </p>
 
 <p align="center">
-  <img src="../graw_site/assets/graw-hero.jpg" alt="Graw desktop-like server management UI: Docker container management, web terminal and real-time monitoring on one screen" width="100%" />
+  <img src="../demo-photo/graw-hero.jpg" alt="Graw desktop-like server management UI: Docker container management, web terminal and real-time monitoring on one screen" width="100%" />
 </p>
 
 ### Multilingual README
@@ -46,15 +46,15 @@ Graw is an open-source, self-hosted **server management panel** — a desktop-li
 
 ## Interface preview
 
-One codebase, two shells: a **desktop-like mode** (windows / taskbar / desktop shortcuts) and a **1Panel-style standard panel mode** — switch anytime in Settings.
+One codebase, two shells: a **desktop-like mode** (windows / taskbar / desktop shortcuts) and a **classic sidebar-style standard panel mode** — switch anytime in Settings.
 
 **Desktop-like mode** — a multi-window workspace: website analytics, file manager and terminal side by side:
 
 <p align="center">
-  <img src="../graw_site/assets/graw-desktop.jpg" alt="Graw desktop-like mode: website analytics, file manager and terminal in a multi-window workspace" width="100%" />
+  <img src="../demo-photo/graw-desktop.jpg" alt="Graw desktop-like mode: website analytics, file manager and terminal in a multi-window workspace" width="100%" />
 </p>
 
-**Standard panel mode** — grouped sidebar menu + multi-tab layout, zero learning curve for 1Panel users:
+**Standard panel mode** — grouped sidebar menu + multi-tab layout, zero learning curve for users coming from classic server panels:
 
 <p align="center">
   <img src="../demo-photo/传统服务器面板-demo.png" alt="Graw standard panel mode: grouped sidebar, multi-tab layout and system overview" width="100%" />
@@ -118,10 +118,10 @@ Meaning of each parameter (required for the panel to fully manage the host):
 ## Features
 
 - **Account and permission system** — JWT-based user login, roles (administrator / normal user), account management, forced password change, login log, online session management (online status is determined by token validity and last activity time)
-- **Dual interface modes** — desktop-like mode (windows / taskbar / desktop shortcuts, with drag, maximize/minimize) and a 1Panel-style standard panel mode (sidebar grouped menu + multiple tabs)
+- **Dual interface modes** — desktop-like mode (windows / taskbar / desktop shortcuts, with drag, maximize/minimize) and a classic sidebar-style standard panel mode (grouped menu + multiple tabs)
 - **Multi-node management** — the main panel manages child nodes through the Agent tunnel + paired access keys, with SSH key deployment, request-level host switching and remote child-node capability gating
 - **Real-time system monitoring** — CPU, memory, disk, network and load, pushed in real time over WebSocket with data and charts, plus historical metric queries
-- **Website management** — CRUD for Nginx / OpenResty / Apache virtual hosts, start/stop, config generation and preview; can coexist with 1Panel/OpenResty and automatically discovers external sites
+- **Website management** — CRUD for Nginx / OpenResty / Apache virtual hosts, start/stop, config generation and preview; can coexist with existing OpenResty setups and automatically discovers external sites
 - **WAF and website enhancements** — Web Application Firewall, rewrite rules, cache and site enhancement configuration, site statistics
 - **Database management** — MySQL / MariaDB / Redis / PostgreSQL / MongoDB connection management, database/table browsing, SQL / Redis command execution, slow query analysis
 - **Docker management** — view, start, stop, inspect logs and resource stats for containers and images; compatible with both docker and podman output formats
