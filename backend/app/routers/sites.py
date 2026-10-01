@@ -2,6 +2,8 @@ import hashlib
 import json
 import logging
 import os
+import asyncio
+import time
 import platform
 import re
 import subprocess
@@ -13,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from app.hostfs import host_path, host_cmd, host_which
 from app import webserver
+from app import config_snapshot
 
 logger = logging.getLogger("graw.sites")
 
@@ -46,7 +49,7 @@ _SUBDOMAIN_RE = re.compile(r"^[A-Za-z0-9*][A-Za-z0-9*-]*$")
 _PROXY_DOMAIN_RE = re.compile(r"^[A-Za-z0-9*.-]+\Z")
 
 # 反向代理目标：http(s)://host[:port][/path]（支持下划线的服务名/主机名）
-_PROXY_RE = re.compile(r"^https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%_-]+$")
+_PROXY_RE = re.compile(r"^https?://[A-Za-z0-9.~:/?#\[\]@!$&'()*+,;=%_-]+$")
 
 # TCP/UDP 上游地址：host:port（域名或 IP + 端口）
 _UPSTREAM_RE = re.compile(r"^[A-Za-z0-9._-]+:[0-9]{1,5}$")
@@ -209,6 +212,8 @@ def _save_sites(sites: list):
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(SITES_FILE, "w", encoding="utf-8") as f:
         json.dump(sites, f, ensure_ascii=False, indent=2)
+    # 站点列表变更，使 merged_sites 的 TTL 缓存立即失效（下次重新发现/解析）
+    _invalidate_merged_cache()
 
 
 # 外部站点「显示名称」覆盖：外部站点由真实配置驱动（每次发现 name 复原），
@@ -231,6 +236,8 @@ def _save_external_names(names: dict):
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(SITES_NAMES_FILE, "w", encoding="utf-8") as f:
         json.dump(names, f, ensure_ascii=False, indent=2)
+    # 显示名称变更同样影响合并结果，使 TTL 缓存失效
+    _invalidate_merged_cache()
 
 
 def _which(cmd: str) -> Optional[str]:
@@ -263,6 +270,7 @@ def _web_server_type() -> str:
             if "True" in r.stdout:
                 return "iis"
         except Exception:
+            # 探测引擎失败时按未知处理，继续检测其它引擎
             pass
     return "none"
 
@@ -362,6 +370,7 @@ def _parse_root_dir(conf: str) -> str:
         matches = list(re.finditer(r"(?:^|\s)root\s+(.+?);", stripped))
         if matches:
             return matches[-1].group(1).strip()
+    # root 规则解析失败，按无结果处理忽略
     except Exception:
         pass
     return ""
@@ -416,6 +425,7 @@ def _existing_site_dirs() -> List[dict]:
         if d:
             dirs.append({"path": d, "source": "nginx"})
     except Exception:
+        # 探测站点目录失败时忽略，继续其它来源
         pass
     # 1Panel：宿主 /opt/1panel/www/conf.d（容器内 conf.d 加载，同一份配置）
     existing = {x["path"] for x in dirs}
@@ -504,9 +514,18 @@ def _apply_external_nginx_config(site: dict, enabled: bool):
     if not conf_path:
         return
     if enabled:
+        # 写前快照：把旧 conf 内容存档，便于配置异常时一键回滚
+        config_snapshot.capture_before("site", site.get("id", "ext"), conf_path,
+                                       route="_apply_external_nginx_config")
         os.makedirs(os.path.dirname(conf_path), exist_ok=True)
-        with open(conf_path, "w", encoding="utf-8") as f:
-            f.write(_nginx_site_config(site))
+        if site.get("maintenance"):
+            # 维护模式：写维护页并生成「仅服务维护页」的 conf
+            _write_site_maint_file(site, True)
+            with open(conf_path, "w", encoding="utf-8") as f:
+                f.write(_maintenance_nginx_config(site))
+        else:
+            with open(conf_path, "w", encoding="utf-8") as f:
+                f.write(_nginx_site_config(site))
     else:
         if os.path.exists(conf_path):
             os.remove(conf_path)
@@ -524,6 +543,7 @@ def _site_status_by_port(port: int) -> bool:
                 and conn.status == psutil.CONN_LISTEN
             ):
                 return True
+    # 端口监听状态读取失败，视为未监听忽略
     except Exception:
         pass
     return False
@@ -632,6 +652,7 @@ def _nginx_site_config(site: dict) -> str:
             if extra:
                 body.extend(ln if ln.strip() else ln for ln in extra.split("\n"))
         except Exception:
+            # 导入扩展配置失败时忽略
             pass
         return body
 
@@ -713,6 +734,7 @@ def _ensure_stream_include():
         with open(conf_path, "w", encoding="utf-8") as f:
             f.write(content)
     except Exception:
+        # 写临时配置失败时忽略，由后续校验与回滚兜底
         pass
 
 
@@ -726,6 +748,8 @@ def _apply_nginx_config(site_id: str, site: dict, enabled: bool):
         stream_conf = os.path.join(stream_dir, conf_name)
         if enabled:
             os.makedirs(stream_dir, exist_ok=True)
+            config_snapshot.capture_before("site", site_id, stream_conf,
+                                           route="_apply_nginx_config")
             with open(stream_conf, "w", encoding="utf-8") as f:
                 f.write(_nginx_stream_config(site))
             _ensure_stream_include()
@@ -745,18 +769,158 @@ def _apply_nginx_config(site_id: str, site: dict, enabled: bool):
     if conf_dir is None:
         conf_dir = host_path(webserver.enabled_dir())
     conf = os.path.join(conf_dir, conf_name)
-    if enabled:
-        os.makedirs(conf_dir, exist_ok=True)
-        with open(conf, "w", encoding="utf-8") as f:
-            f.write(_nginx_site_config(site))
+    # 路径注入防御（code-scanning py/path-injection）：site_id 白名单由调用方校验，
+    # 此处归一化（CodeQL PathNormalization）并做前缀守卫（SafeAccessCheck），
+    # 文件操作一律使用被守卫的 norm_conf，且仅在前缀通过的正分支执行。
+    norm_conf_dir = os.path.normpath(os.path.abspath(conf_dir))
+    norm_conf = os.path.normpath(os.path.abspath(conf))
+    if norm_conf.startswith(norm_conf_dir):
+        if enabled:
+            os.makedirs(conf_dir, exist_ok=True)
+            config_snapshot.capture_before("site", site_id, norm_conf,
+                                           route="_apply_nginx_config")
+            if site.get("maintenance"):
+                # 维护模式：写维护页并生成「仅服务维护页」的 conf
+                _write_site_maint_file(site, True)
+                with open(norm_conf, "w", encoding="utf-8") as f:
+                    f.write(_maintenance_nginx_config(site))
+            else:
+                with open(norm_conf, "w", encoding="utf-8") as f:
+                    f.write(_nginx_site_config(site))
+        else:
+            if os.path.exists(norm_conf):
+                os.remove(norm_conf)
     else:
-        if os.path.exists(conf):
-            os.remove(conf)
+        logger.warning("站点 conf 路径越界，拒绝写配置: %s", repr(norm_conf))
 
 
 def _reload_nginx():
     # 按当前引擎（nginx/openresty）执行 reload
     webserver.reload()
+
+
+# ---------------------------------------------------------------------------
+# 维护模式：一键把站点切到「维护中」维护页（nginx 层拦截）
+#
+# 实现思路：
+#   - 维护中 conf 复用站点原 root，仅对外暴露 /_mainten.html 维护页，
+#     其余请求一律 503（error_page 指向维护页）；
+#   - 面板把维护页 HTML（默认内置 / 用户自定义）持久化在
+#     data/maintenance/{site_id}.html，应用配置时写到站点 root/_mainten.html；
+#   - 关闭维护即写回正常 conf 并删除 _mainten.html 与本地存档。
+# 安全：site_id 白名单防穿越；html 走 Pydantic 长度上限限制。
+# ---------------------------------------------------------------------------
+MAINT_FILE = "_mainten.html"
+MAINT_DIR = os.path.join(DATA_DIR, "maintenance")
+
+# 默认维护页（文案面向普通访客，无敏感信息）
+_DEFAULT_MAINT_HTML = """<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>维护中</title>
+<style>
+body{margin:0;font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+background:#f6f8fb;color:#334;display:flex;align-items:center;justify-content:center;height:100vh}
+.box{text-align:center;padding:32px;background:#fff;border-radius:12px;
+box-shadow:0 6px 24px rgba(30,60,120,.08)}
+h1{font-size:22px;margin:0 0 10px}h1 .dot{display:inline-block;width:10px;height:10px;
+border-radius:50%;background:#f39c12;margin-right:8px;vertical-align:2px}
+p{color:#666;font-size:14px}
+</style></head><body>
+<div class="box"><h1><span class="dot"></span>网站维护中</h1>
+<p>我们正在对站点进行升级维护，请稍后再访问。</p></div>
+</body></html>
+"""
+
+
+def _maint_html_path(site_id: str) -> str:
+    """维护 HTML 存档路径（site_id 白名单防穿越）。"""
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{1,127}", site_id or ""):
+        raise HTTPException(status_code=400, detail="站点 ID 非法")
+    return os.path.join(MAINT_DIR, site_id + ".html")
+
+
+def _load_maint_html(site_id: str) -> str:
+    """读取站点维护页 HTML（无存档用默认页；损坏回退默认）。"""
+    p = _maint_html_path(site_id)
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return _DEFAULT_MAINT_HTML
+
+
+def _save_maint_html(site_id: str, html: str) -> None:
+    """持久化站点维护页 HTML（原子写；清空/空串删除存档回退默认）。"""
+    p = _maint_html_path(site_id)  # site_id 白名单已在 _maint_html_path 内校验
+    # 路径注入防御（code-scanning py/path-injection）：归一化 + 前缀守卫，
+    # 文件操作仅在前缀通过的正分支执行（_maint_html_path 校验的纵深兜底）。
+    root = os.path.normpath(os.path.abspath(MAINT_DIR))
+    np = os.path.normpath(os.path.abspath(p))
+    if not np.startswith(root):
+        logger.warning("维护页路径越界，拒绝写入: %s", repr(np))
+        return
+    os.makedirs(os.path.dirname(np), exist_ok=True)
+    content = (html or "").strip()
+    if not content:
+        content = _DEFAULT_MAINT_HTML
+    tmp = np + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(content)
+    os.replace(tmp, np)
+
+
+def _write_site_maint_file(site: dict, apply: bool) -> None:
+    """把维护页写到（或从）站点 root 删除。apply=True 写入，False 删除。"""
+    root = _conf_token(site.get("root") or "")
+    if not root:
+        return
+    real_root = host_path(root)
+    dst = os.path.join(real_root, MAINT_FILE)
+    # 路径注入防御（code-scanning py/path-injection）：归一化 + 前缀守卫，
+    # 确保维护页文件必须落在站点 root 之内。
+    norm_root = os.path.normpath(os.path.abspath(real_root))
+    norm_dst = os.path.normpath(os.path.abspath(dst))
+    if not norm_dst.startswith(norm_root):
+        logger.warning("维护页路径越界，跳过写入: %s", repr(dst))
+        return
+    try:
+        if apply:
+            # 文件操作仅使用被守卫的 norm_dst（其父目录即站点 root）
+            os.makedirs(os.path.dirname(norm_dst), exist_ok=True)
+            with open(norm_dst, "w", encoding="utf-8") as f:
+                f.write(_load_maint_html(site.get("id", "site")))
+        else:
+            if os.path.exists(norm_dst):
+                os.remove(norm_dst)
+    except OSError as e:
+        logger.warning("写维护页文件失败 %s: %s", repr(norm_dst), type(e).__name__, exc_info=True)
+
+
+def _maintenance_nginx_config(site: dict) -> str:
+    """生成「维护中」nginx server 配置：仅放行 /_mainten.html，其余 503。"""
+    server_name = _site_server_name(site)
+    port = int(site.get("port", 80) or 80)
+    lines = [f"# Graw Maintenance mode: {site.get('id', '')}"]
+    ssl = site.get("ssl", {}) or {}
+    if ssl.get("enabled") and ssl.get("cert") and ssl.get("key"):
+        cert = _conf_token(ssl.get("cert") or "")
+        key = _conf_token(ssl.get("key") or "")
+        lines.append("server {")
+        lines.append("    listen 443 ssl;")
+        lines.append("    server_name %s;" % server_name)
+        lines.append(f"    ssl_certificate {cert};")
+        lines.append(f"    ssl_certificate_key {key};")
+    else:
+        lines.append("server {")
+        lines.append(f"    listen {port};")
+        lines.append("    server_name %s;" % server_name)
+    lines.append(f"    root {_conf_token(site.get('root') or '/var/www/html')};")
+    lines.append(f"    location = /{MAINT_FILE} {{ access_log off; }}")
+    lines.append("    location / { return 503; }")
+    lines.append(f"    error_page 503 /{MAINT_FILE};")
+    lines.append("}")
+    return "\n".join(lines)
 
 
 def _apache_site_config(site: dict) -> str:
@@ -771,6 +935,9 @@ def _apache_site_config(site: dict) -> str:
 
 
 def _apply_apache_config(site_id: str, site: dict, enabled: bool):
+    # 安全：site_id 白名单校验（与 _apply_nginx_config 一致，防止路径穿越）
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{1,127}", site_id or ""):
+        raise HTTPException(status_code=400, detail="站点 ID 非法")
     conf_name = f"{site_id}.conf"
     avail_dir = host_path(APACHE_AVAILABLE)
     enab_dir = host_path(APACHE_ENABLED)
@@ -779,6 +946,8 @@ def _apply_apache_config(site_id: str, site: dict, enabled: bool):
     if enabled:
         os.makedirs(avail_dir, exist_ok=True)
         os.makedirs(enab_dir, exist_ok=True)
+        config_snapshot.capture_before("site", site_id, avail,
+                                       route="_apply_apache_config")
         with open(avail, "w", encoding="utf-8") as f:
             f.write(_apache_site_config(site))
         if os.path.exists(enab):
@@ -795,6 +964,7 @@ def _apply_apache_config(site_id: str, site: dict, enabled: bool):
             ["apache2ctl", "graceful"], capture_output=True, check=False, timeout=10
         )
     except Exception:
+        # 重新加载 apache 失败时忽略
         pass
 
 
@@ -833,11 +1003,32 @@ class UpdateSite(BaseModel):
     domain: Optional[str] = None
 
 
+# merged_sites 结果缓存：站点发现（读 sites.json + 解析真实 nginx conf + glob 目录）
+# 与域名去重是相对重的磁盘/SSH 操作，而 list / WAF / 站点增强下拉会在短时间内
+# 多次调用。TTL 缓存避免每次请求都重新解析，同时保证配置变更后不超过 2 秒生效。
+_merged_cache: Optional[List[dict]] = None
+_merged_cache_at = 0.0
+_MERGED_CACHE_TTL = 2.0
+
+
+def _invalidate_merged_cache() -> None:
+    """使 merged_sites 的缓存失效（站点/外部名称变更时调用）。"""
+    global _merged_cache, _merged_cache_at
+    _merged_cache = None
+    _merged_cache_at = 0.0
+
+
 def merged_sites() -> List[dict]:
     """自建站点 + 外部真实站点 的去重合并列表。
 
     供「网站」列表与 WAF / 站点增强等下拉复用，保证各应用看到同样一组站点。
+    带 2 秒 TTL 缓存：站点发现与 nginx conf 解析较重，避免每次请求重复执行。
     """
+    global _merged_cache, _merged_cache_at
+    now = time.time()
+    if _merged_cache is not None and (now - _merged_cache_at) < _MERGED_CACHE_TTL:
+        # 深拷贝返回，避免调用方修改污染缓存（如 list_sites 叠加 web_server/online）
+        return [dict(s) for s in _merged_cache]
     sites = _load_sites()
     builtin_domains = {
         d.lower()
@@ -853,11 +1044,21 @@ def merged_sites() -> List[dict]:
     for e in external:
         if e.get("id") in names and names[e["id"]]:
             e["name"] = names[e["id"]]
-    return sites + external
+    _merged_cache = sites + external
+    # 缓存时间戳用于 merged_sites 的 TTL 判定
+    _merged_cache_at = now  # lgtm[py/unused-global-variable]
+    return [dict(s) for s in _merged_cache]
 
 
 @router.get("/list")
 async def list_sites():
+    # _web_server_type（subprocess/SSH 探测）、_discover_existing_sites（解析
+    # nginx conf）、_site_status_by_port（psutil 全量网络连接扫描）均为阻塞操作，
+    # 放线程池避免卡事件循环。
+    return await asyncio.to_thread(_list_sites_sync)
+
+
+def _list_sites_sync() -> dict:
     ws = _web_server_type()
     merged = merged_sites()
     for s in merged:
@@ -1069,3 +1270,43 @@ async def delete_site(site_id: str):
     sites = [s for s in sites if s["id"] != site_id]
     _save_sites(sites)
     return {"ok": True}
+
+
+class MaintenanceReq(BaseModel):
+    """维护模式开关请求：enabled 必填；html 可选（空串/缺省用默认维护页）。"""
+
+    enabled: bool
+    html: Optional[str] = Field(default=None, max_length=65536)
+
+
+@router.post("/{site_id}/maintenance")
+async def set_maintenance(site_id: str, req: MaintenanceReq):
+    """一键开启/关闭站点维护模式（nginx 层拦截，保留原站点 root）。"""
+    sites = _load_sites()
+    site = next((s for s in sites if s["id"] == site_id), None)
+    external = False
+    if not site:
+        site = _find_external_site(site_id)
+        if not site:
+            raise HTTPException(status_code=404, detail="Site not found")
+        external = True
+    # 持久化自定义维护页 HTML（空串回退默认页）
+    if req.html is not None:
+        _save_maint_html(site_id, req.html)
+    site["maintenance"] = bool(req.enabled)
+    # 重新应用配置：维护中 → 写维护 conf；关闭 → 写回正常 conf 并清理维护页
+    if external:
+        _apply_external_nginx_config(site, site.get("enabled", True))
+        return {"ok": True, "external": True, "maintenance": site.get("maintenance")}
+    if site.get("enabled"):
+        ws = _web_server_type()
+        if ws in ("nginx", "openresty"):
+            _apply_nginx_config(site_id, site, True)
+            _reload_nginx()
+        elif ws == "apache":
+            _apply_apache_config(site_id, site, True)
+    else:
+        # 站点停用状态下仅记录维护标记，待启用时一并生效
+        pass
+    _save_sites(sites)
+    return {"ok": True, "maintenance": site.get("maintenance")}

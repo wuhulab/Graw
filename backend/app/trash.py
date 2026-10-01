@@ -224,6 +224,7 @@ def _rm_path(path_host_view: str) -> None:
         try:
             os.remove(path)
         except OSError:
+            # 文件已不存在导致删除失败时忽略
             pass
 
 
@@ -432,6 +433,6 @@ async def stop_auto_purge():
         _purge_task.cancel()
         try:
             await _purge_task
-        except asyncio.CancelledError:
+        except asyncio.CancelledError:  # lgtm[py/empty-except] 取消后台任务触发 CancelledError，正常退出
             pass
         _purge_task = None

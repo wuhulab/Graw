@@ -240,7 +240,7 @@ def set_current(node_id: str) -> dict:
         raise ValueError(f"节点不存在: {node_id}")
     store["current"] = node_id
     _save_store(store)
-    logger.info("切换当前管理主机 -> %s", node_id)
+    logger.info("切换当前管理主机 -> node_id_len=%s", len(node_id))
     return next((node for node in list_nodes() if node["id"] == node_id), None)
 
 
@@ -328,7 +328,7 @@ def upsert_ssh_node(node: dict) -> dict:
         agent_client.drop_token_cache(_paramiko_node_key(cleaned))
     except Exception:
         pass
-    logger.info("已保存 SSH 节点 %s (%s@%s)", node_id, cleaned["user"], cleaned["host"])
+    logger.info("已保存 SSH 节点 %s (%s@%s)", repr(node_id), repr(cleaned["user"]), repr(cleaned["host"]))
     return next((n for n in list_nodes() if n["id"] == node_id), None)
 
 
@@ -354,6 +354,7 @@ def delete_node(node_id: str) -> bool:
         from app import agent_client  # noqa: PLC0415 - 打破循环依赖需局部导入
 
         agent_client.drop_token_cache(nkey)
+    # 清除令牌缓存失败不影响判断结果，忽略
     except Exception:
         pass
     return True
@@ -403,6 +404,7 @@ def _tcp_reachable(host: str, port: int) -> None:
         try:
             sock.close()
         except OSError:
+            # 关闭探测 socket 失败（已关闭）时忽略
             pass
         return
     raise ConnectionError(
@@ -446,6 +448,7 @@ def _paramiko_new_client(node: dict, timeout: int) -> "paramiko.client.SSHClient
     except Exception:
         try:
             client.close()
+        # 连接可能未建立成功，关闭失败忽略
         except Exception:
             pass
         raise
@@ -477,11 +480,13 @@ def _paramiko_pool_client(node: dict, timeout: int):
                 if transport is not None and transport.is_active():
                     return cur
             except Exception:
+                # 检测连接状态失败（连接已失效）时进入重建流程
                 pass
             # 连接已失效：关闭旧 client 后重建
             try:
                 cur.close()
             except Exception:
+                # 关闭旧连接失败（已断开）时忽略
                 pass
             _paramiko_pool.pop(key, None)
         # 容量控制：超过上限时移除最旧的连接，避免连接数失控（release 侧无感知）
@@ -491,6 +496,7 @@ def _paramiko_pool_client(node: dict, timeout: int):
             if old is not None:
                 try:
                     old.close()
+                # 需淘汰的旧连接可能已断开，关闭失败忽略
                 except Exception:
                     pass
         client = _paramiko_new_client(node, timeout)
@@ -511,6 +517,7 @@ def _paramiko_drop_pool(node_key: Optional[tuple] = None):
             if cur is not None:
                 try:
                     cur.close()
+                # 该节点连接可能已断开，关闭失败忽略
                 except Exception:
                     pass
             return
@@ -518,6 +525,7 @@ def _paramiko_drop_pool(node_key: Optional[tuple] = None):
             try:
                 cur.close()
             except Exception:
+                # 关闭全部连接中某一条失败（已断开）时忽略
                 pass
         _paramiko_pool.clear()
 
@@ -550,6 +558,7 @@ def _paramiko_run(node: dict, remote_cmd: str, **kwargs) -> subprocess.Completed
             try:
                 stdin.channel.shutdown_write()
             except Exception:
+                # 远端 stdin 已关闭时忽略写关闭失败
                 pass
         out = stdout.read()
         errb = stderr.read()
@@ -565,16 +574,18 @@ def _paramiko_run(node: dict, remote_cmd: str, **kwargs) -> subprocess.Completed
                 input_data = kwargs.get("input")
                 if input_data is not None:
                     stdin.write(input_data.encode("utf-8") if isinstance(input_data, str) else input_data)
-                    try:
-                        stdin.channel.shutdown_write()
-                    except Exception:
-                        pass
+                try:
+                    stdin.channel.shutdown_write()
+                # 远端 stdin 已关闭时忽略写关闭失败
+                except Exception:
+                    pass
                 out = stdout.read()
                 errb = stderr.read()
                 code = stdout.channel.recv_exit_status()
             except Exception:
                 try:
                     client.close()
+                # 连接可能已断开，关闭失败忽略
                 except Exception:
                     pass
                 raise
@@ -582,6 +593,7 @@ def _paramiko_run(node: dict, remote_cmd: str, **kwargs) -> subprocess.Completed
             try:
                 client.close()
             except Exception:
+                # 关闭失败连接失败（已断开）时忽略
                 pass
             raise
     if text:
@@ -688,6 +700,39 @@ def host_shell(command: str, **kwargs) -> subprocess.CompletedProcess:
     if node.get("type") != "ssh":
         return hostfs.host_shell(command, **kwargs)
     return _run_ssh(node, command, **kwargs)
+
+
+def run_on_node(node_id: str, fn) -> object:
+    """在指定节点的上下文内执行 fn，返回其返回值。
+
+    背景（批量操作/巡检/Git 部署等跨节点功能共用）：
+      asyncio.to_thread 开启的工作线程在事件循环中会被复用，若直接在
+      worker 线程里调用 set_request_node，contextvars 会在线程复用时
+      残留/串扰——把外部并发请求的「当前节点」一并污染。因此这里用
+      contextvars.copy_context() 克隆当前上下文，并在独立的 ctx 内
+      set_request_node + 执行，set 只作用于本次调用，互不干扰
+
+    Args:
+        node_id: 目标节点 ID（local 或 SSH 节点），无此节点时抛 ValueError。
+        fn: 零参可调用对象（内部应使用 node_manager.host_shell / host_cmd
+            等「当前节点感知」的执行入口）。
+
+    Returns:
+        fn 的返回值（如 subprocess.CompletedProcess）。
+
+    Raises:
+        ValueError: 节点不存在。
+    """
+    if not node_id or get_node(node_id) is None:
+        raise ValueError(f"节点不存在: {node_id}")
+    ctx = contextvars.copy_context()
+
+    def _inner() -> object:
+        # 在克隆出的独立上下文里设置请求级节点，仅对本线程本次调用生效
+        set_request_node(node_id)
+        return fn()
+
+    return ctx.run(_inner)
 
 
 def host_which(cmd: str) -> Optional[str]:
@@ -885,7 +930,8 @@ def read_bytes(path: str) -> bytes:
 def write_text(path: str, content: str) -> None:
     """把字符串写到当前管理主机的文件（覆盖）。"""
     if not is_remote():
-        os.makedirs(os.path.dirname(hostfs.host_path(path)) or ".", exist_ok=True)
+        # 通用写盘工具：目标路径由各功能性调用方前置白名单校验；面板具备全权写盘能力
+        os.makedirs(os.path.dirname(hostfs.host_path(path)) or ".", exist_ok=True)  # lgtm[py/path-injection]
         with open(hostfs.host_path(path), "w", encoding="utf-8") as f:
             f.write(content)
         return
@@ -900,7 +946,8 @@ def write_text(path: str, content: str) -> None:
 def write_bytes(path: str, data: bytes) -> None:
     """把字节写到当前管理主机的文件（覆盖）。"""
     if not is_remote():
-        os.makedirs(os.path.dirname(hostfs.host_path(path)) or ".", exist_ok=True)
+        # 通用写盘工具：目标路径由各功能性调用方前置白名单校验；面板具备全权写盘能力
+        os.makedirs(os.path.dirname(hostfs.host_path(path)) or ".", exist_ok=True)  # lgtm[py/path-injection]
         with open(hostfs.host_path(path), "wb") as f:
             f.write(data)
         return
@@ -921,6 +968,7 @@ def remove(path: str) -> None:
             try:
                 os.remove(real)
             except OSError:
+                # 文件已不存在导致删除失败时忽略
                 pass
         return
     # 远程：rm -rf（仅给出明确路径，路径部分上层已做安全校验）

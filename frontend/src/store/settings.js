@@ -9,6 +9,17 @@
     locale     —— 界面语言（与 locales/index.js 的 LANGUAGES 对应）
     unifiedPanel —— 统一面板兼容：开启后每个窗口绑定打开时的节点
     hideFoxcode  —— 是否隐藏桌面上的 Foxcode 快捷方式
+    panelMode    —— 标准面板模式：启用后界面切换为 1Panel 式侧边栏布局
+    panelTabs    —— 面板模式多标签缓存：开=标签页保留窗口状态，关=单页切换
+    desktopPreload —— 类桌面模式预加载：进入面板、数据就绪后空闲分批预取全部应用代码
+    shortcutFontSize / shortcutLabelColor / shortcutLabelStroke ——
+        桌面图标下方文字的样式：字号(px)、颜色(#RRGGBB)、是否加黑色描边
+    bracketEnabled / bracketLang —— 语言括号提示：
+        古代语言（古埃及语、苏美尔语、阿卡德语…）的语言包约定所有文案写成
+        `本语言书写形式 (中文原文/拉丁转写)`。这两个开关控制该括号注释是否展示、
+        以及展示括号内的哪种内容，由 locales/index.js 的 postTranslation 钩子生效。
+    overviewDecimals —— 系统概览数值精度：开启后环形统计中心百分比保留两位小数
+        （如 31.25%），关闭则取整（31%）。
 
   用法：任意组件直接读 settings 的响应式字段即可；修改会自动被 watch 落盘，
   无需手动保存。
@@ -27,6 +38,23 @@ const defaults = {
   unifiedPanel: false,
   // 隐藏桌面上的 Foxcode 快捷方式
   hideFoxcode: false,
+  // 标准面板模式：开启后界面切换为 1Panel 式侧边栏布局（替代桌面/窗口系统）
+  panelMode: false,
+  // 面板模式多标签缓存：开启后切换应用保留窗口状态（标签页），关闭则为单页切换
+  panelTabs: true,
+  // 类桌面模式预加载：面板启动、数据就绪后，空闲时段分批预取全部应用窗口代码，
+  // 使之后打开任意应用都命中本地缓存、瞬时渲染（面板模式为单页切换，不参与预加载）
+  desktopPreload: true,
+  // 桌面图标下方文字的样式：字号（px，8-24）/ 颜色 / 是否加黑边描边
+  shortcutFontSize: 12,
+  shortcutLabelColor: '#ffffff',
+  shortcutLabelStroke: false,
+  // 语言括号提示：是否展示「(中文原文/拉丁转写)」括号注释
+  bracketEnabled: true,
+  // 括号内展示的内容：both=中文+转写（默认）/ zh=仅中文原文 / latin=仅拉丁转写
+  bracketLang: 'both',
+  // 系统概览数值精度：true=环形统计中心百分比保留两位小数（31.25%），false=取整（31%）
+  overviewDecimals: true,
 }
 
 // 启动时读取本地偏好；没有缓存 / 内容损坏时回退默认值
@@ -51,6 +79,15 @@ watch(
     locale: settings.locale,
     unifiedPanel: settings.unifiedPanel,
     hideFoxcode: settings.hideFoxcode,
+    panelMode: settings.panelMode,
+    panelTabs: settings.panelTabs,
+    desktopPreload: settings.desktopPreload,
+    shortcutFontSize: settings.shortcutFontSize,
+    shortcutLabelColor: settings.shortcutLabelColor,
+    shortcutLabelStroke: settings.shortcutLabelStroke,
+    bracketEnabled: settings.bracketEnabled,
+    bracketLang: settings.bracketLang,
+    overviewDecimals: settings.overviewDecimals,
   }),
   (val) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(val))   // 整份快照覆盖写，保持存储结构与 defaults 对齐

@@ -12,13 +12,12 @@
 用法：
   python test_loginlog_unit.py
 """
-import json
 import os
 import shutil
 import sys
 import tempfile
 import unittest
-from unittest import mock
+import unittest.mock as mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

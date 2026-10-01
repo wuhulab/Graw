@@ -192,7 +192,6 @@ def set_config(enabled: bool, key: str = "", secret: str = "") -> dict:
             raise ValueError("未配置校验 secret，无法启用")
         effective_role = "admin"
     else:
-        effective_key = effective_key
         effective_secret = ""  # 禁用时清除 secret，避免残留鉴权面
         effective_role = "admin"
     cfg = {

@@ -1,6 +1,20 @@
-blank_issues_enabled: false
+# Issue 模板配置
+# 参考文档: https://docs.github.com/zh/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository
+#
+# 说明：本仓库关闭空白 Issue，所有反馈请走对应模板（Bug 反馈 / 功能建议 / 使用求助）。
+# 下列 contact_links 会在「New Issue」选择页面展示，用于把用户先引导到文档与官网，减少重复提问。
 
+blank_issues_enabled: false
 contact_links:
-  - name: 社区讨论
-    url: https://github.com/wuhulab/Graw/discussions
-    about: 使用疑问、经验交流请到 Discussions 提问
+  - name: 文档中心 · 提问前先看这里
+    url: https://github.com/wuhulab/Graw/blob/main/docs/README.md
+    about: 部署、子节点 Agent、插件协议、应用商店等全部文档的索引与建议阅读顺序。
+  - name: 部署与运维文档 · 启动失败先查这里
+    url: https://github.com/wuhulab/Graw/blob/main/docs/deployment.md
+    about: 启动方式、环境变量、数据目录与常见故障排查。
+  - name: 官网 · 安装说明与界面预览
+    url: https://graw.shunx.top/
+    about: 官网提供快速安装命令、界面截图与核心能力介绍。
+  - name: 安全漏洞报告（请勿公开张贴）
+    url: https://github.com/wuhulab/Graw/security/advisories/new
+    about: 发现安全漏洞请走 GitHub 私有漏洞报告，勿在公开 Issue 中提交。

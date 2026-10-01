@@ -30,7 +30,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.hostfs import host_path, host_cmd
+from app.hostfs import host_path
 from app import webserver
 
 router = APIRouter()
@@ -520,7 +520,11 @@ async def waf_site_save(site_id: str, body: dict):
     try:
         write_result = _write_nginx_fragment(cfg)
     except OSError as e:
-        write_result = {"written": False, "error": str(e)}
+        # 安全（code-scanning py/stack-trace-exposure）：错误详情仅记日志，
+        # 不把内部路径/原因回传给前端
+        import logging
+        logging.getLogger("graw.waf").warning("写入 WAF nginx 片段失败: %s", e)
+        write_result = {"written": False, "error": "写入 nginx 配置失败"}
     return {"saved": True, "config": cfg, "write": write_result}
 
 
@@ -569,8 +573,14 @@ async def waf_apply(body: dict):
 
 
 def _write_nginx_fragment(cfg: dict) -> dict:
-    """将某站点 WAF 片段写盘（host_path 映射），有 nginx 则 reload。"""
-    site = cfg.get("site")
+    """将某站点 WAF 片段写盘（host_path 映射），有 nginx 则 reload。
+
+    安全（code-scanning py/path-injection）：site 会被拼入 conf 文件名，
+    统一做白名单校验（与 _remove_nginx_fragment 一致），阻断穿越。
+    """
+    site = str(cfg.get("site") or "")
+    if not _SITE_ID_RE.match(site):
+        raise HTTPException(status_code=400, detail="站点 ID 非法")
     target_dir = host_path(_waf_dir())
     os.makedirs(target_dir, exist_ok=True)
     conf = os.path.join(target_dir, f"{site}.conf")
@@ -598,7 +608,8 @@ def _reload_nginx():
     # 按当前引擎（nginx/openresty）执行 reload
     try:
         webserver.reload()
-    except Exception:
+    # reload 失败静默：允许批量操作继续，失败由后续站点访问探测暴露
+    except Exception:  # lgtm[py/empty-except]
         pass
 
 

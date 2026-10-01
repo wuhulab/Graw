@@ -1,11 +1,12 @@
 import json
 import logging
 import os
+import asyncio
 import re
 import sqlite3
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -118,6 +119,7 @@ try:
 
     REDIS_LIBS = True
 except Exception:
+    # redis 未安装时降级，隐藏相关功能
     pass
 
 try:
@@ -132,6 +134,7 @@ try:
     from bson import ObjectId
 
     MONGO_LIBS = True
+# 缺少可选驱动 pymongo，导入失败忽略
 except Exception:
     pass
 
@@ -170,6 +173,7 @@ def _auto_detect_mysql() -> Optional[dict]:
                     "name": "Local MySQL",
                 }
     except Exception:
+        # 进程探测失败（psutil 不可用）时按未检测到处理
         pass
     return None
 
@@ -189,6 +193,7 @@ def _auto_detect_redis() -> Optional[dict]:
                     "name": "Local Redis",
                 }
     except Exception:
+        # 进程探测失败（psutil 不可用）时按未检测到处理
         pass
     return None
 
@@ -208,6 +213,7 @@ def _auto_detect_postgresql() -> Optional[dict]:
                     "name": "Local PostgreSQL",
                 }
     except Exception:
+        # 进程探测失败（psutil 不可用）时按未检测到处理
         pass
     return None
 
@@ -227,6 +233,7 @@ def _auto_detect_mongodb() -> Optional[dict]:
                     "name": "Local MongoDB",
                 }
     except Exception:
+        # 进程探测失败（psutil 不可用）时按未检测到处理
         pass
     return None
 
@@ -367,7 +374,14 @@ def _sqlite_file(conn: dict) -> str:
 
 @router.get("/status")
 async def db_status():
-    """返回各数据库驱动安装状态与本机服务探测结果。"""
+    """返回各数据库驱动安装状态与本机服务探测结果。
+
+    _auto_detect_* 会执行 subprocess / 端口探测等阻塞操作，放线程池避免卡事件循环。
+    """
+    return await asyncio.to_thread(_db_status_sync)
+
+
+def _db_status_sync() -> dict:
     return {
         "mysql_detected": bool(_auto_detect_mysql()),
         "redis_detected": bool(_auto_detect_redis()),
@@ -441,7 +455,7 @@ async def update_connection(conn_id: str, req: DBConnection):
     conn["database"] = req.database or ""
     conn["updated_at"] = datetime.now().isoformat()
     _save_connections(data)
-    logger.info("编辑数据库连接: %s (%s)", conn["name"], conn["id"])
+    logger.info("编辑数据库连接：name_len=%s, conn_id_len=%s", len(conn["name"]), len(conn["id"]))
     return {
         **conn,
         "has_password": bool(conn.get("password")),
@@ -455,13 +469,21 @@ async def delete_connection(conn_id: str):
     data = _load_connections()
     data = [c for c in data if c["id"] != conn_id]
     _save_connections(data)
-    logger.info("删除数据库连接: %s", conn_id)
+    logger.info("删除数据库连接: %s", repr(conn_id))
     return {"ok": True}
 
 
 @router.post("/connections/{conn_id}/test")
 async def test_connection(conn_id: str):
-    """测试连接可用性，按类型分别执行最小验证。"""
+    """测试连接可用性，按类型分别执行最小验证。
+
+    数据库连接为阻塞 socket IO，放线程池避免卡事件循环。
+    """
+    return await asyncio.to_thread(_test_connection_sync, conn_id)
+
+
+def _test_connection_sync(conn_id: str):
+    """测试连接可用性（线程池内执行），按类型分别执行最小验证。"""
     conn = _find_connection(conn_id)
     if conn["db_type"] == "mysql":
         if not MYSQL_LIBS:
@@ -534,7 +556,15 @@ async def test_connection(conn_id: str):
 
 @router.get("/connections/{conn_id}/databases")
 async def list_databases(conn_id: str):
-    """列出数据库（MySQL/PG 返回库列表，Redis 返回 info，MongoDB 返回库列表）。"""
+    """列出数据库（MySQL/PG 返回库列表，Redis 返回 info，MongoDB 返回库列表）。
+
+    数据库连接与查询为阻塞 socket IO，放线程池避免卡事件循环。
+    """
+    return await asyncio.to_thread(_list_databases_sync, conn_id)
+
+
+def _list_databases_sync(conn_id: str):
+    """列出数据库（线程池内执行）。"""
     conn = _find_connection(conn_id)
     if conn["db_type"] == "mysql":
         if not MYSQL_LIBS:
@@ -824,7 +854,15 @@ def _reject_dangerous_sql(sql: str) -> bool:
 
 @router.post("/connections/{conn_id}/query")
 async def run_query(conn_id: str, req: DBQuery):
-    """执行查询：SQL 类返回列+行，Redis 返回命令结果，MongoDB 返回文档列表。"""
+    """执行查询：SQL 类返回列+行，Redis 返回命令结果，MongoDB 返回文档列表。
+
+    数据库连接与查询为阻塞 socket IO，放线程池避免卡事件循环。
+    """
+    return await asyncio.to_thread(_run_query_sync, conn_id, req)
+
+
+def _run_query_sync(conn_id: str, req: DBQuery):
+    """执行查询（线程池内执行）。"""
     conn = _find_connection(conn_id)
     if conn["db_type"] == "mysql":
         if not MYSQL_LIBS:
@@ -977,7 +1015,15 @@ async def run_query(conn_id: str, req: DBQuery):
 
 @router.post("/connections/{conn_id}/create-db")
 async def create_database(conn_id: str, body: dict):
-    """创建数据库：MySQL/PG 执行 CREATE DATABASE，MongoDB 按需自动创建。"""
+    """创建数据库：MySQL/PG 执行 CREATE DATABASE，MongoDB 按需自动创建。
+
+    数据库连接与建库为阻塞 socket IO，放线程池避免卡事件循环。
+    """
+    return await asyncio.to_thread(_create_database_sync, conn_id, body)
+
+
+def _create_database_sync(conn_id: str, body: dict):
+    """创建数据库（线程池内执行）。"""
     conn = _find_connection(conn_id)
     # SQLite 是单文件库，无服务器级建库概念，可在查询页执行 CREATE TABLE 建表
     if conn["db_type"] == "sqlite":
@@ -1034,7 +1080,15 @@ async def create_database(conn_id: str, body: dict):
 
 @router.post("/connections/{conn_id}/delete-db")
 async def delete_database(conn_id: str, body: dict):
-    """删除数据库：MySQL/PG 执行 DROP DATABASE，MongoDB 调用 drop_database。"""
+    """删除数据库：MySQL/PG 执行 DROP DATABASE，MongoDB 调用 drop_database。
+
+    数据库连接与删库为阻塞 socket IO，放线程池避免卡事件循环。
+    """
+    return await asyncio.to_thread(_delete_database_sync, conn_id, body)
+
+
+def _delete_database_sync(conn_id: str, body: dict):
+    """删除数据库（线程池内执行）。"""
     conn = _find_connection(conn_id)
     # SQLite 是单文件库，删除库应删除文件本身，属文件管理范畴，不在此提供
     if conn["db_type"] == "sqlite":

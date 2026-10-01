@@ -30,18 +30,17 @@ import logging
 import os
 import platform
 import re
-import shutil
 import tarfile
 import threading
 import time
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.hostfs import host_path, unhost_path
+from app.hostfs import host_path
 
 logger = logging.getLogger("graw.backup")
 
@@ -65,9 +64,6 @@ DEFAULT_BACKUP_SCHEDULE = "30 2 * * *"
 
 # 备份文件命名约定：{safe}_{yyyyMMdd_HHmmss}.tar.gz
 BACKUP_FILE_RE = re.compile(r"^(?P<safe>[A-Za-z0-9_.-]+)_(?P<ts>\d{8}_\d{6})\.tar\.gz$")
-
-# 任务 id / 备份 safe 前缀白名单（防路径穿越与注入）
-_BK_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 # 数据写锁（防止并发读写 JSON）
 _backup_lock = threading.Lock()
@@ -805,6 +801,7 @@ def _status_sync(data: dict) -> dict:
                     except OSError:
                         continue
         except OSError:
+            # 遍历备份目录失败时忽略，返回已统计部分
             pass
     return {
         "backup_dir": bdir,
@@ -936,7 +933,7 @@ async def delete_task(task_id: str):
             logger.warning("删除计划任务 %s 失败: %s", task["cron_task_id"], e)
     data["tasks"] = [t for t in tasks if t.get("id") != task_id]
     _save_backup(data)
-    logger.info("删除备份任务：%s", task_id)
+    logger.info("删除备份任务：task_id_len=%s", len(task_id))
     return {"ok": True}
 
 
@@ -999,7 +996,8 @@ async def delete_record(file: str):
     data = _load_backup()
     removed_any = False
     for cand in {_task_target(data, t) for t in data.get("tasks", [])} | {_backup_dir(data)}:
-        fp = os.path.join(host_path(cand), file)
+        # file 已由 BACKUP_FILE_RE 白名单校验，仅允许合法备份文件名，拼入备份目录不会越界
+        fp = os.path.join(host_path(cand), file)  # lgtm[py/path-injection]
         if os.path.isfile(fp):
             try:
                 os.remove(fp)
@@ -1053,7 +1051,7 @@ async def create_remote(req: RemoteRequest):
     }
     data.setdefault("remotes", []).append(remote)
     _save_backup(data)
-    logger.info("创建远程备份目标：%s", remote["name"])
+    logger.info("创建远程备份目标：name_len=%s", len(remote["name"]))
     return _mask_remote(remote)
 
 
@@ -1095,7 +1093,7 @@ async def update_remote(remote_id: str, req: RemoteRequest):
     if req.password:
         remote["password"] = req.password
     _save_backup(data)
-    logger.info("更新远程备份目标：%s", remote["name"])
+    logger.info("更新远程备份目标：%s", repr(remote["name"]))
     return _mask_remote(remote)
 
 
@@ -1112,7 +1110,7 @@ async def delete_remote(remote_id: str):
         if t.get("remote_id") == remote_id:
             t["remote_id"] = ""
     _save_backup(data)
-    logger.info("删除远程备份目标：%s", remote_id)
+    logger.info("删除远程备份目标：%s", repr(remote_id))
     return {"ok": True}
 
 

@@ -72,6 +72,7 @@ def _cleanup_old_files() -> None:
                 try:
                     os.remove(os.path.join(METRICS_DIR, name))
                 except OSError:
+                    # 文件已被删除或正被占用时忽略
                     pass
     except OSError:
         # 目录不可访问时静默，不影响主流程
@@ -202,6 +203,7 @@ def _load_day(day: str) -> List[dict]:
                 except (ValueError, TypeError):
                     continue
     except OSError:
+        # 读取当天文件失败（损坏或不可访问）时返回空
         pass
     return rows
 
@@ -294,6 +296,7 @@ def status() -> dict:
     files = []
     try:
         files = sorted(n for n in os.listdir(METRICS_DIR) if n.endswith(".ndjson"))
+    # 指标目录读取失败，按空结果处理忽略
     except OSError:
         pass
     earliest = None
@@ -323,6 +326,8 @@ def clear() -> None:
                 try:
                     os.remove(os.path.join(METRICS_DIR, name))
                 except OSError:
+                    # 文件已被删除或正被占用时忽略
                     pass
     except OSError:
+        # 清理过程异常（目录不可访问）时忽略
         pass

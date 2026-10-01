@@ -14,12 +14,10 @@ rewrite.py - 伪静态规则库
 """
 import json
 import os
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-
-from app.hostfs import host_path
 
 router = APIRouter()
 

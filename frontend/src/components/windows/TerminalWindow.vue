@@ -8,17 +8,27 @@
     断线自动重连（指数退避），以及 SGR 鼠标模式（供 vim / tmux / htop 等
     TUI 程序点击交互）。
 
+  「保留持久化终端」（勾选框，容器内终端不提供）：
+    勾选后 WebSocket 带上 persist=1，后端把 shell 进程常驻（会话生命周期与
+    连接解耦），断开只摘客户端、进程继续跑；刷新面板 / 重开窗口会按「节点」
+    会话键接回同一终端并回放最近输出快照，用于长时间任务不因刷新而中断。
+    偏好按节点记在 localStorage：刷新页面后自动恢复勾选 → 自动接回会话。
+    取消勾选会调 DELETE /api/terminal/persist 结束该节点的常驻会话（杀进程）。
+
   用到的后端模块：
-    /api/terminal/ws（强制管理员，WebSocket，token 走查询参数）——普通终端；
+    /api/terminal/ws（强制管理员，WebSocket，token 走查询参数）——普通/持久终端；
     /api/terminal/ws/container?container=xx——容器内终端；
     /api/terminal/mouse-capability——查询平台是否支持 TUI 鼠标
-    （Windows 10 及更早的 ConPTY 不支持）。终端会话固定绑定打开时的管理节点。
+    （Windows 10 及更早的 ConPTY 不支持）。终端会话固定绑定打开时的管理节点；
+    /api/terminal/persist——查询 / 结束后端常驻的持久终端会话。
 
   关键状态：
     term / fit      xterm 实例与 FitAddon 插件
     ws              当前 WebSocket 连接
     termNode        会话绑定的目标节点（打开窗口时由 App.vue 同步）
     mouseOn         SGR 鼠标模式开关
+    persistOn       是否启用「保留持久化终端」（按节点持久化偏好）
+    persistActive / persistClients   后端已确认接入持久会话 / 接入端数量
     reconnectTimer / backoff   断线重连与指数退避
 
   怎么被打开：
@@ -28,6 +38,12 @@
   <div style="display:flex; flex-direction:column; height:100%; background:#1e1e1e; overflow:hidden;">
     <div class="toolbar">
       <span style="color:#0a3d7a;">{{ $t('terminal.title') }}{{ container ? ' · ' + $t('terminal.inContainer', { name: container }) : '' }} · {{ statusText }}</span>
+      <!-- 持久化终端开关（容器内终端不支持）：勾选后终端进程常驻后端，
+           刷新面板 / 重开窗口会接回同一会话；取消勾选则结束该常驻会话 -->
+      <label v-if="!container" class="persist-toggle" :title="$t('terminal.persistHint')">
+        <input type="checkbox" :checked="persistOn" :disabled="persistBusy" @change="onPersistToggle($event)" />
+        <span>{{ $t('terminal.persistTerminal') }}</span>
+      </label>
       <button class="btn" style="margin-left:auto;" @click="reconnect">{{ $t('terminal.reconnect') }}</button>
       <button class="btn" @click="clear">{{ $t('terminal.clear') }}</button>
       <!-- 鼠标模式开关：开启后向 TUI 与应用写入鼠标启用序列，支持 vim/tmux/ranger/htop 等点击交互 -->
@@ -36,7 +52,18 @@
         :title="!mouseSupported ? (mouseReason || $t('terminal.mouseUnsupported')) : (mouseOn ? $t('terminal.mouseOffHint') : $t('terminal.mouseOnHint'))"
         @click="toggleMouse">{{ $t('terminal.mouse') }}:{{ mouseOn ? $t('terminal.on') : $t('terminal.off') }}</button>
     </div>
-    <div ref="termEl" style="flex:1; min-height:0; padding:4px; background:#1e1e1e; overflow:hidden;"></div>
+    <!-- 终端主体：阻止浏览器默认右键菜单，改为弹出终端本地操作菜单 -->
+    <div ref="termEl" style="flex:1; min-height:0; padding:4px; background:#1e1e1e; overflow:hidden;"
+      @contextmenu.prevent.stop="onTermContextMenu"></div>
+    <!-- 右键菜单：复制 / 粘贴（类本地终端习惯；Teleport 到 body 顶层避免被窗口裁剪） -->
+    <Teleport to="body">
+      <div v-if="ctxMenu.show" ref="ctxMenuEl" class="term-ctx-menu"
+        :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+        @click.stop @contextmenu.prevent.stop>
+        <div class="menu-item" @mousedown.prevent="menuCopy">{{ $t('terminal.copy') }}</div>
+        <div class="menu-item" @mousedown.prevent="menuPaste">{{ $t('terminal.paste') }}</div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -72,12 +99,115 @@ let reconnectTimer = null  // 断线重连的定时器句柄
 let backoff = 500          // 重连退避毫秒数，从 500ms 起按 1.5 倍递增
 let autoSent = false       // 自动命令是否已发送（防止重复发送）
 let autoTimer = null       // 自动命令兜底发送的定时器句柄
+let heartbeatTimer = null  // 应用层心跳定时器（防「半开」连接假死）
+let lastPongAt = 0         // 最近一次「连接建立 / 收到后端 pong」的时间戳
+let lastDataAt = 0         // 最近一次「收到后端任何数据」的时间戳（含 shell 输出）
 // 鼠标模式开关状态（默认关闭，避免干扰普通 shell 与下拉选文本）
 const mouseOn = ref(false)
+
+// ---------- 持久化终端（保留持久化终端）----------
+// 勾选后：后端把 shell 进程常驻（会话生命周期与 WebSocket 解耦），刷新面板 /
+// 重开窗口会按同一「节点」会话键接回，并回放最近 256KB 输出，长时间任务不中断。
+// 偏好按节点存 localStorage，刷新页面后自动恢复勾选状态，从而自动接回会话。
+const PERSIST_STORAGE_PREFIX = 'graw.terminal.persist'   // 存储键前缀（按节点追加后缀）
+const persistOn = ref(false)        // 是否启用持久化终端（来自上次偏好）
+const persistActive = ref(false)    // 后端是否已确认本次接入持久会话（来自控制帧）
+const persistClients = ref(0)       // 同一常驻会话的接入端数量（多窗口共享时 > 1）
+const persistBusy = ref(false)      // 切换开关请求进行中：禁用复选框避免并发操作
+// 控制帧前缀：后端下发的 JSON 状态帧（如 {"type":"persist",...}）不写入 xterm，
+// 仅用于前端状态展示；与心跳 pong 帧共用同一「JSON 前缀」约定。
+const CONTROL_FRAME_PREFIX = '{"type":"'
+const CONTROL_FRAME_MAX = 4096      // 超长文本不按控制帧解析（shell 输出可能以 { 开头）
+
+// 持久化偏好的存储键：按节点隔离，避免多节点互相覆盖勾选状态
+function persistKey() {
+  return `${PERSIST_STORAGE_PREFIX}.${termNode || 'local'}`
+}
+
+// 读取上次的持久化偏好（localStorage 不可用时按未勾选处理）
+function loadPersistPref() {
+  try {
+    return localStorage.getItem(persistKey()) === '1'
+  } catch (e) {
+    return false
+  }
+}
+
+// 保存持久化偏好（隐私模式等写入失败时仅本次生效，不阻塞功能）
+function savePersistPref(on) {
+  try {
+    localStorage.setItem(persistKey(), on ? '1' : '0')
+  } catch (e) {
+    console.warn('[terminal] 保存持久终端偏好失败:', e)
+  }
+}
+
+// 切换「保留持久化终端」：
+//   勾选 → 记录偏好并重连（后端创建/接回该节点的常驻会话）；
+//   取消 → 先请求后端结束常驻会话（终止进程、丢弃回放缓冲），再以普通终端重连。
+async function onPersistToggle(e) {
+  if (persistBusy.value) return
+  const next = !!e.target.checked
+  persistBusy.value = true
+  persistOn.value = next
+  savePersistPref(next)
+  if (!next) {
+    // 取消勾选：结束该节点的常驻会话，避免 shell 进程残留
+    try {
+      await api.delete('/terminal/persist', { params: termNode ? { node: termNode } : {} })
+    } catch (err) {
+      console.warn('[terminal] 结束持久终端失败:', err)
+    }
+  }
+  persistActive.value = false
+  persistClients.value = 0
+  persistBusy.value = false
+  backoff = 500   // 重置退避：切换模式后立即重连
+  connect()
+}
+
+// 解析后端控制帧（持久会话接入通知）：命中返回 true，调用方不得写入 xterm。
+function handleControlFrame(text) {
+  let msg = null
+  try {
+    msg = JSON.parse(text)
+  } catch (e) {
+    return false   // 非 JSON：按普通输出处理
+  }
+  if (!msg || msg.type !== 'persist') return false
+  persistActive.value = true
+  persistClients.value = Number(msg.clients) || 1
+  persistOn.value = true   // 后端确认已接入持久会话（勾选框与真实状态对齐）
+  // 回放会重绘历史输出：先复位终端，避免与既有画面叠加
+  try { if (term) term.reset() } catch (e) {}
+  refreshStatusText()
+  return true
+}
+
+// 状态栏文案：持久会话接入时显示「持久终端已接入」，多窗口共享时附加 ×N
+function refreshStatusText() {
+  if (!persistActive.value) {
+    setStatus(t('terminal.connected'))
+    return
+  }
+  const n = persistClients.value
+  setStatus(n > 1 ? `${t('terminal.persistActive')} ×${n}` : t('terminal.persistActive'))
+}
 
 // SGR 扩展鼠标模式启用/停用序列：?1000 启用 X10 鼠标追踪（点击），?1006 使用 SGR 坐标格式（兼容性更好）
 const MOUSE_ON_SEQ = '\x1b[?1000h\x1b[?1006h'
 const MOUSE_OFF_SEQ = '\x1b[?1000l\x1b[?1006l'
+
+// 应用层心跳（与监控 WS 同协议，见 store/systemMetrics.js）：
+// 浏览器 WebSocket 无法发送协议级 ping 帧，而长时间空闲的终端连接会被反向
+// 代理 / NAT 设备掐断成「半开」状态——readyState 仍为 OPEN、send 也不报错，
+// 但数据早已收发不通，表现为「挂久了输入不了东西」。这里每 20s 发一次 ping，
+// 后端命中后回 pong（不写入 pty）；超过 65s 未收到 pong 即判定连接假死，
+// 主动 close 触发指数退避重连。
+const HEARTBEAT_INTERVAL = 20000   // 心跳发送间隔（需小于反代默认 60s 空读超时）
+const HEARTBEAT_TIMEOUT = 65000    // 判定假死的超时阈值（需明显大于心跳间隔）
+const HEARTBEAT_PING = '{"type":"ping"}'
+const HEARTBEAT_PONG = '{"type":"pong"}'
 
 // 切换鼠标模式：同时写入前端 xterm 解析器（让其捕获鼠标事件）与后端/TUI（让应用进入或退出鼠标模式）
 function toggleMouse() {
@@ -88,11 +218,121 @@ function toggleMouse() {
   try { if (ws && ws.readyState === 1) ws.send(seq) } catch (e) { /* 连接未就绪时忽略，重连时会重放 */ }
 }
 
+// ---------- 右键菜单 + 剪贴板（类本地终端：右键 → 复制/粘贴） ----------
+const ctxMenu = ref({ show: false, x: 0, y: 0 })   // 右键菜单显隐与定位坐标
+const ctxMenuEl = ref(null)                         // 右键菜单 DOM（用于判断点击是否在菜单内）
+const TASK_START = { MENU_W: 120, MENU_H: 82, EDGE: 8 }   // 菜单宽高与边缘留白（两项菜单约 82px 高）
+
+// 弹出右键菜单：阻止浏览器默认菜单（已由模板 .prevent 处理），按点击位置定位，
+// 切换到「不越出右缘 / 不戳到桌面底部任务栏」的坐标（任务栏高 64 + 底部留白 12）。
+function onTermContextMenu(e) {
+  const x = Math.max(TASK_START.EDGE, Math.min(e.clientX, window.innerWidth - TASK_START.MENU_W - TASK_START.EDGE))
+  const maxY = window.innerHeight - 76 - TASK_START.MENU_H - TASK_START.EDGE
+  const y = Math.max(TASK_START.EDGE, Math.min(e.clientY, maxY))
+  ctxMenu.value = { show: true, x, y }
+}
+
+// 关闭右键菜单（点击菜单外的任意位置、菜单项操作后调用）
+function closeMenus() {
+  if (ctxMenu.value.show) ctxMenu.value = { show: false, x: 0, y: 0 }
+}
+
+// 点击菜单以外的任何地方（含窗口/桌面/任务栏）都收起菜单
+function onDocMouseDown(e) {
+  if (ctxMenu.value.show && ctxMenuEl.value && !ctxMenuEl.value.contains(e.target)) closeMenus()
+}
+
+// 复制选中文本：优先异步剪贴板 API（HTTPS/localhost 可用），
+// 非安全上下文降级为「临时隐藏 textarea + execCommand('copy')」（用户手势内通常可行）。
+async function copyToClipboard(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      return
+    }
+  } catch (e) {
+    // 剪贴板 API 失败（权限拒绝等），继续走降级路径
+  }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.cssText = 'position:fixed; left:-9999px; top:0; opacity:0;'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+  } catch (e) {
+    console.warn('[terminal] 复制失败:', e)
+  }
+}
+
+// 右键「复制」：仅复制 xterm 选中区，无选中则静默忽略（避免打扰）
+function menuCopy() {
+  closeMenus()
+  if (!term) return
+  const sel = term.getSelection()
+  if (sel) copyToClipboard(sel)
+}
+
+// 读取剪贴板文本：安全上下文直接用 readText()；否则用「临时 textarea 接收系统粘贴事件」方式，
+// 兜底超时 800ms 防止 Promise 悬挂（部分浏览器拒绝以编程方式触发粘贴）。
+function readClipboardText() {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.readText().catch(() => readViaPasteFallback())
+  }
+  return readViaPasteFallback()
+}
+
+function readViaPasteFallback() {
+  return new Promise(resolve => {
+    const ta = document.createElement('textarea')
+    ta.style.cssText = 'position:fixed; left:-9999px; top:0; width:1px; height:1px; opacity:0;'
+    document.body.appendChild(ta)
+    let settled = false   // 防止粘贴事件与超时回调重复收尾
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      document.body.removeChild(ta)
+      try { if (term) term.focus() } catch (e) {}   // 收回终端焦点
+      resolve('')   // 读取失败按空处理，不阻塞后续输入
+    }, 800)
+    // 系统粘贴事件：取纯文本；仅触发一次后立即清理临时元素
+    const onPaste = ev => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      const text = ((ev.clipboardData || window.clipboardData).getData('text/plain') || '')
+      document.body.removeChild(ta)
+      try { if (term) term.focus() } catch (e) {}
+      resolve(text)
+    }
+    ta.addEventListener('paste', onPaste)
+    ta.focus()
+    try { document.execCommand('paste') } catch (e) { /* 异常走超时收尾 */ }
+  })
+}
+
+// 右键「粘贴」：读取剪贴板后写入终端。
+// 换行归一为回车符：剪贴板里的 \n 在终端里表示「回车换行」，与本地终端行为一致。
+function menuPaste() {
+  closeMenus()
+  readClipboardText().then(text => {
+    if (!text) return   // 剪贴板为空或读取失败：不产生任何输入
+    const normalized = text.replace(/\r?\n/g, '\r')
+    try {
+      if (term) { term.paste(normalized); term.focus() }
+    } catch (e) {
+      console.warn('[terminal] 粘贴失败:', e)
+    }
+  })
+}
+
 function setStatus(s) { statusText.value = s }
 
 // --- 建立 WebSocket 连接（拼装 token/节点/容器参数，挂接各事件回调） ---
 function connect() {
   if (ws) { try { ws.close() } catch (e) {} }
+  stopHeartbeat()   // 新连接建立前先停掉旧心跳，避免对旧 ws 重复发送
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'   // https 页面必须用 wss，否则浏览器拒绝
   setStatus(t('terminal.connecting'))
   // 浏览器 WebSocket 无法设置请求头，token 通过查询参数传递；
@@ -100,6 +340,8 @@ function connect() {
   const qs = []
   if (auth.token) qs.push(`token=${encodeURIComponent(auth.token)}`)
   if (termNode) qs.push(`node=${encodeURIComponent(termNode)}`)
+  // 持久化终端：后端按「节点」键创建 / 接回常驻会话（容器终端不支持该模式）
+  if (persistOn.value && !props.container) qs.push('persist=1')
   const qstr = qs.length ? '?' + qs.join('&') : ''
   try {
     if (props.container) {
@@ -116,6 +358,9 @@ function connect() {
     backoff = 500
     setStatus(t('terminal.connected'))
     autoSent = false
+    lastPongAt = Date.now()   // 连接建立即视为存活，作为假死判定的起点
+    lastDataAt = Date.now()   // 连接建立瞬间同样视为「链路可用」
+    startHeartbeat()
     sendResize()
     // 若用户已开启鼠标模式，连接稳定后重放启用序列，保证重连后仍处于鼠标模式
     if (mouseOn.value) {
@@ -135,13 +380,32 @@ function connect() {
     scheduleAutoSend()
   }
   ws.onmessage = (e) => {
+    // 任何来自后端的数据都说明链路可用，优先刷新存活时间
+    lastDataAt = Date.now()
+    // 应用层心跳应答：仅刷新存活时间，不得写入终端
+    if (typeof e.data === 'string' && e.data.startsWith(HEARTBEAT_PONG)) {
+      lastPongAt = Date.now()
+      return
+    }
+    // 其他 JSON 控制帧（持久会话接入通知等）：命中即消费，绝不能写入 xterm
+    if (typeof e.data === 'string' && e.data.length < CONTROL_FRAME_MAX
+      && e.data.startsWith(CONTROL_FRAME_PREFIX) && handleControlFrame(e.data)) {
+      return
+    }
     if (term) term.write(e.data)
     // 收到 shell 首次输出（提示符出现）后再发送自动命令，连接就绪判断更可靠
     if (props.autoCommand && !autoSent) doAutoSend()
   }
+  // 本次连接的局部引用：已被新连接取代的旧连接，其 close 事件不应再排一次重连
+  const sock = ws
   ws.onclose = () => {
+    if (ws !== sock) return
     setStatus(t('terminal.disconnectedShort'))
     clearAutoTimer()
+    stopHeartbeat()   // 连接关闭后停止心跳，等待重连的 onopen 重新启动
+    // 注意：这里不修改 persistOn——持久会话的连接断开后会自动重连并接回同一会话
+    persistActive.value = false
+    persistClients.value = 0
     if (alive) scheduleReconnect()
   }
   ws.onerror = () => { setStatus(t('terminal.error')) }
@@ -161,6 +425,36 @@ function doAutoSend() {
 }
 function clearAutoTimer() {
   if (autoTimer) { clearTimeout(autoTimer); autoTimer = null }
+}
+
+// --- 应用层心跳：定期 ping 后端；长时间无 pong 判定连接「半开」并强制重连 ---
+// 核心原因：长时空闲的 WebSocket 会被反代/NAT 静默掐断，且 onclose 不触发、
+// send 不报错，导致输入看似无响应。心跳让前端有办法区分「连接活着」与「连接假死」。
+function startHeartbeat() {
+  stopHeartbeat()
+  heartbeatTimer = setInterval(() => {
+    if (!ws || ws.readyState !== 1) return   // 未连接时交给 onclose 的重连流程
+    try {
+      ws.send(HEARTBEAT_PING)
+      // 距最近一次存活（pong 或真实数据）超过阈值：连接已假死，主动断开走 onclose 重连
+      if (Date.now() - lastAliveAt() > HEARTBEAT_TIMEOUT) {
+        try { ws.close() } catch (e) {}
+      }
+    } catch (e) {
+      // send 抛错说明连接已失效，主动断开触发重连
+      try { ws.close() } catch (e2) {}
+    }
+  }, HEARTBEAT_INTERVAL)
+}
+function stopHeartbeat() {
+  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null }
+}
+
+// 连接「最近存活时间」= 心跳应答 与 shell 实际输出 的较大者。
+// 只信 pong 不够：后端 WS 层正常回 pong 但 pty 输出已断流时（如旧版远端
+// 通道 bug），终端会「显示活着但输入没回应」；任何真实数据都说明链路可用。
+function lastAliveAt() {
+  return Math.max(lastPongAt, lastDataAt)
 }
 
 // --- 断线重连：用指数退避避免高频重试，最多等 5 秒 ---
@@ -192,6 +486,7 @@ function clear() { term && term.clear() }
 
 onMounted(async () => {
   alive = true
+  document.addEventListener('mousedown', onDocMouseDown)   // 点击菜单外任意处收起右键菜单
   // 查询平台鼠标能力：Windows 10 及更早的 ConPTY 不支持 TUI 鼠标，
   // 查询失败时按「支持」处理（能力接口属增强信息，不阻塞终端使用）
   try {
@@ -215,8 +510,17 @@ onMounted(async () => {
   term.open(termEl.value)
   fit.fit()
   term.onData(data => {
-    if (ws && ws.readyState === 1) ws.send(data)   // 键盘输入原样转发给后端 shell
+    if (!ws || ws.readyState !== 1) return   // 未连接时丢弃输入，等重连后用户再输
+    // 输入时快速探测：若连接早已无应答（半开假死），立即断开让重连流程接管，
+    // 否则用户会感觉「输入没反应」直到下一个心跳周期才恢复
+    if (Date.now() - lastAliveAt() > HEARTBEAT_TIMEOUT) {
+      try { ws.close() } catch (e) {}
+      return
+    }
+    ws.send(data)   // 键盘输入原样转发给后端 shell
   })
+  // 恢复持久化偏好：勾选过「保留持久化终端」时，刷新面板后会自动接回原常驻会话
+  persistOn.value = !props.container && loadPersistPref()
   connect()
   resizeObserver = new ResizeObserver(() => sendResize())   // 容器大小变化时同步后端行列
   resizeObserver.observe(termEl.value)
@@ -224,10 +528,53 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   alive = false                     // 先标记已销毁，杜绝卸载后仍触发重连
+  document.removeEventListener('mousedown', onDocMouseDown)   // 解除全局点击监听，避免泄漏
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
   clearAutoTimer()
+  stopHeartbeat()                   // 停止心跳定时器，避免泄漏
   resizeObserver && resizeObserver.disconnect()
   if (ws) { try { ws.close() } catch (e) {} }   // 关闭连接并释放后端会话
   if (term) { try { term.dispose() } catch (e) {} }   // 释放 xterm 占用的 DOM 与资源
 })
 </script>
+
+<style scoped>
+/* 「保留持久化终端」开关：深色工具栏上的浅色小标签，与终端配色一致 */
+.persist-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 10px;
+  font-size: 12px;
+  color: #d4d4d4;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.persist-toggle input { cursor: pointer; margin: 0; }
+.persist-toggle input:disabled { cursor: wait; }
+
+/* 终端右键菜单：深色主题贴合终端窗口（其余窗口的白色菜单在深色终端里会刺眼） */
+.term-ctx-menu {
+  position: fixed;
+  background: #2d2d30;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  z-index: 200;
+  min-width: 120px;
+  padding: 4px 0;
+  user-select: none;   /* 菜单项点击会触发选中，关闭避免误选文本 */
+}
+.term-ctx-menu .menu-item {
+  padding: 6px 16px;
+  font-size: 13px;
+  color: #d4d4d4;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.term-ctx-menu .menu-item:hover {
+  background: #0a3d7a;
+  color: #fff;
+}
+</style>

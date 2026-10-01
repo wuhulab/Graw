@@ -19,7 +19,6 @@ from app.auth import (
     get_current_user,
     require_non_default_password,
     require_admin,
-    get_current_user_ws,
     get_current_user_ws_checked,
 )
 
@@ -154,6 +153,7 @@ def _remote_overview() -> dict:
         try:
             load1, load5, load15 = map(float, ld[:3])
         except ValueError:
+            # 负载数值解析失败时保持默认 0.0
             pass
     ncores = int(_remote_blocks().get("NPROC", "").strip() or "1")
     return {
@@ -259,6 +259,7 @@ try:
     if _d:
         _last_disk = {"time": time.time(), "read": _d.read_bytes, "write": _d.write_bytes}
 except Exception:
+    # 磁盘 IO 统计不可用（平台不支持）时使用上一周期默认值
     pass
 
 
@@ -409,6 +410,7 @@ def _capeff() -> int:
                 if line.startswith("CapEff:"):
                     return int(line.split()[1], 16)
     except OSError:
+        # 读取失败时按无能力处理（视为非特权）
         pass
     return 0
 
@@ -565,6 +567,7 @@ async def _metrics_producer():
         try:
             metrics_store.record_sample(_metrics_cache if success else None)
         except Exception:
+            # 历史采样落盘失败不影响实时采集主循环
             pass
 
         if success and _metrics_cache is not None:
@@ -623,6 +626,7 @@ async def stop_metrics_producer():
             try:
                 await task
             except asyncio.CancelledError:
+                # 取消协程时预期抛出 CancelledError，忽略即可
                 pass
     _producer_task = None
     _flush_task = None
@@ -631,6 +635,7 @@ async def stop_metrics_producer():
     try:
         await asyncio.to_thread(metrics_store.flush)
     except Exception:
+        # 退出前落盘失败不影响关闭流程
         pass
 
 
@@ -735,6 +740,7 @@ def _tunnel_ws_handshake(client, dst_port: int, path: str, jwt: str) -> tuple:
         try:
             chan.close()
         except Exception:
+            # 关闭通道失败（已断开）时忽略
             pass
         raise
     head, sep, extra = resp.partition(b"\r\n\r\n")
@@ -743,6 +749,7 @@ def _tunnel_ws_handshake(client, dst_port: int, path: str, jwt: str) -> tuple:
         try:
             chan.close()
         except Exception:
+            # 握手失败时关闭通道失败（已断开）忽略
             pass
         raise ConnectionError(f"子节点 WebSocket 握手失败: {status or '无响应'}")
     return chan, extra
@@ -796,12 +803,14 @@ async def _bridge_agent_ws(node: dict, browser: WebSocket) -> None:
                         try:
                             await browser.close()
                         except Exception:
+                            # 浏览器侧已断开关闭失败时忽略
                             pass
                         return
                     elif opcode == 9:  # 子节点 ping -> 回 pong
                         try:
                             chan.sendall(_ws_client_frame(10, payload))
                         except Exception:
+                            # pong 发送失败（通道断开）时忽略
                             pass
                     continue
                 # 缓冲不足：读更多字节（paramiko recv 阻塞，放线程池）
@@ -846,14 +855,17 @@ async def _bridge_agent_ws(node: dict, browser: WebSocket) -> None:
             try:
                 await t
             except (asyncio.CancelledError, Exception):
+                # 桥接任务被取消或异常时忽略，连接已收尾
                 pass
         try:
             chan.close()
         except Exception:
+            # 关闭通道失败（已断开）时忽略
             pass
         try:
             await browser.close()
         except Exception:
+            # 浏览器侧已断开关闭失败时忽略
             pass
 
 
@@ -912,6 +924,7 @@ async def system_ws(
                 try:
                     await websocket.close(code=1011)
                 except Exception:
+                    # 关闭失败（连接已断开）时忽略
                     pass
                 return
 
@@ -926,6 +939,7 @@ async def system_ws(
             try:
                 await websocket.close()
             except Exception:
+                # 关闭失败（连接已断开）时忽略
                 pass
             return
     try:
@@ -939,6 +953,7 @@ async def system_ws(
         try:
             await websocket.close()
         except Exception:
+            # 关闭失败（连接已断开）时忽略
             pass
 
 

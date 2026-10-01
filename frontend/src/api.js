@@ -85,10 +85,11 @@ export const panelApi = {
   health: () => api.get('/health').then(r => r.data)
 }
 
-// 面板自身更新：版本检测与一键更新（写操作需管理员）
+// 面板自身更新：版本检测 / 一键更新 / 更新日志（写操作需管理员）
 export const updateApi = {
   status: () => api.get('/update/status').then(r => r.data),
-  apply: () => api.post('/update/apply').then(r => r.data)
+  apply: () => api.post('/update/apply').then(r => r.data),
+  log: () => api.get('/update/log').then(r => r.data)
 }
 
 export const authApi = {
@@ -225,7 +226,8 @@ export const sitesApi = {
   action: (id, action) => api.post(`/sites/${id}/action`, { action }).then(r => r.data),
   config: (id) => api.get(`/sites/${id}/config`).then(r => r.data),
   update: (id, body) => api.post(`/sites/${id}/update`, body).then(r => r.data),
-  delete: (id) => api.post(`/sites/${id}/delete`).then(r => r.data)
+  delete: (id) => api.post(`/sites/${id}/delete`).then(r => r.data),
+  maintenance: (id, body) => api.post(`/sites/${id}/maintenance`, body).then(r => r.data)
 }
 
 export const databasesApi = {
@@ -260,6 +262,52 @@ export const firewallApi = {
   clear: () => api.post('/firewall/clear').then(r => r.data),
   listening: () => api.get('/firewall/listening').then(r => r.data),
   blockUnopened: () => api.post('/firewall/block-unopened').then(r => r.data)
+}
+
+export const rollbackApi = {
+  list: (kind = '') => api.get('/rollback', { params: { kind } }).then(r => r.data),
+  detail: (id) => api.get(`/rollback/${id}`).then(r => r.data),
+  restore: (id) => api.post(`/rollback/${id}/restore`).then(r => r.data),
+  remove: (id) => api.delete(`/rollback/${id}`).then(r => r.data)
+}
+
+export const batchApi = {
+  command: (body) => api.post('/batch/command', body).then(r => r.data),
+  containers: (body) => api.post('/batch/containers', body).then(r => r.data)
+}
+
+export const gitdeployApi = {
+  list: () => api.get('/gitdeploy').then(r => r.data),
+  create: (body) => api.post('/gitdeploy', body).then(r => r.data),
+  update: (id, body) => api.put(`/gitdeploy/${id}`, body).then(r => r.data),
+  remove: (id) => api.delete(`/gitdeploy/${id}`).then(r => r.data),
+  trigger: (id) => api.post(`/gitdeploy/${id}/trigger`).then(r => r.data)
+}
+
+export const reportApi = {
+  generate: () => api.post('/report/generate').then(r => r.data),
+  list: () => api.get('/report/list').then(r => r.data),
+  get: (fname) => api.get(`/report/${encodeURIComponent(fname)}`).then(r => r.data)
+}
+
+export const portforwardApi = {
+  list: () => api.get('/portforward').then(r => r.data),
+  running: () => api.get('/portforward/running').then(r => r.data),
+  create: (body) => api.post('/portforward', body).then(r => r.data),
+  toggle: (id) => api.post(`/portforward/${id}/toggle`).then(r => r.data),
+  remove: (id) => api.delete(`/portforward/${id}`).then(r => r.data)
+}
+
+export const imgsafetyApi = {
+  scan: (image) => api.post('/imgsafety/scan', { image }).then(r => r.data),
+  advisory: () => api.get('/imgsafety/advisory').then(r => r.data),
+  containers: () => api.get('/imgsafety/containers').then(r => r.data),
+  importAdvisory: (packages) => api.post('/imgsafety/advisory/import', { packages }).then(r => r.data)
+}
+
+export const slowqueryApi = {
+  connections: () => api.get('/slowquery/connections').then(r => r.data),
+  scan: (connection_id) => api.post('/slowquery/scan', { connection_id }).then(r => r.data)
 }
 
 export const sslApi = {
@@ -508,7 +556,9 @@ export const svcmonitorApi = {
   createItem: (body) => api.post('/svcmonitor/items', body).then(r => r.data),
   updateItem: (id, body) => api.put(`/svcmonitor/items/${id}`, body).then(r => r.data),
   deleteItem: (id) => api.delete(`/svcmonitor/items/${id}`).then(r => r.data),
-  test: (id) => api.post(`/svcmonitor/items/${id}/test`).then(r => r.data)
+  test: (id) => api.post(`/svcmonitor/items/${id}/test`).then(r => r.data),
+  // 服务处置：start/stop/restart/enable/disable（仅 kind=service）
+  action: (id, body) => api.post(`/svcmonitor/items/${id}/action`, body).then(r => r.data)
 }
 
 // SSH 密钥管理：生成/导入密钥并一键部署到节点
@@ -535,9 +585,16 @@ export const ftpusersApi = {
   delete: (id) => api.delete(`/ftpusers/${encodeURIComponent(id)}`).then(r => r.data)
 }
 
-// 工具箱：Base64 / 哈希 / 时间戳 / 端口扫描 / Whois（仅管理员）
+// 工具箱：Base64 / 哈希 / 时间戳 / 端口扫描 / Whois / 网络诊断（仅管理员）
 export const toolboxApi = {
-  exec: (body) => api.post('/toolbox/exec', body).then(r => r.data)
+  exec: (body) => api.post('/toolbox/exec', body).then(r => r.data),
+  // 端口排查看板：监听端口 -> 进程 -> 容器归属
+  portView: (filter) => api.get('/toolbox/portview', { params: { filter } }).then(r => r.data),
+  // 常用脚本片段库 CRUD
+  listScripts: () => api.get('/toolbox/scripts').then(r => r.data),
+  createScript: (body) => api.post('/toolbox/scripts', body).then(r => r.data),
+  updateScript: (id, body) => api.put(`/toolbox/scripts/${id}`, body).then(r => r.data),
+  deleteScript: (id) => api.delete(`/toolbox/scripts/${id}`).then(r => r.data)
 }
 
 // PHP 多版本管理：探测系统 PHP/FPM 版本 + 站点 PHP 版本关联（仅管理员）
@@ -654,9 +711,10 @@ export function formatSpeed(bytesPerSec) {
   return formatBytes(bytesPerSec) + '/s'
 }
 
-// 付费功能（VIP/月卡/年卡）：查询状态 + 用授权码激活。
-// 授权码服务地址固定在后端常量，前端不可修改，故无 config 接口。
-export const vipApi = {
-  status: () => api.get('/vip/status').then(r => r.data),
-  activate: (code) => api.post('/vip/activate', { code }).then(r => r.data)
+// 应用接口开放协议（GPOP）：插件功能总开关（设置界面使用）
+export const pluginApi = {
+  // 读取插件功能总开关状态
+  settings: () => api.get('/plugins/settings').then(r => r.data),
+  // 写入插件功能总开关（需要重启面板完全生效）
+  saveSettings: (enabled) => api.put('/plugins/settings', { enabled }).then(r => r.data)
 }
