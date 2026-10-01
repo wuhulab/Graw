@@ -212,6 +212,7 @@ import {
   MetricsHistoryWindow, RollbackWindow, BatchWindow, GitDeployWindow, ReportWindow,
   PortForwardWindow, PortForwardFormWindow, ImageScanWindow, SlowQueryWindow, FtpUsersWindow,
   PhpVersionsWindow, SessionsWindow,
+  preloadWindows,   // 空闲预加载：桌面模式下分批预取全部窗口 chunk（打开即渲染）
 } from './components/windows/lazyWindows.js'
 import ShunXSetup from './components/ShunXSetup.vue'
 import TamperAlert from './components/TamperAlert.vue'
@@ -2007,6 +2008,33 @@ function stopRealtime() {
   stopDocker()
 }
 
+// --- 类桌面模式「空闲预加载」（设置项 settings.desktopPreload 控制） ---
+// 目的：窗口按需加载后，首次打开某应用需现下载其 chunk（慢网下会「点开空白一下」）。
+// 桌面模式用户会频繁穿梭各应用，因此在首屏与实时数据就绪后，分批预取全部窗口代码，
+// 之后打开任意应用都命中本地缓存、瞬时渲染。
+// 约束：
+//   - 仅类桌面模式生效——面板模式一次只挂载一个窗口，预取全部属浪费；
+//   - 延迟 PRELOAD_DELAY 启动，先让首屏渲染与指标/Docker WS 首帧跑完，不抢关键带宽；
+//   - preloadWindows() 自身幂等，重复触发只会复用同一任务。
+const PRELOAD_DELAY = 1500   // 进入面板后延迟多久开始预取（毫秒）
+let preloadTimer = null      // 待触发的延时器：避免多次触发排队
+
+function maybePreloadWindows() {
+  if (preloadTimer) return                    // 已有待触发任务：无需重复排队
+  if (!loggedIn.value) return                 // 未登录：不预取（应用均在登录后才可用）
+  if (settings.panelMode) return              // 面板模式：不参与预加载
+  if (!settings.desktopPreload) return        // 用户已关闭预加载
+  preloadTimer = setTimeout(() => {
+    preloadTimer = null
+    // 二次校验：延迟期间用户可能已退出登录 / 切到面板模式 / 关闭开关
+    if (!loggedIn.value || settings.panelMode || !settings.desktopPreload) return
+    preloadWindows()
+  }, PRELOAD_DELAY)
+}
+
+// 开关或界面形态变化时按需补触发（已预取过则由 preloadWindows 幂等短路）
+watch(() => [settings.panelMode, settings.desktopPreload], () => maybePreloadWindows())
+
 // Clock
 const clockTime = ref('')
 const clockDate = ref('')
@@ -2036,6 +2064,8 @@ onMounted(() => {
     checkInstallCheck()
     // 加载当前账号生效的动态壁纸 / 环形图（「仅用于这个账号」优先）
     loadUiEffective().catch(() => {})
+    // 类桌面模式：首屏与实时数据就绪后，空闲预取全部应用窗口代码（见 maybePreloadWindows）
+    maybePreloadWindows()
   }
   updateClock()
   clockTimer = setInterval(updateClock, 1000)
@@ -2069,6 +2099,8 @@ watch(loggedIn, (v) => {
   if (v) {
     startRealtime()
     loadUiEffective().catch(() => {})
+    // 登录成功（含切号后重新登录）：同样在数据就绪后启动空闲预加载
+    maybePreloadWindows()
   } else {
     stopRealtime()
   }
@@ -2078,6 +2110,7 @@ onUnmounted(() => {
   stopRealtime()
   stopCarousel()
   clearInterval(clockTimer)
+  clearTimeout(preloadTimer)   // 卸载时取消待触发的空闲预加载（已启动的预取不受影响）
   document.removeEventListener('mousedown', onDocClick)
   document.removeEventListener('keydown', onPaletteGlobalKey)
 })

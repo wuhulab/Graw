@@ -11,6 +11,7 @@
     hideFoxcode  —— 是否隐藏桌面上的 Foxcode 快捷方式
     panelMode    —— 标准面板模式：启用后界面切换为 1Panel 式侧边栏布局
     panelTabs    —— 面板模式多标签缓存：开=标签页保留窗口状态，关=单页切换
+    desktopPreload —— 类桌面模式预加载：进入面板、数据就绪后空闲分批预取全部应用代码
     shortcutFontSize / shortcutLabelColor / shortcutLabelStroke ——
         桌面图标下方文字的样式：字号(px)、颜色(#RRGGBB)、是否加黑色描边
     bracketEnabled / bracketLang —— 语言括号提示：
@@ -41,6 +42,9 @@ const defaults = {
   panelMode: false,
   // 面板模式多标签缓存：开启后切换应用保留窗口状态（标签页），关闭则为单页切换
   panelTabs: true,
+  // 类桌面模式预加载：面板启动、数据就绪后，空闲时段分批预取全部应用窗口代码，
+  // 使之后打开任意应用都命中本地缓存、瞬时渲染（面板模式为单页切换，不参与预加载）
+  desktopPreload: true,
   // 桌面图标下方文字的样式：字号（px，8-24）/ 颜色 / 是否加黑边描边
   shortcutFontSize: 12,
   shortcutLabelColor: '#ffffff',
@@ -77,6 +81,7 @@ watch(
     hideFoxcode: settings.hideFoxcode,
     panelMode: settings.panelMode,
     panelTabs: settings.panelTabs,
+    desktopPreload: settings.desktopPreload,
     shortcutFontSize: settings.shortcutFontSize,
     shortcutLabelColor: settings.shortcutLabelColor,
     shortcutLabelStroke: settings.shortcutLabelStroke,

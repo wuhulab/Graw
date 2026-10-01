@@ -1633,6 +1633,8 @@ Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队
     showTaskbarText: '底栏显示详细文字',
     taskbarTextOnly: '底栏只显示文字（隐藏图标）',
     hideFoxcode: '隐藏 Foxcode 快捷方式',
+    desktopPreload: '类桌面模式预加载应用',
+    desktopPreloadHint: '进入面板、数据加载完成后，在空闲时段分批预取全部应用代码，之后打开任意应用都能瞬时呈现；关闭可减少后台流量。仅类桌面模式生效（标准面板模式不预加载），本机偏好，即改即存。',
     shortcutFontSize: '桌面应用文字大小',
     shortcutFontSizeHint: '桌面图标下方文字的字号（8-24px），即改即存。',
     shortcutLabelColor: '桌面应用文字颜色',

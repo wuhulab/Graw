@@ -23,17 +23,24 @@
 
 import { defineAsyncComponent } from 'vue'   // Vue 异步组件工厂：把动态 import 包成组件
 
+// 全部窗口组件的「加载器」清单：每个 export 调 lazy() 时自动登记（按声明顺序）。
+// 供 preloadWindows() 在空闲时段预取——避免在文件里再维护第二份窗口列表。
+const preloaders = []
+
 /**
  * 包装动态 import：懒加载组件对象，可安全传给 markRaw 存入响应式窗口描述。
  *
  * @param {Function} loader 返回 Promise 的加载函数（`() => import('./Xxx.vue')`）
  * @returns {Object} 可渲染的异步组件定义
  */
-const lazy = (loader) => defineAsyncComponent({
-  loader,
-  delay: 0,             // 不设延迟：chunk 命中缓存时立刻渲染，避免出现无谓的空白帧
-  suspensible: false,   // 显式关闭 Suspense 接管：本应用无 Suspense，走内部加载态更可预期
-})
+const lazy = (loader) => {
+  preloaders.push(loader)   // 顺带登记：模块求值完成即得到完整预加载清单
+  return defineAsyncComponent({
+    loader,
+    delay: 0,             // 不设延迟：chunk 命中缓存时立刻渲染，避免出现无谓的空白帧
+    suspensible: false,   // 显式关闭 Suspense 接管：本应用无 Suspense，走内部加载态更可预期
+  })
+}
 
 // ---------------- 容器 / Docker 相关 ----------------
 export const DockerWindow = lazy(() => import('./DockerWindow.vue'))
@@ -125,3 +132,44 @@ export const UISettingsWindow = lazy(() => import('./UISettingsWindow.vue'))
 export const SettingsWindow = lazy(() => import('./SettingsWindow.vue'))
 export const LogsWindow = lazy(() => import('./LogsWindow.vue'))
 export const PhpVersionsWindow = lazy(() => import('./PhpVersionsWindow.vue'))
+
+// ---------------- 空闲预加载（类桌面模式「打开即渲染」） ----------------
+// 背景：窗口按需加载后，首次打开某个应用要现下载它的 chunk（几十~几百 KB），
+// 慢网络下会看到「点开先空白一下」。桌面模式下用户会频繁穿梭各应用，因此可在
+// 面板启动、数据就绪之后，用浏览器空闲时段把剩余窗口 chunk 分批预取到本地缓存，
+// 之后打开任意窗口都是「命中缓存 → 瞬时渲染」。
+//
+// 设计要点：
+//   - 分批 + 间隔：按 BATCH_SIZE 个一批、批间隔 GAP_MS，避免一次性发起几十个请求
+//     抢占带宽与主线程（预加载过程中不影响用户当前操作）；
+//   - 失败不打扰：某个 chunk 下载失败（离线 / 哈希失效）只被忽略，不影响既有功能，
+//     真正打开该窗口时仍会按原来的按需加载流程重试；
+//   - 幂等：同一会话只跑一次，重复调用返回同一个 Promise；
+//   - 尊重省流偏好：浏览器开启「省流量/慢速网络」时跳过，不偷偷消耗流量。
+const BATCH_SIZE = 5   // 每批预取数量
+const GAP_MS = 300     // 批次之间的间隔（毫秒），给主线程与网络留出喘息
+
+let preloadTask = null   // 进行中的预加载任务（幂等控制）
+
+/**
+ * 空闲时段分批预取全部窗口组件 chunk。
+ *
+ * @returns {Promise<void>} 全部批次结束（或跳过）后兑现；不抛错
+ */
+export function preloadWindows() {
+  if (preloadTask) return preloadTask   // 已在预取中：复用同一任务，避免重复下载
+  preloadTask = (async () => {
+    // 省流 / 2G 网络：直接跳过，避免在受限网络上抢占带宽
+    const conn = navigator.connection
+    if (conn && (conn.saveData || conn.effectiveType === '2g')) return
+    for (let i = 0; i < preloaders.length; i += BATCH_SIZE) {
+      const batch = preloaders.slice(i, i + BATCH_SIZE)
+      // allSettled：个别失败不中断整批，也不影响后续批次
+      await Promise.allSettled(batch.map((load) => load()))
+      if (i + BATCH_SIZE < preloaders.length) {
+        await new Promise((resolve) => setTimeout(resolve, GAP_MS))   // 批间隔
+      }
+    }
+  })().catch(() => {})   // 兜底：预加载属于体验优化，任何异常都不应冒泡到业务
+  return preloadTask
+}

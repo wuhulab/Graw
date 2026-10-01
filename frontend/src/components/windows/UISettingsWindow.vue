@@ -177,6 +177,14 @@
             <span>{{ $t('settings.hideFoxcode') }}</span>
           </label>
         </div>
+        <!-- 类桌面模式预加载：启动后空闲分批预取全部应用窗口代码（即改即存） -->
+        <div class="row">
+          <label class="switch-label">
+            <input type="checkbox" v-model="settings.desktopPreload" />
+            <span>{{ $t('settings.desktopPreload') }}</span>
+          </label>
+        </div>
+        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('settings.desktopPreloadHint') }}</div>
 
         <!-- 桌面应用图标下方文字样式：字号 / 颜色 / 黑边描边（即改即存，应用到桌面） -->
         <div style="border-top:1px dashed rgba(0,0,0,0.12); margin:8px 0 4px; padding-top:10px;">
