@@ -5,18 +5,29 @@ import shutil
 import subprocess
 import time
 import asyncio
+import logging
 import threading
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 
 # 宿主机文件系统 / 命令适配层（HOST_ROOT 容器 /host 挂载模式）。
 # 容器模式下面板的 Docker 操作需经 chroot 宿主机根目录执行宿主机 docker/podman，
 # 或在配置/备份等涉及路径的场景把容器内路径映射为宿主可达路径。
 from app import hostfs
 from app import node_manager
+from app import agent_client
+# WebSocket 鉴权依赖：Docker 属管理员功能，WS 用 ?token= + 强制管理员（get_current_user_ws_admin）
+from app.auth import get_current_user_ws_admin
 from pydantic import BaseModel
 from typing import Optional, List
 
+logger = logging.getLogger("graw.docker_api")
+
 router = APIRouter()
+# WebSocket 专用路由：/api/docker 的 HTTP 路由挂了 ADMIN 全局依赖，而 WS 无法携带
+# Bearer 头（只能用 ?token=），Router 级依赖会在握手阶段直接拒绝连接，因此 WS 端点
+# 单独注册到一个「无全局依赖」的路由里，改由端点内部强制管理员鉴权。
+# 注册方式见 main.py（与 terminal / gitdeploy webhook 同一模式）。
+ws_router = APIRouter()
 
 IS_WINDOWS = os.name == "nt"
 
@@ -108,9 +119,8 @@ def _save_meta(meta: dict) -> None:
             json.dump(meta, f, ensure_ascii=False, indent=2)
         os.replace(tmp, _META_FILE)
     except Exception:
-        # 元数据写入失败不应拖垮主流程，仅记录日志
-        import logging
-        logging.getLogger("docker_api").warning("保存容器元数据失败", exc_info=True)
+        # 元数据写入失败不应拖垮主流程，仅记录日志（使用模块级 logger，避免重复导入）
+        logger.warning("保存容器元数据失败", exc_info=True)
 
 
 def _run(cmd, timeout=30):
@@ -131,7 +141,8 @@ def _run(cmd, timeout=30):
         out = r.stdout if isinstance(r.stdout, bytes) else (r.stdout or "").encode()
         err = r.stderr if isinstance(r.stderr, bytes) else (r.stderr or "").encode()
         return r.returncode, out.decode("utf-8", "replace"), err.decode("utf-8", "replace")
-    p = subprocess.run(cmd, capture_output=True, timeout=timeout)
+    # 工具层：cmd 以参数列表逐项透传至容器引擎 CLI，命令与参数由业务调用方构造校验
+    p = subprocess.run(cmd, capture_output=True, timeout=timeout)  # lgtm[py/command-line-injection]
     return p.returncode, p.stdout.decode("utf-8", "replace"), p.stderr.decode("utf-8", "replace")
 
 
@@ -167,8 +178,6 @@ def _host_to_wsl_path(p: str) -> str:
 
     供通过 WSL 执行的 podman/宿主机命令使用（如备份导出文件路径）。
     """
-    import re
-
     p = p.replace("\\", "/")
     m = re.match(r"^([A-Za-z]):(/.*)$", p)
     if m:
@@ -347,6 +356,7 @@ def _podman_json(args: List[str]) -> list:
         if isinstance(data, dict):
             # 单对象：docker 单容器时整体即一个对象 → 包成单元素列表
             return [data]
+    # 整体 JSON 解析失败，忽略并退回逐行解析
     except json.JSONDecodeError:
         pass
     # 2) 逐行解析（docker: 每行一个 JSON 对象）；任一行失败则跳过
@@ -403,6 +413,7 @@ def _try_docker_sdk():
             except Exception:
                 try:
                     _client.close()
+                # 客户端可能已关闭，关闭失败忽略
                 except Exception:
                     pass
                 _client = None
@@ -427,6 +438,7 @@ def _try_docker_sdk():
                 try:
                     c.close()
                 except Exception:
+                    # 关闭探测失败连接失败（已断开）时忽略
                     pass
         _docker_fail_until = time.time() + _podman_fail_backoff
         return None
@@ -766,6 +778,7 @@ def _containers_sync(all: bool = True):
                     else:
                         ports.append(k)
             except Exception:
+                # 端口映射解析失败时忽略，不影响容器信息
                 pass
             st = stats.get(c.name, {})
             cid = c.short_id
@@ -846,11 +859,19 @@ def _container_logs_sync(container_id: str, tail: int = 200):
         rc, out, err = _run(cmd)
         if rc != 0:
             raise HTTPException(status_code=500, detail=err.strip() or "获取日志失败")
-        return {"logs": out or "(空)"}
+        # 关键修复（容器日志显示「空」）：
+        #   docker/podman 的 `logs` 会把「容器 stdout」写到自身 stdout，把「容器 stderr」
+        #   写到自身 stderr（CLI 内部是 stdcopy 双流拆分）。而绝大多数应用（nginx、
+        #   php-fpm、gunicorn、node 等）的日志写往 stderr——此前只取 stdout，导致这些
+        #   容器明明有日志却显示「(空)」。这里把两个流合并后再判定有无内容。
+        text = f"{out}{err}"
+        return {"logs": text if text.strip() else "(空)"}
     try:
         c = client.containers.get(container_id)
+        # docker SDK 默认同时读取 stdout + stderr（stdout=True/stderr=True）并自动解复用，
+        # 与 CLI 分支的合并语义保持一致；空内容统一回 "(空)"，避免前端出现空白面板。
         logs = c.logs(tail=tail).decode("utf-8", errors="replace")
-        return {"logs": logs}
+        return {"logs": logs if logs.strip() else "(空)"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=_clean_reason(e))
 
@@ -1113,6 +1134,7 @@ def _container_inspect_sync(container_id: str):
                         virtual_size = int(img.get("VirtualSize", 0) or img.get("Size", 0))
                         break
             except Exception:
+                # 查询镜像大小失败时忽略
                 pass
 
             install_dir = _find_install_dir(c)
@@ -1178,6 +1200,7 @@ def _container_inspect_sync(container_id: str):
                 sys_delta = cpu.get("system_cpu_usage", 0) - precpu.get("system_cpu_usage", 0)
                 online = cpu.get("online_cpus", 1) or 1
                 cpu_percent = round(cpu_delta / sys_delta * online * 100, 2) if sys_delta > 0 else 0
+            # CPU 占用计算失败（除零等）忽略
             except Exception:
                 pass
 
@@ -1341,8 +1364,6 @@ def _upgrade_container_sync(container_id: str):
             image = c.image
             # 拉取新镜像
             image.pull()
-            # 获取配置重建
-            config = c.attrs
             name = c.name
             c.remove(force=True)
             new_c = client.containers.run(image, name=name, detach=True, **{})
@@ -1408,7 +1429,6 @@ def _parse_size_bytes(s: str) -> int:
         "K": 1024, "M": 1024 ** 2, "G": 1024 ** 3, "T": 1024 ** 4,
         "KiB": 1024, "MiB": 1024 ** 2, "GiB": 1024 ** 3, "TiB": 1024 ** 4,
     }
-    import re
     m = re.match(r"^([\d.]+)\s*([A-Za-z]+)$", s)
     if m:
         try:
@@ -1488,6 +1508,7 @@ def _save_panel_cfg(cfg: dict) -> None:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
         os.replace(tmp, _PANEL_CFG_FILE)
     except Exception:
+        # 配置写入失败不影响主流程，仅记录
         pass
 
 
@@ -1546,7 +1567,6 @@ def _write_engine_config(path: str, content: str) -> None:
 
 def _parse_registries_toml(content: str) -> dict:
     """解析 registries.conf (TOML) 提取 search/mirrors/private_registries。"""
-    import re
 
     result = {"search": [], "mirrors": [], "private": []}
     # unqualified-search-registries = [...]（顶层）
@@ -1558,7 +1578,6 @@ def _parse_registries_toml(content: str) -> dict:
     if m:
         result["search"] = [x.strip().strip('"\'') for x in m.group(1).split(",") if x.strip()]
     # [[registry]] 与 [[registry.mirror]] 块
-    blocks = re.findall(r"\[\[registry(?:\.[a-z]+)?\]\]\s*location\s*=\s*\"([^\"]+)\"", content)
     in_private = False
     for token in re.findall(r"\[\[registry(?:\.([a-z]+))?\]\]\s*(?:location\s*=\s*\"([^\"]+)\"|insecure\s*=\s*(true|false))", content):
         part, loc, insecure = token
@@ -1640,6 +1659,7 @@ def _docker_config_sync():
             mirrors = data.get("registry-mirrors", []) or []
             private = data.get("insecure-registries", []) or []
             iptables = data.get("iptables", None)
+        # 解析 daemon.json 失败忽略，按无配置处理
         except Exception:
             pass
 
@@ -1796,7 +1816,6 @@ def _compose_projects_sync():
             })
 
     # 查询容器，统计每个 project 的运行状态
-    services_by_project = {}
     try:
         if kind == "cli":
             ps = _podman_json(["ps", "-a", "--format", "json"])
@@ -1837,6 +1856,7 @@ def _compose_projects_sync():
                 if data and isinstance(data.get("services"), dict):
                     services = list(data.get("services", {}).keys())
             except Exception:
+                # compose 文件解析失败时跳过服务名提取
                 pass
         p["services"] = services
     return projects
@@ -2039,7 +2059,8 @@ def _build_image_sync(req: BuildRequest):
         if os.path.isdir(context_dir):
             image, logs = client.images.build(path=context_dir, tag=full_name)
             return {"ok": True, "image": full_name, "id": image.short_id}
-        image, logs = client.images.build(fileobj=open(context_dir, "rb"), tag=full_name)
+        with open(context_dir, "rb") as cfh:
+            image, logs = client.images.build(fileobj=cfh, tag=full_name)
         return {"ok": True, "image": full_name, "id": image.short_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=_clean_reason(e))
@@ -2131,3 +2152,257 @@ def _remove_network_sync(network_name: str):
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=_clean_reason(e))
+
+
+# ------------------------------------------------------------
+# Docker 实时推送（WebSocket：/api/docker/ws）
+# ------------------------------------------------------------
+# 为什么改（本轮修复）：此前前端在登录后就用 setInterval 反复请求
+# /api/docker/status 与 /api/docker/containers（打开 Docker 窗口还会再即时刷一次），
+# 既是持续的无谓 HTTP 轮询，也让「打开窗口」必须等一次请求往返才有数据可渲染。
+# 现改为「后端实时采集 + WS 推送」：
+#   - 单生产者协程按固定周期采集「引擎状态 + 容器列表」并广播给订阅者；
+#   - 采集由订阅驱动：没有任何 WS 订阅者时协程完全不采集（零引擎开销）；
+#   - 新客户端连入先回放最近一次缓存，再由一次「立即采集」补上最新数据，
+#     因此窗口一打开就能渲染，不必等用户手动刷新；
+#   - 采集目标按「订阅的节点」隔离并各自缓存（多节点面板下各主机数据互不串场）。
+# 安全：WS 走 ?token= + 强制管理员（get_current_user_ws_admin），与 HTTP 的 ADMIN
+# 依赖语义一致；因 Router 级依赖在 WS 握手阶段无法用 ?token= 鉴权，故单独挂在
+# ws_router 上（见文件顶部说明与 main.py 注册）。
+_DOCKER_PUSH_INTERVAL = 6.0      # 推送周期（秒）：兼顾实时性与引擎 CLI 开销
+_DOCKER_COLLECT_TIMEOUT = 30.0   # 单次采集超时保护：远端 SSH / 引擎迟钝时不拖住周期
+
+# 订阅表：node_id -> {websocket, ...}（同一节点可能被多个浏览器 / 窗口订阅）
+_docker_ws_clients: dict = {}
+# 快照缓存：node_id -> {"status": {...}, "containers": [...], "ts": 毫秒时间戳}
+_docker_cache: dict = {}
+# 「立即采集」信号：新订阅者连入 / 前端操作后请求刷新时置位
+_docker_wakeup = asyncio.Event()
+# 生产者协程句柄（由 lifespan 启停）
+_docker_producer_task: Optional[asyncio.Task] = None
+
+
+def _collect_docker_local_sync() -> dict:
+    """在当前（请求级上下文）节点采集一份 Docker 快照（阻塞调用，需放线程池）。
+
+    引擎不可用时同样返回结构化结果（available=False + 原因），让前端展示降级提示，
+    而不是把一次采集失败当成推送异常。
+    """
+    ts = int(time.time() * 1000)
+    try:
+        status = _status_sync()
+    except HTTPException as e:
+        return {"status": {"available": False, "reason": str(e.detail)}, "containers": [], "ts": ts}
+    except Exception as e:
+        return {"status": {"available": False, "reason": _clean_reason(e)}, "containers": [], "ts": ts}
+
+    containers = []
+    if status.get("available"):
+        try:
+            containers = _containers_sync(True)
+        except Exception as e:
+            # 容器列表失败不影响「引擎可用」的结论：返回空列表，状态卡片仍然有效
+            logger.warning("采集容器列表失败: %s", e)
+            containers = []
+    return {"status": status, "containers": containers, "ts": ts}
+
+
+def _collect_docker_via_agent(node: dict) -> dict:
+    """经 Agent 隧道向子节点自身面板取 Docker 快照（与 HTTP 代理路径同源）。
+
+    子节点面板运行在具备引擎权限的环境里（如容器内 root），比从主面板经 SSH 调
+    docker/podman CLI 更可靠，也与 /api/docker/* 请求被 agent_proxy_middleware
+    转发到子节点时的数据完全一致。
+    """
+    ts = int(time.time() * 1000)
+    try:
+        resp = agent_client.agent_proxy(node, "GET", "/api/docker/status", {})
+        status = json.loads(resp.get("body") or b"{}")
+        if not isinstance(status, dict):
+            raise ValueError("子节点未返回引擎状态")
+    except Exception as e:
+        return {"status": {"available": False, "reason": _clean_reason(e)}, "containers": [], "ts": ts}
+
+    containers = []
+    if status.get("available"):
+        try:
+            resp = agent_client.agent_proxy(node, "GET", "/api/docker/containers", {})
+            data = json.loads(resp.get("body") or b"[]")
+            containers = data if isinstance(data, list) else []
+        except Exception as e:
+            logger.warning("经 Agent 采集容器列表失败: %s", e)
+    return {"status": status, "containers": containers, "ts": ts}
+
+
+def _collect_docker_for_node(node_id: str) -> dict:
+    """采集指定管理节点的 Docker 快照（阻塞调用，需放线程池）。
+
+    - SSH 且已配置 Agent 的子节点：经 Agent 隧道取子节点面板自己的数据；
+    - 本地 / 未配置 Agent 的远端节点：切到该节点上下文后直接调用引擎 CLI
+      （远端经 SSH 执行，与 HTTP 直连路径一致）。
+    """
+    node = node_manager.get_node(node_id) if node_id else None
+    if node is not None and node.get("type") == "ssh" and agent_client.agent_ready(node):
+        return _collect_docker_via_agent(node)
+    try:
+        return node_manager.run_on_node(node_id or node_manager.current_node_id(), _collect_docker_local_sync)
+    except ValueError:
+        # 节点已被删除 / 未知：退回当前节点，避免一次异常打断整个推送周期
+        return _collect_docker_local_sync()
+
+
+async def _broadcast_to_node(node_id: str, payload: dict) -> None:
+    """把一帧推送给订阅了该节点的全部客户端，并顺带清理失效连接。"""
+    dead = []
+    for ws in list(_docker_ws_clients.get(node_id, ())):
+        try:
+            await ws.send_json(payload)
+        except Exception:
+            dead.append(ws)
+    bucket = _docker_ws_clients.get(node_id)
+    if bucket is not None:
+        for ws in dead:
+            bucket.discard(ws)
+        if not bucket:
+            _docker_ws_clients.pop(node_id, None)
+
+
+async def _docker_collect_once() -> None:
+    """按订阅节点逐个采集并广播（同一周期内每个节点只采集一次）。"""
+    for node_id in list(_docker_ws_clients.keys()):
+        if not _docker_ws_clients.get(node_id):
+            continue
+        try:
+            snapshot = await asyncio.wait_for(
+                asyncio.to_thread(_collect_docker_for_node, node_id),
+                timeout=_DOCKER_COLLECT_TIMEOUT,
+            )
+        except asyncio.CancelledError:
+            # 应用关闭：交给 stop_docker_producer 收尾
+            raise
+        except Exception as e:
+            # 超时 / 异常：保留上一帧缓存，下一周期重试（远端不可达也不会中断推送）
+            logger.warning("采集节点 %s 的 Docker 数据失败: %s", node_id, e)
+            continue
+        _docker_cache[node_id] = snapshot
+        await _broadcast_to_node(node_id, {"type": "docker", "data": snapshot})
+
+
+async def _docker_producer() -> None:
+    """Docker 实时推送生产协程：有订阅才采集，无订阅纯等待（零引擎开销）。
+
+    等待期间若收到「立即采集」信号（新订阅者连入 / 前端操作后请求刷新），
+    立即结束本次等待并提前采集一轮，保证打开窗口与容器操作后的状态快速回显。
+    """
+    while True:
+        try:
+            if not _docker_ws_clients:
+                # 无订阅者：挂起等待，不产生任何 docker/podman 调用
+                await _docker_wakeup.wait()
+                _docker_wakeup.clear()
+                continue
+            await _docker_collect_once()
+            _docker_wakeup.clear()
+            try:
+                await asyncio.wait_for(_docker_wakeup.wait(), timeout=_DOCKER_PUSH_INTERVAL)
+            except asyncio.TimeoutError:
+                pass  # 正常到达下一推送周期
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # 兜底：任何未预期异常都不能让推送协程退出，否则前端将永久收不到更新
+            logger.warning("Docker 实时推送循环异常", exc_info=True)
+            await asyncio.sleep(2.0)
+
+
+async def start_docker_producer() -> None:
+    """启动 Docker 实时推送协程（应用启动时调用，幂等）。"""
+    global _docker_producer_task
+    if _docker_producer_task is None or _docker_producer_task.done():
+        _docker_producer_task = asyncio.create_task(_docker_producer())
+        logger.info("Docker 实时推送协程已启动")
+
+
+async def stop_docker_producer() -> None:
+    """停止 Docker 实时推送协程并清空订阅（应用关闭时调用）。"""
+    global _docker_producer_task
+    task = _docker_producer_task
+    _docker_producer_task = None
+    if task is not None:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            # 取消协程时预期抛出 CancelledError，忽略即可
+            pass
+    _docker_ws_clients.clear()
+    _docker_wakeup.clear()
+    logger.info("Docker 实时推送协程已停止")
+
+
+@ws_router.websocket("/ws")
+async def docker_ws(
+    websocket: WebSocket,
+    user: Optional[dict] = Depends(get_current_user_ws_admin),
+    node: str = Query(default=""),
+):
+    """Docker 实时数据 WebSocket（引擎状态 + 容器列表）。
+
+    鉴权：?token= 查询参数 + 强制管理员（get_current_user_ws_admin），与
+    /api/docker/* 的 ADMIN 依赖语义一致；鉴权失败时依赖内部已关闭连接，直接返回。
+
+    协议：
+      - 服务端→客户端：{"type":"docker","data":{"status":…,"containers":[…],"ts":…}}
+      - 客户端→服务端：{"type":"refresh"} 请求立即重采一轮；
+                      {"type":"ping"}    心跳保活（服务端忽略）
+    ?node= 指定订阅的管理节点（缺省 = 当前管理主机）；节点不存在时回落到当前主机。
+    """
+    if user is None:
+        # get_current_user_ws_admin 内部已在鉴权失败时 close(4401/4403)
+        return
+    await websocket.accept()
+
+    target_id = node or node_manager.current_node_id()
+    if node_manager.get_node(target_id) is None:
+        target_id = node_manager.current_node_id()
+    _docker_ws_clients.setdefault(target_id, set()).add(websocket)
+
+    # 回放最近一次缓存：让窗口打开即刻有数据可渲染（随后会被新采集覆盖）
+    cached = _docker_cache.get(target_id)
+    if cached is not None:
+        try:
+            await websocket.send_json({"type": "docker", "data": cached})
+        except Exception:
+            _docker_ws_clients.get(target_id, set()).discard(websocket)
+            try:
+                await websocket.close()
+            except Exception:
+                # 关闭失败（连接已断开）时忽略
+                pass
+            return
+    # 通知生产者立即采集一轮：拿到最新数据，而不是干等下一个推送周期
+    _docker_wakeup.set()
+
+    try:
+        # 保持连接存活：生产者负责发送数据，这里只消费客户端帧（心跳 / 主动刷新）
+        while True:
+            text = await websocket.receive_text()
+            try:
+                msg = json.loads(text) if text else None
+            except json.JSONDecodeError:
+                msg = None
+            if isinstance(msg, dict) and msg.get("type") == "refresh":
+                _docker_wakeup.set()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        bucket = _docker_ws_clients.get(target_id)
+        if bucket is not None:
+            bucket.discard(websocket)
+            if not bucket:
+                _docker_ws_clients.pop(target_id, None)
+        try:
+            await websocket.close()
+        except Exception:
+            # 关闭失败（连接已断开）时忽略
+            pass

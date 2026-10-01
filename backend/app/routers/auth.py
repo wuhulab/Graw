@@ -18,7 +18,6 @@ from ..auth import (
     otpauth_uri,
     get_current_user,
     require_admin,
-    require_non_default_password,
     _load_users,
     _save_users,
     _get_user,
@@ -224,7 +223,7 @@ def _record_global_failure(username: str, ip: str) -> None:
             rec["locked_until"] = now + _GLOBAL_LOCK_SECONDS
             logger.warning(
                 "账号 %s 触发全局登录锁定（分布式爆破防护，来源 IP 数 %d）",
-                username, len(rec["ips"]),
+                repr(username), len(rec["ips"]),
             )
 
 
@@ -358,7 +357,7 @@ async def logout(request: Request, user: dict = Depends(get_current_user)):
     """注销登录：递增 token_version 使当前用户所有 JWT 立即失效。"""
     bump_token_version(user["username"])
     _clear_failures(request, user["username"])
-    logger.info("用户 %s 已注销（IP %s）", user["username"], get_client_ip(request))
+    logger.info("用户 %s 已注销（IP %s）", repr(user["username"]), repr(get_client_ip(request)))
     auditlog.record("退出登录", user["username"], get_client_ip(request))
     return {"ok": True}
 
@@ -421,8 +420,8 @@ async def kick_all(
     if not _get_user(target):
         raise HTTPException(status_code=404, detail="用户不存在")
     bump_token_version(target)
-    logger.info("用户 %s 的全部会话已被管理员强制下线（操作者 %s, IP %s）",
-                target, admin["username"], get_client_ip(request))
+    logger.info("用户强制下线：target_len=%s, operator_len=%s, ip_len=%s",
+                len(target or ""), len(admin["username"] or ""), len(get_client_ip(request) or ""))
     auditlog.record("强制下线", target, get_client_ip(request), f"全部设备被 {admin['username']} 强制下线")
     return {"ok": True}
 
@@ -499,7 +498,7 @@ async def change_password(
     users = _load_users() or {}
     new_tv = int(users.get(user["username"], {}).get("token_version") or 0)
     new_token = create_token(user["username"], token_version=new_tv)
-    logger.info("用户 %s 已修改密码并刷新令牌（IP %s）", user["username"], get_client_ip(request))
+    logger.info("用户 %s 已修改密码并刷新令牌（IP %s）", repr(user["username"]), repr(get_client_ip(request)))
     auditlog.record("修改密码", user["username"], get_client_ip(request))
     return {"ok": True, "token": new_token}
 
@@ -569,7 +568,7 @@ async def update_user(
         )
         # 重置密码后吊销该用户所有现有会话，强制重新登录
         bump_token_version(username)
-        logger.info("管理员重置账号 %s 的密码，其所有会话已失效", username)
+        logger.info("管理员重置账号 %s 的密码，其所有会话已失效", repr(username))
     if req.role is not None:
         if req.role not in VALID_ROLES:
             raise HTTPException(status_code=400, detail="角色无效")
@@ -660,7 +659,7 @@ async def otp_enable(req: OtpEnableRequest, request: Request, user: dict = Depen
         raise HTTPException(status_code=400, detail="验证码错误")
     full["otp_enabled"] = True
     _save_users(users)
-    logger.info("用户 %s 已启用两步验证（IP %s）", user["username"], get_client_ip(request))
+    logger.info("用户启用两步验证：username_len=%s, ip_len=%s", len(user["username"] or ""), len(get_client_ip(request) or ""))
     auditlog.record("启用两步验证", user["username"], get_client_ip(request))
     return {"ok": True}
 
@@ -677,6 +676,6 @@ async def otp_disable(req: OtpEnableRequest, request: Request, user: dict = Depe
     full["otp_enabled"] = False
     full["otp_secret"] = ""
     _save_users(users)
-    logger.info("用户 %s 已关闭两步验证（IP %s）", user["username"], get_client_ip(request))
+    logger.info("用户 %s 已关闭两步验证（IP %s）", repr(user["username"]), repr(get_client_ip(request)))
     auditlog.record("关闭两步验证", user["username"], get_client_ip(request))
     return {"ok": True}

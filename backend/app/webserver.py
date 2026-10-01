@@ -17,7 +17,7 @@ webserver.py - 宿主机 Web 服务器引擎（NGINX / OpenResty）配置适配�
 import json
 import os
 
-from app.hostfs import host_cmd, host_which, host_path
+from app.hostfs import host_cmd, host_which
 from app import node_manager
 
 # 配置目录与文件（backend/data/webserver.json）

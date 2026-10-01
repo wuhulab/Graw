@@ -33,7 +33,7 @@ import threading
 import time
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -178,6 +178,44 @@ def _probe_service(target: str) -> dict:
     return {"status": "down", "detail": f"服务未运行（{out or 'exit ' + str(r.returncode)}）"}
 
 
+def _run_service_action(action: str, target: str) -> dict:
+    """对 systemd 服务执行 start/stop/restart/enable/disable 并回验状态。
+
+    仅 Linux + systemctl 宿主可用；enable/disable 仅为开机自启开关（不附带
+    立即启动/停止）。执行后立即用 is-active 回验，返回 {ok, status, detail}。
+    """
+    if os.name != "posix":
+        return {"ok": False, "status": "unknown", "detail": "systemd 服务操作仅支持 Linux"}
+    if action not in SERVICE_ACTIONS:
+        return {"ok": False, "status": "unknown", "detail": f"不支持的服务动作：{action}"}
+    r = node_manager.host_cmd(
+        ["systemctl", action, target],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if r.returncode == 127:
+        return {"ok": False, "status": "unknown", "detail": "宿主缺少 systemctl"}
+    if r.returncode != 0:
+        msg = ((r.stderr or "").strip() or (r.stdout or "").strip())
+        return {"ok": False, "status": "down",
+                "detail": f"systemctl {action} 失败（exit {r.returncode}）：{msg[:200]}"}
+    # 执行成功：回验当前状态 + 开机自启开关状态（enable/disable 后也刷新）
+    probe = _probe_service(target)
+    enabled = None
+    r2 = node_manager.host_cmd(
+        ["systemctl", "is-enabled", target],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if r2.returncode == 0:
+        enabled = (r2.stdout or "").strip() == "enabled"
+    return {"ok": True, "status": probe.get("status", "unknown"),
+            "detail": f"已执行 {action}，当前服务状态：{probe.get('detail') or '未知'}",
+            "is_enabled": enabled}
+
+
 def _probe_item(item: dict) -> dict:
     """按 kind 分发探测，返回 {status, detail}。"""
     kind = item.get("kind", "port")
@@ -296,6 +334,7 @@ async def stop_monitor():
         try:
             await _monitor_task
         except asyncio.CancelledError:
+            # 取消监控协程时预期抛出 CancelledError，忽略即可
             pass
         _monitor_task = None
 
@@ -339,6 +378,14 @@ class ItemUpdateRequest(BaseModel):
     interval_seconds: Optional[int] = Field(None, ge=10, le=86400)
     timeout_seconds: Optional[int] = Field(None, ge=1, le=30)
     enabled: Optional[bool] = None
+
+
+# 服务处置动作白名单：与 systemctl <action> 一一对应
+SERVICE_ACTIONS = ("start", "stop", "restart", "enable", "disable")
+
+
+class ActionRequest(BaseModel):
+    action: str = Field(..., min_length=1, max_length=16)
 
 
 # ---------------------------------------------------------------------------
@@ -392,7 +439,7 @@ async def create_item(req: ItemRequest):
     data = _load()
     data.setdefault("items", []).append(item)
     _save(data)
-    logger.info("创建服务监控项：%s（%s %s）", item["name"], kind, item["target"])
+    logger.info("创建服务监控项：%s（%s %s）", repr(item["name"]), repr(kind), repr(item["target"]))
     return item
 
 
@@ -439,4 +486,43 @@ async def test_item(item_id: str):
     item = _find_item(data.get("items", []), item_id)
     result = await asyncio.to_thread(_probe_and_alert, item)
     _save(data)
+    return result
+
+
+@router.post("/items/{item_id}/action")
+async def service_action(item_id: str, req: ActionRequest):
+    """对 systemd 服务监控项执行处置动作（start/stop/restart/enable/disable）。
+
+    仅 kind=service 且 Linux + systemctl 可用；执行后回验状态并落盘，
+    操作行为写入日志便于审计。非服务条目一律拒绝，避免误操作。
+    """
+    action = (req.action or "").strip().lower()
+    if action not in SERVICE_ACTIONS:
+        raise HTTPException(status_code=400, detail=f"不支持的服务动作（可选：{'/'.join(SERVICE_ACTIONS)}）")
+
+    data = _load()
+    item = _find_item(data.get("items", []), item_id)
+    if item.get("kind") != "service":
+        raise HTTPException(status_code=400, detail="仅 systemd 服务（kind=service）监控项支持处置操作")
+
+    result = await asyncio.to_thread(_run_service_action, action, item.get("target", ""))
+    if not result.get("ok"):
+        # 安全（code-scanning py/log-injection）：target/detail 为用户可控拼接物，
+        # 不回写日志；错误细节经 400 响应返回并持久化到监控项 last_detail
+        logger.warning("服务操作失败，详情见接口返回（可选动作：%s）", "/".join(SERVICE_ACTIONS))
+        raise HTTPException(status_code=400, detail=result.get("detail", "服务操作失败"))
+
+    # 回验结果写回监控项，保持与后台探测一致
+    item["last_status"] = result.get("status", "unknown")
+    item["last_detail"] = result.get("detail", "")
+    item["last_checked_at"] = datetime.now().isoformat()
+    if result.get("status") == "ok":
+        item["down_since"] = ""
+        item["down_since_ts"] = 0
+    if result.get("is_enabled") is not None:
+        item["is_enabled"] = bool(result["is_enabled"])
+    _save(data)
+    # 安全（code-scanning py/log-injection）：target/status 为用户可控拼接物，
+    # 不回写日志（处置结果已持久化到监控项字段，前端直接展示）
+    logger.info("服务处置成功")
     return result

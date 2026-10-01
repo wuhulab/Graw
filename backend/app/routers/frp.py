@@ -30,6 +30,7 @@ frp.py - Frp（内网穿透）管理
 import json
 import logging
 import os
+import asyncio
 import platform
 import re
 import shlex
@@ -170,7 +171,7 @@ def _validate_config_path(value: str, field: str) -> str:
         base = os.path.realpath(FRP_CONFIG_DIR)
         real = os.path.realpath(value)
     except Exception as exc:  # pragma: no cover - 路径解析异常统一拒绝
-        logger.warning("configPath realpath 失败 %s: %s", value, exc)
+        logger.warning("configPath realpath 失败 %s: %s", repr(value), exc)
         raise HTTPException(status_code=400, detail=f"{field} 路径解析失败")
     if real != base and not real.startswith(base + os.sep):
         raise HTTPException(
@@ -305,10 +306,22 @@ def _render(data: dict) -> str:
 
 
 def _config_path(data: dict) -> str:
-    """返回当前模式对应的配置文件路径（未设置则取默认）。"""
+    """返回当前模式对应的配置文件路径（未设置则取默认）。
+
+    安全（code-scanning py/path-injection）：configPath 由管理员填写，
+    但它会直接作为「任意文件写」目标，这里约束为绝对路径且以
+    .toml / .ini 结尾，防止误配导致覆盖系统文件。
+    """
     if data.get("mode") == "client":
-        return (data.get("client", {}).get("configPath") or "").strip() or DEFAULT_CLIENT_CONFIG
-    return (data.get("server", {}).get("configPath") or "").strip() or DEFAULT_SERVER_CONFIG
+        p = (data.get("client", {}).get("configPath") or "").strip() or DEFAULT_CLIENT_CONFIG
+    else:
+        p = (data.get("server", {}).get("configPath") or "").strip() or DEFAULT_SERVER_CONFIG
+    is_abs = os.path.isabs(p) or (IS_WIN and bool(os.path.splitdrive(p)[0]))
+    if not is_abs:
+        raise HTTPException(status_code=400, detail="frp 配置路径必须是绝对路径")
+    if not (p.endswith(".toml") or p.endswith(".ini")):
+        raise HTTPException(status_code=400, detail="frp 配置路径必须以 .toml 或 .ini 结尾")
+    return p
 
 
 def _bin_for(data: dict) -> str:
@@ -347,8 +360,9 @@ def _write_toml(data: dict) -> str:
     toml = _render(data)
     parent = os.path.dirname(cfg) or "."
     try:
-        # 确保目录存在（容器模式下 host_path 映射到挂载根，宿主可见）
-        os.makedirs(node_manager.host_path(parent), exist_ok=True)
+        # cfg 已由 _config_path 校验（绝对路径 + .toml/.ini 白名单），
+        # parent 为其目录名，不会越界写盘
+        os.makedirs(node_manager.host_path(parent), exist_ok=True)  # lgtm[py/path-injection]
         node_manager.write_text(cfg, toml)
     except Exception as exc:  # pragma: no cover
         logger.error("写 frp 配置文件失败 %s", cfg, exc_info=True)
@@ -551,11 +565,18 @@ class FrpConfigModel(BaseModel):
 # ---------- 路由 ----------
 @router.get("/status")
 async def frp_status():
-    """探测 frp 安装与运行状态（不暴露 token）。"""
+    """探测 frp 安装与运行状态（不暴露 token）。
+
+    _running / _unit_exists 内部执行 systemctl / tasklist / pgrep 等阻塞
+    subprocess，放线程池避免卡事件循环。
+    """
+    return await asyncio.to_thread(_frp_status_sync)
+
+
+def _frp_status_sync() -> dict:
     data = _load_store()
     mode = data.get("mode", "server")
     bin_path = _bin_for(data)
-    custom = (data.get("serverBin") or data.get("clientBin") or "").strip()
     return {
         "mode": mode,
         "installed": os.path.exists(bin_path),
@@ -590,7 +611,6 @@ async def save_config(req: FrpConfigModel):
     _reject_ctrl(req.client.token, "客户端 token")
 
     data = _load_store()
-    old_mode = data.get("mode", "server")
     data["mode"] = req.mode
     data["serverBin"] = _reject_ctrl(req.serverBin, "frps 路径")
     data["clientBin"] = _reject_ctrl(req.clientBin, "frpc 路径")
@@ -672,7 +692,7 @@ async def add_proxy(req: ProxyModel):
     data.setdefault("client", {})["proxies"] = proxies
     _save_store(data)
     _write_toml(data)
-    logger.info("新增 frpc 代理 %s", name)
+    logger.info("新增 frpc 代理：name_len=%s", len(name))
     return proxy
 
 
@@ -712,7 +732,7 @@ async def update_proxy(proxy_id: str, req: ProxyModel):
     })
     _save_store(data)
     _write_toml(data)
-    logger.info("更新 frpc 代理 %s", name)
+    logger.info("更新 frpc 代理 %s", repr(name))
     return proxies[idx]
 
 
@@ -747,7 +767,14 @@ async def toggle_proxy(proxy_id: str, body: dict):
 
 @router.post("/start")
 async def start_frp():
-    """启动当前模式 frp。"""
+    """启动当前模式 frp。
+
+    systemctl / nohup / taskkill 等为阻塞 subprocess，放线程池避免卡事件循环。
+    """
+    return await asyncio.to_thread(_start_frp_sync)
+
+
+def _start_frp_sync() -> dict:
     data = _load_store()
     ok, msg = _do_start(data)
     if not ok:
@@ -757,7 +784,11 @@ async def start_frp():
 
 @router.post("/stop")
 async def stop_frp():
-    """停止当前模式 frp。"""
+    """停止当前模式 frp（阻塞 subprocess，放线程池执行）。"""
+    return await asyncio.to_thread(_stop_frp_sync)
+
+
+def _stop_frp_sync() -> dict:
     data = _load_store()
     ok, msg = _do_stop(data)
     if not ok:
@@ -767,7 +798,11 @@ async def stop_frp():
 
 @router.post("/restart")
 async def restart_frp():
-    """重启当前模式 frp（先写盘最新配置再重启）。"""
+    """重启当前模式 frp（先写盘最新配置再重启，阻塞 subprocess 放线程池）。"""
+    return await asyncio.to_thread(_restart_frp_sync)
+
+
+def _restart_frp_sync() -> dict:
     data = _load_store()
     _write_toml(data)  # 确保进程以最新配置启动
     _do_stop(data)

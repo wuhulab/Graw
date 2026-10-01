@@ -23,7 +23,6 @@ from app.routers.docker_api import (
     _safe_docker_ref,
     _clean_reason,
     get_backend,
-    DOCKER_SDK,  # noqa: F401 - 与 docker_api 保持一致的可选 SDK 能力开关
 )
 
 router = APIRouter()

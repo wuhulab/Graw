@@ -102,6 +102,7 @@ def delete_node(node_id: str):
             from app.ssh_host_keys import forget
             forget(f"{node['host']}:{node.get('port') or 22}")
         except Exception:
+            # 遗忘主机密钥失败时忽略
             pass
     return {"ok": True}
 

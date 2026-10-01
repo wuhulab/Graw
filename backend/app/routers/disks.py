@@ -252,9 +252,10 @@ async def disk_list():
             for p in disk.get("parts", []):
                 p["system"] = disk["system"]
         return {"disks": disks}
-    except Exception as e:  # noqa: BLE001 - 兜底避免磁盘接口影响整体面板
+    except Exception:  # noqa: BLE001 - 兜底避免磁盘接口影响整体面板
         logger.exception("获取磁盘信息失败")
-        return {"disks": [], "error": str(e)}
+        # 安全（code-scanning py/stack-trace-exposure）：错误详情仅记日志
+        return {"disks": [], "error": "获取磁盘信息失败"}
 
 
 @router.post("/mount")
@@ -295,5 +296,5 @@ async def mount_partition(device: str, mountpoint: str):
     if mount.returncode != 0:
         return {"ok": False, "message": f"挂载失败：{mount.stderr.strip()}"}
 
-    logger.info("已挂载 %s -> %s", dev_path, mountpoint)
+    logger.info("已挂载 %s -> %s", repr(dev_path), repr(mountpoint))
     return {"ok": True, "message": "挂载成功"}

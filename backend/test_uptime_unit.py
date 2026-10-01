@@ -17,12 +17,12 @@ import sys
 import tempfile
 import shutil
 import unittest
-from unittest import mock
+import unittest.mock as mock
 from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from fastapi import FastAPI, HTTPException  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.routers import uptime  # noqa: E402
@@ -138,7 +138,7 @@ class UptimeLogicTest(unittest.TestCase):
         # 再 ok（持续正常）→ 不推送
         with self._probe([SimpleNamespace(status_code=200)]), \
              mock.patch.object(notify, "push_all", return_value=(1, 0)) as p2:
-            r2 = uptime._probe_and_alert(self.item)
+            _ = uptime._probe_and_alert(self.item)
         p2.assert_not_called()
 
         # ok→down → 推送宕机

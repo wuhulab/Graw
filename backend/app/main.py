@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response
 from contextlib import asynccontextmanager
+import json as _json
 import os
 import asyncio
 
@@ -45,6 +46,13 @@ from app.routers import (
     webstats,
     rewrite,
     sitesopts,
+    rollback,
+    batch,
+    gitdeploy as gitdeploy_api,
+    report,
+    portforward,
+    imgsafety,
+    slowquery,
     svcmonitor,
     sshkeys,
     healthcheck,
@@ -52,7 +60,7 @@ from app.routers import (
     toolbox,
     phpversions,
     recycle,
-    vip,
+    plugins,
 )
 from app.auth import (
     seed_default_users,
@@ -65,6 +73,10 @@ from app import agent_auth
 from app import node_manager
 from app import agent_client
 from app import trash
+from app import plugin_protocol
+from app import reporting
+from app import portforward as pf_store
+from app import tty_persist
 
 # 权限分级：
 #   PROTECTED - 仅需登录（只读信息类接口，如系统概览/备忘录，供桌面展示）
@@ -103,6 +115,9 @@ async def lifespan(app: FastAPI):
     _secure_data_dir()
     # 启动统一系统指标采集（供首页三卡片共享单条 WS），预热缓存并后台广播
     await system.start_metrics_producer()
+    # 启动 Docker 实时推送协程（/api/docker/ws）：由订阅驱动采集，无订阅时零开销，
+    # 替代前端登录后对 /api/docker/status|containers 的持续 HTTP 轮询
+    await docker_api.start_docker_producer()
     # 启动 ShunX 网页防篡改后台监控（定时备份 + 篡改检测回滚 + 在线告警推送）
     await tamper.start_tamper_monitor()
     # 启动通知中心后台监控（资源阈值告警检查 + 渠道推送）
@@ -115,15 +130,24 @@ async def lifespan(app: FastAPI):
     await svcmonitor.start_monitor()
     # 启动回收站后台自动清理（按小时清理所有节点过期回收站条目）
     await trash.start_auto_purge()
+    # 启动每日巡检报告协程（每天 08:00 生成并推送，见 app/reporting.py）
+    reporting.start_daily()
+    # 恢复持久化的 SSH 端口转发隧道（enabled=true 条目）
+    pf_store.restore_all()
     yield
     # 关闭后台采集协程
     await system.stop_metrics_producer()
+    await docker_api.stop_docker_producer()
     await tamper.stop_tamper_monitor()
     await notify.stop_monitor()
     await uptime.stop_monitor()
     await certcheck.stop_monitor()
     await svcmonitor.stop_monitor()
     await trash.stop_auto_purge()
+    reporting.stop_daily()
+    pf_store.stop_all()
+    # 关闭全部「持久化终端」会话：结束常驻 shell，避免面板退出后留下孤儿进程
+    tty_persist.get_manager().shutdown_all()
 
 
 # 安全：默认关闭交互式 API 文档（/docs、/redoc、/openapi.json）。
@@ -134,7 +158,7 @@ _ENABLE_DOCS = os.environ.get("GRAW_ENABLE_DOCS", "").strip() == "1"
 
 # 面板版本号：用于 /api/health（前端「设置-关于」板块展示）。
 # 升级版本时仅需同步修改此处，FastAPI 应用信息与此保持一致。
-APP_VERSION = "1.5.2"
+APP_VERSION = "1.7.3"
 
 app = FastAPI(
     title="Graw Server Panel",
@@ -192,8 +216,10 @@ _AGENT_PROXY_EXCLUDE_PREFIX = (
     "/api/agent",
     "/api/ui",
     "/api/shunx",
-    "/api/vip",
     "/api/health",
+    "/api/batch",
+    "/api/gitdeploy",
+    "/api/portforward",
 )
 
 
@@ -325,7 +351,14 @@ async def _agent_proxy_request(request: Request) -> Response:
             agent_client.agent_proxy, node, request.method, full_path, headers, raw_body
         )
     except Exception as e:  # noqa: BLE001 - 代理失败给可读错误
-        return JSONResponse(status_code=502, content={"detail": f"Agent 代理失败: {str(e)[:300]}"})
+        # 安全（code-scanning py/stack-trace-exposure）：不把异常详情原样回传
+        #（可能含内部路径/凭据），仅记录日志供排查
+        import logging
+        logging.getLogger("graw.main").warning(
+            "Agent 代理失败（node=%s %s %s）: %s",
+            (node or {}).get("name", ""), request.method, request.url.path, e,
+        )
+        return JSONResponse(status_code=502, content={"detail": "Agent 代理失败，请检查子节点 Agent 状态"})
     status = result.get("status") or 500
     body = result.get("body") or b""
     ctype = (result.get("headers") or {}).get("content-type", "text/plain")
@@ -385,6 +418,108 @@ async def agent_proxy_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+# ---------------------------------------------------------------------------
+# 请求体大小限制（纯 ASGI 中间件，最后注册=最外层，先于 agent 代理执行）
+# ---------------------------------------------------------------------------
+# 背景（第十五轮审计，High）：此前全链路对请求体大小没有任何限制——
+# uvicorn(h11) 在应用消费之前会把整个请求体缓冲进内存，FastAPI 解析 JSON
+# 时还会再复制一份。未认证攻击者只需向公开的 /api/auth/login 并发发送
+# 超大 JSON（PoC 实测 4 连接 × 32MB → RSS 峰值 +276MB，约 2.2 倍放大），
+# 即可低成本耗尽面板内存（未认证 pre-auth DoS）。
+#
+# 防护策略（拒绝均发生在读取请求体之前，内存占用不超过已在途数据）：
+#   1. 携带 Transfer-Encoding 的请求一律 411 Length Required：HTTP/1.1
+#      请求体必须用 Content-Length 声明大小，否则服务端无法在不缓冲的
+#      前提下判定边界。主流客户端（浏览器 / axios / requests / curl /
+#      本面板自身的 agent_client）都使用 Content-Length 框架，不受影响。
+#   2. Content-Length 超过限额直接 413，且不读取请求体：uvicorn 对
+#      未消费完请求体的连接会在响应后关闭，攻击者的发送被 TCP 层截断。
+#   3. 两级限额：普通请求（JSON 等小配置负载）默认 16MB；multipart
+#      文件上传（/api/files/upload、/api/panelbackup/import 等，管理员
+#      专用，Starlette 超过 1MB 自动落盘）默认 2GB。均可用环境变量
+#      GRAW_MAX_BODY_MB / GRAW_MAX_UPLOAD_MB 覆盖（最小 1MB）。
+#   4. 多个不一致的 Content-Length 头（请求走私经典手法）直接 400。
+# ---------------------------------------------------------------------------
+def _env_mb(name: str, default_mb: int) -> int:
+    """从环境变量读取 MB 数（非法/缺省回落默认值），换算为字节。"""
+    try:
+        return max(1, int(os.environ.get(name, "") or default_mb)) * 1024 * 1024
+    except (TypeError, ValueError):
+        return default_mb * 1024 * 1024
+
+
+_MAX_BODY_BYTES = _env_mb("GRAW_MAX_BODY_MB", 16)
+_MAX_UPLOAD_BYTES = _env_mb("GRAW_MAX_UPLOAD_MB", 2048)
+
+
+class _RequestBodyLimitMiddleware:
+    """全局请求体大小限制（防未认证超大请求体内存耗尽 DoS）。"""
+
+    def __init__(self, app, *, body_limit: int, upload_limit: int):
+        self.app = app
+        self.body_limit = body_limit
+        self.upload_limit = upload_limit
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            # WebSocket / lifespan 原样放行
+            await self.app(scope, receive, send)
+            return
+        headers: dict = {}
+        for k, v in scope.get("headers") or []:
+            headers.setdefault(
+                k.decode("latin-1", "replace").lower(), []
+            ).append(v.decode("latin-1", "replace"))
+
+        if headers.get("transfer-encoding"):
+            await self._reply(send, 411, "请求必须声明 Content-Length（不支持 chunked 传输）")
+            return
+        cls_ = headers.get("content-length")
+        if not cls_:
+            # 无请求体（GET / 无 body POST 等）或未声明大小：直接放行，
+            # 此时不可能有合法的请求体（HTTP 规定请求体必须有框架声明）。
+            await self.app(scope, receive, send)
+            return
+        if len(set(cls_)) > 1:
+            await self._reply(send, 400, "Content-Length 头不一致")
+            return
+        try:
+            cl = int(cls_[0])
+        except ValueError:
+            await self._reply(send, 400, "Content-Length 非法")
+            return
+        ctype = (headers.get("content-type") or [""])[0].lower()
+        limit = self.upload_limit if ctype.startswith("multipart/") else self.body_limit
+        if cl > limit:
+            await self._reply(
+                send, 413, f"请求体过大（上限 {limit // (1024 * 1024)} MB）"
+            )
+            return
+        await self.app(scope, receive, send)
+
+    @staticmethod
+    async def _reply(send, status: int, detail: str) -> None:
+        body = _json.dumps({"detail": detail}).encode("utf-8")
+        await send(
+            {
+                "type": "http.response.start",
+                "status": status,
+                "headers": [
+                    (b"content-type", b"application/json; charset=utf-8"),
+                    (b"content-length", str(len(body)).encode("latin-1")),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
+
+
+app.add_middleware(
+    _RequestBodyLimitMiddleware,
+    body_limit=_MAX_BODY_BYTES,
+    upload_limit=_MAX_UPLOAD_BYTES,
+)
+
+
 # 公开路由：登录、当前用户、改密、健康检查
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 
@@ -406,6 +541,10 @@ app.include_router(
 app.include_router(
     docker_api.router, prefix="/api/docker", tags=["docker"], dependencies=ADMIN
 )
+# Docker 实时数据 WebSocket（/api/docker/ws）：WS 无法携带 Bearer 头，只能 ?token=，
+# 因而不挂 Router 级 ADMIN 依赖，改由端点内部用 get_current_user_ws_admin 强制管理员
+# （与 terminal / gitdeploy webhook 同一模式）。
+app.include_router(docker_api.ws_router, prefix="/api/docker", tags=["docker"])
 # Docker 数据卷（volumes）管理：复用 docker_api 的后端探测与 CLI/SDK 工具（管理员）
 app.include_router(
     dockervolumes.router,
@@ -534,6 +673,36 @@ app.include_router(rewrite.router, prefix="/api/rewrite", tags=["rewrite"], depe
 # 站点增强配置：防盗链 / gzip / 静态资源缓存（写入 nginx 配置，管理员）
 app.include_router(sitesopts.router, prefix="/api/sitesopts", tags=["sitesopts"], dependencies=ADMIN)
 
+# 配置快照 / 一键回滚：站点 nginx conf 与防火墙规则的写前快照与恢复（管理员）
+app.include_router(
+    rollback.router, prefix="/api/rollback", tags=["rollback"], dependencies=ADMIN
+)
+
+# 批量操作中心：多节点批量命令 / 批量容器启停（管理员；排除 Agent 代理——
+# 批量命令由主面板持全部节点凭据直连执行）
+app.include_router(batch.router, prefix="/api/batch", tags=["batch"], dependencies=ADMIN)
+
+# 站点 Git 自动部署：CRUD 与手动触发（管理员）；webhook 端点公开、令牌校验
+app.include_router(
+    gitdeploy_api.admin_router, prefix="/api/gitdeploy", tags=["gitdeploy"], dependencies=ADMIN
+)
+# webhook 接收端点不能挂全局 ADMIN（Git 平台无面板登录态），端点内校验签名；
+# 且必须排除 Agent 代理——部署要在主面板上依 deploy.node_id 分发执行
+app.include_router(gitdeploy_api.webhook_router, prefix="/api/gitdeploy", tags=["gitdeploy"])
+
+# 巡检报告：手动生成 / 历史查看（管理员；每日 08:00 由 lifespan 协程自动生成）
+app.include_router(report.router, prefix="/api/report", tags=["report"], dependencies=ADMIN)
+
+# SSH 端口转发：本地直连远程服务（管理员，排除 Agent 代理——隧道建立在
+# 主面板与节点之间，不能把请求转发给子节点执行）
+app.include_router(portforward.router, prefix="/api/portforward", tags=["portforward"], dependencies=ADMIN)
+
+# 镜像漏洞扫描：本地 advisory 比对（管理员；扫描在线程池执行，不阻塞事件循环）
+app.include_router(imgsafety.router, prefix="/api/imgsafety", tags=["imgsafety"], dependencies=ADMIN)
+
+# MySQL 慢查询分析：解析慢日志 TOP N（管理员）
+app.include_router(slowquery.router, prefix="/api/slowquery", tags=["slowquery"], dependencies=ADMIN)
+
 # 服务/端口监控：自定义监控项（端口/进程/systemd 服务）状态看板（管理员）
 app.include_router(
     svcmonitor.router, prefix="/api/svcmonitor", tags=["svcmonitor"], dependencies=ADMIN
@@ -567,10 +736,23 @@ app.include_router(
     dependencies=ADMIN,
 )
 
-# 付费功能（VIP/月卡/年卡）：查询当前用户 VIP 状态 + 用授权码激活 +
-# 配置授权码服务地址。status/activate 需登录，config 需管理员，
-# 均在各端点内部自行鉴权（参照 ui/tamper 路由），故不挂全局依赖。
-app.include_router(vip.router, prefix="/api/vip", tags=["vip"])
+# 应用接口开放协议（GPOP）：
+# - /api/plugins/settings 为插件功能总开关（始终注册，否则关闭后无法重新打开）；
+# - /api/plugins 为插件管理接口（安装/启停/卸载/轮换令牌），需管理员；
+# - /api/op 为插件开放接口（插件凭令牌调用，内部自行鉴权）。
+# 插件功能关闭时（data/plugins.json 的 enabled=false）静默切换为「不加载插件
+# 相关代码」：仅注册 settings 开关路由，业务/开放路由整体不注册。
+app.include_router(
+    plugins.settings_router,
+    prefix="/api/plugins",
+    tags=["plugins"],
+    dependencies=ADMIN,
+)
+if plugin_protocol.is_enabled():
+    app.include_router(
+        plugins.router, prefix="/api/plugins", tags=["plugins"], dependencies=ADMIN
+    )
+    app.include_router(plugins.op_router, prefix="/api/op", tags=["plugins"])
 
 
 @app.get("/api/health")
@@ -618,8 +800,9 @@ if os.path.exists(FRONTEND_DIST):
             in_dist = os.path.commonpath([candidate, FRONTEND_DIST]) == FRONTEND_DIST
         except ValueError:
             candidate, in_dist = "", False
-        if full_path and in_dist and os.path.isfile(candidate):
-            return FileResponse(candidate)
+        # candidate 已通过 commonpath == FRONTEND_DIST 校验（下方 in_dist），只允许站内文件
+        if full_path and in_dist and os.path.isfile(candidate):  # lgtm[py/path-injection]
+            return FileResponse(candidate)  # lgtm[py/path-injection]
         return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
 
 

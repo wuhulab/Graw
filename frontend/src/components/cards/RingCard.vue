@@ -42,6 +42,7 @@ import { PieChart } from 'echarts/charts'   // 饼图（环形图由饼图去中
 import { TitleComponent, TooltipComponent } from 'echarts/components'   // 标题 / 提示组件
 import VChart from 'vue-echarts'   // ECharts 的 Vue 封装
 import { uiState } from '../../store/ui'   // 界面设置（环形图主色与告警开关）
+import { settings } from '../../store/settings'   // 本地偏好（系统概览数值精度：整数 / 两位小数）
 import MetricsFallback from './MetricsFallback.vue'   // 监控数据降级提示
 
 use([CanvasRenderer, PieChart, TitleComponent, TooltipComponent])   // 注册所需 ECharts 模块
@@ -63,6 +64,9 @@ function mainColor(percent) {
 // 生成单个环形图配置：一段「已用」弧 + 一段「剩余」弧，中心显示百分比
 function ringOption(percent, color) {
   const p = Math.max(0, Math.min(100, percent || 0))   // 百分比夹在 0-100，防止数据越界破坏图形
+  // 显示精度：默认取整（31%）；开启「系统概览显示到后两位」后保留两位小数（31.25%）。
+  // 读取的是响应式 settings，切换开关时本 option 的 computed 会自动重算并刷新图表。
+  const decimals = settings.overviewDecimals ? 2 : 0
   return {
     series: [{
       type: 'pie',
@@ -72,8 +76,9 @@ function ringOption(percent, color) {
       label: {
         show: true,
         position: 'center',
-        formatter: `${p.toFixed(0)}%`,
-        fontSize: 14,
+        formatter: `${p.toFixed(decimals)}%`,
+        // 两位小数时文案变长（最多「100.00%」7 个字符），同步收小字号避免溢出环形内圈
+        fontSize: decimals ? 11 : 14,
         fontWeight: 'bold',
         color: '#0a3d7a'
       },

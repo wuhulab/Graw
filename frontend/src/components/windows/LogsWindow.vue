@@ -18,7 +18,7 @@
         <button class="tab" :class="{ active: mode === 'audit' }" @click="switchMode('audit')">{{ $t('logs.modeAudit') }}</button>
       </div>
       <template v-if="mode === 'logs'">
-        <button class="btn primary" @click="showAdd=true">{{ $t('logs.add') }}</button>
+        <button class="btn primary" @click="emit('openLogCollectForm', { source: null })">{{ $t('logs.add') }}</button>
         <button class="btn" @click="refresh">{{ $t('logs.refresh') }}</button>
       </template>
     </div>
@@ -52,19 +52,7 @@
       <AuditLogWindow />
     </div>
 
-    <div v-if="showAdd" class="modal-overlay" @click.self="showAdd=false">
-      <div class="modal">
-        <h3>{{ $t('logs.addTitle') }}</h3>
-        <div class="form">
-          <label>{{ $t('logs.nameLabel') }}</label><input v-model="addForm.name" />
-          <label>{{ $t('logs.pathLabel') }}</label><input v-model="addForm.path" placeholder="/var/log/xxx.log" />
-          <div class="actions">
-            <button class="btn" @click="showAdd=false">{{ $t('common.cancel') }}</button>
-            <button class="btn primary" @click="doAdd">{{ $t('common.save') }}</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- 添加日志源表单改由独立窗口承载（LogCollectFormWindow），避免点遮罩误关丢失输入 -->
 
     <!-- 高风险操作二次确认：清空日志需输入面板密码 -->
     <ConfirmDialog
@@ -83,7 +71,7 @@
 
 <script setup>
 // 响应式状态、计算属性与生命周期钩子
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 // 国际化
 import { useI18n } from 'vue-i18n'
 // 日志 API：list/read/clear/add
@@ -93,18 +81,24 @@ import ConfirmDialog from '../ConfirmDialog.vue'
 // 合并进来的子窗口：登录日志（/api/loginlog）与审计日志（/api/logs audit）的完整实现
 import LoginLogWindow from './LoginLogWindow.vue'
 import AuditLogWindow from './AuditLogWindow.vue'
+// 表单保存信号：独立「添加日志源」窗口保存成功后刷新本列表
+import { formBus } from '../../store/formBus'
 
 const { t } = useI18n()
+
+const emit = defineEmits(['openLogCollectForm'])   // 打开独立「添加日志源」窗口（source: 编辑对象或 null）
+
 const logs = ref([])         // 日志源列表（内置 + 自定义）
 const currentId = ref(null)  // 当前选中的日志源 id
 const current = ref(null)    // 当前选中的日志源对象
 const lines = ref([])        // 当前日志文件读出的内容行
-const showAdd = ref(false)   // 「添加日志源」弹窗显隐
-const addForm = ref({ name: '', path: '' })   // 新日志源表单（名称 + 路径）
 // 高风险操作二次确认状态
 const confirm = ref({ show: false, path: '' })
 // 视图模式：'logs' 系统日志 / 'login' 登录日志 / 'audit' 审计日志
 const mode = ref('logs')
+
+// 添加日志源改由独立窗口承载：保存成功后 bumpForm('logs') 触发此处重载
+watch(() => formBus.logs, refresh)
 
 // --- 动作：切换视图标签（系统/登录/审计） ---
 function switchMode(m) {
@@ -160,13 +154,6 @@ async function doClearLog() {
   await loadLog(path)
 }
 
-// --- 动作：添加自定义日志源并刷新列表 ---
-async function doAdd() {
-  await logsApi.add({ name: addForm.value.name, path: addForm.value.path })   // 调用 /api/logs/add
-  showAdd.value = false
-  await refresh()
-}
-
 onMounted(refresh)   // 打开即加载日志源列表
 </script>
 
@@ -195,11 +182,4 @@ onMounted(refresh)   // 打开即加载日志源列表
 .btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
 .btn.small { padding: 4px 8px; font-size: 12px; }
 .btn.primary { background: #111827; color: #fff; border-color: #111827; }
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; z-index: 2000; }
-.modal { background: #fff; border-radius: 12px; padding: 16px; width: 420px; max-width: 90vw; box-shadow: 0 10px 30px rgba(0,0,0,0.15); }
-.modal h3 { margin: 0 0 12px; font-size: 16px; }
-.form { display: flex; flex-direction: column; gap: 10px; }
-.form label { font-size: 12px; color: #374151; }
-.form input { padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
-.actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 </style>

@@ -1,0 +1,58 @@
+---
+# 「使用求助」Issue 模板
+# 面向安装、配置、使用过程中的疑问，引导提问者先自查文档与已有 Issue，并补充必要的环境信息。
+name: 使用求助
+description: 安装、配置或使用过程中的疑问
+title: "[Question] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢提问！提交前请先确认以下几点：
+        1. 已查阅 [文档中心](https://github.com/wuhulab/Graw/blob/main/docs/README.md) 与 [部署与运维文档](https://github.com/wuhulab/Graw/blob/main/docs/deployment.md)；
+        2. 已搜索 [已有 Issues](https://github.com/wuhulab/Graw/issues)（含已关闭）中没有相同问题；
+        3. 无法登录面板时，可先在服务器本地离线重置密码：`cd backend && python reset_password.py admin`；
+        4. 若能复现为缺陷，请改提 **Bug 反馈**；涉及安全漏洞请走 [私有漏洞报告](https://github.com/wuhulab/Graw/security/advisories/new)，勿公开张贴。
+  - type: textarea
+    id: question
+    attributes:
+      label: 你的问题
+      description: 描述你遇到的问题，或想实现的目标/效果
+      placeholder: 例如：想把子节点接入主面板，Agent 该如何部署与配置？
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: 已尝试的做法
+      description: 你已尝试的步骤、参考过的文档或执行过的命令，便于我们直接给出下一步建议
+  - type: input
+    id: version
+    attributes:
+      label: Graw 版本
+      description: 展示在「关于」或 `GET /api/health` 的版本号
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: 部署方式
+      multiple: false
+      options:
+        - Docker 容器（完整宿主机模式）
+        - 本地源码运行（python uvicorn + vite dev）
+        - 其它
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      description: 操作系统（含版本）、浏览器及版本、是否为多节点/子节点 Agent 场景
+      placeholder: 例如：Debian 12 / Chrome 120 / 单节点
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志与截图
+      description: 后端日志或界面截图（注意脱敏：去掉 token、密码等敏感信息）

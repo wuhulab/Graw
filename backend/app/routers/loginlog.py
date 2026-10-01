@@ -23,7 +23,6 @@ import logging
 import os
 import re
 import threading
-import time
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -248,7 +247,7 @@ def _notify_abnormal(entry: dict) -> None:
         sent, failed = push_all(message)
         if sent:
             logger.info(
-                "异常登录提醒已推送（user=%s, sent=%d）", entry["username"], sent
+                "异常登录提醒已推送（user=%s, sent=%d）", repr(entry["username"]), sent
             )
     except Exception as e:
         # 推送失败不影响登录主流程
@@ -317,7 +316,7 @@ async def update_config(req: ConfigRequest, _: dict = Depends(require_admin)):
     known = _load_known()
     known["_config"]["alert_enabled"] = req.alert_enabled
     _save_json(KNOWN_FILE, known)
-    logger.info("异常登录提醒开关已设置为 %s", req.alert_enabled)
+    logger.info("异常登录提醒开关已设置为: %s", "on" if req.alert_enabled else "off")
     return {"ok": True}
 
 
@@ -342,4 +341,5 @@ async def test_alert(request: Request, _: dict = Depends(require_admin)):
         return {"ok": True, "sent": sent, "failed": failed}
     except Exception as e:
         logger.warning("测试异常登录提醒推送失败: %s", e)
-        return {"ok": False, "sent": 0, "failed": 0, "error": str(e)}
+        # 安全：错误详情仅记日志，不回传（code-scanning py/stack-trace-exposure）
+        return {"ok": False, "sent": 0, "failed": 0, "error": "推送失败"}

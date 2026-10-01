@@ -17,7 +17,7 @@ import tempfile
 import shutil
 import time
 import unittest
-from unittest import mock
+import unittest.mock as mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

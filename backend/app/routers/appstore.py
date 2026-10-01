@@ -262,7 +262,9 @@ def _load_index(refresh: bool = False):
 
 @router.get("/index")
 async def get_index(refresh: bool = False):
-    source, data, _at, error = _load_index(refresh=refresh)
+    # _load_index 首次拉取远程索引会执行同步 urllib 网络请求（最长 30s），
+    # 放线程池避免卡事件循环（缓存命中时开销极小，包上无额外负担）
+    source, data, _at, error = await asyncio.to_thread(_load_index, refresh=refresh)
     store = data.get("store", {})
     apps = []
     for app in data.get("apps", []):
@@ -284,7 +286,11 @@ async def get_app_icon(app_id: str):
     """返回应用的官方图标（本地 app-store/apps/<id>/icon.png 或 icon.svg）。
 
     优先 PNG，其次 SVG；统一由本地静态服务提供，不依赖外部 CDN。
+    安全（code-scanning py/path-injection）：app_id 必须是普通标识符，
+    拒绝 / \\ .. 等字符，防止穿越读取任意目录文件。
     """
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._\\-]{0,63}", app_id or ""):
+        raise HTTPException(status_code=400, detail="非法应用 ID")
     safe = os.path.basename(app_id)
     app_dir = os.path.join(LOCAL_APPS_DIR, safe)
     for fname, mime in (("icon.png", "image/png"), ("icon.svg", "image/svg+xml")):
@@ -333,6 +339,11 @@ def _get_compose_text(app: dict) -> str:
 
 @router.get("/app/{app_id}/compose")
 async def get_app_compose(app_id: str):
+    # _get_compose_text 可能同步拉取远程 docker-compose.yml（最长 60s），放线程池
+    return await asyncio.to_thread(_get_app_compose_sync, app_id)
+
+
+def _get_app_compose_sync(app_id: str) -> dict:
     app = _find_app(app_id)
     try:
         compose = _get_compose_text(app)
@@ -361,11 +372,47 @@ def _parse_github_repo(source: str):
 
 @router.get("/app/{app_id}/readme")
 async def get_app_readme(app_id: str):
+    # GitHub API / raw 拉取为同步 urllib 网络请求（最长 30s），放线程池避免卡事件循环
+    return await asyncio.to_thread(_get_app_readme_sync, app_id)
+
+
+# README 内容大小上限（约 512KB）：GitHub 原始 README 远小于此。防止投毒的
+# 仓库返回超大内容，经 readme 接口原样回传前端造成内存/渲染 DoS（第十五轮
+# 审计加固，与 files.py 读取 2MB 上限同基线）。
+_README_MAX_BYTES = 512 * 1024
+
+
+def _read_readme_limited(resp, url: str) -> str:
+    """限长读取 README 响应体；超限抛 HTTPException(413) 中止拉取。
+
+    分块累计，超过上限即中断（先抛错后不再读，避免把超大响应整读进内存）。
+    """
+    chunks = []
+    total = 0
+    while True:
+        chunk = resp.read(65536)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > _README_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="README 过大，已中止拉取")
+        chunks.append(chunk)
+    return b"".join(chunks).decode("utf-8", "replace")
+
+
+def _get_app_readme_sync(app_id: str) -> dict:
     app = _find_app(app_id)
     repo = _parse_github_repo(app.get("source", ""))
     if not repo:
         raise HTTPException(status_code=400, detail="该应用未提供有效的 GitHub 开源社区地址")
     owner, name = repo
+    # 路径段白名单：owner/name 会拼入 GitHub API/raw URL 的路径，仅允许 GitHub
+    # 仓库名合法字符（字母/数字/._-），拒绝 ? # .. 等 URL 污染字符（第十五轮
+    # 审计加固，防 URL 语义被改写）。
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,99}", owner) or not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9_.-]{0,99}", name
+    ):
+        raise HTTPException(status_code=400, detail="仓库地址格式非法")
 
     content = None
     # 优先走 GitHub API（自动识别默认分支与 README 文件名）
@@ -378,7 +425,9 @@ async def get_app_readme(app_id: str):
             },
         )
         with urllib.request.urlopen(api_req, timeout=30) as resp:
-            content = resp.read().decode("utf-8", "replace")
+            content = _read_readme_limited(resp, api_req.full_url)
+    except HTTPException:
+        raise  # README 超限等业务校验异常原样上抛（413），不被降级为 502
     except Exception:
         content = None
 
@@ -389,8 +438,10 @@ async def get_app_readme(app_id: str):
             try:
                 raw_req = urllib.request.Request(url, headers={"User-Agent": "Graw-Panel/1.0"})
                 with urllib.request.urlopen(raw_req, timeout=30) as resp:
-                    content = resp.read().decode("utf-8", "replace")
+                    content = _read_readme_limited(resp, url)
                     break
+            except HTTPException:
+                raise  # README 超限：中止后续分支尝试，直接返回 413
             except Exception:
                 continue
 
@@ -762,6 +813,7 @@ def _run_compose_stream(prefix: list, compose_path: str, args: list, emit, timeo
         try:
             proc.kill()
         except Exception:
+            # 终止超时进程失败（已退出）时忽略
             pass
         raise HTTPException(status_code=504, detail="docker compose 执行超时（可能仍在拉取镜像）")
     return rc, "\n".join(lines)
@@ -807,6 +859,7 @@ def _verify_compose_containers(prefix: list, app_name: str, container_name: str)
             try:
                 containers.append(json.loads(line))
             except Exception:
+                # 单行容器信息解析失败时跳过该行
                 pass
 
     targets = {container_name} if container_name else set()

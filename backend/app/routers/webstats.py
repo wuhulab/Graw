@@ -16,6 +16,7 @@ webstats.py - 网站访问统计
   4. 全部读取操作只读、不落盘，超限时返回部分数据并提示已截断。
 """
 import os
+import asyncio
 import re
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
@@ -292,7 +293,8 @@ def _aggregate(
 @router.get("/logs")
 async def list_logs():
     """返回可用的访问日志路径（供前端选择）。"""
-    found = _discover_logs()
+    # glob 展开 + 远端 isfile 探测为阻塞 IO，放线程池避免卡事件循环
+    found = await asyncio.to_thread(_discover_logs)
     return {"logs": [unhost_path(p) for p in found]}
 
 
@@ -306,7 +308,12 @@ async def analyze(
 
     - 未指定 log_path 时自动探测常见路径；找不到则 400。
     - 日志超大会自动只取尾部并截断（部分统计）。
+    - 日志发现 / 大文件读取 / 逐行正则统计均为阻塞 CPU/IO，放线程池执行。
     """
+    return await asyncio.to_thread(_analyze_sync, log_path, days, domain)
+
+
+def _analyze_sync(log_path: str, days: int, domain: str) -> dict:
     # 校验输入：绝对路径 + 禁止 .. 穿越 + 禁止 data 目录（安全修复）
     if log_path:
         norm = _reject_forbidden_log_path(log_path)

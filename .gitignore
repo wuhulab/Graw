@@ -42,8 +42,8 @@ outputs/
 agent/
 WorkBuddy/
 skills-lock.json
-GETMEREAD/
 tmp_audit/
+.mimosa/
 
 
 # Other projects

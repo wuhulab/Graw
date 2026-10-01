@@ -194,6 +194,7 @@ async def delete_cert(cert_id: str):
             try:
                 os.remove(real)
             except Exception:
+                # 删除证书文件失败（被占用/不存在）时忽略
                 pass
     certs = [c for c in certs if c["id"] != cert_id]
     _save_certs(certs)

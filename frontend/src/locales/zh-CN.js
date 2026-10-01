@@ -205,6 +205,13 @@ export default {
     disabled: '已停用',
     online: '运行中',
     offline: '离线',
+    maintTitle: '维护模式：{name}',
+    maintEnabled: '维护中（对外展示维护页，其余请求 503）',
+    maintDisabled: '正常运行',
+    maintHtmlHint: '自定义维护页 HTML（留空则用默认页；退出维护后自动清理维护页文件）',
+    enterMaintenance: '进入维护模式',
+    exitMaintenance: '退出维护模式',
+    maintaining: '维护中',
     noSites: '暂无站点',
     selectType: '选择站点类型',
     static: '静态网址',
@@ -583,6 +590,56 @@ export default {
     saveFailed: '保存失败：{error}',
     daysInvalid: '保留天数需为 1-365 的整数',
   },
+  // 标准面板模式（1Panel 式侧边栏布局）界面文案
+  panel: {
+    home: '主页',
+    toggleSidebar: '收起 / 展开侧边栏',
+    searchPlaceholder: '搜索应用…',
+    closeTab: '关闭',
+    emptyHint: '从左侧选择功能',
+    emptySub: '在侧边栏菜单中打开一个应用',
+    switchHost: '切换主机',       // 顶栏主机切换下拉标题
+    noNodes: '暂无 SSH 节点',     // 未配置任何子节点时的占位文案
+    menu: {
+      monitor: '概览监控',
+      site: '网站',
+      database: '数据库',
+      container: '容器',
+      file: '文件',
+      network: '网络',
+      security: '安全',
+      task: '任务',
+      store: '商店',
+      system: '系统',
+    },
+  },
+  // 桌面快捷方式（隐藏/固定到任务栏）
+  desktop: {
+    title: '桌面应用',
+    titleHint: '在桌面右键应用可以选择隐藏或固定到任务栏。此处可恢复隐藏的应用，或取消任务栏固定。',
+    perUser: '仅当前用户生效',
+    perUserHint: '开启后，隐藏 / 固定只对当前登录账号生效；关闭则为所有账号共享',
+    hiddenSection: '已隐藏的应用',
+    pinnedSection: '已固定到任务栏',
+    restore: '恢复显示',
+    unpin: '取消固定',
+    empty: '暂无隐藏或固定的应用',
+    hideShortcut: '隐藏',
+    pinShortcut: '固定到任务栏',
+    unpinShortcut: '取消固定',
+  },
+  // 应用接口开放协议（GPOP）：插件功能总开关
+  plugins: {
+    title: '插件',
+    titleHint: '启用后支持以插件形式安装第三方应用，并通过开放接口与面板交互',
+    enable: '启用插件',
+    enabled: '已启用',
+    disabled: '已禁用',
+    enabledHint: '插件功能已启用：面板启动时加载插件路由与开放接口',
+    disabledHint: '插件功能已禁用：面板不会加载插件相关代码与接口',
+    needRestart: '已保存。插件开关将在面板重启后完全生效',
+    saveFailed: '保存失败：{error}',
+  },
   // 进程管理
   process: {
     title: '进程管理',
@@ -637,6 +694,139 @@ export default {
     mountFailedFallback: '挂载失败，请重试',
     mountFailed: '挂载失败：{error}',
   },
+  // MySQL 慢查询分析
+  slowq: {
+    selectConn: '选择数据库连接',
+    scan: '分析慢查询',
+    hint: '仅支持当前管理节点本机的 MySQL/MariaDB',
+    time: '时间',
+    queryTime: '耗时',
+    sent: '返回行',
+    examined: '扫描行',
+    user: '用户',
+    sql: 'SQL',
+    empty: '选择连接后点击「分析」查看 TOP N 慢查询',
+  },
+  // 镜像漏洞扫描
+  imgscan: {
+    tabScan: '扫描镜像',
+    tabAdvisory: '漏洞库',
+    scan: '开始扫描',
+    selectContainer: '选择本地容器…',
+    noContainers: '暂无本地容器（Docker 引擎未运行或无容器）',
+    loadContainersFailed: '加载容器列表失败：{error}',
+    pkgCount: '检测包数',
+    findingCount: '命中 {n} 个',
+    cached: '命中缓存',
+    severity: '级别',
+    cve: 'CVE',
+    pkg: '软件包',
+    pkgVersion: '已装版本',
+    desc: '说明',
+    constraint: '约束',
+    noFindings: '未命中任何已知漏洞（或漏洞库为空，请先导入 advisory）',
+    import: '导入漏洞库',
+    advisoryCount: '漏洞库共 {n} 条规则',
+    advEmpty: '暂无规则，粘贴 JSON 导入',
+    jsonInvalid: 'JSON 格式非法（须为对象数组）',
+    importOk: '已导入 {n} 条（共 {total} 条）',
+  },
+  // SSH 端口转发
+  pf: {
+    create: '新建转发',
+    empty: '还没有转发规则。把远程节点的数据库/Redis 端口映射到本地，本地工具即可直连',
+    localHint: '监听 127.0.0.1，仅本机可访问',
+    name: '名称',
+    node: '目标节点',
+    localPort: '本地端口',
+    remoteHost: '远程地址',
+    remotePort: '远程端口',
+    running: '运行中',
+    stopped: '已停止',
+    start: '启动',
+    stop: '停止',
+    conns: '连接数',
+    traffic: '流量',
+    needPorts: '请填写本地端口与远程端口',
+    deleteConfirm: '确定删除该转发并从本地释放端口吗？',
+  },
+  // 巡检报告
+  report: {
+    generate: '立即生成并推送',
+    dailyHint: '每天 08:00 自动生成并推送通知',
+    empty: '暂无报告',
+    selectHint: '选择左侧报告查看全文',
+  },
+  // 站点 Git 自动部署
+  gitdeploy: {
+    create: '新建部署',
+    edit: '编辑部署',
+    count: '共 {count} 个部署',
+    empty: '还没有部署任务，点击「新建部署」为站点绑定 Git 仓库',
+    name: '名称',
+    site: '站点',
+    repoUrl: '仓库地址',
+    branch: '分支',
+    auth: '认证方式',
+    namePlaceholder: '如: my-site-deploy',
+    lastFail: '上次部署失败',
+    authNone: '无需认证',
+    authToken: 'Token 令牌',
+    authSsh: 'SSH 密钥（预置）',
+    token: '访问令牌',
+    tokenPlaceholder: '留空表示清空（仅保存时需要）',
+    sshHint: '使用目标机已有 SSH 密钥访问私有仓库',
+    deployDir: '部署目录',
+    deployDirPlaceholder: '默认=站点根目录，可自定义绝对路径',
+    node: '部署节点',
+    notify: '部署完成后推送通知',
+    trigger: '手动部署',
+    triggerConfirm: '确定立即部署「{name}」吗？',
+    triggerOk: '部署已执行，详情见任务中心',
+    triggerFail: '部署失败：{error}',
+    copyWebhook: '复制 URL',
+    webhookUrl: 'Webhook 地址（请在 Git 平台配置）',
+    webhookMissingSecret: '已复制 Webhook URL（无 secret）。Git 平台需用 HMAC 签名或「地址?secret=密钥」方式调用；密钥仅在创建/重置后展示一次。',
+    lastRun: '最近',
+    deleteConfirm: '确定删除部署「{name}」吗？',
+    needName: '请填写名称',
+    needRepo: '请填写仓库地址',
+    st: { idle: '待命', running: '部署中', success: '成功', failed: '失败' },
+  },
+  // 批量操作中心
+  batch: {
+    tabCmd: '批量命令',
+    tabContainers: '批量容器',
+    targetNodes: '目标节点',
+    cmdPlaceholder: '输入要在所选节点执行的命令，如：systemctl restart nginx',
+    keywordPlaceholder: '容器名包含（可空）',
+    start: '启动',
+    stop: '停止',
+    restart: '重启',
+    execute: '执行',
+    running: '执行中',
+    noResult: '选择节点并输入内容后点击「执行」',
+    needNodes: '请至少勾选一个节点',
+    needCommand: '请输入要执行的命令',
+    noContainer: '无匹配容器',
+  },
+  // 配置回滚
+  rollback: {
+    title: '配置回滚',
+    kindLabel: '类型',
+    kindAll: '全部',
+    kind: { site: '站点', firewall: '防火墙' },
+    count: '共 {count} 条快照',
+    noSnapshots: '暂无快照（修改站点配置或防火墙规则后会自动生成）',
+    selectHint: '选择左侧快照查看详情',
+    restore: '恢复此版本',
+    delete: '删除快照',
+    restoreConfirm: '确定恢复为该版本吗？当前文件内容将被覆盖。',
+    restoreOk: '已恢复，配置已重新加载',
+    deleteConfirm: '确定删除此快照吗？',
+    meta: { when: '时间', target: '目标', user: '操作人', route: '来源', bytes: '大小' },
+    preview: '内容预览',
+  },
   // 终端
   terminal: {
     title: '终端',
@@ -656,6 +846,11 @@ export default {
     mouseOnHint: '点击关闭鼠标模式',
     mouseOffHint: '点击启用鼠标模式，支持 TUI（vim/tmux/ranger 等）点击交互',
     mouseUnsupported: '当前系统不支持 TUI 鼠标点击（Windows 10 的 ConPTY 限制）',
+    persistTerminal: '保留持久化终端',
+    persistHint: '勾选后终端进程常驻后端：刷新面板或重开窗口会接回同一会话，适合长时间运行的任务；取消勾选将结束该常驻会话',
+    persistActive: '持久终端已接入',
+    copy: '复制',
+    paste: '粘贴',
   },
   // Graw数据库保护机制
   protection: {
@@ -1052,6 +1247,70 @@ export default {
     disclaimerScrollHint: '（请滚动到最底部以勾选）',
     close: '拒绝并关闭',
     enter: '进入应用商店',
+    // 免责声明全文（1.1.0）：属「以中文为准」的法律文本，其余语种未提供时
+    // 由 vue-i18n 回退到本字段原样展示，避免机械翻译造成法律风险。
+    disclaimerText: `前言
+
+Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队发起，由全球多国开源社区共同维护的去中心化应用索引平台。本商店致力于为开发者提供透明、安全、便捷的应用部署体验。在使用本商店服务前，请您仔细阅读以下免责条款。您对本商店的访问、浏览或使用，即视为您已阅读、理解并同意接受本声明的所有条款。
+
+一、隐私保护承诺
+
+1. 零数据采集：Graw 社区应用商店不会以任何形式采集、存储、上传或转交您的个人隐私数据（包括但不限于 IP 地址、设备信息、浏览记录、地理位置、联系方式等）。您无需担忧隐私泄露风险，本商店完全不需要独立的隐私政策，因为根本没有数据值得被保护。
+2. 匿名化运行：您与商店之间的交互（如浏览应用列表、查看详情）均以匿名方式进行，不生成任何用户画像或行为追踪记录。
+3. 第三方服务说明：若您通过本商店安装的应用（如 WordPress、Nextcloud 等）自身包含数据收集行为，该行为与本商店无关，您应参考该应用自身的隐私政策。
+
+二、平台性质声明
+
+1. 去中心化开源社区：本商店是一个多元化、去中心化的开源社区项目，由全球开发者志愿者共同维护。所有应用元数据（包括 docker-compose.yml、data.yml、README.md 等）均托管于公开的 Git 仓库（如 GitHub），并由社区成员通过 Pull Request 方式贡献。
+2. 索引性质：本商店仅为索引服务提供方，并不实际存储、托管或分发任何应用软件本身。所有应用的实际文件来源为第三方仓库（如 Docker Hub、GitHub Releases 等），本商店仅提供指向这些资源的元数据链接。
+3. 多源支持：本商店允许用户自由添加、切换或移除任何第三方应用源（包括但不限于自建源、社区源、组织源），用户对选择信任的源及其内容负全部责任。本商店不对任何第三方源的可用性、安全性或内容合法性作任何担保。
+4. 非隶属关系：本商店与应用作者、第三方仓库及镜像源之间不存在任何隶属、代理或合作关系。应用作者独立对其作品负责。
+
+三、用户责任与合规性
+
+1. 法律合规自查：本商店的应用列表来源于全球多国开源社区，其中部分应用可能涉及特定国家/地区的技术出口管制、数据合规或内容审查相关规定。您应在安装或使用任何应用前，自行查阅并遵守您所在国家/地区的所有适用法律法规、进出口管制条例及行业规范。
+2. 责任独立性：您通过本商店安装、配置或使用任何应用所产生的一切后果（包括但不限于数据丢失、服务中断、法律纠纷、行政处罚、刑事责任等）均由您独立承担。Graw 社区应用商店不对您的任何行为或后果承担任何形式的责任。
+3. 应用质量声明：本商店不对应用列表中的任何软件做明示或暗示的担保，包括但不限于适销性、特定用途适用性、安全性、稳定性、无病毒及无侵权等。您应自行评估应用的质量和安全性。
+4. 推荐与背书：本商店内任何应用的显示顺序、标签（如"精选"或"官方"）均不代表 Graw 社区对其的认可或背书。此类标签仅用于提升浏览体验，不构成任何法律意义上的推荐。
+
+四、内容管理与下架规则
+
+1. 国际法违规处理：本商店遵循严重国际法违规的下架原则，仅在以下情形下对应用索引进行下架处理：
+   · 应用内容违反联合国宪章及公认的国际人道主义基本准则
+   · 应用涉及全球公认的严重违法犯罪行为（如人口贩卖、恐怖主义融资等）
+   · 受到具有明确国际法依据的官方制裁或禁令
+2. 不可抗力处理：因下列不可抗力因素，本商店可能对某些应用进行临时或永久下架：
+   · GitHub Pages、Docker Hub 等第三方服务中断或终止服务
+   · 应用作者主动要求下架或其仓库被删除
+   · 社区维护团队因技术原因无法继续维护相关索引
+3. 国家法律例外声明：本商店不依照特定国家的法律进行单独管理，亦不承担主动审查或屏蔽特定国家/地区法律所禁止内容的责任。用户应自行遵守其所在地法律，若某项应用在您所在地区违法，您应主动避免安装和使用该应用。
+4. 社区自治原则：应用列表的增删改由社区成员通过 PR 形式共同决策，Graw 社区保留因上述国际法或不可抗力因素进行紧急下架的权利，但不对下架决策的及时性、全面性承担保证责任。
+
+五、知识产权与内容责任
+
+1. 第三方版权：本商店中收录的应用图标、名称、标识、界面设计等，均属于其各自权利人的合法财产。本商店仅以技术中立原则进行索引，不对第三方知识产权侵权承担责任。
+2. 社区内容：用户通过 GitHub Pull Request 方式提交的应用元数据或文档，其内容由提交者独立负责。Graw 社区保留对明显违反国际法或公序良俗的内容进行下架处理的权利，但不对社区成员提交内容的准确性、合法性及完整性承担主动审查义务。
+3. 侵权投诉：若您认为本商店索引的内容侵犯了您的合法权益，请通过 GitHub Issue 或邮件方式联系社区维护团队，我们将在合理时间内进行审查并采取必要措施（如移除相关索引）。
+
+六、Graw 的有限责任
+
+1. 不可抗力免责：因下列原因导致本商店服务中断或无法访问的，Graw 社区不承担责任：
+   · GitHub Pages、Docker Hub 等第三方服务故障
+   · 自然灾害、战争、网络攻击、政府行为等不可抗力因素
+   · 互联网基础设施故障或网络传输延迟
+2. 无服务级别承诺：本商店以"现状"（AS IS）形式提供，不承诺任何形式的服务可用性、稳定性或连续性。Graw 社区没有义务确保商店服务的 24/7 不间断运行。
+3. 赔偿上限：在任何情况下，Graw 社区及其成员不负任何相关责任。
+
+七、其他条款
+
+1. 变更权：Graw 社区保留随时修改本声明的权利。重大变更（如涉及用户责任或隐私保护）将通过 GitHub 仓库的公告栏或 Release 说明进行通知。变更生效后继续使用本商店即视为接受新声明。
+2. 可分割性：若本声明的任何条款被有管辖权的法院认定为无效或不可执行，不影响其他条款的效力。
+3. 语言效力：本声明以中文版本为准，翻译版本，仅供参考。
+4. 联系我们：若有任何疑问，请通过 ShunX 公益母团队的 GitHub 仓库提交 Issue，或发送邮件至 s@shunx.top。
+
+本声明的最终解释权归 Graw 社区及 ShunX 公益母团队所有。
+
+文档版本：1.1.0 | 更新日期：2026年8月16日`,
   },
   // 应用安装
   appinstall: {
@@ -1354,6 +1613,9 @@ export default {
   settings: {
     title: '账号',
     openUsers: '打开账号管理',
+    uiSettingsTitle: '界面设置',
+    uiSettingsHint: '自定义登录页、桌面与底栏观感：网站名、欢迎语、Logo、动态壁纸、环形统计图配色、桌面应用文字等。',
+    openUiSettings: '打开界面设置',
     shunxTitle: 'ShunX 安全入口',
     shunxPlaceholder: '例如 shunx-8f3k2q7m（留空保存则清除）',
     shunxNotSet: '未设置安全入口（当前允许直接登录）',
@@ -1371,7 +1633,30 @@ export default {
     showTaskbarText: '底栏显示详细文字',
     taskbarTextOnly: '底栏只显示文字（隐藏图标）',
     hideFoxcode: '隐藏 Foxcode 快捷方式',
+    desktopPreload: '类桌面模式预加载应用',
+    desktopPreloadHint: '进入面板、数据加载完成后，在空闲时段分批预取全部应用代码，之后打开任意应用都能瞬时呈现；关闭可减少后台流量。仅类桌面模式生效（标准面板模式不预加载），本机偏好，即改即存。',
+    shortcutFontSize: '桌面应用文字大小',
+    shortcutFontSizeHint: '桌面图标下方文字的字号（8-24px），即改即存。',
+    shortcutLabelColor: '桌面应用文字颜色',
+    shortcutLabelStroke: '桌面应用文字添加黑边',
+    shortcutLabelStrokeHint: '开启后文字带黑色描边，在浅色壁纸上更清晰。',
+    // 标准面板模式（1Panel 式侧边栏布局）
+    panelModeTitle: '标准面板模式',
+    panelModeHint: '启用后界面切换为 1Panel 式侧边栏布局，替代桌面/窗口系统，即改即生效。',
+    panelMode: '启用面板模式',
+    panelModeOn: '已启用',
+    panelModeOff: '未启用',
+    panelTabs: '面板模式使用标签页缓存',
+    panelTabsHint: '开启后打开过的应用以标签页保留状态（切回不丢内容）；关闭则为单页切换。',
     language: '界面语言',
+    // 语言括号提示：控制古代语言语言包「(中文原文/拉丁转写)」尾注的显示
+    bracketTitle: '语言括号提示',
+    bracketEnabled: '显示括号注释',
+    bracketLang: '括号内语言',
+    bracketLangBoth: '中文 + 转写',
+    bracketLangZh: '仅中文',
+    bracketLangLatin: '仅转写',
+    bracketHint: '古代语言（古埃及语、苏美尔语、阿卡德语等）的文案写作「本语言书写 (中文原文/拉丁转写)」。可在此关闭括号注释，或让它只显示其中一种。',
     // Web 服务器引擎（NGINX / OpenResty）
     webmode: {
       title: 'Web 服务器引擎',
@@ -1531,34 +1816,6 @@ export default {
     deleteFailed: '删除失败：{error}',
     loadFailed: '加载节点失败：{error}',
   },
-  // 付费功能解锁（VIP / 月卡 / 年卡）
-  vip: {
-    title: '付费功能解锁',
-    status: '当前状态',
-    active: '已解锁',
-    inactive: '未解锁',
-    plan: '套餐',
-    month: '月卡',
-    year: '年卡',
-    expire: '有效期至',
-    inactiveHint: '付费功能未解锁。输入授权码可开通（月卡 1 个月 / 年卡 1 年），开通后可解锁「统一面板兼容」等付费选项。',
-    codeLabel: '授权码',
-    codePlaceholder: '输入授权码，如 GRAW-MONTH-XXXX',
-    activate: '激活授权码',
-    activating: '激活中…',
-    activateSuccess: '激活成功，付费功能已解锁！',
-    activateFailed: '激活失败',
-    codeRequired: '请输入授权码',
-    purchase: '购买授权码',
-    purchaseHint: '还没有授权码？点击前往购买：',
-    paid: '付费解锁',
-    unlock: '解锁',
-    lockedHint: '该选项为付费功能，开通 VIP 后即可解锁使用。',
-    renew: '续费月卡',
-    renewHint: '输入授权码可开通或续费付费功能（授权码服务地址由后端固定，不可在此修改）。',
-    activeDays: '{plan}生效中：{days}天',
-    gateMsg: '该功能为付费功能，请先开通/续费 VIP 后再使用。',
-  },
   // 「作为子节点」Agent 收取模式（设置界面）
   agent: {
     title: '作为子节点',
@@ -1590,7 +1847,7 @@ export default {
     secretShownOnce: '校验 secret 已显示（仅本次可见，复制后请妥善保存）',
     secretAlreadyShown: '校验 secret 已展示过；如需再次查看，请点击「生成随机 key/secret」重置后重新保存',
   },
-  // ShunX 保护机制（聚合：防火墙 / 应用防火墙 / 网页防篡改 / 数据库保护）
+  // ShunX 保护机制（聚合：防火墙 / 应用防火墙 / 网页防篡改 / 数据库保护 / 系统体检 / 面板备份）
   shunx: {
     modeFirewall: '防火墙',
     modeWaf: '应用防火墙',
@@ -1599,6 +1856,8 @@ export default {
     modeBackup: '备份中心',
     modeNotify: '通知中心',
     modeSshkeys: 'SSH密钥',
+    modeHealthcheck: '系统体检',
+    modePanelbackup: '面板备份',
   },
   // 监控（聚合：站点监控 / 服务监控）
   monitoring: {
@@ -1645,6 +1904,8 @@ export default {
     ringColorHint: '系统概览四个环形图使用的统一主色，所有用户桌面共享生效。',
     ringAlarm: '使用率超过 90% 时该环形图变红告警',
     ringColorInvalid: '颜色需为 #RRGGBB 格式（如 #409eff）',
+    overviewDecimals: '系统概览显示到后两位',
+    overviewDecimalsHint: '开启后环形统计中心的百分比保留两位小数（如 31.25%），关闭则取整（31%）；本机偏好，即改即存。',
     personalOnly: '仅用于这个账号',
     personalOnlyHint: '勾选后该项只对当前账号生效；不勾选则写入全局，其它账号共用。',
     saved: '界面设置已保存',
@@ -1706,13 +1967,19 @@ export default {
       update: '系统更新',
       sessions: '会话管理',
       phpversions: 'PHP版本',
+      rollback: '配置回滚',
+      batch: '批量操作',
+      gitdeploy: 'Git 部署',
+      report: '巡检报告',
+      portforward: '端口转发',
+      imgsafety: '镜像扫描',
+      slowquery: '慢查询分析',
     },
     // 窗口标题
     winTitle: {
       users: '账号管理',
       changepwd: '修改密码',
       settings: '设置',
-      vip: 'VIP',
       files: '文件管理',
       editor: '编辑: {name}',
       netstorageBrowse: '文件管理：{name}',

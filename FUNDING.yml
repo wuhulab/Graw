@@ -1,0 +1,4 @@
+# GitHub 赞助按钮配置（仓库首页右上角 Sponsor 按钮）
+# 说明：放在仓库根目录（与 GitHub 上正常显示赞助按钮的同类项目一致）；仅保留爱发电链接。
+# 若需追加链接：custom 最多 4 条，修改后提交到默认分支，等待几分钟生效。
+custom: ["https://afdian.com/a/shunianssy"]

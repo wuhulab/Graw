@@ -30,7 +30,6 @@ import re
 import shlex
 import shutil
 import threading
-import uuid
 from datetime import datetime, timedelta
 from typing import List, Optional
 
@@ -747,6 +746,7 @@ def _map_docker_container_sync(name: str) -> dict:
             try:
                 cli_run(["volume", "rm", "-f", vol], 30)
             except Exception:
+                # 删除新卷失败时忽略，避免掩盖主错误
                 pass
             raise
 
@@ -791,6 +791,7 @@ def _map_docker_container_sync(name: str) -> dict:
         # 回滚：尽力把原容器重新启动，避免服务不可用
         try:
             cli_run(["start", cid], 60)
+        # 回滚拉起原容器失败时忽略，避免掩盖主错误
         except Exception:
             pass
         logger.error("一键映射容器 %s 失败: %s", cname, e)
@@ -820,6 +821,7 @@ def _dir_size(real_path: str, cap_entries: int = 5000) -> Optional[int]:
                 try:
                     total += os.path.getsize(os.path.join(root, fn))
                 except OSError:
+                    # 文件已删除导致统计失败时忽略
                     pass
                 count += 1
                 if count > cap_entries:
@@ -1103,7 +1105,7 @@ async def add_db_backup(req: BackupRequest):
         }
     )
     _save_protection(data)
-    logger.info("已将数据库路径加入自动备份：%s（任务：%s）", path, name)
+    logger.info("已将数据库路径加入自动备份：%s（任务：%s）", repr(path), repr(name))
     return {"ok": True, "already": False, "path": path, "task": task}
 
 
@@ -1158,9 +1160,11 @@ async def batch_add_backup(req: BatchBackupRequest):
             )
             _save_protection(data)
             results.append({"path": path, "ok": True, "already": False, "task_id": task.get("id", "")})
-        except Exception as e:
-            logger.error("批量备份中创建 %s 失败: %s", path, e)
-            results.append({"path": path, "ok": False, "error": str(e)})
+        except Exception:
+            # 安全：日志仅记录异常类型与堆栈，不拼接用户可控的 path/e 文本
+            #（code-scanning py/log-injection），避免日志注入
+            logger.error("批量备份中创建备份项失败（%s）", type(e).__name__, exc_info=True)
+            results.append({"path": path, "ok": False, "error": "加入备份失败"})
     logger.info("批量加入备份完成：%s 项", len(results))
     return {"results": results}
 
@@ -1185,7 +1189,7 @@ async def ignore_item(req: IgnoreRequest):
             if req.name:
                 item["name"] = req.name
             _save_protection(data)
-            logger.warning("用户%s忽略了保护警告：kind=%s key=%s", "永久" if permanent else "暂时", req.kind, key)
+            logger.warning("用户%s忽略了保护警告：kind_len=%s key_len=%s", "永久" if permanent else "暂时", len(req.kind), len(key))
             return {"ok": True, "already": True, "permanent": permanent}
     data.setdefault("ignored", []).append(
         {
@@ -1197,7 +1201,7 @@ async def ignore_item(req: IgnoreRequest):
         }
     )
     _save_protection(data)
-    logger.warning("用户%s忽略了保护警告：kind=%s key=%s", "永久" if permanent else "暂时", req.kind, key)
+    logger.warning("用户%s忽略了保护警告：kind_len=%s key_len=%s", "永久" if permanent else "暂时", len(req.kind), len(key))
     return {"ok": True, "already": False, "permanent": permanent}
 
 
@@ -1212,7 +1216,7 @@ async def unignore_item(req: UnignoreRequest):
     ]
     if len(data["ignored"]) != before:
         _save_protection(data)
-        logger.info("已恢复保护提醒：kind=%s key=%s", req.kind, req.key)
+        logger.info("已恢复保护提醒：kind=%s key=%s", repr(req.kind), repr(req.key))
     return {"ok": True}
 
 

@@ -15,7 +15,7 @@ from __future__ import annotations
 import ctypes
 import msvcrt
 import os
-from ctypes import wintypes
+import ctypes.wintypes as wintypes
 
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
@@ -345,11 +345,13 @@ class ConPTY:
             try:
                 kernel32.ClosePseudoConsole(self._hpc)
             except Exception:
+                # 释放伪控制台句柄失败时忽略
                 pass
             self._hpc = 0
         if self._out_read_fd != -1:
             try:
                 os.close(self._out_read_fd)
+            # 管道读端可能已关闭，关闭失败忽略
             except OSError:
                 pass
             self._out_read_fd = -1
@@ -363,12 +365,14 @@ class ConPTY:
             alist = self._attr_list
             try:
                 kernel32.DeleteProcThreadAttributeList(alist)
+            # 属性列表可能已被释放，释放失败忽略
             except Exception:
                 pass
             if self._heap:
                 try:
                     kernel32.HeapFree(self._heap, 0, alist)
                 except Exception:
+                    # 释放堆内存失败时忽略
                     pass
             self._attr_list = 0
         if self._h_thread:
@@ -386,5 +390,6 @@ class ConPTY:
                 kernel32.TerminateProcess(self._h_process, 0)
                 kernel32.WaitForSingleObject(self._h_process, 2000)
             except Exception:
+                # 终止子进程失败（已退出）时忽略，进入清理流程
                 pass
         self._teardown()

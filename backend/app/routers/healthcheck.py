@@ -15,9 +15,9 @@ healthcheck.py - 一键系统体检路由
   - 输出统一结构：{ score, summary, items: [{level, title, detail, advice}] }
   - 前端 HealthCheckWindow.vue 渲染报告并按 level 分级着色。
 """
-import json
 import logging
 import os
+import asyncio
 import platform
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -305,7 +305,15 @@ def _scan_panel_config() -> list:
 # ---------------------------------------------------------------------------
 @router.get("/run")
 async def run_check():
-    """执行一键体检，返回分级报告。"""
+    """执行一键体检，返回分级报告。
+
+    各 _scan_* 包含 subprocess / 文件 IO / bcrypt 计算，放线程池避免卡事件循环。
+    """
+    return await asyncio.to_thread(_run_check_sync)
+
+
+def _run_check_sync() -> dict:
+    """执行体检（线程池内运行），返回分级报告。"""
     try:
         items = []
         items += _scan_weak_passwords()
