@@ -58,6 +58,9 @@ export default {
   settings: {
     title: 'Account',
     openUsers: 'Open Account Management',
+    uiSettingsTitle: 'UI Settings',
+    uiSettingsHint: 'Customize the login page and desktop appearance: site name, welcome text, logo, dynamic wallpaper, ring chart colors, etc.',
+    openUiSettings: 'Open UI Settings',
     shunxTitle: 'ShunX Secure Entry',
     shunxPlaceholder: 'e.g. shunx-8f3k2q7m (leave empty to clear)',
     shunxNotSet: 'Secure entry not set (direct login currently allowed)',
@@ -76,6 +79,14 @@ export default {
     taskbarTextOnly: 'Taskbar text only (hide icons)',
     hideFoxcode: 'Hide Foxcode shortcut',
     language: 'Language',
+    // 语言括号提示：控制古代语言语言包「(中文原文/拉丁转写)」尾注的显示
+    bracketTitle: 'Bracket annotations',
+    bracketEnabled: 'Show bracket annotations',
+    bracketLang: 'Language in brackets',
+    bracketLangBoth: 'Chinese + transliteration',
+    bracketLangZh: 'Chinese only',
+    bracketLangLatin: 'Transliteration only',
+    bracketHint: 'Texts in ancient languages (Ancient Egyptian, Sumerian, Akkadian, etc.) are written as "this language (Chinese original / Latin transliteration)". You can turn bracket annotations off here, or make them show only one of the two.',
     // Web server engine (NGINX / OpenResty)
     webmode: {
       title: 'Web Server Engine',
@@ -116,6 +127,19 @@ export default {
       updateStarted: 'Update started. The panel will rebuild automatically; please refresh shortly.',
       updateFailed: 'Update failed',
     },
+    shortcutFontSize: 'Desktop app text size',
+    shortcutFontSizeHint: 'Font size of the text below desktop icons (8-24px). Saved immediately.',
+    shortcutLabelColor: 'Desktop app text color',
+    shortcutLabelStroke: 'Add black outline to desktop app text',
+    shortcutLabelStrokeHint: 'When enabled, the text gets a black outline, making it clearer on light wallpapers.',
+    // Standard panel mode (1Panel-style sidebar layout)
+    panelModeTitle: 'Panel Mode',
+    panelModeHint: 'Switch the interface to a 1Panel-style sidebar layout instead of the desktop/window system. Applies immediately.',
+    panelMode: 'Enable panel mode',
+    panelModeOn: 'Enabled',
+    panelModeOff: 'Disabled',
+    panelTabs: 'Use tab caching in panel mode',
+    panelTabsHint: 'When enabled, opened apps are kept as tabs (state preserved when switching back); when disabled, pages switch without caching.',
   },
   nodes: {
     title: 'Multi-server',
@@ -180,34 +204,6 @@ export default {
     deleteFailed: 'Delete failed: {error}',
     loadFailed: 'Failed to load nodes: {error}',
   },
-  // Paid feature unlock (VIP / monthly / yearly card)
-  vip: {
-    title: 'Paid Feature Unlock',
-    status: 'Status',
-    active: 'Unlocked',
-    inactive: 'Locked',
-    plan: 'Plan',
-    month: 'Monthly card',
-    year: 'Yearly card',
-    expire: 'Valid until',
-    inactiveHint: 'Paid features are not unlocked. Enter a license code to activate (monthly card: 1 month / yearly card: 1 year); once unlocked, paid options like "Unified panel" become available.',
-    codeLabel: 'License code',
-    codePlaceholder: 'Enter license code, e.g. GRAW-MONTH-XXXX',
-    activate: 'Activate',
-    activating: 'Activating…',
-    activateSuccess: 'Activated! Paid features unlocked.',
-    activateFailed: 'Activation failed',
-    codeRequired: 'Please enter a license code',
-    purchase: 'Buy a license code',
-    purchaseHint: "Don't have a code yet? Click to buy:",
-    paid: 'Paid unlock',
-    unlock: 'Unlock',
-    lockedHint: 'This is a paid feature; unlock it by activating VIP.',
-    renew: 'Renew monthly card',
-    renewHint: 'Enter a license code to activate or renew paid features (license server URL is fixed on the backend and cannot be changed here).',
-    activeDays: '{plan} active · {days} day(s) left',
-    gateMsg: 'This is a paid feature. Please activate/renew your VIP to continue.',
-  },
   // "Act as child node" Agent receiving mode (settings page)
   agent: {
     title: 'Act as child node',
@@ -239,7 +235,7 @@ export default {
     secretShownOnce: 'Verify secret shown (visible once; save it after copying)',
     secretAlreadyShown: 'Verify secret was already shown; click "Generate random key/secret" to reset and re-save to view again.',
   },
-  // ShunX Protection Hub (Firewall / WAF / Tamper / Database protection)
+  // ShunX Protection Hub (Firewall / WAF / Tamper / Database protection / Health check / Panel backup)
   shunx: {
     modeFirewall: 'Firewall',
     modeWaf: 'WAF',
@@ -248,6 +244,8 @@ export default {
     modeBackup: 'Backup Center',
     modeNotify: 'Notification Center',
     modeSshkeys: 'SSH Keys',
+    modeHealthcheck: 'Health Check',
+    modePanelbackup: 'Panel Backup',
   },
   // Monitoring (Uptime / Service monitor)
   monitoring: {
@@ -354,12 +352,18 @@ export default {
       update: 'System Update',
       sessions: 'Sessions',
       phpversions: 'PHP Versions',
+      rollback: 'Config Rollback',
+      batch: 'Batch Operations',
+      gitdeploy: 'Git Deploy',
+      report: 'Inspection Report',
+      portforward: 'Port Forwarding',
+      imgsafety: 'Image Scan',
+      slowquery: 'Slow Query Analysis',
     },
     winTitle: {
       users: 'Account Management',
       changepwd: 'Change Password',
       settings: 'Settings',
-      vip: 'VIP',
       files: 'File Manager',
       editor: 'Editing: {name}',
       netstorageBrowse: 'File Manager: {name}',
@@ -438,6 +442,70 @@ export default {
     disclaimerScrollHint: '(Please scroll to the bottom to check the box)',
     close: 'Decline and Close',
     enter: 'Enter App Store',
+    // Disclaimer full text (informational translation of the Chinese original,
+    // which remains authoritative). Deep-link wording kept faithful on purpose.
+    disclaimerText: `Preface
+
+The Graw Community App Store ("the Store") is a decentralized application index platform initiated by the ShunX public-benefit mother team and jointly maintained by the open-source community across multiple countries. The Store is committed to providing developers with a transparent, secure, and convenient application deployment experience. By accessing, browsing, or using the Store, you are deemed to have read, understood, and agreed to all the terms of this statement.
+
+I. Privacy Protection Commitment
+
+1. Zero Data Collection: The Store does not collect, store, upload, or pass on any of your personal privacy data in any form (including but not limited to IP addresses, device information, browsing history, geographic location, and contact details). You need not worry about privacy-leak risks; the Store requires no separate privacy policy because there is simply no data worth protecting.
+2. Anonymous Operation: Your interactions with the Store (such as browsing the app list or viewing details) are conducted anonymously, and no user profiles or behavioral tracking records are generated.
+3. Third-Party Services: If an app installed via the Store (such as WordPress, Nextcloud, etc.) itself engages in data collection, such behavior is unrelated to the Store; please refer to that app's own privacy policy.
+
+II. Platform Nature Statement
+
+1. Decentralized Open Source Community: The Store is a diversified, decentralized open-source community project maintained by volunteer developers worldwide. All app metadata (including docker-compose.yml, data.yml, README.md, etc.) is hosted in public Git repositories (e.g., GitHub) and contributed by community members via Pull Requests.
+2. Index Nature: The Store is only an index-service provider and does not actually store, host, or distribute any application software itself. The actual file sources of all apps are third-party repositories (such as Docker Hub, GitHub Releases, etc.). The Store only provides metadata links pointing to these resources.
+3. Multi-Source Support: The Store allows users to freely add, switch, or remove any third-party app sources (including but not limited to self-hosted sources, community sources, and organization sources). Users bear full responsibility for the sources they choose to trust and their content. The Store makes no warranty whatsoever about the availability, security, or legality of any third-party source.
+4. No Affiliation: The Store has no affiliation, agency, or partnership with the app authors, third-party repositories, or image sources. App authors are independently responsible for their own works.
+
+III. User Responsibility and Compliance
+
+1. Legal Compliance Self-Check: The Store's app list comes from open-source communities in multiple countries, some of which may involve technology export controls, data compliance, or content-review regulations of specific countries/regions. Before installing or using any app, you should review and comply with all applicable laws, import/export control regulations, and industry standards of your country/region.
+2. Independent Liability: Any consequences arising from your installation, configuration, or use of any app through the Store (including but not limited to data loss, service interruption, legal disputes, administrative penalties, and criminal liability) are borne by you independently. The Store does not assume any liability whatsoever for your actions or their consequences.
+3. App Quality Statement: The Store makes no express or implied warranty for any software in the app list, including but not limited to merchantability, fitness for a particular purpose, security, stability, virus-freeness, and non-infringement. You should assess the quality and security of apps yourself.
+4. Recommendations and Endorsements: The display order or tags of any app in the Store (such as "Featured" or "Official") do not represent recognition or endorsement by the Graw community. Such tags merely enhance the browsing experience and constitute no recommendation in any legal sense.
+
+IV. Content Management and Delisting Rules
+
+1. Handling of International-Law Violations: The Store follows a delisting principle for severe violations of international law, and only delists an app index in the following cases:
+   · The app content violates the UN Charter and generally recognized basic norms of international humanitarian law
+   · The app involves severe criminal acts generally recognized worldwide (such as human trafficking, terrorist financing, etc.)
+   · The app is subject to official sanctions or bans with clear basis in international law
+2. Force Majeure Handling: The Store may temporarily or permanently delist certain apps due to the following force-majeure factors:
+   · Third-party services such as GitHub Pages or Docker Hub are interrupted or discontinued
+   · App authors request delisting or their repositories are removed
+   · Community maintenance teams can no longer maintain the relevant index for technical reasons
+3. National-Law Exception Statement: The Store is not managed according to the laws of any specific country, nor does it undertake to proactively review or block content prohibited by the laws of specific countries/regions. Users should comply with the local laws where they are located; if an app is illegal in your region, you should proactively avoid installing and using it.
+4. Community Autonomy Principle: Additions, deletions, and changes to the app list are jointly decided by community members via PRs. The Graw community reserves the right to urgently delist for the international-law or force-majeure reasons above, but does not guarantee the timeliness or completeness of such decisions.
+
+V. Intellectual Property and Content Responsibility
+
+1. Third-Party Copyright: The app icons, names, logos, interface designs, etc. included in the Store are the lawful property of their respective right holders. The Store indexes them under a principle of technological neutrality and does not bear responsibility for third-party intellectual-property infringement.
+2. Community Content: For app metadata or documentation submitted by users via GitHub Pull Requests, the submitters are independently responsible for their content. The Graw community reserves the right to delist content that clearly violates international law or public order and morality, but does not undertake a proactive review obligation regarding the accuracy, legality, and completeness of community-submitted content.
+3. Infringement Complaints: If you believe that content indexed by the Store infringes your lawful rights, please contact the community maintenance team via GitHub Issues or email. We will review and take necessary action (such as removing the relevant index) within a reasonable time.
+
+VI. Graw's Limited Liability
+
+1. Force Majeure Disclaimer: The Graw community is not liable if the Store is interrupted or inaccessible for the following reasons:
+   · Failures of third-party services such as GitHub Pages or Docker Hub
+   · Force-majeure factors such as natural disasters, war, cyberattacks, or government actions
+   · Internet-infrastructure failures or network transmission delays
+2. No Service-Level Commitment: The Store is provided on an "AS IS" basis and makes no commitment of any kind regarding availability, stability, or continuity of service. The Graw community is under no obligation to ensure 24/7 uninterrupted operation of the Store.
+3. Compensation Cap: Under no circumstances shall the Graw community or its members be liable in any respect.
+
+VII. Other Terms
+
+1. Right to Amend: The Graw community reserves the right to modify this statement at any time. Significant changes (such as those involving user responsibility or privacy protection) will be announced via the announcement board or Release notes of the GitHub repository. Continued use of the Store after such changes take effect is deemed acceptance of the new statement.
+2. Severability: If any provision of this statement is held by a court of competent jurisdiction to be invalid or unenforceable, the validity of the other provisions shall not be affected.
+3. Language Effectiveness: The Chinese version of this statement is authoritative; translated versions are for reference only.
+4. Contact Us: If you have any questions, please file an Issue in the GitHub repository of the ShunX public-benefit mother team, or send an email to s@shunx.top.
+
+The final right of interpretation of this statement belongs to the Graw community and the ShunX public-benefit mother team.
+
+Document version: 1.1.0 | Updated: 2026-08-16`,
   },
   // App Install
   appinstall: {
@@ -728,6 +796,13 @@ export default {
     disableAction: 'Disable',
     config: 'Edit config',
     viewConfigHint: 'View config',
+    maintTitle: 'Maintenance Mode: {name}',
+    maintEnabled: 'Under maintenance (maintenance page shown to visitors, all other requests return 503)',
+    maintDisabled: 'Running normally',
+    maintHtmlHint: 'Custom maintenance page HTML (leave empty for the default page; the maintenance page file is removed automatically after exiting maintenance mode)',
+    enterMaintenance: 'Enter Maintenance Mode',
+    exitMaintenance: 'Exit Maintenance Mode',
+    maintaining: 'Under maintenance',
   },
   // Database
   database: {
@@ -866,6 +941,7 @@ export default {
     blockUnopenedSkip: 'Protected ports kept: {skipped} (nothing new)',
     blockUnopenedNone: 'No unopened ports to block',
     blockUnopenedFail: 'Block failed: {error}',
+    clearAll: 'Clear All Rules',
   },
   frp: {
     mode: 'Mode',
@@ -1063,6 +1139,56 @@ export default {
     saveFailed: 'Save failed: {error}',
     daysInvalid: 'Retention days must be an integer between 1 and 365',
   },
+  // Standard panel mode (1Panel-style sidebar layout) UI texts
+  panel: {
+    home: 'Home',
+    toggleSidebar: 'Toggle sidebar',
+    searchPlaceholder: 'Search apps…',
+    closeTab: 'Close',
+    emptyHint: 'Select a feature from the left',
+    emptySub: 'Open an app from the sidebar menu',
+    switchHost: 'Switch host',    // Topbar host-switch dropdown title
+    noNodes: 'No SSH nodes yet',  // Placeholder when no sub-node is configured
+    menu: {
+      monitor: 'Monitor',
+      site: 'Websites',
+      database: 'Databases',
+      container: 'Containers',
+      file: 'Files',
+      network: 'Network',
+      security: 'Security',
+      task: 'Tasks',
+      store: 'Store',
+      system: 'System',
+    },
+  },
+  // Desktop shortcuts (hide / pin to taskbar)
+  desktop: {
+    title: 'Desktop Apps',
+    titleHint: 'Right-click an app on the desktop to hide it or pin it to the taskbar. Restore hidden apps or unpin them here.',
+    perUser: 'Only for current user',
+    perUserHint: 'When enabled, hide/pin preferences apply only to the logged-in account; otherwise they are shared by all accounts',
+    hiddenSection: 'Hidden apps',
+    pinnedSection: 'Pinned to taskbar',
+    restore: 'Restore',
+    unpin: 'Unpin',
+    empty: 'No hidden or pinned apps',
+    hideShortcut: 'Hide',
+    pinShortcut: 'Pin to taskbar',
+    unpinShortcut: 'Unpin',
+  },
+  // Plugin Open Protocol (GPOP): master switch
+  plugins: {
+    title: 'Plugins',
+    titleHint: 'Enable to install third-party apps as plugins and interact with the panel via open APIs',
+    enable: 'Enable plugins',
+    enabled: 'Enabled',
+    disabled: 'Disabled',
+    enabledHint: 'Plugin feature is enabled: plugin routes and open APIs are loaded on startup',
+    disabledHint: 'Plugin feature is disabled: the panel does not load plugin code or APIs',
+    needRestart: 'Saved. The plugin switch takes full effect after the panel restarts',
+    saveFailed: 'Save failed: {error}',
+  },
   // Process management
   process: {
     title: 'Processes',
@@ -1136,6 +1262,11 @@ export default {
     mouseOnHint: 'Click to disable mouse mode',
     mouseOffHint: 'Enable mouse mode for TUI clicks (vim/tmux/ranger...)',
     mouseUnsupported: 'TUI mouse clicks are not supported on this system (Windows 10 ConPTY limitation)',
+    persistTerminal: 'Keep persistent terminal',
+    persistHint: 'When enabled, the shell process stays alive on the backend: refreshing the panel or reopening the window reattaches to the same session, ideal for long-running tasks; unchecking ends that session',
+    persistActive: 'Persistent terminal attached',
+    copy: 'Copy',
+    paste: 'Paste',
   },
   // Graw database protection mechanism
   protection: {
@@ -1670,6 +1801,8 @@ export default {
       bootTime: 'Boot time',
       uptime: 'Uptime',
     },
+    metricsUnavailable: 'Monitoring data temporarily unavailable',
+    metricsUnavailableDetail: 'The current management node has not reported data for a long time. Check node connectivity, or switch the host in "Multi-server".',
   },
   // ShunX secure entry setup
   shunxsetup: {
@@ -1791,5 +1924,145 @@ export default {
     panelRestoreMsg: 'Importing the configuration "{name}" will overwrite the current panel configuration. A backup is created automatically before import.\nEnter your panel password to confirm.',
     deletePanelBackupTitle: 'Delete Panel Backup',
     deletePanelBackupMsg: 'Deleting the panel backup "{name}" cannot be undone.\nEnter your panel password to confirm.'
-  }
+  },
+  slowq: {
+    selectConn: 'Select database connection',
+    scan: 'Analyze Slow Queries',
+    hint: 'Only local MySQL/MariaDB on the current management node is supported',
+    time: 'Time',
+    queryTime: 'Duration',
+    sent: 'Rows returned',
+    examined: 'Rows examined',
+    user: 'User',
+    sql: 'SQL',
+    empty: 'Select a connection and click "Analyze" to view TOP N slow queries',
+  },
+  imgscan: {
+    tabScan: 'Scan Images',
+    tabAdvisory: 'Advisory Database',
+    scan: 'Start Scan',
+    selectContainer: 'Select a local container…',
+    noContainers: 'No local containers (Docker engine not running or no containers)',
+    loadContainersFailed: 'Failed to load container list: {error}',
+    pkgCount: 'Packages scanned',
+    findingCount: '{n} found',
+    cached: 'Cache hit',
+    severity: 'Severity',
+    cve: 'CVE',
+    pkg: 'Package',
+    pkgVersion: 'Installed version',
+    desc: 'Description',
+    constraint: 'Constraint',
+    noFindings: 'No known vulnerabilities found (or the advisory database is empty, import an advisory first)',
+    import: 'Import Advisory',
+    advisoryCount: 'Advisory database: {n} rules',
+    advEmpty: 'No rules yet. Paste JSON to import',
+    jsonInvalid: 'Invalid JSON format (must be an array of objects)',
+    importOk: 'Imported {n} rules ({total} in total)',
+  },
+  pf: {
+    create: 'Create Forward',
+    empty: "No forward rules yet. Map a remote node's database/Redis port to localhost so local tools can connect directly",
+    localHint: 'Listens on 127.0.0.1, only accessible from this machine',
+    name: 'Name',
+    node: 'Target node',
+    localPort: 'Local port',
+    remoteHost: 'Remote address',
+    remotePort: 'Remote port',
+    running: 'Running',
+    stopped: 'Stopped',
+    start: 'Start',
+    stop: 'Stop',
+    conns: 'Connections',
+    traffic: 'Traffic',
+    needPorts: 'Please enter the local port and remote port',
+    deleteConfirm: 'Delete this forward and release the local port?',
+  },
+  report: {
+    generate: 'Generate & Send Now',
+    dailyHint: 'Auto-generated and pushed as a notification every day at 08:00',
+    empty: 'No reports yet',
+    selectHint: 'Select a report on the left to view the full text',
+  },
+  gitdeploy: {
+    create: 'Create Deployment',
+    edit: 'Edit Deployment',
+    count: '{count} deployments',
+    empty: 'No deployment tasks yet. Click "Create Deployment" to bind a Git repository to a site',
+    name: 'Name',
+    site: 'Site',
+    repoUrl: 'Repository URL',
+    branch: 'Branch',
+    auth: 'Authentication',
+    namePlaceholder: 'e.g. my-site-deploy',
+    lastFail: 'Last deploy failed',
+    authNone: 'No authentication',
+    authToken: 'Token',
+    authSsh: 'SSH key (pre-installed)',
+    token: 'Access token',
+    tokenPlaceholder: 'Leave empty to clear (on save only)',
+    sshHint: 'Uses an existing SSH key on the target machine to access private repositories',
+    deployDir: 'Deploy directory',
+    deployDirPlaceholder: 'Defaults to the site root; you can set a custom absolute path',
+    node: 'Deploy node',
+    notify: 'Push a notification after deployment',
+    trigger: 'Deploy Now',
+    triggerConfirm: 'Deploy "{name}" now?',
+    triggerOk: 'Deployment started. See Task Center for details',
+    triggerFail: 'Deployment failed: {error}',
+    copyWebhook: 'Copy URL',
+    webhookUrl: 'Webhook URL (configure it on your Git platform)',
+    webhookMissingSecret: 'Webhook URL copied (no secret). The Git platform must call it with an HMAC signature or as "URL?secret=KEY"; the secret is shown only once after creation/reset.',
+    lastRun: 'Last run',
+    deleteConfirm: 'Delete deployment "{name}"?',
+    needName: 'Please enter a name',
+    needRepo: 'Please enter a repository URL',
+    st: {
+      idle: 'Idle',
+      running: 'Deploying',
+      success: 'Success',
+      failed: 'Failed',
+    },
+  },
+  batch: {
+    tabCmd: 'Batch Commands',
+    tabContainers: 'Batch Containers',
+    targetNodes: 'Target nodes',
+    cmdPlaceholder: 'Enter the command to run on the selected nodes, e.g. systemctl restart nginx',
+    keywordPlaceholder: 'Container name contains (optional)',
+    start: 'Start',
+    stop: 'Stop',
+    restart: 'Restart',
+    execute: 'Execute',
+    running: 'Running',
+    noResult: 'Select nodes, enter content, then click "Execute"',
+    needNodes: 'Please select at least one node',
+    needCommand: 'Please enter the command to run',
+    noContainer: 'No matching containers',
+  },
+  rollback: {
+    title: 'Config Rollback',
+    kindLabel: 'Type',
+    kindAll: 'All',
+    kind: {
+      site: 'Site',
+      firewall: 'Firewall',
+    },
+    count: '{count} snapshots',
+    noSnapshots: 'No snapshots yet (generated automatically after modifying site config or firewall rules)',
+    selectHint: 'Select a snapshot on the left to view details',
+    restore: 'Restore this version',
+    delete: 'Delete snapshot',
+    restoreConfirm: 'Restore to this version? The current file content will be overwritten.',
+    restoreOk: 'Restored. Config has been reloaded',
+    deleteConfirm: 'Delete this snapshot?',
+    meta: {
+      when: 'Time',
+      target: 'Target',
+      user: 'Operator',
+      route: 'Source',
+      bytes: 'Size',
+    },
+    preview: 'Content Preview',
+  },
 }

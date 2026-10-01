@@ -99,7 +99,7 @@ async def restore(
     try:
         res = trash.restore_item(req.path, user["username"])
     except Exception as e:
-        logger.warning("恢复 %s 失败: %s", req.path, e)
+        logger.warning("恢复失败: %s", type(e).__name__)
         raise _to_http(e, "恢复失败")
     auditlog.record("恢复回收站", user["username"], get_client_ip(request), res.get("original", req.path))
     return res
@@ -115,7 +115,7 @@ async def delete_item(
     try:
         trash.delete_item(req.path)
     except Exception as e:
-        logger.warning("彻底删除回收站条目 %s 失败: %s", req.path, e)
+        logger.warning("彻底删除回收站条目 %s 失败: %s", repr(req.path), e)
         raise _to_http(e, "彻底删除失败")
     auditlog.record("彻底删除", user["username"], get_client_ip(request), req.path)
     return {"ok": True}

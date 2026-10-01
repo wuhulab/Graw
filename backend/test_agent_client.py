@@ -7,7 +7,7 @@ test_agent_client.py - 主面板 Agent 客户端单元测试
 import os
 import sys
 import unittest
-from unittest import mock
+import unittest.mock as mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 

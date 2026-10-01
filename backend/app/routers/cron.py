@@ -104,6 +104,7 @@ def _parse_schtasks_xml(xml_text: str) -> list:
                 }
             )
     except Exception:
+        # 读取任务配置失败时返回空列表
         pass
     return tasks
 

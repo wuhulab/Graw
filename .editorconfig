@@ -1,4 +1,6 @@
-# 统一编辑器格式配置（https://editorconfig.org）
+# EditorConfig —— 统一不同编辑器/IDE 的基础风格，避免格式不一致
+# 文档参考: https://editorconfig.org
+
 root = true
 
 [*]
@@ -7,20 +9,28 @@ end_of_line = lf
 insert_final_newline = true
 trim_trailing_whitespace = true
 
-# Python：PEP 8 四空格缩进
+# Python: 遵循 PEP 8，4 空格缩进
 [*.py]
 indent_style = space
 indent_size = 4
+max_line_length = 120
 
-# 前端（JS / Vue / CSS / HTML / JSON / YAML / MD）：两空格缩进
-[*.{js,jsx,ts,vue,css,scss,html,json,yaml,yml,md}]
+# 前端 JS/Vue/CSS: 遵循 Prettier 默认风格，2 空格缩进
+[*.{js,mjs,cjs,ts,vue,css,scss,html,json}]
+indent_style = space
+indent_size = 2
+quote_type = single
+
+# Markdown/Shell/批量脚本
+[*.{md,sh,bat}]
+indent_style = space
+indent_size = 4
+
+# YAML: 2 空格缩进（GitHub Actions / docker-compose）
+[*.{yml,yaml}]
 indent_style = space
 indent_size = 2
 
-# Makefile 必须使用 Tab
-[Makefile]
-indent_style = tab
-
-# Windows 脚本保留 CRLF
-[*.{bat,cmd,ps1}]
-end_of_line = crlf
+# 屏蔽仓库内部不可提交的运行时文件（与 .gitignore 一致）
+[.gitignore]
+trim_trailing_whitespace = false

@@ -33,7 +33,7 @@ import subprocess
 import threading
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -96,7 +96,14 @@ def _save_meta(data: dict):
 
 
 def _key_dir(key_id: str) -> str:
-    """返回单个密钥的存放目录。"""
+    """返回单个密钥的存放目录。
+
+    安全（code-scanning py/path-injection）：key_id 来自 URL 路径参数，
+    必须为服务器生成的 `key_<hex>` 形态，严格白名单防止 `/`、`..` 等
+    字符拼出越界路径。
+    """
+    if not re.fullmatch(r"key_[0-9a-fA-F]{6,32}", key_id or ""):
+        raise HTTPException(status_code=400, detail="非法密钥 ID")
     return os.path.join(KEYS_DIR, key_id)
 
 
@@ -156,6 +163,7 @@ def _detect_key_type(private_key) -> str:
         if isinstance(private_key, ec.EllipticCurvePrivateKey):
             return "ecdsa"
     except Exception:
+        # 私钥解析失败时按未知类型处理
         pass
     return "unknown"
 
@@ -375,7 +383,7 @@ async def deploy_key(key_id: str, req: KeyDeployRequest):
         logger.error("部署密钥到节点 %s 失败: %s", req.node_id, err)
         raise HTTPException(status_code=500, detail=f"部署失败：{err[:200]}")
 
-    logger.info("公钥 %s 已部署到节点 %s", key_id, req.node_id)
+    logger.info("公钥已部署到节点（key_id_len=%s, node_id_len=%s）", len(key_id), len(req.node_id))
     return {
         "ok": True,
         "node_id": req.node_id,
@@ -397,5 +405,5 @@ async def delete_key(key_id: str):
         import shutil
 
         shutil.rmtree(d, ignore_errors=True)
-    logger.info("删除 SSH 密钥：%s", key_id)
+    logger.info("删除 SSH 密钥：%s", repr(key_id))
     return {"ok": True}

@@ -17,12 +17,12 @@
 
     <!-- 站点监控视图（合并自独立的「站点监控」应用） -->
     <div v-if="mode === 'uptime'" class="hub-body">
-      <UptimeWindow />
+      <UptimeWindow @openUptimeForm="emit('openUptimeForm', $event)" />
     </div>
 
     <!-- 服务监控视图（合并自独立的「服务监控」应用） -->
     <div v-else class="hub-body">
-      <ServiceMonitorWindow />
+      <ServiceMonitorWindow @openServiceMonitorForm="emit('openServiceMonitorForm', $event)" />
     </div>
   </div>
 </template>
@@ -33,6 +33,9 @@ import { ref } from 'vue'
 // 合并进来的子窗口：站点监控（/api/uptime）与服务监控（/api/svcmonitor）的完整实现
 import UptimeWindow from './UptimeWindow.vue'
 import ServiceMonitorWindow from './ServiceMonitorWindow.vue'
+
+// 冒泡到桌面（App.vue）的独立表单窗口事件：把子应用的「添加/编辑监控项」事件转发给桌面统一打开
+const emit = defineEmits(['openUptimeForm', 'openServiceMonitorForm'])
 
 // 视图模式：'uptime' 站点监控 / 'svcmonitor' 服务监控
 const mode = ref('uptime')

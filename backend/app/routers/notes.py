@@ -3,7 +3,7 @@ from pydantic import BaseModel
 import os
 import json
 
-from app.auth import require_admin, get_current_user, get_client_ip
+from app.auth import require_admin, get_client_ip
 from app import auditlog
 
 router = APIRouter()

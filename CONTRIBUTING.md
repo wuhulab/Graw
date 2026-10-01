@@ -1,103 +1,124 @@
-# 贡献指南（CONTRIBUTING）
+# Contributing — 贡献指南
 
-感谢你对 Graw 的关注！Graw 是一个采用「类桌面操作系统」交互设计的开源服务器管理面板，
-由 ShunX 公益团队发起维护。本指南帮助新贡献者快速上手。
+感谢你对 Graw 的关注与贡献！本指南帮助你快速上手本地开发、了解代码约定并完成一次合规的 Pull Request。
 
-参与本项目即表示你同意遵守 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) 中的行为准则。
+仓库主页：<https://github.com/wuhulab/Graw>
 
----
-
-## 1. 开始之前
-
-- 阅读根目录 [README.md](README.md) 了解功能与快速开始。
-- 阅读 [AGENTS.md](AGENTS.md) —— 它记录了架构约定与已知陷阱，**改代码前请先通读**。
-- 确认你遵循的许可证与商用条款：项目以 AGPLv3 为基础的定制开源许可
-  （见 [LICENSE](LICENSE) 与 [license.txt](license.txt)）。
-
-## 2. 开发环境
+## 1. 本地开发环境
 
 ### 环境要求
+- Python 3.8+（生产镜像为 3.11）
+- Node.js 16+
+- （可选）Docker 引擎 —— 仅 Docker 管理相关功能需要
 
-- Python 3.11（后端，生产镜像版本；本地 3.8+ 可运行）
-- Node.js 16+（前端）
--（可选）Docker 引擎（Docker 管理功能需要）
-
-### 本地启动（前后端分离）
-
+### 启动方式（前后端分离）
 ```bash
-# 后端
+# 后端（Windows 使用 start.bat，Linux/macOS 使用 start.sh）
 cd backend
-python -m venv .venv
-# Windows: .venv\Scripts\activate
-source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 # 前端（另开终端）
 cd frontend
 npm install
-npm run dev     # → http://localhost:5173（Vite 代理 /api 与 WebSocket 到 :8000）
+npm run dev    # → http://localhost:5173，Vite 代理 /api 与 ws 到 :8000
 ```
 
-或使用一键脚本：`start.sh`（Linux/macOS）/ `start.bat`（Windows）。
+> 注意：Windows 的 PowerShell/cmd 不支持 `&&`，多命令请用分号 `;` 分隔。
 
-> 注意：请在 Windows PowerShell 中不要使用 `&&`，需用 `;` 分隔命令。
+## 2. 代码结构速览
 
-## 3. 代码约定
+AI 改动代码前请通读根目录 `AGENTS.md`，它描述了整体架构、权限模型与常见陷阱。关键约定摘录：
 
-### 后端（FastAPI）
+| 想做什么 | 去哪里 |
+|---------|--------|
+| 新增一个 REST 业务模块 | `backend/app/routers/xxx.py`，并在 `main.py` 用 `include_router` 注册，按需选 `PROTECTED` / `ADMIN` 依赖 |
+| 新增一个前端功能页 | `frontend/src/components/windows/XxxWindow.vue`，并在 `App.vue` 的 shortcuts 注册入口（桌面/标准面板两种模式共用） |
+| 登录 / 鉴权 / 用户 | `backend/app/auth.py`、`routers/auth.py` |
+| 多节点 / 子节点 Agent | `agent_auth.py`、`agent_cfg.py`、`agent_client.py`、`node_manager.py`（实操见 `docs/node-agent.md`） |
+| 实时监控 / 指标采集 | `routers/system.py`、`store/systemMetrics.js` |
+| 应用商店配方 | `app-store/`（YAML），面板侧机制见 `docs/app-store-recipe.md` |
+| 改文档 | 开发者/运维文档在 `docs/`，运行逻辑在 `GETMEREAD/`（更新规矩见其 README），文档总索引 `docs/README.md` |
 
-- 新增 REST 业务模块：新建 `backend/app/routers/xxx.py`，并在
-  `backend/app/main.py` 用 `app.include_router(..., prefix="/api/xxx")` 注册。
-- 鉴权分级：只读信息类用 `PROTECTED`，写操作/命令执行类用 `ADMIN`；
-  WebSocket / 部分端点（`/api/ui` public、ShunX、VIP、terminal）在端点内部自行鉴权，
-  不要误挂全局依赖。
-- 数据持久化：配置/凭据以 JSON 存于 `backend/data/`，读写时优先「原子写」
-  （临时文件 + `os.replace()`），不要放宽 `data/` 目录权限。
-- 多节点 / Agent：明确新接口是 local-only（挂 `remote_cap`）还是需要子节点透传，
-  不要绕过 Agent 代理中间件。
-- 常量驻后台协程请在 `main.py` 的 `lifespan()` 中**配对启动/停止**。
-- 风格：类型注解 + Pydantic 模型；docstring 用中文说明背景与安全约束；
-  日志用 `logging.getLogger("graw.xxx")`。
+### 必须遵守的约束
+- **不要引入 Pinia**：前端全局状态使用 `store/*.js` 的 `reactive` 单例模式。
+- **数据持久化**：配置/凭据以 JSON 文件存于 `backend/data/`，写入用「临时文件 + `os.replace()`」原子写；不要放宽该目录权限、不要明文回传凭据。
+- **接口鉴权分级**：只读类挂 `PROTECTED`（登录即可），写操作/命令执行挂 `ADMIN`；WebSocket 与部分端点（`/api/ui` public、ShunX）在端点内自行鉴权。
+- **API 文档与 CORS 默认关闭**：同源部署，不要为联调方便放开 `*`。
+- **多节点透传**：新增接口若需对子节点透传，确认它不在 `_AGENT_PROXY_EXCLUDE_PREFIX` 内；涉及本地宿主机能力时用 `remote_cap.py` 门控。
 
-### 前端（Vue 3）
+## 3. 测试
 
-- 使用 `<script setup>` Composition API；组件 PascalCase；样式优先 scoped。
-- 状态管理使用自定义 `reactive` 单例（`src/store/*.js`），**不要引入 Pinia**。
-- 新增功能页：新建 `src/components/windows/XxxWindow.vue` 并在桌面注册入口。
-- 国际化：界面文案走 `vue-i18n`（`src/locales/`），不要硬编码中文。
-- 所有 API 调用统一经 `src/api.js` 注入 `Authorization: Bearer <token>`。
+后端测试放在 `backend/`，命名遵循 `test_<模块>_(unit|e2e).py`，基于 pytest 与 FastAPI TestClient。
 
-## 4. 测试
+```bash
+cd backend
+pip install -r requirements.txt
+# 运行全部单测
+python -m pytest test_*_unit.py -q
 
-- 后端测试位于 `backend/test_*.py`：
-  - pytest 风格（如 `test_security_regression.py`、`test_frp_configpath_regression.py`）：
-    `cd backend && python -m pytest test_security_regression.py -v`
-  - 自执行脚本风格（自带 PASS/FAIL 计数）：
-    `cd backend && python test_firewall_unit.py`
-- 提交前请在本地把改动涉及的测试跑一遍；CI 会在 PR 中运行全部健康测试集。
+# 运行指定模块测试（示例）
+python -m pytest test_2fa_unit.py test_auditlog_unit.py -q
+```
 
-## 5. 提交与 PR 流程
+- 新增/修改功能时请补充对应测试（项目已有大量单测与 e2e 用例可参考）。
+- 修改后端后保证 `backend` 无语法错误；修改前端后保证 `npm run build` 通过。
 
-1. 从 `main` 创建功能分支，命名建议：`feat/xxx`、`fix/xxx`、`docs/xxx`。
-2. 小步提交，提交信息用中文或英文均可，格式建议：
-   - `fix: 修复实时监控数据闪断`
-   - `feat: 新增会话管理`
-   - `docs: 更新 README`
-3. 推送分支后开 Pull Request，填写 `.github/PULL_REQUEST_TEMPLATE.md` 中的内容：
-   - 关联的 issue 编号（如有）
-   - 变更内容与动机
-   - 如何验证（测试命令、截图等）
-4. 变更涉及「子节点 Agent」功能时，请说明是否需要同步子节点代码，并在 PR 描述中注明。
+## 4. 代码风格
 
-## 6. 发布流程（维护者）
+- **后端**：类型注解 + Pydantic 模型；docstring 用中文描述背景与安全约束；日志用 `logging.getLogger("graw.xxx")`；敏感操作前做鉴权断言。
+- **前端**：`<script setup>` Composition API；组件名 PascalCase；样式优先 scoped；新增界面文案走 `src/locales/` 的 i18n key，不要硬编码中文。
+- 编辑器统一风格见根目录 `.editorconfig`。
+- 不要提交 `backend/data/` 下任何运行时文件（已 gitignore）。
 
-- 版本号单一来源：`backend/app/main.py` 的 `APP_VERSION`。
-- 打 tag（如 `v1.5.2`）将自动触发 Docker Hub 镜像构建与发布
-  （见 `.github/workflows/docker-publish.yml`）。
-- 发版前更新 [CHANGELOG.md](CHANGELOG.md)。
+## 5. 提交与 Pull Request
 
-## 7. 问题与讨论
+### Commit 消息
+建议使用 Conventional Commits 风格（与现有历史风格兼容）：
 
-- Bug / 功能建议：使用 GitHub Issues（模板见 `.github/ISSUE_TEMPLATE/`）。
-- 安全问题：请**不要**在公开 issue 中披露，按 [SECURITY.md](SECURITY.md) 私有报告。
+```
+<type>: <描述>
+
+type: feat / fix / docs / style / refactor / test / chore / build
+```
+
+示例：`fix: 修复实时监控数据闪断`、`feat: 新增回收站自动清理`、`docs: 补充贡献指南`。
+
+### 流程
+1. Fork 仓库并创建功能分支：`git checkout -b feat/xxx`。
+2. 小步提交，逻辑独立；不要混入无关改动。
+3. 推送并创建 Pull Request，PR 描述请使用模板（`.github/PULL_REQUEST_TEMPLATE.md`）。
+4. 保持 PR 聚焦：一次 PR 解决一个问题，方便 review 与回滚。
+
+### Review 前自查
+- [ ] 已阅读并同意第 7 节《贡献者许可协议（CLA）》
+- [ ] 已通读 `AGENTS.md`，改动符合鉴权/持久化/多节点约定
+- [ ] 后端无语法错误，新增/修改模块已注册路由
+- [ ] 前端 `npm run build` 通过，界面文案走 i18n
+- [ ] 关键逻辑有对应测试用例
+- [ ] 未提交敏感信息（`data/`、`.env`、密钥）
+
+## 6. 安全相关
+
+发现安全问题请**不要**在公开 Issue 中张贴，按 [SECURITY.md](./SECURITY.md) 的流程报告。
+
+## 7. 贡献者许可协议（CLA）
+
+> 本节即 Graw 项目的贡献者许可协议（Contributor License Agreement，简称 CLA）。
+
+**提交即视为同意**：你以任何形式向本项目提交代码、文档、配置或其他内容（通过 Pull Request、补丁、Issue 附件等，以下统称「贡献」），即表示你已阅读、理解并**默认同意**本协议的全部条款。**若你不同意，请不要提交贡献**。
+
+1. **著作权归属**：你保留对所提交贡献的著作权；本协议不转让著作权，仅授予下述许可。
+2. **版权许可**：你授予 **WuHuLaB**（及其关联方、继承方、受让方）一项**永久、全球范围、不可撤销、免费、非独占**的版权许可，允许其复制、修改、再许可、分发与以任何方式使用你的贡献。
+3. **保留商业闭源权利**：你明确同意，WuHuLaB 有权将包含你贡献的代码用于**商业用途**，并有权以**闭源（专有）许可**再许可或分发（包括但不限于商业版、企业版、云托管/订阅服务），**无需另行通知你，也无需向你支付任何费用**。开源仓库中的代码仍按 [AGPLv3](./LICENSE) 向公众提供。
+4. **专利许可**：你授予 WuHuLaB 及其用户一项永久、全球范围、不可撤销、免费的专利许可，允许其使用你的贡献中必然被侵犯的专利权利要求。
+5. **原创性保证**：你保证贡献为本人原创，或已取得足以按本协议授予上述全部许可的权利；贡献不侵犯任何第三方权利，且不含违反法律法规或第三方许可的内容。
+6. **无需单独签署**：本项目采用「默认同意」模式，**无需**另行签署纸质或电子版 CLA 文件；提交 Pull Request 即等同于签署本协议。
+
+## 8. 提问与讨论
+
+- Bug 反馈 / 功能建议：<https://github.com/wuhulab/Graw/issues>
+- 一般问题请在提交前先搜索是否存在类似 Issue，避免重复。
+
+再次感谢你的贡献！

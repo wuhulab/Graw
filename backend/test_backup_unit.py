@@ -89,7 +89,7 @@ class BackupUnitTest(unittest.TestCase):
     def test_sanitize_name(self):
         self.assertEqual(backup._sanitize_name("/var/www/html"), "html")
         self.assertEqual(backup._sanitize_name("我的站点目录"), "______")
-        self.assertTrue(backup._sanitize_name("my_site-1.v2") == "my_site-1.v2")
+        self.assertEqual(backup._sanitize_name("my_site-1.v2"), "my_site-1.v2")
 
     def test_cron_command_linux_escape(self):
         cmd = backup._build_cron_command(
@@ -185,7 +185,8 @@ class BackupUnitTest(unittest.TestCase):
         r = backup._do_restore_sync(task, fname, dest)
         self.assertTrue(r["ok"])
         restored_index = os.path.join(dest, os.path.basename(src), "index.html")
-        self.assertEqual(open(restored_index, encoding="utf-8").read(), "v1")
+        with open(restored_index, encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), "v1")
 
     def test_restore_rejects_tar_slip(self):
         """构造含 ../ 越界成员的恶意 tar，恢复必须拒绝。"""
@@ -219,7 +220,7 @@ class BackupUnitTest(unittest.TestCase):
 
     def test_remote_upload_success(self):
         """远程上传：MKCOL 建目录 + PUT 上传，2xx 视为成功。"""
-        from unittest import mock
+        import unittest.mock as mock
         from types import SimpleNamespace
 
         remote = {"base": "https://dav.example.com/dav", "username": "u", "password": "p"}
@@ -237,7 +238,7 @@ class BackupUnitTest(unittest.TestCase):
 
     def test_remote_upload_auth_fail(self):
         """远程上传 401：抛 HTTPException 401，不当作成功。"""
-        from unittest import mock
+        import unittest.mock as mock
         from types import SimpleNamespace
 
         remote = {"base": "https://dav.example.com/dav", "username": "u", "password": "p"}
@@ -251,7 +252,7 @@ class BackupUnitTest(unittest.TestCase):
 
     def test_remote_upload_http_error(self):
         """远程上传 500：抛 HTTPException 502。"""
-        from unittest import mock
+        import unittest.mock as mock
         from types import SimpleNamespace
 
         remote = {"base": "https://dav.example.com/dav"}
@@ -265,7 +266,7 @@ class BackupUnitTest(unittest.TestCase):
 
     def test_test_remote_ok_and_fail(self):
         """连接测试：PROPFIND 2xx 成功，>=400 抛 502。"""
-        from unittest import mock
+        import unittest.mock as mock
         from types import SimpleNamespace
 
         remote = {"base": "https://dav.example.com/dav", "username": "u", "password": "p"}
@@ -415,7 +416,7 @@ class BackupApiTest(unittest.TestCase):
 
     def test_task_bind_remote_and_upload(self):
         """任务绑定远程后，手动备份会上传到远程（mock 上传成功）。"""
-        from unittest import mock
+        import unittest.mock as mock
 
         rid = self._add_remote().json()["id"]
         r = self._create(schedule="", remote_id=rid)

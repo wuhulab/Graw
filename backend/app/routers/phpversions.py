@@ -21,11 +21,10 @@ import os
 import platform
 import re
 import shutil
-import subprocess
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import Optional
 
 from app import hostfs
 from app.hostfs import host_path, unhost_path
@@ -344,5 +343,5 @@ async def set_site_php(site_id: str, req: SetPhpRequest):
 
     site["php_version"] = version
     _save_sites(sites)
-    logger.info("站点 %s 绑定 PHP 版本: %r", site_id, version)
+    logger.info("站点 %s 绑定 PHP 版本: %s", repr(site_id), repr(version))
     return site

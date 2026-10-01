@@ -22,7 +22,7 @@ import socket
 import sys
 import unittest
 from types import SimpleNamespace
-from unittest import mock
+import unittest.mock as mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -40,7 +40,8 @@ def _entry_headers() -> dict:
     try:
         with open(os.path.join(HERE, "data", "shunx.json"), "r", encoding="utf-8") as f:
             entry = json.load(f).get("entry_path")
-    except Exception:
+    # 读取可选 shunx.json：未配置/损坏时静默忽略（有意吞异常）
+    except Exception:  # lgtm[py/empty-except]
         pass
     return {"X-ShunX-Entry": entry} if entry else {}
 

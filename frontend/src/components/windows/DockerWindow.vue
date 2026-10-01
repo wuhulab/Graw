@@ -20,6 +20,11 @@
         <option value="config">配置</option>
       </select>
       <button class="btn" @click="refreshCurrent">刷新</button>
+      <!-- 镜像视图操作按钮与「镜像」下拉同一行对齐（面板模式工具栏观感统一） -->
+      <template v-if="view === 'images'">
+        <button class="btn" @click="openPull"><Download :size="13" /> 拉取镜像</button>
+        <button class="btn" @click="openBuild"><Hammer :size="13" /> 构建镜像</button>
+      </template>
       <span style="margin-left:8px; color:#0a3d7a;" v-if="status && view === 'containers'">
         <template v-if="status.available">
           Docker {{ status.server_version }} · 容器 {{ status.containers_running }}/{{ status.containers }} · 镜像 {{ status.images }}
@@ -162,10 +167,6 @@
 
       <!-- ================= 镜像视图 ================= -->
       <div v-else-if="view === 'images'">
-        <div class="img-toolbar">
-          <button class="btn" @click="openPull"><Download :size="13" /> 拉取镜像</button>
-          <button class="btn" @click="openBuild"><Hammer :size="13" /> 构建镜像</button>
-        </div>
         <table class="dt">
           <thead>
             <tr>
@@ -177,7 +178,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="img in images" :key="img.id">
+            <tr v-for="img in images" :key="img.id" @contextmenu.prevent="onImgContextMenu($event, img)">
               <td>{{ img.tags.length ? img.tags.join(', ') : '&lt;none&gt;' }}</td>
               <td style="font-family:monospace;font-size:11px;">{{ img.id }}</td>
               <td>{{ formatBytes(img.size) }}</td>
@@ -278,6 +279,18 @@
       </div>
     </Teleport>
 
+    <!-- 右键菜单（镜像）：镜像视图右键镜像行调起 -->
+    <Teleport to="body">
+      <div v-if="imgCtxMenu.show" class="context-menu" :style="{ left: imgCtxMenu.x + 'px', top: imgCtxMenu.y + 'px' }" @click.stop>
+        <div class="menu-header">{{ imgCtxMenu.item?.tags?.length ? imgCtxMenu.item.tags.join(', ') : '&lt;none&gt;' }}</div>
+        <div class="menu-divider"></div>
+        <div class="menu-item" @click="imgMenuTag">打标签</div>
+        <div class="menu-item" @click="imgMenuCopyId">复制镜像 ID</div>
+        <div class="menu-divider"></div>
+        <div class="menu-item danger" @click="imgMenuRemove">删除镜像</div>
+      </div>
+    </Teleport>
+
     <!-- 备注笔记编辑弹窗 -->
     <div v-if="noteDialog.show" class="note-mask" @click.self="noteDialog.show = false">
       <div class="note-dialog">
@@ -349,7 +362,7 @@
 
 <script setup>
 // 响应式状态、生命周期与计算属性
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, onDeactivated, computed, watch } from 'vue'
 // 图标（拉取/构建按钮）
 import { Download, Hammer } from 'lucide-vue-next'
 // Docker API：容器/镜像/网络/compose/配置/数据卷
@@ -369,7 +382,8 @@ const loading = ref(false)
 // ---------- 容器：Docker 守护状态与容器列表 ----------
 const status = ref(null)        // Docker 引擎状态（可用与否、版本、运行数等）
 const containers = ref([])      // 容器列表（由共享 store 经 watch 回填）
-const ctxMenu = ref({ show: false, x: 0, y: 0, item: null })   // 右键操作菜单
+const ctxMenu = ref({ show: false, x: 0, y: 0, item: null })   // 右键操作菜单（容器）
+const imgCtxMenu = ref({ show: false, x: 0, y: 0, item: null })   // 右键操作菜单（镜像）
 const noteDialog = ref({ show: false, text: '', item: null })   // 备注笔记弹窗
 // 高风险操作二次确认状态（删除容器/镜像/网络时记录待执行动作）
 const confirm = ref({ show: false, title: '', message: '', action: null })
@@ -653,6 +667,7 @@ async function doAct(id, action) {
 
 function closeMenus() {
   ctxMenu.value.show = false
+  imgCtxMenu.value.show = false
 }
 
 // 预估右键菜单高度：菜单项约 31px、header 约 34px、分隔线约 9px
@@ -674,6 +689,59 @@ function onContextMenu(e, c) {
   const maxTop = window.innerHeight - TASKBAR_TOP_OFFSET - menuH - MENU_SIDE_MARGIN
   const y = Math.max(MENU_SIDE_MARGIN, Math.min(e.clientY, maxTop))
   ctxMenu.value = { show: true, x, y, item: c }
+}
+
+// ---------- 镜像右键菜单：调起 / 动作 ----------
+// 镜像行右键：打标签 / 复制 ID / 删除（复用现有弹窗与高危二次确认）
+function onImgContextMenu(e, img) {
+  // 菜单较短（约 4 项），依然做基础边界约束，避免戳出视口/底部任务栏
+  const menuH = 4 * 31 + 34 + 2 * 9 + 8
+  const x = Math.max(MENU_SIDE_MARGIN, Math.min(e.clientX, window.innerWidth - 180 - MENU_SIDE_MARGIN))
+  const maxTop = window.innerHeight - TASKBAR_TOP_OFFSET - menuH - MENU_SIDE_MARGIN
+  const y = Math.max(MENU_SIDE_MARGIN, Math.min(e.clientY, maxTop))
+  imgCtxMenu.value = { show: true, x, y, item: img }
+}
+
+// 打标签：复用现有打标签弹窗（需要镜像真实 ID）
+function imgMenuTag() {
+  const img = imgCtxMenu.value.item
+  closeMenus()
+  if (img) openTag({ id: img.id })
+}
+
+// 复制镜像 ID 到剪贴板（优先 Clipboard API，降级隐藏 textarea + execCommand）
+function imgMenuCopyId() {
+  const img = imgCtxMenu.value.item
+  closeMenus()
+  if (!img) return
+  const text = img.id
+  const copy = async () => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+        return
+      }
+      throw new Error('clipboard unavailable')
+    } catch (e) {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.setAttribute('readonly', '')
+      ta.style.position = 'fixed'
+      ta.style.top = '-1000px'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+  }
+  copy().then(() => alert('已复制镜像 ID：' + text)).catch(() => alert('复制失败'))
+}
+
+// 删除镜像：走现有高危二次确认（输入面板密码）
+function imgMenuRemove() {
+  const img = imgCtxMenu.value.item
+  closeMenus()
+  if (img) removeImageItem(img)
 }
 
 // 打开容器资源编辑窗口（由父窗口接收事件创建）
@@ -883,6 +951,17 @@ onUnmounted(() => {
   if (stopWatch) stopWatch()
   // 不停止共享轮询：其他仍打开的 Docker 窗口（或后台预热）继续接收更新
 })
+
+// 面板模式（KeepAlive）切出本标签时，回收所有 Teleport 到 body 的弹出层
+// （右键菜单/二次确认框等），避免菜单残留悬挂在其它页面之上
+onDeactivated(() => {
+  ctxMenu.value.show = false
+  imgCtxMenu.value.show = false
+  for (const d of [pullDialog, buildDialog, tagDialog, noteDialog]) {
+    if (d.value && typeof d.value.show === 'boolean') d.value.show = false
+  }
+  confirm.value.show = false
+})
 </script>
 
 <style scoped>
@@ -940,6 +1019,5 @@ onUnmounted(() => {
 .note-textarea { width: 100%; height: 140px; resize: vertical; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; box-sizing: border-box; }
 .note-input { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; box-sizing: border-box; font-family: inherit; }
 .err-text { color: #b91c1c; font-size: 12px; margin-top: 8px; }
-.img-toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
 .note-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 </style>

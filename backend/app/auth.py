@@ -74,11 +74,13 @@ def _get_secret() -> str:
                 s = f.read().strip()
                 if s:
                     return s
-        except Exception:
+        except Exception:  # lgtm[py/empty-except] 既有签名密钥不可读/损坏时视为不存在，走重建
             pass
     secret = secrets.token_urlsafe(48)
+    # 签名密钥必须明文持久化才能跨重启校验 JWT（加密密钥无法加密存储——
+    # 自举问题），已配套 0600 权限 + data 目录 0700 收紧
     with open(SECRET_FILE, "w", encoding="utf-8") as f:
-        f.write(secret)
+        f.write(secret)  # lgtm[py/clear-text-storage-sensitive-data]
     # 限制签名密钥文件权限（仅本进程/用户可读），Linux 上避免同机低权用户读取
     try:
         os.chmod(SECRET_FILE, 0o600)
@@ -211,7 +213,7 @@ def bump_token_version(username: str) -> None:
     _save_users(users)
     # 同步吊销该用户全部会话记录（列表页不再显示）
     _revoke_user_sessions(username)
-    logger.info("已吊销用户 %s 的所有登录令牌（token_version -> %d）", username, target["token_version"])
+    logger.info("已吊销用户 %s 的所有登录令牌（token_version -> %d）", repr(username), target["token_version"])
 
 
 # ---------------------------------------------------------------------------
@@ -309,6 +311,7 @@ def _ensure_online_session(username: str, sid: str) -> None:
         _save_sessions(newly)
         _ensure_cache[username] = now
     except Exception:
+        # 会话创建持久化失败时忽略，不影响登录
         pass
 
 
@@ -365,6 +368,7 @@ def _revoke_user_sessions(username: str) -> None:
                 changed = True
         if changed:
             _save_sessions(sessions)
+    # 会话状态刷新失败不影响访问，忽略
     except Exception:
         pass
 
@@ -398,6 +402,7 @@ def list_sessions(username: Optional[str] = None, limit: int = 100) -> list:
         try:
             _save_sessions(expired)
         except Exception:
+            # 会话裁剪持久化失败时忽略
             pass
     items = []
     for sid, s in expired.items():

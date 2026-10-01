@@ -15,7 +15,7 @@
 
   关键状态：
     items       监控项列表
-    form / editing   添加 / 编辑表单
+    添加 / 编辑表单已改为独立窗口 UptimeFormWindow（保存后经 formBus.uptime 刷新本列表）
     upCount / downCount   汇总的正常 / 异常数
     confirm     删除监控项的二次确认（需输入面板密码）
 
@@ -39,7 +39,7 @@
 
     <!-- 列表 -->
     <div class="table-toolbar">
-      <button class="btn primary" @click="openAdd"><Plus :size="14" /> 添加监控</button>
+      <button class="btn primary" @click="emit('openUptimeForm', { item: null })"><Plus :size="14" /> 添加监控</button>
     </div>
 
     <div v-if="loading" class="empty">加载中…</div>
@@ -79,53 +79,12 @@
             <td class="actions-cell">
               <button class="btn mini" :disabled="busy" @click="doTest(i)">测试</button>
               <button class="btn mini" :disabled="busy" @click="toggleItem(i)">{{ i.enabled ? '停用' : '启用' }}</button>
-              <button class="btn mini" :disabled="busy" @click="openEdit(i)">编辑</button>
+              <button class="btn mini" :disabled="busy" @click="emit('openUptimeForm', { item: i })">编辑</button>
               <button class="btn mini danger-text" :disabled="busy" @click="doDelete(i)">删除</button>
             </td>
           </tr>
         </tbody>
       </table>
-    </div>
-
-    <!-- 添加 / 编辑弹窗 -->
-    <div v-if="formOpen" class="modal-overlay" @click.self="formOpen = false">
-      <div class="modal">
-        <h3><Activity :size="16" /> {{ editing ? '编辑监控项' : '添加监控项' }}</h3>
-
-        <label class="field">
-          <span class="label">名称</span>
-          <input v-model.trim="form.name" maxlength="64" placeholder="如：官网 / API 服务" />
-        </label>
-        <label class="field">
-          <span class="label">监控地址（http/https URL）</span>
-          <input v-model.trim="form.url" placeholder="https://example.com" spellcheck="false" />
-        </label>
-        <div class="field-row">
-          <label class="field">
-            <span class="label">预期状态码</span>
-            <input type="number" min="100" max="599" v-model.number="form.expect_status" />
-          </label>
-          <label class="field">
-            <span class="label">检查间隔（秒）</span>
-            <input type="number" min="10" max="86400" v-model.number="form.interval_seconds" />
-          </label>
-        </div>
-        <div class="field-row">
-          <label class="field">
-            <span class="label">超时（秒）</span>
-            <input type="number" min="1" max="60" v-model.number="form.timeout_seconds" />
-          </label>
-          <label class="field check" style="justify-content:flex-end;">
-            <input type="checkbox" v-model="form.enabled" />
-            <span>启用</span>
-          </label>
-        </div>
-        <div v-if="formError" class="error">{{ formError }}</div>
-        <div class="actions">
-          <button class="btn" :disabled="saving" @click="formOpen = false">取消</button>
-          <button class="btn primary" :disabled="saving" @click="saveForm">{{ saving ? '保存中…' : '保存' }}</button>
-        </div>
-      </div>
     </div>
 
     <!-- 高风险操作二次确认：删除监控项需输入面板密码 -->
@@ -144,10 +103,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'   // 响应式状态、表单对象、汇总计数、挂载钩子
+import { ref, computed, onMounted, watch } from 'vue'   // 响应式状态、汇总计数、挂载钩子、表单总线监听
 import { Activity, RefreshCw, Plus } from 'lucide-vue-next'   // 状态 / 刷新 / 添加图标
 import { uptimeApi } from '../../api'   // 可用性监控后端能力：/api/uptime/* 的封装
 import ConfirmDialog from '../ConfirmDialog.vue'   // 高风险操作确认框（删除监控项要求输入面板密码）
+// 表单保存信号：独立「添加 / 编辑监控项」窗口保存成功后刷新本列表
+import { formBus } from '../../store/formBus'
 
 const loading = ref(false)   // 列表加载中（首屏与空状态判断）
 const busy = ref(false)      // 行内操作（测试 / 启停 / 删除）进行中，用于禁用按钮
@@ -155,13 +116,10 @@ const items = ref([])        // 监控项列表
 // 高风险操作二次确认状态（删除监控项需输入面板密码）
 const confirm = ref({ show: false, target: null })
 
-const formOpen = ref(false)
-const editing = ref(null)
-const saving = ref(false)
-const formError = ref('')
-const form = reactive({
-  name: '', url: '', expect_status: 200, timeout_seconds: 10, interval_seconds: 60, enabled: true,
-})
+const emit = defineEmits(['openUptimeForm'])   // 打开独立「添加/编辑监控项」表单窗口（props 传 item）
+
+// 添加 / 编辑表单已改为独立窗口承载：保存成功后 bumpForm('uptime') 触发此处重载
+watch(() => formBus.uptime, loadAll)
 
 const upCount = computed(() => items.value.filter((i) => i.last_status === 'ok').length)
 const downCount = computed(() => items.value.filter((i) => i.last_status === 'down').length)
@@ -195,48 +153,6 @@ async function loadAll() {
     alert('加载失败：' + (e.response?.data?.detail || e.message))
   } finally {
     loading.value = false
-  }
-}
-
-// --- 打开「添加」弹窗：重置表单到默认值 ---
-function openAdd() {
-  editing.value = null
-  formError.value = ''
-  Object.assign(form, { name: '', url: '', expect_status: 200, timeout_seconds: 10, interval_seconds: 60, enabled: true })   // 默认 200 期望码、60 秒间隔、开启
-  formOpen.value = true
-}
-
-// --- 打开「编辑」弹窗：把监控项现有值灌回表单 ---
-function openEdit(i) {
-  editing.value = i
-  formError.value = ''
-  Object.assign(form, {
-    name: i.name || '', url: i.url || '', expect_status: i.expect_status ?? 200,
-    timeout_seconds: i.timeout_seconds ?? 10, interval_seconds: i.interval_seconds ?? 60,
-    enabled: i.enabled !== false,
-  })
-  formOpen.value = true
-}
-
-async function saveForm() {
-  if (saving.value) return   // 提交进行中直接退出，防止重复保存
-  formError.value = ''
-  if (!form.name.trim()) { formError.value = '请填写名称'; return }    // 名称必填
-  if (!form.url.trim()) { formError.value = '请填写监控地址'; return }  // URL 必填，否则探测无从发起
-  const body = {
-    name: form.name.trim(), url: form.url.trim(), expect_status: form.expect_status,
-    timeout_seconds: form.timeout_seconds, interval_seconds: form.interval_seconds, enabled: form.enabled,
-  }
-  saving.value = true
-  try {
-    if (editing.value) await uptimeApi.updateItem(editing.value.id, body)
-    else await uptimeApi.createItem(body)
-    formOpen.value = false
-    await loadAll()   // 保存后刷新列表
-  } catch (e) {
-    formError.value = e.response?.data?.detail || e.message
-  } finally {
-    saving.value = false
   }
 }
 
@@ -327,18 +243,4 @@ tbody tr:hover { background: #f9fafb; }
 .badge.danger { background: #fee2e2; color: #b91c1c; font-weight: 600; }
 
 .empty { text-align: center; color: #9ca3af; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 2000; }
-.modal { background: #fff; border-radius: 12px; padding: 18px; width: 560px; max-width: 92vw; box-shadow: 0 10px 30px rgba(0,0,0,0.18); max-height: 92vh; overflow: auto; }
-.modal h3 { margin: 0 0 12px; font-size: 16px; display: flex; align-items: center; gap: 8px; }
-.field { display: block; margin-bottom: 10px; }
-.field .label { display: block; font-size: 11px; color: #1d1d1f; font-weight: 600; margin-bottom: 5px; }
-.field input { width: 100%; box-sizing: border-box; border: 1px solid rgba(0,0,0,0.15); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-family: inherit; }
-.field input:focus { outline: none; border-color: #0a84ff; box-shadow: 0 0 0 3px rgba(10,132,255,0.15); }
-.field.check { display: flex; align-items: center; gap: 8px; }
-.field.check input { width: auto; }
-.field-row { display: flex; gap: 12px; }
-.field-row .field { flex: 1; }
-.error { color: #b91c1c; font-size: 12.5px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; }
-.actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 </style>

@@ -14,7 +14,7 @@ import asyncio
 import os
 import tempfile
 import unittest
-from unittest import mock
+import unittest.mock as mock
 
 import app.webserver as webserver
 from app.routers import webmode

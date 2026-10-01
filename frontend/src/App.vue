@@ -2,12 +2,31 @@
      登录前显示 Login 视图；登录后渲染桌面（动态壁纸 + 快捷方式 + 右侧监控卡片）、
      窗口系统（独立窗口组件，支持拖拽 / 最小化 / 最大化）、Dock 式任务栏与开始菜单。
      核心状态：登录态 auth、已打开窗口列表 openWindows、当前聚焦窗口、管理节点（多机）、
-     VIP / 统一面板兼容门控、ShunX 安全入口与网页防篡改告警。
+     统一面板兼容（免费）、ShunX 安全入口与网页防篡改告警。
      窗口按 shortcuts 清单打开各自功能组件；多节点经 X-Graw-Node 透传（见 api.js）。
      打开 / 聚焦窗口即同步请求目标节点，避免切换主机后首个请求打到旧节点。 -->
 
 <template>
   <Login v-if="!loggedIn" @login="onLoggedIn" />
+  <!-- 标准面板模式（设置 → 面板模式 开启）：1Panel 式侧边栏布局替代桌面/窗口系统。
+       窗口打开/聚焦逻辑与桌面共用（openWindows/activeWindowId），仅外壳不同。
+       50 个 openXxx 事件经 winEvents 透传给 PanelLayout 内容区的 WindowContent。 -->
+  <PanelLayout
+    v-else-if="panelModeOn"
+    :windows="openWindows"
+    :active-id="activeWindowId"
+    :user="auth.user"
+    :menu-shortcuts="visibleShortcuts"
+    :host-name="hostBadgeText"
+    :host-remote="hostBadgeRemote"
+    :show-tabs="settings.panelTabs"
+    :content-events="winEvents"
+    @open="onPanelOpen"
+    @focus="focusWindow"
+    @close="handleCloseWindow"
+    @dirty="onPanelDirty"
+    @logout="doLogout"
+  />
   <div v-else class="desktop" :style="desktopBgStyle">
     <!-- 动态壁纸层：视频壁纸或图片轮播（置于桌面内容之下） -->
     <div v-if="wallpaperVideo" class="wallpaper-video">
@@ -34,10 +53,35 @@
           :class="{ selected: selected === sc.key }"
           @click="onShortcutClick(sc.key)"
           @dblclick="openShortcut(sc.key)"
+          @contextmenu.prevent="openShortcutMenu($event, sc)"
         >
           <div class="icon"><component :is="sc.icon" :size="32" /></div>
-          <div class="label" :title="sc.titleKey ? $t(sc.titleKey) : sc.label">{{ sc.titleKey ? $t(sc.titleKey) : sc.label }}</div>
+          <div class="label" :style="shortcutLabelStyle" :title="sc.titleKey ? $t(sc.titleKey) : sc.label">{{ sc.titleKey ? $t(sc.titleKey) : sc.label }}</div>
         </div>
+      </div>
+
+      <!-- 快捷方式右键菜单：隐藏 / 固定到任务栏（在设置里可恢复 / 取消固定） -->
+      <div
+        v-if="shortcutMenu.show"
+        class="shortcut-menu"
+        :style="{ left: shortcutMenu.x + 'px', top: shortcutMenu.y + 'px' }"
+        @click.stop="shortcutMenu.show = false"
+      >
+        <template v-if="shortcutMenu.sc">
+          <button class="shortcut-menu-item" @click="hideScFromMenu">
+            <EyeOff :size="14" /> {{ $t('desktop.hideShortcut') }}
+          </button>
+          <button
+            v-if="desktopPrefs.pinnedKeys.includes(shortcutMenu.sc.key)"
+            class="shortcut-menu-item"
+            @click="togglePinSc(false)"
+          >
+            <PinOff :size="14" /> {{ $t('desktop.unpinShortcut') }}
+          </button>
+          <button v-else class="shortcut-menu-item" @click="togglePinSc(true)">
+            <Pin :size="14" /> {{ $t('desktop.pinShortcut') }}
+          </button>
+        </template>
       </div>
 
       <!-- Spacer (center) -->
@@ -51,7 +95,8 @@
       </div>
     </div>
 
-    <!-- Windows -->
+    <!-- Windows：窗口外壳 + 统一的内容组件（约 50 个 openXxx 事件由 winEvents 提供，
+         经 WindowFrame 作用域插槽 contentAttrs 透传给 WindowContent 的动态组件） -->
     <WindowFrame
       v-for="w in openWindows"
       :key="w.id"
@@ -63,8 +108,12 @@
       @maximize="toggleMaximize(w.id)"
       @move="(x, y) => moveWindow(w.id, x, y)"
       @resize="(width, height) => resizeWindow(w.id, width, height)"
+      v-bind="winEvents"
+      @dirty="(v) => setWinDirty(w.id, v)"
     >
-      <component :is="w.component" v-bind="w.props || {}" @close="handleCloseWindow(w.id)" @dirty="(v) => { const ww=openWindows.value.find(x=>x.id===w.id); if(ww) ww.dirty=v }" @openTerminal="openTerminalAt" @openEditor="openEditor" @openMedia="openMedia" @openUsers="openUsers" @openVip="openVip" @openLogs="openContainerLogs" @openContainerTerminal="openContainerTerminal" @openContainerDetails="openContainerDetails" @openContainerStats="openContainerStats" @openContainerEdit="openContainerEdit" @openFiles="openFiles" @openDockerConfigEditor="openDockerConfigEditor" @openAppInstall="openAppStoreInstall" @openComposeEditor="openAppStoreComposeEditor" @openInstallLog="openAppStoreInstallLog" @openReadme="openAppStoreReadme" @openTaskCenter="openTasks" @openRuntimeCreate="openRuntimeCreate" @openConnectionForm="openConnectionForm" @openNetStorageBrowse="openNetStorageBrowse" @openNetStorageForm="openNetStorageForm" @openSiteEdit="openSiteEdit" />
+      <template #default="{ contentAttrs }">
+        <WindowContent :window="w" :content-events="{ ...contentAttrs, onClose: () => handleCloseWindow(w.id) }" />
+      </template>
     </WindowFrame>
 
     <!-- Dock -->
@@ -80,10 +129,24 @@
           <button class="start-item" @click="openChangePwd(); startMenuOpen = false"><UserCircle2 :size="16" /> {{ $t('app.changePassword') }}</button>
           <button class="start-item" @click="openSettings(); startMenuOpen = false"><Settings :size="16" /> {{ $t('app.settings') }}</button>
           <button class="start-item" @click="reportIssue(); startMenuOpen = false"><Bug :size="16" /> {{ $t('app.reportIssue') }}</button>
+          <!-- 关于外链：源码仓库 / 捐赠（置于退出登录上方，文案复用 settings.about 既有 i18n 键） -->
+          <button class="start-item" @click="openExternal(SOURCE_REPO_URL); startMenuOpen = false"><Github :size="16" /> {{ $t('settings.about.githubSource') }}</button>
+          <button class="start-item" @click="openExternal(DONATE_URL); startMenuOpen = false"><Heart :size="16" /> {{ $t('settings.about.donate') }}</button>
           <button class="start-item danger" @click="doLogout"><LogOut :size="16" /> {{ $t('app.logout') }}</button>
         </div>
       </div>
       <div class="task-items">
+        <!-- 固定到任务栏的快捷方式（不随窗口开关，点击即打开应用） -->
+        <div
+          v-for="ps in pinnedShortcuts"
+          :key="'pin-' + ps.key"
+          class="task-item pinned"
+          :class="{ 'window-open': pinnedWindowOpen(ps.key) }"
+          :title="ps.titleKey ? $t(ps.titleKey) : ps.label"
+          @click="openPinned(ps)"
+        >
+          <span class="icon"><component :is="ps.icon" :size="20" /></span>
+        </div>
         <div
           v-for="w in openWindows"
           :key="w.id"
@@ -113,77 +176,68 @@
 
   <!-- ShunX 安全入口：登录后未配置入口时强制设置，阻止使用面板其他功能 -->
   <ShunXSetup v-if="loggedIn && shunxRequired" @saved="onShunxSaved" />
+
+  <!-- 全局快捷搜索（Ctrl+K / Spotlight）：搜索功能/节点/站点/容器并直达 -->
+  <CommandPalette v-if="loggedIn" ref="paletteRef" :app-items="paletteItems" @open="onPaletteOpen" />
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted, shallowRef, markRaw, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, shallowRef, markRaw, watch, defineAsyncComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
-import RingCard from './components/cards/RingCard.vue'
-import MonitorCard from './components/cards/MonitorCard.vue'
-import InfoNotesCard from './components/cards/InfoNotesCard.vue'
 import WindowFrame from './components/WindowFrame.vue'
-import DockerWindow from './components/windows/DockerWindow.vue'
-import ProcessWindow from './components/windows/ProcessWindow.vue'
-import FilesWindow from './components/windows/FilesWindow.vue'
-import RecycleBinWindow from './components/windows/RecycleBinWindow.vue'
-import TerminalWindow from './components/windows/TerminalWindow.vue'
-import SitesWindow from './components/windows/SitesWindow.vue'
-import SiteEditWindow from './components/windows/SiteEditWindow.vue'
-import DatabaseWindow from './components/windows/DatabaseWindow.vue'
-import EditorWindow from './components/windows/EditorWindow.vue'
-import MediaWindow from './components/windows/MediaWindow.vue'
-import UserWindow from './components/windows/UserWindow.vue'
-import ChangePasswordWindow from './components/windows/ChangePasswordWindow.vue'
-import VipWindow from './components/windows/VipWindow.vue'
-import FrpWindow from './components/windows/FrpWindow.vue'
-import LogsWindow from './components/windows/LogsWindow.vue'
-import SettingsWindow from './components/windows/SettingsWindow.vue'
-import ContainerLogsWindow from './components/windows/ContainerLogsWindow.vue'
-import ContainerDetailWindow from './components/windows/ContainerDetailWindow.vue'
-import ContainerStatsWindow from './components/windows/ContainerStatsWindow.vue'
-import ContainerEditWindow from './components/windows/ContainerEditWindow.vue'
-import DockerConfigEditorWindow from './components/windows/DockerConfigEditorWindow.vue'
-import AppStoreWindow from './components/windows/AppStoreWindow.vue'
-import AppStoreInstallWindow from './components/windows/AppStoreInstallWindow.vue'
-import AppStoreComposeEditorWindow from './components/windows/AppStoreComposeEditorWindow.vue'
-import AppStoreInstallLogWindow from './components/windows/AppStoreInstallLogWindow.vue'
-import AppStoreReadmeWindow from './components/windows/AppStoreReadmeWindow.vue'
-import TasksWindow from './components/windows/TasksWindow.vue'
-import ShunxSecurityWindow from './components/windows/ShunxSecurityWindow.vue'
-import UISettingsWindow from './components/windows/UISettingsWindow.vue'
-import ConnectionFormWindow from './components/windows/ConnectionFormWindow.vue'
-import NetStorageWindow from './components/windows/NetStorageWindow.vue'
-import NetStorageBrowseWindow from './components/windows/NetStorageBrowseWindow.vue'
-import NetStorageFormWindow from './components/windows/NetStorageFormWindow.vue'
-import RuntimeWindow from './components/windows/RuntimeWindow.vue'
-import RuntimeCreateWindow from './components/windows/RuntimeCreateWindow.vue'
-import DisksWindow from './components/windows/DisksWindow.vue'
-import MonitoringWindow from './components/windows/MonitoringWindow.vue'
-import CertWindow from './components/windows/CertWindow.vue'
-import PanelBackupWindow from './components/windows/PanelBackupWindow.vue'
-import WebStatsWindow from './components/windows/WebStatsWindow.vue'
-import RewriteWindow from './components/windows/RewriteWindow.vue'
-import SiteOptsWindow from './components/windows/SiteOptsWindow.vue'
-import MetricsHistoryWindow from './components/windows/MetricsHistoryWindow.vue'
-import HealthCheckWindow from './components/windows/HealthCheckWindow.vue'
-import FtpUsersWindow from './components/windows/FtpUsersWindow.vue'
-import PhpVersionsWindow from './components/windows/PhpVersionsWindow.vue'
-import SessionsWindow from './components/windows/SessionsWindow.vue'
+import WindowContent from './components/WindowContent.vue'
+import PanelLayout from './components/PanelLayout.vue'
+import PanelHome from './components/PanelHome.vue'
+// 功能窗口组件：统一从「按需加载」注册表命名导入（见 components/windows/lazyWindows.js）。
+// 每个窗口会被 Vite 切成独立 chunk，只在真正打开时才下载/执行——首屏不再需要解析
+// 全部功能代码（含 ECharts / xterm / markdown-it 等重依赖），这是面板启动提速的关键。
+// 使用方式与静态导入完全一致：component: markRaw(XxxWindow)。
+// 注：模板中直接渲染的基础组件（Login / PanelLayout / PanelHome / WindowContent /
+// 告警层 / CommandPalette）仍保持静态导入，它们属于首屏必需，不能延迟。
+import {
+  DockerWindow, ProcessWindow, FilesWindow, RecycleBinWindow, TerminalWindow,
+  SitesWindow, SiteEditWindow, DatabaseWindow, EditorWindow, MediaWindow,
+  UserWindow, ChangePasswordWindow, FrpWindow, LogsWindow, SettingsWindow,
+  ContainerLogsWindow, ContainerDetailWindow, ContainerStatsWindow, ContainerEditWindow,
+  DockerConfigEditorWindow, AppStoreWindow, AppStoreInstallWindow, AppStoreComposeEditorWindow,
+  AppStoreInstallLogWindow, AppStoreReadmeWindow, FirewallRuleFormWindow, BackupTaskFormWindow,
+  BackupRemoteFormWindow, DatabaseManageWindow, DatabaseCreateWindow, TamperFormWindow,
+  SiteMaintenanceWindow, AppStoreConfigWindow, CronTaskFormWindow, NotifyChannelFormWindow,
+  NotifyRuleFormWindow, FrpProxyFormWindow, GitDeployFormWindow, LogCollectFormWindow,
+  ServiceMonitorFormWindow, UptimeFormWindow, FtpUserFormWindow, WafAclFormWindow,
+  SslUploadWindow, SslLeFormWindow, SshKeyGenWindow, SshKeyImportWindow, SshKeyDeployWindow,
+  TasksWindow, ShunxSecurityWindow, UISettingsWindow, ConnectionFormWindow, NetStorageWindow,
+  NetStorageBrowseWindow, NetStorageFormWindow, RuntimeWindow, RuntimeCreateWindow, DisksWindow,
+  MonitoringWindow, CertWindow, WebStatsWindow, RewriteWindow, SiteOptsWindow,
+  MetricsHistoryWindow, RollbackWindow, BatchWindow, GitDeployWindow, ReportWindow,
+  PortForwardWindow, PortForwardFormWindow, ImageScanWindow, SlowQueryWindow, FtpUsersWindow,
+  PhpVersionsWindow, SessionsWindow,
+  preloadWindows,   // 空闲预加载：桌面模式下分批预取全部窗口 chunk（打开即渲染）
+} from './components/windows/lazyWindows.js'
 import ShunXSetup from './components/ShunXSetup.vue'
 import TamperAlert from './components/TamperAlert.vue'
 import InstallCheckAlert from './components/InstallCheckAlert.vue'
+import CommandPalette from './components/CommandPalette.vue'
 import Login from './views/Login.vue'
 import { shunxApi, systemApi } from './api'
 import { auth, clearAuth, isAdmin } from './store/auth'
 import { uiState, loadUi, loadUiEffective } from './store/ui'
 import { settings } from './store/settings'
-import { vip as vipStore, refreshVip } from './store/vip'
+import { desktopPrefs, bindUser as bindDesktopUser, hideShortcut, pinShortcut, unpinShortcut } from './store/desktopPrefs'
 import { systemState, startMetrics, stopMetrics } from './store/systemMetrics'
-import { startDocker, stopDocker, refresh as refreshDocker } from './store/docker'
+import { startDocker, stopDocker } from './store/docker'
 import { nodes as nodesStore, refreshNodes } from './store/nodes'
 import { setRequestNode } from './store/requestNode'
 import { tamperState, startTamper, stopTamper } from './store/tamper'
-import { Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, Archive, BarChart3, FileCode2, History, Stethoscope, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用）
+import { Archive, Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, Shield, ShieldAlert, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, BarChart3, FileCode2, History, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug, Pin, PinOff, EyeOff, Clock, BellRing, Gauge, KeyRound, FileUp, Send, Home, Github, Heart } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用）
+
+// 桌面「系统概览」三张卡片：按需加载（异步组件）。
+// RingCard / MonitorCard 依赖 ECharts（体积大），且只在「类桌面」形态的首屏渲染——
+// 「标准面板模式」完全不使用它们。改为异步组件后 ECharts 不再进入入口 chunk，
+// 面板模式的启动因此不必再下载/解析图表库。
+const RingCard = defineAsyncComponent(() => import('./components/cards/RingCard.vue'))
+const MonitorCard = defineAsyncComponent(() => import('./components/cards/MonitorCard.vue'))
+const InfoNotesCard = defineAsyncComponent(() => import('./components/cards/InfoNotesCard.vue'))
 
 // --- 桌面根状态：登录态、动态壁纸、底栏主机徽标 ---
 const loggedIn = computed(() => !!auth.token)
@@ -290,10 +344,10 @@ const shortcuts = ref([
   // 容器资源与端口编辑（CPU/内存/环境变量/端口映射，管理员专属）
   // 已从桌面隐藏，仅保留 Docker 容器右键「编辑」入口（openContainerEdit）
   // { key: 'containeredit', label: '容器编辑', titleKey: 'app.shortcut.containeredit', icon: markRaw(Settings2), component: markRaw(ContainerEditWindow), w: 760, h: 660, adminOnly: true },
-  { key: 'appstore', label: '应用商店', titleKey: 'app.shortcut.appstore', icon: markRaw(Store), component: markRaw(AppStoreWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local', vip: true },
+  { key: 'appstore', label: '应用商店', titleKey: 'app.shortcut.appstore', icon: markRaw(Store), component: markRaw(AppStoreWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local' },
   // 任务 = 计划任务 + 任务中心 合并
   { key: 'tasks', label: '任务', titleKey: 'app.shortcut.tasks', icon: markRaw(ListChecks), component: markRaw(TasksWindow), w: 900, h: 560, adminOnly: true, remoteCap: 'local' },
-  // ShunX保护机制 = 防火墙 + 应用防火墙 + 网页防篡改 + 数据库保护 合并
+  // ShunX保护机制 = 防火墙 + 应用防火墙 + 网页防篡改 + 数据库保护 + 系统体检 + 面板备份 + 备份中心 + 通知中心 + SSH密钥 合并
   { key: 'shunxprotection', label: 'ShunX保护机制', titleKey: 'app.shortcut.shunxprotection', icon: markRaw(ShieldCheck), component: markRaw(ShunxSecurityWindow), w: 980, h: 620, adminOnly: true },
   // 下述应用已合并进「ShunX保护机制」，桌面不再单独保留
   // { key: 'protection', label: 'Graw数据库保护机制', titleKey: 'app.shortcut.protection', icon: markRaw(ShieldCheck), component: markRaw(ProtectionWindow), w: 860, h: 560, adminOnly: true, remoteCap: 'local' },
@@ -304,7 +358,7 @@ const shortcuts = ref([
   { key: 'files', label: '文件管理', titleKey: 'app.shortcut.files', icon: markRaw(Folder), component: markRaw(FilesWindow), w: 820, h: 540, adminOnly: true },
   { key: 'recycle', label: '回收站', titleKey: 'app.shortcut.recycle', icon: markRaw(Trash2), component: markRaw(RecycleBinWindow), w: 760, h: 480, adminOnly: true },
   { key: 'netstorage', label: '网络储存', titleKey: 'app.shortcut.netstorage', icon: markRaw(Cloud), component: markRaw(NetStorageWindow), w: 860, h: 540, adminOnly: true, remoteCap: 'local' },
-  { key: 'uisettings', label: '界面设置', titleKey: 'app.shortcut.uisettings', icon: markRaw(Palette), component: markRaw(UISettingsWindow), w: 520, h: 540, adminOnly: true, remoteCap: 'local', vip: true },
+  { key: 'uisettings', label: '界面设置', titleKey: 'app.shortcut.uisettings', icon: markRaw(Palette), component: markRaw(UISettingsWindow), w: 520, h: 540, adminOnly: true, remoteCap: 'local' },
   { key: 'disks', label: '磁盘管理', titleKey: 'app.shortcut.disks', icon: markRaw(HardDrive), component: markRaw(DisksWindow), w: 900, h: 560, adminOnly: true },
   // 备份中心已合并进「ShunX保护机制」应用，桌面不再单独保留
   // { key: 'backup', label: '备份中心', titleKey: 'app.shortcut.backup', icon: markRaw(DatabaseBackup), component: markRaw(BackupWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local' },
@@ -322,11 +376,13 @@ const shortcuts = ref([
   // SSH 密钥已合并进「ShunX保护机制」应用，桌面不再单独保留
   // { key: 'sshkeys', label: 'SSH 密钥', titleKey: 'app.shortcut.sshkeys', icon: markRaw(KeyRound), component: markRaw(SSHKeysWindow), w: 880, h: 540, adminOnly: true, remoteCap: 'local' },
   { key: 'certcheck', label: '证书到期', titleKey: 'app.shortcut.certcheck', icon: markRaw(Lock), component: markRaw(CertWindow), w: 820, h: 540, adminOnly: true, remoteCap: 'local' },
-  { key: 'healthcheck', label: '系统体检', titleKey: 'app.shortcut.healthcheck', icon: markRaw(Stethoscope), component: markRaw(HealthCheckWindow), w: 820, h: 600, adminOnly: true, remoteCap: 'local' },
+  // 系统体检已合并进「ShunX保护机制」应用，桌面不再单独保留
+  // { key: 'healthcheck', label: '系统体检', titleKey: 'app.shortcut.healthcheck', icon: markRaw(Stethoscope), component: markRaw(HealthCheckWindow), w: 820, h: 600, adminOnly: true, remoteCap: 'local' },
   { key: 'ftpusers', label: 'FTP用户', titleKey: 'app.shortcut.ftpusers', icon: markRaw(UserCheck), component: markRaw(FtpUsersWindow), w: 860, h: 560, adminOnly: true, remoteCap: 'local' },
   // PHP 多版本管理：探测系统 PHP/FPM + 站点 PHP 版本关联（仅管理员）
   { key: 'phpversions', label: 'PHP版本', titleKey: 'app.shortcut.phpversions', icon: markRaw(ServerCog), component: markRaw(PhpVersionsWindow), w: 900, h: 580, adminOnly: true, remoteCap: 'local' },
-  { key: 'panelbackup', label: '面板备份', titleKey: 'app.shortcut.panelbackup', icon: markRaw(Archive), component: markRaw(PanelBackupWindow), w: 860, h: 540, adminOnly: true, remoteCap: 'local' },
+  // 面板备份已合并进「ShunX保护机制」应用，桌面不再单独保留
+  // { key: 'panelbackup', label: '面板备份', titleKey: 'app.shortcut.panelbackup', icon: markRaw(Archive), component: markRaw(PanelBackupWindow), w: 860, h: 540, adminOnly: true, remoteCap: 'local' },
   // 系统更新已从桌面移除（面板自身更新入口走其他渠道）
   // { key: 'update', label: '系统更新', titleKey: 'app.shortcut.update', icon: markRaw(RefreshCw), component: markRaw(UpdateWindow), w: 640, h: 420, adminOnly: true, remoteCap: 'local' },
   // 登录日志已合并进「日志」应用的登录日志标签页，桌面不再单独保留
@@ -335,18 +391,125 @@ const shortcuts = ref([
   { key: 'sessions', label: '会话管理', titleKey: 'app.shortcut.sessions', icon: markRaw(MonitorSmartphone), component: markRaw(SessionsWindow), w: 900, h: 560, adminOnly: false, remoteCap: 'local' },
   { key: 'terminal', label: '终端', titleKey: 'app.shortcut.terminal', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true },
   // Foxcode：双击打开终端并自动输入 foxcode 命令启动
-  { key: 'foxcode', label: 'Foxcode', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true, props: { autoCommand: 'foxcode' } }
+  { key: 'foxcode', label: 'Foxcode', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true, props: { autoCommand: 'foxcode' } },
+  // 配置回滚：站点/防火墙配置的写前快照 + 一键恢复（管理员）
+  { key: 'rollback', label: '配置回滚', titleKey: 'app.shortcut.rollback', icon: markRaw(History), component: markRaw(RollbackWindow), w: 980, h: 580, adminOnly: true },
+  // 批量操作中心：多节点批量命令 / 批量容器启停（管理员）
+  { key: 'batch', label: '批量操作', titleKey: 'app.shortcut.batch', icon: markRaw(ServerCog), component: markRaw(BatchWindow), w: 1000, h: 620, adminOnly: true },
+  // 站点 Git 自动部署：绑定仓库 + Webhook 自动发布（管理员，面板自身管理项）
+  { key: 'gitdeploy', label: 'Git 部署', titleKey: 'app.shortcut.gitdeploy', icon: markRaw(FileCode2), component: markRaw(GitDeployWindow), w: 960, h: 600, adminOnly: true, remoteCap: 'local' },
+  // 巡检报告：每日/手动生成系统健康汇总并推送（管理员）
+  { key: 'report', label: '巡检报告', titleKey: 'app.shortcut.report', icon: markRaw(BarChart3), component: markRaw(ReportWindow), w: 960, h: 600, adminOnly: true },
+  // SSH 端口转发：本地直连远程节点服务（管理员，面向远程节点的隧道）
+  { key: 'portforward', label: '端口转发', titleKey: 'app.shortcut.portforward', icon: markRaw(Unlink), component: markRaw(PortForwardWindow), w: 880, h: 580, adminOnly: true },
+  // 镜像漏洞扫描：本地 advisory 比对（管理员）
+  { key: 'imgsafety', label: '镜像扫描', titleKey: 'app.shortcut.imgsafety', icon: markRaw(ShieldCheck), component: markRaw(ImageScanWindow), w: 980, h: 600, adminOnly: true },
+  // MySQL 慢查询分析：慢日志 TOP N 与建议（管理员）
+  { key: 'slowquery', label: '慢查询分析', titleKey: 'app.shortcut.slowquery', icon: markRaw(Activity), component: markRaw(SlowQueryWindow), w: 1000, h: 620, adminOnly: true }
 ])
 
 // 桌面快捷方式：管理员可见全部，普通用户仅可见非管理功能。
 // 远端节点下：未配置 Agent 时隐藏 local 类（面板自身管理项）应用，避免误操作本机；
 // 已配置 Agent 时 local 类经 Agent 代理在子节点可用，正常显示。
-// --- 快捷方式可见性：管理员 / 隐藏 Foxcode / 远端节点 local 类门控 ---
+// --- 快捷方式可见性：管理员 / 隐藏 Foxcode / 远端节点 local 类门控 / 用户隐藏 ---
 const visibleShortcuts = computed(() => shortcuts.value.filter(s =>
   (!s.adminOnly || isAdmin()) &&
   !(s.key === 'foxcode' && settings.hideFoxcode) &&
+  !desktopPrefs.hiddenKeys.includes(s.key) &&
   !(isCurrentHostRemote.value && !currentHostAgentReady.value && s.remoteCap === 'local')
 ))
+
+// --- 桌面快捷方式右键菜单：隐藏 / 固定到任务栏 ---
+const shortcutMenu = ref({ show: false, x: 0, y: 0, sc: null })
+
+// 桌面图标下方文字的样式（设置 → 面板 里可调）：字号 / 颜色 / 黑边描边。
+// 黑边开启时用 8 向 text-shadow 模拟描边，否则保持默认柔和投影。
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/
+const shortcutLabelStyle = computed(() => {
+  const size = Number(settings.shortcutFontSize)
+  const fontSize = Number.isFinite(size) && size >= 8 && size <= 24 ? Math.round(size) : 12
+  const color = HEX_COLOR_RE.test(settings.shortcutLabelColor) ? settings.shortcutLabelColor : '#ffffff'
+  const textShadow = settings.shortcutLabelStroke
+    ? '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 -1px 0 #000, 0 1px 0 #000, -1px 0 0 #000, 1px 0 0 #000'
+    : '0 1px 2px rgba(0,0,0,0.45)'
+  return { fontSize: fontSize + 'px', color, textShadow }
+})
+
+function openShortcutMenu(e, sc) {
+  // 菜单定位：限制在视口内，避免贴边被截断
+  const menuW = 160
+  const menuH = 76
+  shortcutMenu.value = {
+    show: true,
+    x: Math.min(e.clientX, window.innerWidth - menuW - 8),
+    y: Math.min(e.clientY, window.innerHeight - menuH - 8),
+    sc,
+  }
+}
+
+// 隐藏当前右键的应用（桌面移除，可在「设置 → 桌面」里恢复）
+function hideScFromMenu() {
+  const sc = shortcutMenu.value.sc
+  if (!sc) return
+  hideShortcut(sc.key)
+  // 若该应用窗口正开着，不强制关闭（只隐藏入口），并收窄为桌面右键菜单已处理
+  shortcutMenu.value.show = false
+}
+
+// 固定 / 取消固定当前右键的应用（任务栏常驻入口）
+function togglePinSc(pin) {
+  const sc = shortcutMenu.value.sc
+  if (!sc) return
+  if (pin) {
+    pinShortcut(sc.key)
+  } else {
+    unpinShortcut(sc.key)
+  }
+  shortcutMenu.value.show = false
+}
+
+// 固定的应用在任务栏的渲染集：按固定顺序匹配 shortcuts 定义
+const pinnedShortcuts = computed(() => {
+  const byKey = {}
+  shortcuts.value.forEach(s => { byKey[s.key] = s })
+  return desktopPrefs.pinnedKeys.map(k => byKey[k]).filter(Boolean)
+})
+
+// 固定应用是否已有窗口打开（任务栏高亮提示）
+function pinnedWindowOpen(key) {
+  return openWindows.value.some(w => w.key === key)
+}
+
+// 点击任务栏固定图标：未打开则打开；已打开则聚焦（若已聚焦则最小化，与其他窗口一致）
+function openPinned(ps) {
+  const existing = openWindows.value.find(w => w.key === ps.key)
+  if (existing) {
+    if (existing.minimized) {
+      existing.minimized = false
+      focusWindow(existing.id)
+    } else if (activeWindowId.value === existing.id) {
+      existing.minimized = true
+    } else {
+      focusWindow(existing.id)
+    }
+    return
+  }
+  if (ps.key === 'foxcode') {
+    openFoxcode()
+  } else {
+    openWindow(ps.key)
+  }
+}
+
+// 登录后校准桌面偏好作用域：切换用户时按「仅当前用户」开关读取对应偏好
+watch(() => auth.user?.username, (name) => {
+  if (name) bindDesktopUser()
+})
+
+// 点击桌面空白处关闭右键菜单（与开始菜单共用 mousedown 处理）
+function onDeskContextClose() {
+  shortcutMenu.value.show = false
+}
 
 // --- 窗口系统状态：选中项、已开窗口、聚焦窗口、开始菜单 ---
 const selected = ref(null)
@@ -354,9 +517,11 @@ const openWindows = ref([])
 const activeWindowId = ref(null)
 const startMenuOpen = ref(false)
 
-// 统一面板兼容的实际生效值：设定开启且为生效 VIP 才启用。
-// 未授权（未解锁）时强制视为关闭，避免历史残留值绕过付费锁定。
-const unifiedPanelOn = computed(() => settings.unifiedPanel && !!vipStore.vip)
+// 统一面板兼容的实际生效值：跟随界面设置开关（完全免费，无付费门控）。
+const unifiedPanelOn = computed(() => !!settings.unifiedPanel)
+
+// 标准面板模式：设置里开启后界面切换为 1Panel 式侧边栏布局（本地偏好，即改即生效）
+const panelModeOn = computed(() => !!settings.panelMode)
 
 // ShunX 安全入口：登录后检查是否已配置，未配置则强制设置。
 // 仅管理员触发（保存入口需要管理员权限）；后端对普通用户已脱敏
@@ -403,12 +568,32 @@ function toggleStartMenu() { startMenuOpen.value = !startMenuOpen.value }
 function openUsers() { openWindow('users') }
 function openChangePwd() { openWindow('changepwd') }
 function openSettings() { openWindow('settings') }
-function openVip() { openWindow('vip') }
+// 「设置」窗口 →「界面设置」入口：复用桌面快捷方式门控（adminOnly + 远程能力）。
+function openUiSettings() { openWindow('uisettings') }
 function openTasks() { openWindow('tasks') }
 
 // 报告问题：跳转到项目 GitHub Issues 新建页（新窗口，noopener 防钓鱼）
 function reportIssue() {
   window.open('https://github.com/wuhulab/Graw/issues/new', '_blank', 'noopener')
+}
+
+// ---- 关于外链（源码仓库 / 捐赠）----
+// 集中常量便于后续更换地址；点击后新标签页打开，异常仅提示不中断桌面
+const SOURCE_REPO_URL = 'https://github.com/wuhulab/Graw'   // 源码仓库
+const DONATE_URL = 'https://afdian.com/a/shunianssy'        // 捐赠（爱发电）
+
+/**
+ * 新标签页打开外部链接
+ * @param {string} url - 目标地址
+ */
+function openExternal(url) {
+  try {
+    window.open(url, '_blank', 'noopener')
+  } catch (e) {
+    // 浏览器拦截弹窗等异常：仅提示，不影响桌面其余操作
+    console.error('[app] 打开外链失败:', url, e)
+    alert(`${url}`)
+  }
 }
 
 function doLogout() {
@@ -417,14 +602,114 @@ function doLogout() {
   location.reload()
 }
 
+// --- 窗口内容事件映射（winEvents）---
+// 桌面模式（WindowFrame 作用域插槽）与面板模式（PanelLayout 内容区）共用的一份
+// 「窗口内容 → openXxx」事件清单。onXxx 键等价模板 @xxx；各 openXxx 均为本组件内的
+// function 声明（会被提升），因此这里可以安全地直接引用。close/dirty 因需要按窗口
+// id 定位，不放进映射（桌面分支逐个绑定，面板分支统一冒泡后按 activeId 处理）。
+const winEvents = {
+  onOpenTerminal: openTerminalAt,
+  onOpenEditor: openEditor,
+  onOpenMedia: openMedia,
+  onOpenUsers: openUsers,
+  onOpenUiSettings: openUiSettings,
+  onOpenLogs: openContainerLogs,
+  onOpenContainerTerminal: openContainerTerminal,
+  onOpenContainerDetails: openContainerDetails,
+  onOpenContainerStats: openContainerStats,
+  onOpenContainerEdit: openContainerEdit,
+  onOpenFiles: openFiles,
+  onOpenDockerConfigEditor: openDockerConfigEditor,
+  onOpenAppInstall: openAppStoreInstall,
+  onOpenComposeEditor: openAppStoreComposeEditor,
+  onOpenInstallLog: openAppStoreInstallLog,
+  onOpenReadme: openAppStoreReadme,
+  onOpenTaskCenter: openTasks,
+  onOpenRuntimeCreate: openRuntimeCreate,
+  onOpenConnectionForm: openConnectionForm,
+  onOpenNetStorageBrowse: openNetStorageBrowse,
+  onOpenNetStorageForm: openNetStorageForm,
+  onOpenSiteEdit: openSiteEdit,
+  onOpenFirewallRuleForm: openFirewallRuleForm,
+  onOpenBackupTaskForm: openBackupTaskForm,
+  onOpenBackupRemoteForm: openBackupRemoteForm,
+  onOpenDatabaseManage: openDatabaseManage,
+  onOpenDatabaseCreate: openDatabaseCreate,
+  onOpenTamperForm: openTamperForm,
+  onOpenSiteMaintenance: openSiteMaintenance,
+  onOpenAppStoreConfig: openAppStoreConfig,
+  onOpenCronTaskForm: openCronTaskForm,
+  onOpenNotifyChannelForm: openNotifyChannelForm,
+  onOpenNotifyRuleForm: openNotifyRuleForm,
+  onOpenFrpProxyForm: openFrpProxyForm,
+  onOpenGitDeployForm: openGitDeployForm,
+  onOpenLogCollectForm: openLogCollectForm,
+  onOpenServiceMonitorForm: openServiceMonitorForm,
+  onOpenUptimeForm: openUptimeForm,
+  onOpenFtpUserForm: openFtpUserForm,
+  onOpenWafAclForm: openWafAclForm,
+  onOpenSslUpload: openSslUpload,
+  onOpenSslLeForm: openSslLeForm,
+  onOpenSshKeyGen: openSshKeyGen,
+  onOpenSshKeyImport: openSshKeyImport,
+  onOpenSshKeyDeploy: openSshKeyDeploy,
+  onOpenPortForwardForm: openPortForwardForm,
+}
+
+// 更新指定窗口的 dirty 标记（编辑器未保存时关闭前提示）
+function setWinDirty(id, value) {
+  const w = openWindows.value.find((x) => x.id === id)
+  if (w) w.dirty = value
+}
+
+// 面板模式侧边栏/用户菜单点击：已打开同 key 窗口则聚焦（即切页），否则走 openWindow
+// （openWindow 内部已含 adminOnly / remoteCap 两层守卫与统一面板节点绑定）
+function onPanelOpen(key) {
+  const existing = openWindows.value.find((w) => w.key === key)
+  if (existing) {
+    if (existing.minimized) existing.minimized = false
+    focusWindow(existing.id)
+    return
+  }
+  openWindow(key)
+}
+
+// 面板模式内容区窗口 dirty 标记：按 { id, value } 更新
+function onPanelDirty({ id, value }) {
+  setWinDirty(id, value)
+}
+
 function onDocClick(e) {
+  // 右键菜单：点击菜单外部（含桌面空白、窗口、任务栏）任意处即关闭。
+  // 必须在开始菜单判断之前执行——开始菜单关闭时若提前 return，右键菜单会残留。
+  const ctx = e.target.closest('.shortcut-menu')
+  if (shortcutMenu.value.show && !ctx) shortcutMenu.value.show = false
   if (!startMenuOpen.value) return
   const btn = e.target.closest('.start-button')
   const menu = e.target.closest('.start-menu')
-  if (!btn && !menu) startMenuOpen.value = false
+  if (!btn && !menu && !ctx) startMenuOpen.value = false
 }
 
-// --- 通用窗口打开：含 adminOnly / remoteCap / VIP 三重门控 ---
+// --- 全局快捷搜索（CommandPalette）：
+// 功能入口取「对当前用户可见」的快捷方式（复用 visibleShortcuts 门控）；
+// 站点/容器/节点由 CommandPalette 内部拉取；执行动作统一走 openWindow（含门控）。
+const paletteRef = ref(null)
+const paletteItems = computed(() =>
+  visibleShortcuts.value.map(s => ({ key: s.key, label: s.titleKey ? t(s.titleKey) : (s.label || s.key) }))
+)
+function onPaletteOpen(key) {
+  openWindow(key) // openWindow 内部已做 adminOnly / remoteCap 两层守卫
+}
+function onPaletteGlobalKey(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    paletteRef.value?.toggle()
+  } else if (e.key === 'Escape') {
+    paletteRef.value?.close()
+  }
+}
+
+// --- 通用窗口打开：含 adminOnly / remoteCap 双重门控 ---
 function openWindow(key) {
   let def = shortcuts.value.find(s => s.key === key)
   if (!def) {
@@ -432,7 +717,8 @@ function openWindow(key) {
       users: { label: '账号管理', titleKey: 'app.winTitle.users', icon: markRaw(UserCircle2), component: markRaw(UserWindow), w: 600, h: 460, adminOnly: true },
       changepwd: { label: '修改密码', titleKey: 'app.winTitle.changepwd', icon: markRaw(UserCircle2), component: markRaw(ChangePasswordWindow), w: 420, h: 360 },
       settings: { label: '设置', titleKey: 'app.winTitle.settings', icon: markRaw(Settings), component: markRaw(SettingsWindow), w: 520, h: 480 },
-      vip: { label: 'VIP', titleKey: 'app.winTitle.vip', icon: markRaw(Lock), component: markRaw(VipWindow), w: 440, h: 400, adminOnly: false, remoteCap: 'local' }
+      // 面板模式「主页」：系统概览 + 实时监控 + 系统信息/备忘录（非窗口外壳的全屏视图）
+      panelhome: { label: '主页', titleKey: 'panel.home', icon: markRaw(Home), component: markRaw(PanelHome), w: 900, h: 620 }
     }
     def = extras[key]
     if (!def) return
@@ -445,13 +731,6 @@ function openWindow(key) {
   // 已配置 Agent 时 local 类经 Agent 代理在子节点可用，正常打开。
   if (def.remoteCap === 'local' && isCurrentHostRemote.value && !currentHostAgentReady.value) {
     alert(t('nodes.localOnlyOnRemote'))
-    return
-  }
-  // 付费门控：vip 标记的功能（应用商店/界面管理）需生效 VIP。未解锁时拦截并
-  // 提示，转入「付费解锁」窗口；加载中（vip.loaded=false）暂不误拦，待状态明确。
-  if (def.vip && vipStore.loaded && !vipStore.vip) {
-    alert(t('vip.gateMsg'))
-    openWindow('vip')
     return
   }
   const id = ++windowSeq
@@ -560,6 +839,647 @@ function openEditor({ path, content }) {
     y: 60 + (openWindows.value.length * 25),
     width: 780,
     height: 520,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 防火墙：点击「新增端口/IP规则」打开独立的规则表单窗口（避免内嵌弹窗误触遮罩丢输入）
+function openFirewallRuleForm(payload) {
+  const id = ++windowSeq
+  // 窗口标题按类型展示（端口规则 / IP 规则）
+  const isPort = payload?.mode !== 'ip'
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'firewall-rule-form',
+    nodeId: boundNode,
+    title: isPort ? t('firewall.addPortRule') : t('firewall.addIpRule'),
+    titleKey: isPort ? 'firewall.addPortRule' : 'firewall.addIpRule',
+    icon: markRaw(Shield),
+    component: markRaw(FirewallRuleFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 440,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 计划任务：新增/编辑「定时任务」的独立表单窗口（mode: regular/standar，task 存在即为编辑）
+function openCronTaskForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.task
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'cron-task-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑定时任务' : '新建定时任务',
+    titleKey: null,
+    icon: markRaw(Clock),
+    component: markRaw(CronTaskFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 520,
+    height: 560,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 通知中心：新增/编辑「通知渠道」的独立表单窗口
+function openNotifyChannelForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.channel
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'notify-channel-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑通知渠道' : '添加通知渠道',
+    titleKey: null,
+    icon: markRaw(BellRing),
+    component: markRaw(NotifyChannelFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 520,
+    height: 560,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 通知中心：新增/编辑「告警规则」的独立表单窗口
+function openNotifyRuleForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.rule
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'notify-rule-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑告警规则' : '添加告警规则',
+    titleKey: null,
+    icon: markRaw(Gauge),
+    component: markRaw(NotifyRuleFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 480,
+    height: 420,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 内网穿透：新增/编辑「代理配置」的独立表单窗口
+function openFrpProxyForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.proxy
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'frp-proxy-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑代理' : '新增代理',
+    titleKey: null,
+    icon: markRaw(Radio),
+    component: markRaw(FrpProxyFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 560,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// Git 部署：新增/编辑「部署绑定」的独立表单窗口（binding.isNew 为创建）
+function openGitDeployForm(payload) {
+  // 探针日志：排查面板模式下「新建」点击无反应时事件是否到达本函数（输出则链路通）
+  // eslint-disable-next-line no-console
+  console.debug('[panel] openGitDeployForm', payload)
+  const id = ++windowSeq
+  const isCreate = !!payload?.binding?.isNew
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'git-deploy-form',
+    nodeId: boundNode,
+    title: isCreate ? '创建部署绑定' : '编辑部署绑定',
+    titleKey: null,
+    icon: markRaw(FileCode2),
+    component: markRaw(GitDeployFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 520,
+    height: 560,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 日志中心：添加「日志收集」的独立表单窗口
+function openLogCollectForm(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'log-collect-form',
+    nodeId: boundNode,
+    title: '添加日志收集',
+    titleKey: null,
+    icon: markRaw(ScrollText),
+    component: markRaw(LogCollectFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 420,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 服务监控：新增/编辑「监控项」的独立表单窗口
+function openServiceMonitorForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.item
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'service-monitor-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑监控项' : '添加监控项',
+    titleKey: null,
+    icon: markRaw(Activity),
+    component: markRaw(ServiceMonitorFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 520,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 站点监控：新增/编辑「监控项」的独立表单窗口
+function openUptimeForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.item
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'uptime-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑监控项' : '添加监控项',
+    titleKey: null,
+    icon: markRaw(Activity),
+    component: markRaw(UptimeFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 400,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// FTP 用户：新增/编辑「FTP 用户」的独立表单窗口
+function openFtpUserForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.user
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'ftp-user-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑 FTP 用户' : '添加 FTP 用户',
+    titleKey: null,
+    icon: markRaw(UserCheck),
+    component: markRaw(FtpUserFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 460,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 应用防火墙：新增/编辑「自定义 ACL」的独立表单窗口（编辑结果经 onSaved 写回父窗口）
+function openWafAclForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.acl
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'waf-acl-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑 ACL' : '新增 ACL',
+    titleKey: null,
+    icon: markRaw(ShieldCheck),
+    component: markRaw(WafAclFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 420,
+    height: 440,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// SSL：证书「上传」独立窗口（证书名由多语言键提供）
+function openSslUpload(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'ssl-upload',
+    nodeId: boundNode,
+    title: t('ssl.uploadTitle'),
+    titleKey: 'ssl.uploadTitle',
+    icon: markRaw(Lock),
+    component: markRaw(SslUploadWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 420,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// SSL：证书「Let's Encrypt 申请」独立窗口
+function openSslLeForm(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'ssl-le-form',
+    nodeId: boundNode,
+    title: t('ssl.leTitle'),
+    titleKey: 'ssl.leTitle',
+    icon: markRaw(Lock),
+    component: markRaw(SslLeFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 380,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// SSH 密钥：生成密钥对的独立窗口
+function openSshKeyGen(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'ssh-key-gen',
+    nodeId: boundNode,
+    title: '生成密钥对',
+    titleKey: null,
+    icon: markRaw(KeyRound),
+    component: markRaw(SshKeyGenWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 420,
+    height: 360,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// SSH 密钥：导入私钥的独立窗口
+function openSshKeyImport(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'ssh-key-import',
+    nodeId: boundNode,
+    title: '导入私钥',
+    titleKey: null,
+    icon: markRaw(FileUp),
+    component: markRaw(SshKeyImportWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 520,
+    height: 560,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// SSH 密钥：部署私钥到节点的独立窗口
+function openSshKeyDeploy(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'ssh-key-deploy',
+    nodeId: boundNode,
+    title: '部署到节点',
+    titleKey: null,
+    icon: markRaw(Send),
+    component: markRaw(SshKeyDeployWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 360,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 备份中心：新建/编辑「备份任务」的独立表单窗口（避免内嵌弹窗误触遮罩丢输入）
+function openBackupTaskForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.task
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'backup-task-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑备份任务' : '新建备份任务',
+    titleKey: null,
+    icon: markRaw(Archive),
+    component: markRaw(BackupTaskFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 520,
+    height: 620,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 备份中心：新建/编辑「远程备份目标（WebDAV）」的独立表单窗口
+function openBackupRemoteForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.remote
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'backup-remote-form',
+    nodeId: boundNode,
+    title: isEdit ? '编辑远程备份目标' : '添加远程备份目标',
+    titleKey: null,
+    icon: markRaw(Cloud),
+    component: markRaw(BackupRemoteFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 480,
+    height: 320,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 数据库：点击「管理」打开独立的连接管理控制台窗口（库列表 / 查询，误触不丢查询内容）
+function openDatabaseManage(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'database-manage',
+    nodeId: boundNode,
+    title: t('database.manageTitle', { name: payload?.conn?.name || '' }),
+    titleKey: null,
+    icon: markRaw(Database),
+    component: markRaw(DatabaseManageWindow),
+    props: payload ? { ...payload } : {},
+    x: 160 + (openWindows.value.length * 30),
+    y: 70 + (openWindows.value.length * 25),
+    width: 720,
+    height: 520,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 数据库：管理窗口内点「创建数据库」打开的独立表单窗口
+function openDatabaseCreate(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'database-create',
+    nodeId: boundNode,
+    title: t('database.createDBTitle'),
+    titleKey: 'database.createDBTitle',
+    icon: markRaw(Database),
+    component: markRaw(DatabaseCreateWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 90 + (openWindows.value.length * 25),
+    width: 380,
+    height: 180,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 网页防篡改：点击「添加/编辑」打开独立的防护表单窗口（含长文本域，误触不丢内容）
+function openTamperForm(payload) {
+  const id = ++windowSeq
+  const isEdit = !!payload?.task
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'tamper-form',
+    nodeId: boundNode,
+    title: isEdit ? t('tamper.formTitleEdit', { name: payload?.task?.site_name || '' }) : t('tamper.formTitle'),
+    titleKey: null,
+    icon: markRaw(ShieldAlert),
+    component: markRaw(TamperFormWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 520,
+    height: 640,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 网站：右键「维护模式」打开的独立表单窗口（开关 + 自定义维护页 HTML）
+function openSiteMaintenance(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'site-maintenance',
+    nodeId: boundNode,
+    title: t('sites.maintTitle', { name: payload?.site?.name || '' }),
+    titleKey: null,
+    icon: markRaw(Wrench),
+    component: markRaw(SiteMaintenanceWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 420,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 应用商店：点击「索引地址配置」打开的独立表单窗口
+function openAppStoreConfig(payload) {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'appstore-config',
+    nodeId: boundNode,
+    title: t('appstore.indexConfigTitle'),
+    titleKey: 'appstore.indexConfigTitle',
+    icon: markRaw(Settings2),
+    component: markRaw(AppStoreConfigWindow),
+    props: payload ? { ...payload } : {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 460,
+    height: 220,
+    z: ++zSeq,
+    minimized: false,
+    maximized: false,
+    prev: null
+  })
+  openWindows.value.push(w)
+  activeWindowId.value = id
+}
+
+// 端口转发：点击「新建」打开的独立表单窗口（选择节点 + 端口配置，误触不丢内容）
+function openPortForwardForm() {
+  const id = ++windowSeq
+  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
+  const w = reactive({
+    id,
+    key: 'portforward-form',
+    nodeId: boundNode,
+    title: t('pf.create'),
+    titleKey: 'pf.create',
+    icon: markRaw(Unlink),
+    component: markRaw(PortForwardFormWindow),
+    props: {},
+    x: 180 + (openWindows.value.length * 30),
+    y: 80 + (openWindows.value.length * 25),
+    width: 420,
+    height: 480,
     z: ++zSeq,
     minimized: false,
     maximized: false,
@@ -1068,16 +1988,17 @@ function taskClick(id) {
 // --- 系统概览 + 实时数据（指标 WS / 防篡改 / Docker）启停 ---
 const overview = computed(() => systemState.overview)
 
-// 连接池启动/停止：登录后统一建立共享指标 WS，并预启动 Docker 后台轮询；
+// 连接池启动/停止：登录后统一建立共享指标 WS（系统概览）与 Docker 实时推送 WS；
 // 退出登录时全部停止，避免未登录时持续请求。
 function startRealtime() {
   startMetrics()
   // 网页防篡改告警订阅：登录即建立（篡改发生时对在线用户弹窗）
   startTamper()
-  // Docker 为管理员功能：登录即后台预热并缓存，打开窗口可直接渲染上次数据
+  // Docker 为管理员功能：登录即订阅后端实时推送（/api/docker/ws）。
+  // 注意：这里不再调用任何 HTTP 拉取——数据由后端按周期推送，窗口打开时后端
+  // 会先回放最近一次快照（并立即补采一轮），因此无需前端预取即可秒开。
   if (isAdmin()) {
     startDocker()
-    refreshDocker()
     refreshNodes()
   }
 }
@@ -1086,6 +2007,33 @@ function stopRealtime() {
   stopTamper()
   stopDocker()
 }
+
+// --- 类桌面模式「空闲预加载」（设置项 settings.desktopPreload 控制） ---
+// 目的：窗口按需加载后，首次打开某应用需现下载其 chunk（慢网下会「点开空白一下」）。
+// 桌面模式用户会频繁穿梭各应用，因此在首屏与实时数据就绪后，分批预取全部窗口代码，
+// 之后打开任意应用都命中本地缓存、瞬时渲染。
+// 约束：
+//   - 仅类桌面模式生效——面板模式一次只挂载一个窗口，预取全部属浪费；
+//   - 延迟 PRELOAD_DELAY 启动，先让首屏渲染与指标/Docker WS 首帧跑完，不抢关键带宽；
+//   - preloadWindows() 自身幂等，重复触发只会复用同一任务。
+const PRELOAD_DELAY = 1500   // 进入面板后延迟多久开始预取（毫秒）
+let preloadTimer = null      // 待触发的延时器：避免多次触发排队
+
+function maybePreloadWindows() {
+  if (preloadTimer) return                    // 已有待触发任务：无需重复排队
+  if (!loggedIn.value) return                 // 未登录：不预取（应用均在登录后才可用）
+  if (settings.panelMode) return              // 面板模式：不参与预加载
+  if (!settings.desktopPreload) return        // 用户已关闭预加载
+  preloadTimer = setTimeout(() => {
+    preloadTimer = null
+    // 二次校验：延迟期间用户可能已退出登录 / 切到面板模式 / 关闭开关
+    if (!loggedIn.value || settings.panelMode || !settings.desktopPreload) return
+    preloadWindows()
+  }, PRELOAD_DELAY)
+}
+
+// 开关或界面形态变化时按需补触发（已预取过则由 preloadWindows 幂等短路）
+watch(() => [settings.panelMode, settings.desktopPreload], () => maybePreloadWindows())
 
 // Clock
 const clockTime = ref('')
@@ -1112,16 +2060,19 @@ onMounted(() => {
   if (loggedIn.value) {
     startRealtime()
     checkShunxRequired()
-    // 付费功能：启动即加载当前账号 VIP 状态，供「统一面板兼容」/应用商店等门控使用
-    refreshVip()
     // 已登录态（如页面刷新）也重新检测安装环境，确保缺失时弹窗提醒
     checkInstallCheck()
     // 加载当前账号生效的动态壁纸 / 环形图（「仅用于这个账号」优先）
     loadUiEffective().catch(() => {})
+    // 类桌面模式：首屏与实时数据就绪后，空闲预取全部应用窗口代码（见 maybePreloadWindows）
+    maybePreloadWindows()
   }
   updateClock()
   clockTimer = setInterval(updateClock, 1000)
   document.addEventListener('mousedown', onDocClick)
+  // 全局快捷搜索：Ctrl/Cmd+K 唤出（浏览器保留常用 Ctrl+K 聚焦地址栏，
+  // 通常在输入框内不拦截，这里在面板顶层监听一次即可）
+  document.addEventListener('keydown', onPaletteGlobalKey)
 })
 
 // 统一面板兼容：把「当前请求目标节点」设为当前聚焦/打开窗口绑定的节点。
@@ -1147,9 +2098,9 @@ watch(activeWindowId, (id) => {
 watch(loggedIn, (v) => {
   if (v) {
     startRealtime()
-    // 付费功能：登录后刷新当前账号 VIP 状态，保证门控（应用商店/界面管理）准确
-    refreshVip()
     loadUiEffective().catch(() => {})
+    // 登录成功（含切号后重新登录）：同样在数据就绪后启动空闲预加载
+    maybePreloadWindows()
   } else {
     stopRealtime()
   }
@@ -1159,6 +2110,8 @@ onUnmounted(() => {
   stopRealtime()
   stopCarousel()
   clearInterval(clockTimer)
+  clearTimeout(preloadTimer)   // 卸载时取消待触发的空闲预加载（已启动的预取不受影响）
   document.removeEventListener('mousedown', onDocClick)
+  document.removeEventListener('keydown', onPaletteGlobalKey)
 })
 </script>
