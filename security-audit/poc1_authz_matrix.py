@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PoC-1: 越权矩阵扫描。
 
-对每个敏感端点分别以三种身份（未认证 / 普通用户 / 管理员）发起请求，
+对每个敏感端点分别以两种身份（未认证 / 普通用户）发起请求，
 检测是否存在：
   1. 未认证可访问的管理端点（鉴权缺失）
   2. 普通用户可访问的管理端点（权限提升）
@@ -15,7 +15,6 @@ import urllib.error
 
 BASE = "http://127.0.0.1:8000"
 
-ADMIN_USER, ADMIN_PASS = "admin", "Adm1nTestPwd2026"
 LOW_USER, LOW_PASS = "attacker", "Atk1TestPwd2026"
 
 
