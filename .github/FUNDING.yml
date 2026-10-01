@@ -1,0 +1,8 @@
+# GitHub 赞助按钮配置
+# 展示位置：仓库首页右上角 Sponsor 按钮（提升项目可信度与曝光）
+# 参考文档: https://docs.github.com/zh/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+#
+# 说明：未开通 GitHub Sponsors，使用 custom 字段挂自定义赞助链接（最多 4 个）。
+custom:
+  - "https://afdian.com/a/shunianssy"
+  - "https://www.rainyun.com/NjQwNjg5_"

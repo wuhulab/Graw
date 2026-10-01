@@ -7,7 +7,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        感谢建议！请先搜索 [已有 Issues](https://github.com/wuhulab/Graw/issues) 确认没有重复。
+        感谢建议！请先搜索 [已有 Issues](https://github.com/wuhulab/Graw/issues) 确认没有重复（含已关闭 Issue 中的历史讨论）。
+        提交前可先浏览 [功能特性](https://github.com/wuhulab/Graw#功能特性) 与 [文档中心](https://github.com/wuhulab/Graw/blob/main/docs/README.md)，确认该能力是否已经存在。
   - type: textarea
     id: problem
     attributes:

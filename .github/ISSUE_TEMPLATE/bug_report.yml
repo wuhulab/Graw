@@ -8,6 +8,7 @@ body:
     attributes:
       value: |
         感谢反馈！请先搜索 [已有 Issues](https://github.com/wuhulab/Graw/issues) 确认没有重复。
+        安装/启动失败类问题，建议先查阅 [部署与运维文档](https://github.com/wuhulab/Graw/blob/main/docs/deployment.md) 与 [官网安装说明](https://graw.shunx.top/)；纯使用疑问请改提「使用求助」模板。
         如果问题涉及**安全漏洞**，请勿在此提交，改用 [私有漏洞报告](https://github.com/wuhulab/Graw/security/advisories/new)。
   - type: textarea
     id: description

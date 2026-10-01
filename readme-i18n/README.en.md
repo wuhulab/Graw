@@ -4,6 +4,21 @@ A web-based server management panel with an operating-system-like desktop intera
 
 Beyond the local machine, Graw can also bring other hosts into a unified panel as "child nodes" through an **Agent tunnel + paired access keys**: switch hosts in one place and manage the containers, websites, files, terminals and firewalls of multiple servers.
 
+Graw is an open-source, self-hosted **server management panel** — a desktop-like alternative to 1Panel / Baota (aaPanel) / Cockpit — covering real-time monitoring, Docker, websites, databases, web terminal and multi-server management, built with Vue 3 + FastAPI and deployable with one Docker command.
+
+<p align="center">
+  <a href="https://github.com/wuhulab/Graw/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/wuhulab/Graw?style=flat-square&logo=github&color=4c8bf5&label=Stars"></a>
+  <a href="https://github.com/wuhulab/Graw/tags"><img alt="Latest Tag" src="https://img.shields.io/github/v/tag/wuhulab/Graw?style=flat-square&color=4c8bf5&label=Release"></a>
+  <a href="https://hub.docker.com/r/shunx/graw"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/shunx/graw?style=flat-square&logo=docker&color=4c8bf5&label=Docker%20Pulls"></a>
+  <a href="../LICENSE"><img alt="License" src="https://img.shields.io/github/license/wuhulab/Graw?style=flat-square&color=4c8bf5&label=License"></a>
+  <a href="https://github.com/wuhulab/Graw/issues"><img alt="Issues" src="https://img.shields.io/github/issues/wuhulab/Graw?style=flat-square&color=4c8bf5&label=Issues"></a>
+  <a href="https://github.com/wuhulab/Graw/commits/main"><img alt="Last Commit" src="https://img.shields.io/github/last-commit/wuhulab/Graw?style=flat-square&color=4c8bf5&label=Last%20Commit"></a>
+</p>
+
+<p align="center">
+  <img src="../graw_site/assets/graw-hero.jpg" alt="Graw desktop-like server management UI: Docker container management, web terminal and real-time monitoring on one screen" width="100%" />
+</p>
+
 ### Multilingual README
 
 [简体中文](../README.md) ·
@@ -26,8 +41,24 @@ Beyond the local machine, Graw can also bring other hosts into a unified panel a
 | App Store recipes | <https://github.com/wuhulab/Graw-app-store> |
 | Docker image | <https://hub.docker.com/r/shunx/graw> |
 | Website | <https://graw.shunx.top/> |
-| Issue tracker | <https://github.com/wuhulab/Graw/issues> |
+| Issue tracker | <https://github.com/wuhulab/Graw/issues/new/choose> |
 | Donate | <https://afdian.com/a/shunianssy> |
+
+## Interface preview
+
+One codebase, two shells: a **desktop-like mode** (windows / taskbar / desktop shortcuts) and a **1Panel-style standard panel mode** — switch anytime in Settings.
+
+**Desktop-like mode** — a multi-window workspace: website analytics, file manager and terminal side by side:
+
+<p align="center">
+  <img src="../graw_site/assets/graw-desktop.jpg" alt="Graw desktop-like mode: website analytics, file manager and terminal in a multi-window workspace" width="100%" />
+</p>
+
+**Standard panel mode** — grouped sidebar menu + multi-tab layout, zero learning curve for 1Panel users:
+
+<p align="center">
+  <img src="../demo-photo/传统服务器面板-demo.png" alt="Graw standard panel mode: grouped sidebar, multi-tab layout and system overview" width="100%" />
+</p>
 
 ## How to install?
 
@@ -289,6 +320,19 @@ Commonly used environment variables:
 - [app-store/](../app-store/) — App Store recipes (YAML)
 - [plugin-examples/](../plugin-examples/) — plugin examples
 
+## Getting help
+
+Please follow this order when you run into a problem — it usually gets you the fastest answer:
+
+1. **Read the docs first** — [docs/](../docs/README.md) (deployment, child-node Agent, plugin protocol, App Store) and [docs/deployment.md](../docs/deployment.md) (startup failures, environment variables, troubleshooting); the official website <https://graw.shunx.top/> covers installation.
+2. **Search existing issues** — including closed ones, at <https://github.com/wuhulab/Graw/issues>.
+3. **Cannot log in?** — reset the admin password offline on the server: `cd backend && python reset_password.py admin` (see [Reset password](#reset-password)).
+4. **File a well-formed issue** — use the templates below and include your Graw version, deployment method and environment info (redact tokens and passwords in logs):
+   - [Bug report](https://github.com/wuhulab/Graw/issues/new?template=bug_report.yml)
+   - [Feature request](https://github.com/wuhulab/Graw/issues/new?template=feature_request.yml)
+   - [Question / help](https://github.com/wuhulab/Graw/issues/new?template=question.yml)
+5. **Security vulnerabilities** — use the [private vulnerability report](https://github.com/wuhulab/Graw/security/advisories/new) instead of a public issue.
+
 ## Contributing
 
 Issues and pull requests are welcome; see [CONTRIBUTING.md](../CONTRIBUTING.md) for details.
@@ -301,6 +345,7 @@ If Graw has been helpful to you, you're welcome to buy the author a cup of coffe
 
 - Afdian: <https://afdian.com/a/shunianssy>
 - RainYun (sponsor, affordable servers): <https://www.rainyun.com/NjQwNjg5_>
+- You can also use the **Sponsor** button at the top of the repository page (powered by `.github/FUNDING.yml`).
 
 ## License
 

@@ -4,6 +4,21 @@
 
 除本机外，Graw 还能通过 **Agent 隧道 + 成对访问密钥** 把其它主机作为「子节点」纳入统一面板管理：在一处即可切换主机，管理多台服务器的容器、网站、文件、终端与防火墙。
 
+**English** — Graw is an open-source, self-hosted **server management panel** with a desktop-like UI: a modern alternative to 1Panel / Baota (宝塔) / Cockpit. Real-time monitoring, Docker & App Store, websites, databases, web terminal and multi-node management — all in one panel, built with Vue 3 + FastAPI and deployable with one Docker command.
+
+<p align="center">
+  <a href="https://github.com/wuhulab/Graw/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/wuhulab/Graw?style=flat-square&logo=github&color=4c8bf5&label=Stars"></a>
+  <a href="https://github.com/wuhulab/Graw/tags"><img alt="Latest Tag" src="https://img.shields.io/github/v/tag/wuhulab/Graw?style=flat-square&color=4c8bf5&label=Release"></a>
+  <a href="https://hub.docker.com/r/shunx/graw"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/shunx/graw?style=flat-square&logo=docker&color=4c8bf5&label=Docker%20Pulls"></a>
+  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/github/license/wuhulab/Graw?style=flat-square&color=4c8bf5&label=License"></a>
+  <a href="https://github.com/wuhulab/Graw/issues"><img alt="Issues" src="https://img.shields.io/github/issues/wuhulab/Graw?style=flat-square&color=4c8bf5&label=Issues"></a>
+  <a href="https://github.com/wuhulab/Graw/commits/main"><img alt="Last Commit" src="https://img.shields.io/github/last-commit/wuhulab/Graw?style=flat-square&color=4c8bf5&label=Last%20Commit"></a>
+</p>
+
+<p align="center">
+  <img src="graw_site/assets/graw-hero.jpg" alt="Graw 桌面式服务器管理界面：Docker 容器管理、Web 终端与实时系统监控同屏" width="100%" />
+</p>
+
 ### 多语言 README
 
 [简体中文](./README.md) ·
@@ -27,8 +42,24 @@
 | 应用商店配方 | <https://github.com/wuhulab/Graw-app-store> |
 | Docker 镜像 | <https://hub.docker.com/r/shunx/graw> |
 | 官网 | <https://graw.shunx.top/> |
-| 问题反馈 | <https://github.com/wuhulab/Graw/issues> |
+| 问题反馈 | <https://github.com/wuhulab/Graw/issues/new/choose> |
 | 捐赠支持 | <https://afdian.com/a/shunianssy> |
+
+## 界面预览
+
+同一套功能，两种外壳：**类桌面模式**（窗口 / 任务栏 / 桌面快捷方式）与 **1Panel 风格标准面板模式**，在设置中随时切换。
+
+**类桌面模式** —— 多窗口工作区，访问统计、文件管理、终端等应用并行操作：
+
+<p align="center">
+  <img src="graw_site/assets/graw-desktop.jpg" alt="Graw 类桌面模式：访问统计、文件管理与终端多窗口工作区" width="100%" />
+</p>
+
+**标准面板模式** —— 侧边栏分组菜单 + 多标签页，1Panel 用户零成本上手：
+
+<p align="center">
+  <img src="demo-photo/传统服务器面板-demo.png" alt="Graw 标准面板模式：侧边栏分组菜单、多标签页与系统概览" width="100%" />
+</p>
 
 ## 怎么下载？
 
@@ -302,6 +333,19 @@ server: {
 - [plugin-examples/](./plugin-examples/) —— 插件示例
 
 
+## 问题反馈
+
+遇到问题请按以下顺序处理，通常能最快得到答案：
+
+1. **先查文档** —— [文档中心](./docs/README.md)（部署、子节点 Agent、插件协议、应用商店等）与 [部署与运维文档](./docs/deployment.md)（启动失败、环境变量、数据目录与排障）；官网 <https://graw.shunx.top/> 提供安装说明与界面预览。
+2. **再搜已有 Issue** —— 在 [Issues](https://github.com/wuhulab/Graw/issues)（含已关闭）中搜索关键词，常见问题大多已有现成答案。
+3. **无法登录面板** —— 在服务器本地运行 `cd backend && python reset_password.py admin` 即可离线重置管理员密码，详见 [重置密码](#重置密码)。
+4. **提交问题请走模板** —— 按模板填写 Graw 版本、部署方式与环境信息（日志请先脱敏），便于快速定位：
+   - [Bug 反馈](https://github.com/wuhulab/Graw/issues/new?template=bug_report.yml)
+   - [功能建议](https://github.com/wuhulab/Graw/issues/new?template=feature_request.yml)
+   - [使用求助](https://github.com/wuhulab/Graw/issues/new?template=question.yml)
+5. **安全漏洞** —— 请使用 [私有漏洞报告](https://github.com/wuhulab/Graw/security/advisories/new)，勿在公开 Issue 中张贴。
+
 ## 贡献
 
 欢迎提交 Issue 或 Pull Request，详见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
@@ -314,6 +358,7 @@ server: {
 
 - 爱发电：<https://afdian.com/a/shunianssy>
 - 雨云（赞助商，便宜服务器）：<https://www.rainyun.com/NjQwNjg5_>
+- 也可以点击仓库页右上角的 **Sponsor** 按钮（由 `.github/FUNDING.yml` 提供）。
 
 ## License
 
