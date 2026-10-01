@@ -12,6 +12,7 @@
 成功完成握手并保持连接 2s 视为「已接受」。
 """
 import asyncio
+import importlib.util
 import json
 import sys
 import urllib.request
@@ -79,9 +80,8 @@ async def main():
 
 
 if __name__ == "__main__":
-    try:
-        import websockets  # noqa
-    except ImportError:
+    # 仅探测依赖是否可用（不导入模块本身，避免 unused-import 告警）
+    if importlib.util.find_spec("websockets") is None:
         print("[!] 缺少 websockets 库，安装: pip install websockets")
         sys.exit(2)
     sys.exit(asyncio.run(main()))

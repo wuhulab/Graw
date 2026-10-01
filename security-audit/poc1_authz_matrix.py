@@ -96,10 +96,10 @@ TARGETS = [
 
 
 def main():
-    admin_t = login(ADMIN_USER, ADMIN_PASS)
+    # 本矩阵实际以「未认证 / 普通用户」两种身份探测（管理员对照由其他 PoC 覆盖）
     low_t = login(LOW_USER, LOW_PASS)
     findings = []
-    print(f"[*] 管理员与低权限用户登录成功，开始扫描 {len(TARGETS)} 个端点 x 3 种身份\n")
+    print(f"[*] 低权限用户登录成功，开始扫描 {len(TARGETS)} 个端点 x 2 种身份\n")
     for method, path, body in TARGETS:
         anon = call(method, path, None, body)
         low = call(method, path, low_t, body)

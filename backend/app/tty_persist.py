@@ -44,6 +44,15 @@ from typing import Callable, Dict, List, Optional
 logger = logging.getLogger("graw.tty_persist")
 
 
+def _sanitize_log(value: object) -> str:
+    """清洗写入日志的外部输入，防止日志伪造（log injection / CWE-117）。
+
+    会话 key 与标题可能源自请求参数（如节点 ID），其中的换行符可被用来
+    在日志文件中伪造新日志行；记录前统一去除控制字符。
+    """
+    return str(value).replace("\r", "\\r").replace("\n", "\\n")
+
+
 class SessionIO:
     """持久会话的底层通道抽象：把「进程怎么起来的」与「会话怎么共享」解耦。
 
@@ -273,7 +282,7 @@ class SessionManager:
         session = self._sessions.get(key)
         if session is not None and not session.alive():
             self._sessions.pop(key, None)
-            logger.info("持久终端会话已结束，回收注册 key=%s", key)
+            logger.info("持久终端会话已结束，回收注册 key=%s", _sanitize_log(key))
             session = None
         return session
 
@@ -282,7 +291,7 @@ class SessionManager:
         session = PersistentSession(key, title, io, asyncio.get_running_loop())
         self._sessions[key] = session
         session.start()
-        logger.info("创建持久终端会话 key=%s title=%s", key, title)
+        logger.info("创建持久终端会话 key=%s title=%s", _sanitize_log(key), _sanitize_log(title))
         return session
 
     def destroy(self, key: str) -> bool:
@@ -291,7 +300,7 @@ class SessionManager:
         if session is None:
             return False
         session.close()
-        logger.info("销毁持久终端会话 key=%s", key)
+        logger.info("销毁持久终端会话 key=%s", _sanitize_log(key))
         return True
 
     def destroy_node(self, node_id: str) -> int:

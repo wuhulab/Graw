@@ -20,8 +20,6 @@ import socket
 import sys
 import time
 import threading
-import urllib.request
-import urllib.error
 
 BASE = "http://127.0.0.1:8000/api/auth/login"
 SERVER_PID = int(os.environ.get("GRAW_PID", "2750"))
@@ -72,6 +70,8 @@ def send_big_body(result, idx):
                     break
                 data += d
         except (ConnectionResetError, socket.timeout, OSError):
+            # 连接被服务端重置/超时属预期（413 截断后主动关闭），
+            # 已读到的数据仍足以解析状态行，无需额外处理
             pass
         s.close()
         status = data.split(b"\r\n", 1)[0].decode("utf-8", "replace") if data else "(无响应)"

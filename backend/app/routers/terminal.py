@@ -1093,7 +1093,9 @@ def _paramiko_persist_io(node: dict):
         try:
             client.close()
         except Exception:
-            pass
+            # 关闭失败可忽略（连接可能从未建立或已被对端断开），
+            # 原始异常才是调用方需要感知的错误，继续向上抛出
+            logger.debug("关闭 SSH 客户端失败（忽略）", exc_info=True)
         raise
     channel.settimeout(10)
 

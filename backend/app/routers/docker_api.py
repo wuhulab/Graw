@@ -119,9 +119,8 @@ def _save_meta(meta: dict) -> None:
             json.dump(meta, f, ensure_ascii=False, indent=2)
         os.replace(tmp, _META_FILE)
     except Exception:
-        # 元数据写入失败不应拖垮主流程，仅记录日志
-        import logging
-        logging.getLogger("docker_api").warning("保存容器元数据失败", exc_info=True)
+        # 元数据写入失败不应拖垮主流程，仅记录日志（使用模块级 logger，避免重复导入）
+        logger.warning("保存容器元数据失败", exc_info=True)
 
 
 def _run(cmd, timeout=30):

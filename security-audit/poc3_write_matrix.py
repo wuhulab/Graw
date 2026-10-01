@@ -103,6 +103,8 @@ def route_auth_desc(r):
             if n and n not in names:
                 names.append(n)
     except Exception:
+        # 不同 Starlette 版本的结构差异（无 dependant.dependencies）静默降级：
+        # 路由级依赖已在上方收集完成
         pass
     return names
 
@@ -132,8 +134,8 @@ def main():
     for ms, p, has_body in targets:
         method = "POST" if "POST" in ms else ms[0]
         if not has_body:
-            # 无 body：动态调用会产生副作用 → 仅静态记录依赖声明
-            static_review.append((method, p, route_auth_desc(r) if False else None))
+            # 无 body：动态调用会产生副作用 → 仅静态记录（当前不进一步分析）
+            static_review.append((method, p, None))
             continue
         url = fill(p)
         anon = call(method, url, None)
