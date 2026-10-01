@@ -9,7 +9,7 @@
   <div class="deploy-key-window">
     <div v-if="error" class="error-box">{{ error }}</div>
 
-    <p class="hint-text">将「{{ key?.name }}」的公钥追加到目标节点 ~/.ssh/authorized_keys（幂等，已存在则跳过）。</p>
+    <p class="hint-text">将「{{ sshKey?.name }}」的公钥追加到目标节点 ~/.ssh/authorized_keys（幂等，已存在则跳过）。</p>
 
     <label class="ui-field">
       <span class="ui-label">目标节点</span>
@@ -34,8 +34,9 @@ import { ref, onMounted } from 'vue'
 import { sshkeysApi } from '../../api'
 import { bumpForm } from '../../store/formBus'
 
+// 待部署的公钥记录；不能用 key 作为 prop 名（Vue 保留属性，vue/no-reserved-props）
 const props = defineProps({
-  key: { type: Object, default: null }   // 要部署的公钥对应的密钥记录
+  sshKey: { type: Object, default: null }
 })
 const emit = defineEmits(['close'])
 
@@ -55,11 +56,11 @@ async function loadNodes() {
 }
 
 async function deploy() {
-  if (busy.value || !node.value || !props.key) return   // 未选目标节点或请求进行中则不发请求
+  if (busy.value || !node.value || !props.sshKey) return   // 未选目标节点或请求进行中则不发请求
   busy.value = true
   error.value = ''
   try {
-    const r = await sshkeysApi.deploy(props.key.id, node.value)   // 后端幂等追加公钥
+    const r = await sshkeysApi.deploy(props.sshKey.id, node.value)   // 后端幂等追加公钥
     alert(`已部署到节点「${r.node_name}」`)
     bumpForm('sshkeys')
     emit('close')

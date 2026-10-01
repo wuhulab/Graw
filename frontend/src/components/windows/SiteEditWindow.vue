@@ -68,7 +68,6 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'        // Composition API：响应式、挂载
-import { useI18n } from 'vue-i18n'          // 国际化：取 t() 生成动态文案
 import { sitesApi } from '../../api'        // 站点（Nginx/OpenResty）后端接口封装
 import { bumpSites } from '../../store/siteBus'   // 站点变更信号：保存后通知站点列表刷新
 
@@ -78,7 +77,6 @@ const props = defineProps({
   site: { type: Object, default: null }      // 仅编辑时需要
 })
 const emit = defineEmits(['close'])   // 向父窗口发出：关闭窗口（保存后触发）
-const { t } = useI18n()
 
 const emptyForm = (type) => ({
   name: '',

@@ -182,7 +182,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted, shallowRef, markRaw, watch, defineAsyncComponent } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, markRaw, watch, defineAsyncComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
 import WindowFrame from './components/WindowFrame.vue'
 import WindowContent from './components/WindowContent.vue'
@@ -505,11 +505,6 @@ function openPinned(ps) {
 watch(() => auth.user?.username, (name) => {
   if (name) bindDesktopUser()
 })
-
-// 点击桌面空白处关闭右键菜单（与开始菜单共用 mousedown 处理）
-function onDeskContextClose() {
-  shortcutMenu.value.show = false
-}
 
 // --- 窗口系统状态：选中项、已开窗口、聚焦窗口、开始菜单 ---
 const selected = ref(null)
@@ -987,7 +982,6 @@ function openFrpProxyForm(payload) {
 // Git 部署：新增/编辑「部署绑定」的独立表单窗口（binding.isNew 为创建）
 function openGitDeployForm(payload) {
   // 探针日志：排查面板模式下「新建」点击无反应时事件是否到达本函数（输出则链路通）
-  // eslint-disable-next-line no-console
   console.debug('[panel] openGitDeployForm', payload)
   const id = ++windowSeq
   const isCreate = !!payload?.binding?.isNew
@@ -1677,7 +1671,7 @@ function openFiles({ path }) {
     titleKey: 'app.winTitle.files',
     icon: markRaw(Folder),
     component: markRaw(FilesWindow),
-    props: { path },
+    props: { initialPath: path },   // 与 FilesWindow 的 initialPath prop 对应
     x: 140 + (openWindows.value.length * 30),
     y: 60 + (openWindows.value.length * 25),
     width: 820,

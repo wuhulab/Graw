@@ -32,7 +32,7 @@ import { dockerApi } from '../../api'
 const { t } = useI18n()
 
 // 通知父窗口关闭本编辑器窗口
-const emit = defineEmits(['close'])
+defineEmits(['close'])
 
 const content = ref('')        // 编辑区文本（daemon.json 原始内容）
 const configPath = ref('')    // 配置文件在宿主机的绝对路径（仅展示）

@@ -18,6 +18,8 @@ import shutil
 import sys
 import tempfile
 
+import pytest
+
 # 确保可导入 app 包（与 test_security_regression.py 同级目录）
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -25,6 +27,9 @@ from app.routers import tamper  # noqa: E402
 
 PASS = 0
 FAIL = 0
+# pytest 模式下「当前用例内」的 check 失败计数：脚本模式由 FAIL 末尾汇总，
+# pytest 模式由 autouse fixture 转成断言（详见 _check_failure_guard）
+_case_fails = 0
 
 
 def ok(name, detail=""):
@@ -37,8 +42,9 @@ def ok(name, detail=""):
 
 
 def fail(name, detail):
-    global FAIL
+    global FAIL, _case_fails
     FAIL += 1
+    _case_fails += 1
     print(f"  FAIL  {name}: {detail}")
 
 
@@ -47,6 +53,50 @@ def check(name, cond, detail=""):
         ok(name, detail)
     else:
         fail(name, detail)
+
+
+# ---------------------------------------------------------------------------
+# pytest 兼容层
+#
+# 本文件原先只能以脚本方式运行（python test_tamper_unit.py），但文件名与函数名
+# 均为 test_* 会被 pytest 收集：其中的 tmp / tmp_root / tmp_backup 在脚本模式
+# 由 main() 手工构造，pytest 下不存在 → 收集后 4 个用例直接 ERROR；同时脚本式
+# check() 只做计数不抛异常，用例即使断言失败也会「静默通过」。下面补齐 fixture
+# 并把失败计数转成断言，使两种运行方式语义一致。
+# ---------------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _check_failure_guard():
+    """把本用例内的 check() 失败数转成 pytest 断言，避免静默通过。"""
+    global _case_fails
+    _case_fails = 0
+    yield
+    assert _case_fails == 0, f"本用例有 {_case_fails} 项 check 断言失败"
+
+
+@pytest.fixture
+def tmp_root(tmp_path, monkeypatch):
+    """站点根目录：与面板数据目录互为兄弟目录（数据目录内不得作为防护范围）。"""
+    root = tmp_path / "www"
+    data = tmp_path / "data"
+    root.mkdir(parents=True, exist_ok=True)
+    data.mkdir(parents=True, exist_ok=True)
+    # 把持久化/备份落点重定向到临时目录，避免污染 backend/data
+    monkeypatch.setattr(tamper, "DATA_DIR", str(data))
+    monkeypatch.setattr(tamper, "TAMPER_FILE", str(data / "tamper.json"))
+    monkeypatch.setattr(tamper, "BACKUP_ROOT", str(data / "tamper_backups"))
+    return str(root)
+
+
+@pytest.fixture
+def tmp(tmp_root):
+    """test_validate_root 使用的「合法绝对路径」，与 tmp_root 同源。"""
+    return tmp_root
+
+
+@pytest.fixture
+def tmp_backup(tmp_root, tmp_path):
+    """篡改备份根目录（与 tmp_root 中注入的 BACKUP_ROOT 保持一致）。"""
+    return str(tmp_path / "data" / "tamper_backups")
 
 
 # ---------------------------------------------------------------------------

@@ -56,7 +56,7 @@
 import { ref, onMounted } from 'vue'                          // Composition API：响应式、挂载
 import { RefreshCw, MonitorSmartphone } from 'lucide-vue-next' // 图标集合
 import { authApi } from '../../api'                            // 认证后端接口（会话管理）
-import { auth, isAdmin } from '../../store/auth'               // 当前登录态 + 是否管理员门控
+import { isAdmin } from '../../store/auth'                     // 是否管理员门控
 
 const loading = ref(false)
 const busy = ref(false)
@@ -84,7 +84,6 @@ async function load() {
 
 // 踢出单个设备（强制下线）
 async function kickOne(s) {
-  const target = s.username === auth.user?.username ? '当前设备' : `设备（${s.device || s.ip || s.sid}）`
   if (!confirm(`确认将该设备强制下线？\n账号：${s.username}\n设备：${s.device || s.ip || '未知'}\n被踢出的设备将立即退出登录。`)) return
   busy.value = true
   try {

@@ -208,7 +208,7 @@ async function remove(it) {
 async function renameItem(it) {
   const name = prompt(t('files.renamePrompt'), it.name)
   if (!name || name === it.name) return
-  const dst = it.path.replace(/\/[^\/]+$/, m => '/' + name)
+  const dst = it.path.replace(/\/[^/]+$/, () => '/' + name)
   try {
     await netstorageApi.rename(props.conn.id, it.path, dst)
     refresh()

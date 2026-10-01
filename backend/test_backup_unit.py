@@ -52,8 +52,22 @@ class BackupUnitTest(unittest.TestCase):
         backup.host_path = lambda p: p
         backup.unhost_path = lambda p: p
         backup.IS_WINDOWS = False
+        # SSRF 防护替身：真实校验会做 DNS 解析与主机钉扎，在无外网/无 DNS 的
+        # 测试环境中必然失败（返回 400），从而掩盖「上传 / 认证 / 错误码映射」
+        # 这些真正被验证的逻辑。此处只放行安全校验，被测代码的其余分支不变。
+        from unittest import mock
+
+        self._ssrf_patchers = [
+            mock.patch("app.ssrf_guard.assert_safe_http_url", lambda *a, **k: None),
+            # pin_http_url 返回 (最终 URL, Host 头)，与原签名保持一致
+            mock.patch("app.ssrf_guard.pin_http_url", lambda url, **k: (url, None)),
+        ]
+        for p in self._ssrf_patchers:
+            p.start()
 
     def tearDown(self):
+        for p in self._ssrf_patchers:
+            p.stop()
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     # ---------- 路径安全校验 ----------

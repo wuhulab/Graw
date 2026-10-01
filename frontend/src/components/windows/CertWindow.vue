@@ -81,7 +81,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'   // 响应式状态/表单/派生值/挂载钩子
+import { ref, reactive, onMounted } from 'vue'   // 响应式状态/表单/挂载钩子
 import { Lock, RefreshCw } from 'lucide-vue-next'   // 空状态/刷新按钮图标
 import { certcheckApi } from '../../api'   // /api/certcheck：证书到期检查
 
@@ -145,7 +145,7 @@ async function saveConfig() {
   const days = (remindDaysText.value || '').split(/[,，\s]+/).map((s) => parseInt(s, 10)).filter((n) => !isNaN(n) && n > 0)
   if (days.length === 0) { configMsg.value = '请填写有效的提醒天数'; configMsgType.value = 'err'; busy.value = false; return }   // 无有效档位直接中止
   try {
-    const r = await certcheckApi.updateConfig({ remind_days: days })
+    await certcheckApi.updateConfig({ remind_days: days })   // 调用保存接口（写库有副作用，勿删调用）
     configMsg.value = '配置已保存'
     configMsgType.value = 'ok'
   } catch (e) {

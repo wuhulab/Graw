@@ -110,7 +110,7 @@ import { dockerApi } from '../../api'   // /api/docker：容器 inspect 接口
 const { t } = useI18n()
 
 const props = defineProps({ id: String, name: String })   // 容器 id 与显示名称
-const emit = defineEmits(['close'])   // 对外仅暴露 close
+defineEmits(['close'])   // 对外仅暴露 close
 
 const info = ref(null)   // 容器 inspect 结果对象
 const loading = ref(false)   // 加载中

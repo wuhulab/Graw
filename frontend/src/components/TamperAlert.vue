@@ -84,10 +84,11 @@
 
 <script setup>
 import { ref, computed } from 'vue'   // Vue 响应式与计算属性
+import { useI18n } from 'vue-i18n'    // 国际化：脚本内动态提示文案（模板侧使用全局 $t）
 import { ShieldAlert, Clock, Power, OctagonAlert } from 'lucide-vue-next'   // 告警 / 操作按钮图标
 import { tamperState, dismissAlert, disableForMinutes, disableManual, canOperate } from '../store/tamper'   // 防篡改告警状态与各项操作
 
-const props = defineProps({})
+const { t } = useI18n()
 
 // 当前展示的告警 = 队列最新一条
 const alert = computed(() => tamperState.alerts[0] || {})
@@ -138,9 +139,9 @@ async function onDisableManual() {
     dismissAlert(alert.value.id)
     showManualConfirm.value = false
     showAdvanced.value = false
-    showFeedback('warn', 'tamperAlertDisabledManual')
+    showFeedback('warn', t('tamper.alertDisabledManual'))
   } catch (e) {
-    showFeedback('error', e?.response?.data?.detail || '')
+    showFeedback('error', e?.response?.data?.detail || t('tamper.alertOpFailed'))
   } finally {
     busy.value = false
   }

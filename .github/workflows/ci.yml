@@ -2,14 +2,19 @@
 # Graw CI —— 每次 push / PR 自动执行的检查
 #
 # 包含两个相互独立的 job（任一失败不影响另一个产出结果）：
-#   1. backend   : Python 语法体检 + 后端健康回归测试（pytest）
-#   2. frontend  : 前端依赖安装 + 生产构建（vite build）
+#   1. backend   : Python 语法体检 + 后端回归测试（pytest）
+#   2. frontend  : ESLint 检查 + i18n / import 静态检查 + 依赖安装 + 生产构建（vite build）
 #
 # 说明：
-#   - 测试集仅纳入「可移植、无需真实系统环境」的 pytest 回归文件。
-#   - test_agent_cfg_unit.py 因断言仍使用旧版 set_config(role=...) 签名、
-#     与当前代码不同步（本地已知 2 项失败），暂不纳入 CI；
-#     待其与 agent_cfg.set_config() 同步后再加入。
+#   - 测试集纳入「可移植、无需真实系统环境」的 pytest 用例（约 450+ 项）。
+#   - 后端分两段执行：
+#       (1) test_*_unit.py 互相隔离，可整跑一次；
+#       (2) 其余 pytest 风格文件会改写 app 模块级全局状态（USERS_FILE /
+#           DATA_DIR / 插件注册表等），同进程内互相污染（单独跑全绿、合并跑
+#           失败），故逐文件以独立进程执行。
+#   - 排除项：test_*_e2e.py 与 test_terminal_mouse.py 为脚本式（依赖 __main__ /
+#     需真实后端）；http_integration 用例依赖 localhost:8000 且会改写
+#     data/users.json，均不纳入 CI。
 #   - pytest 与 httpx 属于「测试期依赖」，未写入 requirements.txt（运行时不
 #     需要）；其中 httpx 是 starlette.testclient 的必需项，缺失会导致
 #     FastAPI TestClient 在收集阶段直接报错，故在 CI 中显式安装。
@@ -55,9 +60,25 @@ jobs:
       - name: Syntax check (compileall)
         run: python -m compileall -q backend/app
 
-      - name: Run regression tests (pytest)
+      - name: Run unit tests (pytest)
         working-directory: backend
-        run: python -m pytest test_security_regression.py test_frp_configpath_regression.py -q --tb=short
+        # test_*_unit.py 用例间互相隔离（各自使用临时目录），可整跑一次
+        run: python -m pytest test_*_unit.py -q --tb=short
+
+      - name: Run remaining suites (per-file isolation)
+        working-directory: backend
+        # 这些文件会改写 app 模块级全局状态（USERS_FILE / DATA_DIR / 插件注册表等），
+        # 同进程内互相污染（单独跑全绿、合并跑失败），故逐文件以独立进程执行。
+        # 排除：*_e2e.py / test_terminal_mouse.py（脚本式）、http_integration（需真实后端）。
+        run: |
+          set -e
+          for f in test_*.py; do
+            case "$f" in
+              test_*_unit.py|test_*_e2e.py|test_terminal_mouse.py) continue ;;
+            esac
+            echo "=== pytest $f ==="
+            python -m pytest "$f" -q --tb=short -k "not http_integration"
+          done
 
   frontend:
     name: Frontend build
@@ -77,6 +98,23 @@ jobs:
       - name: Install dependencies
         working-directory: frontend
         run: npm ci
+
+      - name: Lint (ESLint)
+        working-directory: frontend
+        # 扁平配置见 frontend/eslint.config.js：@eslint/js 推荐规则 + eslint-plugin-vue
+        # 的 Vue3 essential 规则；仅拦截真实错误，排版类规则交给 Prettier（已用
+        # eslint-config-prettier 关闭冲突项）。当前仓库为 0 error / 0 warning。
+        run: npm run lint
+
+      - name: Check i18n keys
+        working-directory: frontend
+        # 组件引用但语言包缺失的 key 会导致界面直接显示 key 文本
+        run: node scripts/check-i18n-keys.mjs
+
+      - name: Check imports
+        working-directory: frontend
+        # 缺失 import 的组件引用会在运行时报错，表现为整页白屏
+        run: node scripts/check-imports.mjs
 
       - name: Build production bundle
         working-directory: frontend

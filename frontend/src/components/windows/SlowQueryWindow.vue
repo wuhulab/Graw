@@ -57,10 +57,8 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'   // 响应式 + 挂载
-import { useI18n } from 'vue-i18n'      // 国际化
 import { slowqueryApi } from '../../api' // 慢查询接口
 
-const { t } = useI18n()
 const conns = ref([])      // 连接下拉数据
 const connId = ref('')     // 选中连接
 const items = ref([])      // TOP N 结果

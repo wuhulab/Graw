@@ -48,7 +48,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'                  // Vue 响应式与生命周期
 
-const props = defineProps({ metrics: Object })       // 父级传入的实时指标（系统信息用）
+defineProps({ metrics: Object })                     // 父级传入的实时指标（系统信息用）
 const tab = ref('sys')                               // 当前标签页：sys=系统信息 / note=备忘录
 const notes = ref([])                                // 备忘录列表
 const editing = ref(false)                           // 是否处于编辑态

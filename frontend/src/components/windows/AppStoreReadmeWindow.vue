@@ -112,12 +112,16 @@ const safeSource = computed(() => (/^https?:\/\//i.test(source.value || '') ? so
 // --- 渲染 README：每次刷新仓库上下文后经 DOMPurify 净化输出 ---
 const html = computed(() => {
   if (!raw.value) return `<p class="md-empty">${t('appreadme.noContent')}</p>`
-  // 每次渲染前刷新仓库上下文，保证相对链接正确拼接
+  // 每次渲染前刷新仓库上下文，保证相对链接正确拼接。
+  // markdown-it 的 renderer 回调在 md.render() 期间同步读取模块级 repoCtx，
+  // 因此必须在这里就地写入（同步生效），属于刻意的副作用，豁免该规则。
   const [owner, name] = (repo.value || '/').split('/')
+  /* eslint-disable vue/no-side-effects-in-computed-properties */
   repoCtx.owner = owner || ''
   repoCtx.name = name || ''
   repoCtx.rawBase = repoCtx.owner && repoCtx.name ? `https://github.com/${repoCtx.owner}/${repoCtx.name}/raw/HEAD/` : ''
   repoCtx.blobBase = repoCtx.owner && repoCtx.name ? `https://github.com/${repoCtx.owner}/${repoCtx.name}/blob/HEAD/` : ''
+  /* eslint-enable vue/no-side-effects-in-computed-properties */
   return DOMPurify.sanitize(md.render(raw.value), {
     ADD_ATTR: ['target', 'rel'],        // 允许链接的 target/rel 属性
     FORBID_ATTR: ['style'],             // 禁止 style 属性（见下方说明）

@@ -138,8 +138,9 @@ const uploadIdx = ref(0)         // 当前正在上传的文件序号（进度�
 
 // 子窗口事件：打开终端 / 编辑器 / 媒体预览（由父窗口接收创建）
 const emit = defineEmits(['openTerminal', 'openEditor', 'openMedia'])
-// 父窗口传入：初始目录路径
-const props = defineProps({ path: String })
+// 父窗口传入的初始目录路径（如 Docker「进入安装目录」）；命名为 initialPath
+// 以避免与内部状态 path 在模板命名空间冲突（vue/no-dupe-keys）
+const props = defineProps({ initialPath: String })
 
 // --- 动作：加载指定目录的文件列表 ---
 async function load(p) {
@@ -672,7 +673,7 @@ function onWindowBlur() {
 }
 
 onMounted(async () => {
-  await load(props.path || '')   // 挂载后进入父窗口指定的初始目录
+  await load(props.initialPath || '')   // 挂载后进入父窗口指定的初始目录
   document.addEventListener('keydown', onKeyDown)
   window.addEventListener('blur', onWindowBlur)
 })

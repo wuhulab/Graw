@@ -128,9 +128,6 @@ function statusClass(s) {
 function authText(a) {
   return a === 'token' ? 'Token' : (a === 'ssh' ? 'SSH' : '')
 }
-function firstDomain(s) {
-  return (s.domains && s.domains[0]) || s.id
-}
 
 async function load() {
   loading.value = true

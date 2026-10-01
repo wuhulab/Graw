@@ -65,7 +65,7 @@
             <td class="ui-mono">{{ fmtTime(k.created_at) }}</td>
             <td class="actions-cell">
               <button class="ui-btn mini" :disabled="busy" @click="showPublic(k)">公钥</button>
-              <button class="ui-btn mini" :disabled="busy" @click="emit('openSshKeyDeploy', { key: k })">部署</button>
+              <button class="ui-btn mini" :disabled="busy" @click="emit('openSshKeyDeploy', { sshKey: k })">部署</button>
               <button class="ui-btn mini danger-text" :disabled="busy" @click="doDelete(k)">删除</button>
             </td>
           </tr>
@@ -107,7 +107,7 @@
 
 <script setup>
 import { ref, onMounted, watch } from 'vue'   // 响应式状态、挂载钩子、信号监听
-import { KeyRound, FileUp, FileKey, Send, RefreshCw } from 'lucide-vue-next'   // 工具栏 / 各弹窗用到的图标
+import { KeyRound, FileUp, FileKey, RefreshCw } from 'lucide-vue-next'   // 工具栏 / 各弹窗用到的图标
 import { sshkeysApi } from '../../api'   // SSH 密钥后端能力：/api/sshkeys/* 的封装
 import ConfirmDialog from '../ConfirmDialog.vue'   // 高风险操作确认框（删除密钥要求输入面板密码）
 import { formBus } from '../../store/formBus'   // 表单保存信号：独立表单窗口保存成功后刷新

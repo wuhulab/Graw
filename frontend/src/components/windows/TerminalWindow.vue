@@ -168,7 +168,7 @@ async function onPersistToggle(e) {
 
 // 解析后端控制帧（持久会话接入通知）：命中返回 true，调用方不得写入 xterm。
 function handleControlFrame(text) {
-  let msg = null
+  let msg   // 由下方 JSON.parse 赋值；解析失败直接 return，故无需初始值
   try {
     msg = JSON.parse(text)
   } catch (e) {

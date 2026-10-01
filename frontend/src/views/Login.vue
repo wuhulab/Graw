@@ -111,12 +111,10 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'      // 表单状态 / 背景样式 / 挂载后初始化
-import { useI18n } from 'vue-i18n'                  // $t：错误与提示文案走多语言
 import { authApi, shunxApi } from '../api'          // 登录/改密接口 + ShunX 安全入口状态接口
 import { setAuth } from '../store/auth'             // 登录成功/改密成功后把身份写入全局并落盘
 import { uiState, loadUi } from '../store/ui'       // 登录页品牌配置（网站名/欢迎语/Logo/背景）
 
-const { t } = useI18n()
 const emit = defineEmits(['login'])   // 登录/改密成功后通知 App.vue 收起登录页、进入桌面
 
 // 界面品牌配置（共享 store）：自定义网站名 / 欢迎语 / Logo / 背景

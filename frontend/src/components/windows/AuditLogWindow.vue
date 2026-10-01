@@ -75,7 +75,8 @@ const loading = ref(false)   // 日志内容加载中
 
 const current = computed(() => sources.value.find((s) => s.id === currentId.value) || null)
 const contentText = computed(() => lines.value.join(''))
-const emptyText = computed(() => (current && !current.exists) ? '该日志源文件不存在' : '暂无日志内容')
+// current 是 computed ref，须用 .value 取值；此前漏写 .value 导致恒判为「文件不存在」
+const emptyText = computed(() => (current.value && !current.value.exists) ? '该日志源文件不存在' : '暂无日志内容')
 
 // 内置日志源优先用本地翻译（缺键时回退后端 desc，逻辑同 LogsWindow）
 function sourceName(s) {

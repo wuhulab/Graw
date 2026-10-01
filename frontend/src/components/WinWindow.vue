@@ -79,9 +79,12 @@ function startDrag(e) {
 
 function onDrag(e) {
   if (!isDragging.value) return
-  // model 是 store 中的响应式对象，直接改 x/y 即实时生效
+  // model 是 store 中的共享响应式对象，直接改 x/y 即可实时生效；
+  // 属于刻意的「就地修改共享状态」用法，故豁免 vue/no-mutating-props
+  /* eslint-disable vue/no-mutating-props */
   props.model.x = e.clientX - dragOffset.value.x
   props.model.y = e.clientY - dragOffset.value.y
+  /* eslint-enable vue/no-mutating-props */
 }
 
 function stopDrag() {

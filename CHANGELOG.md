@@ -8,9 +8,53 @@
 ## [Unreleased]
 
 ### Added
+- 前端工程化：新增 ESLint 扁平配置（`frontend/eslint.config.js`，`@eslint/js` 推荐规则 + `eslint-plugin-vue` Vue3 essential，并用 `eslint-config-prettier` 关闭排版类冲突规则）与 Prettier 配置（`.prettierrc.json` / `.prettierignore`）
+- 前端新增脚本：`lint` / `lint:fix` / `format` / `format:check`
+- CI：恢复 Backend / Frontend 检查工作流（Backend 补装 httpx，修复 TestClient 收集阶段报错）
+
+### Changed
+- CI：前端新增 ESLint 检查步骤；后端测试集扩容为「`test_*_unit.py` 整跑 + 其余套件逐文件独立进程」（规避模块级全局状态跨文件污染），并明确排除依赖真实后端 / 会改写 `data/users.json` 的用例
+- 依赖升级（已用独立虚拟环境跑通全量测试验证）：`fastapi` 0.115.14 → 0.141.1、`uvicorn[standard]` 0.30.6 → 0.52.4、`psutil` 6.0.0 → 7.2.2；并因 uvicorn 新版要求 `websockets>=13` 同步将 `websockets` 12.0 → 17.1
+- 代码扫描告警收敛：修复 CodeQL 12 项告警（重复导入 / 空 except / 日志注入 / 未使用导入与变量 / 恒真条件）
+- 测试活债清理：`test_tamper_unit.py` 补 pytest fixture 与临时目录隔离、`test_backup_unit.py` mock 掉真实 DNS 解析、`test_databases_sqlite.py` 与 SQL 首动词白名单对齐
+
+### Fixed
+- 计划任务「新增 → 标准」表单崩溃：`CronTaskFormWindow` 调用了未定义的 `defaultStd()`，补齐默认值工厂函数
+- 防篡改告警弹窗操作报错：`TamperAlert` 使用未定义的 `t()`（漏了 `useI18n`），并修复「完全关闭」提示显示为原始 key 文本的问题
+- 日志审计窗口空态误判：`AuditLogWindow` 对 computed 漏写 `.value`，导致恒显示「文件不存在」
+- SSH 密钥部署窗口：prop 名 `key` 为 Vue 保留属性，重命名为 `sshKey`（调用方同步调整）
+- 文件管理窗口：prop `path` 与内部状态同名造成模板命名空间冲突，prop 重命名为 `initialPath`
+- 防篡改窗口：清理引用未定义变量的死代码
+- 其余 ESLint 报出的死代码 / 未使用导入与变量、多余正则转义等若干处；有意静默的空 catch 通过 `no-empty: allowEmptyCatch` 显式放行（避免为 17 处「尽力而为」的容错分支逐个加注释）
+
+## [1.7.3] - 2026-10-01
+
+### Added
+- 面板启动过渡动画：面板挂载前显示静态「Graw」文字 + 浅蓝色旋转指示，挂载完成后自动移除
+- 系统概览「显示两位小数」开关：开启后 CPU / 内存 / 磁盘百分比按两位小数展示（界面设置实时生效，无需保存）
+- 窗口组件懒加载拆分（`lazyWindows.js`），进一步切割组件、加快面板启动速度
+- Docker 实时数据单元测试（`test_docker_realtime_unit.py`）
+- Docker Hub 说明文档（DOCKERHUB.md）与演示图目录（demo-photo）；Issue 模板补充 question 模板并新增 FUNDING.yml
+
+### Changed
+- Docker：移除 `/api/docker/status`、`/api/docker/containers` 的常驻轮询，改为按需拉取，降低空闲开销
+- Docker：修复部分容器日志无法获取、显示为「空」的问题
+- README 与多语言 README（readme-i18n）更新；docs/deployment 补充说明
+
+## [1.7.2] - 2026-09-26
+
+仅版本号同步，无功能变更。
+
+## [1.7.1] - 2026-09-25
+
+仅版本号同步，无功能变更。
+
+## [1.7.0] - 2026-09-25
+
+### Added
 - 界面多语言：新增 11 种语言包（阿拉伯语、埃及阿拉伯语、古埃及语、爱尔兰语、希腊语、意大利语、拉丁语、波兰语、越南语、藏语、壮语），累计支持 22 种界面语言
 - 古代语言语言包：新增苏美尔语 / 阿卡德语 / 赫梯语语言包，并新增「语言括号提示」设置（控制 `本语言书写形式 (中文原文/拉丁转写)` 括号注释的展示内容）
-- 标准面板模式（1Panel 风格）：侧边栏分组菜单 + 顶部多标签栏（标签页可缓存窗口状态），并补充传统服务器面板主页与 Docker / 进程窗口适配
+- 标准面板模式：侧边栏分组菜单 + 顶部多标签栏（标签页可缓存窗口状态），并补充传统服务器面板主页与 Docker / 进程窗口适配
 - 应用商店：README / 详情窗口增强（README 拉取增加 512KB 上限与 owner/name 路径白名单校验）
 - 贡献者许可协议（CLA）：CONTRIBUTING.md 新增第 7 节「贡献者许可协议」（提交即视为同意）
 - 文档体系完善：新增 docs/README、docs/api-overview、docs/deployment、docs/node-agent、docs/app-store-recipe
@@ -97,7 +141,11 @@
 与远端子节点能力门控（remote_cap）等功能逐步演进上线，详细变更
 请查看对应 git tag 提交记录。
 
-[Unreleased]: https://github.com/wuhulab/Graw/compare/v1.6.1...HEAD
+[Unreleased]: https://github.com/wuhulab/Graw/compare/v1.7.3...HEAD
+[1.7.3]: https://github.com/wuhulab/Graw/releases/tag/v1.7.3
+[1.7.2]: https://github.com/wuhulab/Graw/releases/tag/v1.7.2
+[1.7.1]: https://github.com/wuhulab/Graw/releases/tag/v1.7.1
+[1.7.0]: https://github.com/wuhulab/Graw/releases/tag/v1.7.0
 [1.6.1]: https://github.com/wuhulab/Graw/releases/tag/v1.6.1
 [1.6.0]: https://github.com/wuhulab/Graw/releases/tag/v1.6.0
 [1.5.9]: https://github.com/wuhulab/Graw/releases/tag/v1.5.9

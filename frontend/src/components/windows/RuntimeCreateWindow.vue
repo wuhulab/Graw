@@ -216,22 +216,6 @@ const form = reactive({
 const CONTAINER_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/
 const containerNameValid = computed(() => !form.container_name || CONTAINER_NAME_RE.test(form.container_name))
 
-function resetForm() {
-  form.name = ''
-  form.project_dir = ''
-  form.start_command = ''
-  form.app_version = (template.value?.default_version || template.value?.versions?.[0] || '')
-  form.container_name = ''
-  form.notes = ''
-  form.html_port = ''
-  form.install_command = ''
-  form.ports = []
-  form.env = []
-  form.mounts = []
-  form.hosts = []
-  form.workdir = template.value?.workdir || '/app'
-}
-
 async function loadTemplates() {
   loadingTemplates.value = true
   try {

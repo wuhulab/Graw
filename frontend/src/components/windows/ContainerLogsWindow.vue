@@ -48,7 +48,7 @@ const { t } = useI18n()
 
 // props: id 容器 ID, name 容器名称；emit: close 关闭窗口
 const props = defineProps({ id: String, name: String })
-const emit = defineEmits(['close'])
+defineEmits(['close'])
 
 const logs = ref(t('containerlogs.fetching'))   // 日志文本（初始为「正在获取」）
 const loading = ref(false)   // 加载中

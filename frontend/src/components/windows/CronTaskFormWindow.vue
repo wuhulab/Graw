@@ -149,7 +149,24 @@ const form = reactive(props.task && props.mode === 'regular'
   ? { name: props.task.name || '', schedule: props.task.schedule || '0 3 * * *', command: props.task.command || '' }
   : { name: '', schedule: '0 3 * * *', command: '' })
 
-// 标准记录表单默认值：默认分组「默认」、每天 02:30 执行（新建与编辑回填共用）
+// 标准记录表单默认值工厂：默认分组「默认」、每天 02:30 执行。
+// 单独抽成函数是因为下面 reactive 的分支需要「新建时取全新默认对象」，
+// 直接内联对象会在多窗口/多次打开时共享同一引用（reactive 拷贝前即被改写）。
+function defaultStd() {
+  return {
+    name: '',
+    group: '默认',
+    taskType: 'shell_command',
+    freq: 'daily',
+    weekday: 1,
+    dayOfMonth: 1,
+    time: '02:30',
+    content: '',
+    alert: false
+  }
+}
+
+// 标准记录表单：编辑时按 task 回填，新建（task 为空）时使用默认值
 const std = reactive(props.mode === 'standard' && props.task
   ? {
       name: props.task.name || '',

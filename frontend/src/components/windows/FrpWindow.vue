@@ -254,6 +254,8 @@ function delProxy(p) {
 }
 
 // 面板密码校验通过后真正执行删除
+// 预留：面板密码二次确认 UI 尚未接入（见文件顶部说明），暂保留待接入
+// eslint-disable-next-line no-unused-vars
 async function doDeleteProxy() {
   const p = confirm.value.target
   confirm.value.show = false

@@ -305,7 +305,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'   // 响应式状态、表单对象、派生值、挂载钩子
+import { ref, reactive, onMounted } from 'vue'   // 响应式状态、表单对象、挂载钩子
 import { wafApi } from '../../api'   // WAF 后端能力：/api/waf/* 的封装
 import ConfirmDialog from '../ConfirmDialog.vue'   // 高风险操作确认框（清空日志要求输入面板密码）
 

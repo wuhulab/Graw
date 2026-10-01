@@ -249,18 +249,14 @@ function fmtTime(iso) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
-// --- 拉取全局状态 + 防护站点 + 候选站点，并同步后端默认忽略规则 ---
+// --- 拉取全局状态 + 防护站点 + 候选站点 ---
 async function loadAll() {
   loading.value = true
   try {
-    const [st, sites] = await Promise.all([refreshTamperStatus(), tamperApi.sites()])   // 状态与站点并发拉取，减少等待
+    // refreshTamperStatus 会顺带刷新全局告警状态（store），此处只需站点列表
+    const [, sites] = await Promise.all([refreshTamperStatus(), tamperApi.sites()])   // 状态与站点并发拉取，减少等待
     protections.value = (sites && sites.protections) || []
     candidates.value = (sites && sites.candidates) || []
-    // 以后端返回的内置默认忽略规则为准（保持一致，避免前端硬编码过期）
-    const defaults = st?.sites?.[0]?.default_ignore_patterns
-    if (Array.isArray(defaults) && defaults.length) {
-      defaultIgnorePatterns.value = defaults
-    }
   } catch (e) {
     // 接口失败时保留已有数据
   } finally {

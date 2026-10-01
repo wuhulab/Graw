@@ -88,6 +88,8 @@ function remove(c) {
 }
 
 // 面板密码校验通过后真正执行删除
+// 预留：面板密码二次确认 UI 尚未接入（模板仅 remove() 置位，未挂删除调用），暂保留待接入
+// eslint-disable-next-line no-unused-vars
 async function doRemove() {
   const c = confirm.value.target
   confirm.value.show = false   // 先收起确认框，避免删除期间重复触发

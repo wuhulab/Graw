@@ -231,9 +231,7 @@ const emit = defineEmits(['openSiteEdit', 'openSslUpload', 'openSslLeForm', 'ope
 // 站点列表发生变更（独立窗口保存成功）后自动刷新
 // siteRevision 是个全局计数器，站点编辑窗口保存成功就自增一次，本窗口据此重新拉列表，
 // 免得管理员保存完还要手动刷新才看到新数据
-let revisionInited = false
 watch(siteRevision, () => {
-  revisionInited = true
   load()
 })
 

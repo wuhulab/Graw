@@ -186,7 +186,7 @@ function connect() {
 
   sock.onmessage = (ev) => {
     if (ws !== sock) return
-    let msg = null
+    let msg   // 由下方 JSON.parse 赋值；非法帧已 return，故无需初始值
     try {
       msg = JSON.parse(ev.data)
     } catch (e) {

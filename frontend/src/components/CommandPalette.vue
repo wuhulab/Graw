@@ -41,7 +41,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, nextTick, watch } from 'vue'
+import { ref, computed, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { sitesApi, dockerApi } from '../api'
 import { nodes, setCurrentNode } from '../store/nodes'
