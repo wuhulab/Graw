@@ -40,13 +40,14 @@
           <tr>
             <th>{{ $t('users.username') }}</th>
             <th>{{ $t('users.role') }}</th>
+            <th>{{ $t('users.permCol') }}</th>
             <th>{{ $t('users.status') }}</th>
             <th>{{ $t('users.createdAt') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="users.length === 0">
-            <td colspan="4" class="empty">{{ $t('users.noUsers') }}</td>
+            <td colspan="5" class="empty">{{ $t('users.noUsers') }}</td>
           </tr>
           <tr v-for="u in users" :key="u.username" @contextmenu.prevent="onContextMenu($event, u)">
             <td>
@@ -55,6 +56,14 @@
             </td>
             <td>
               <span :class="['role-pill', u.role]">{{ u.role === 'admin' ? $t('users.admin') : $t('users.user') }}</span>
+            </td>
+            <td style="font-size:11px;">
+              <!-- 模块权限：null/缺失 = 全量（完整管理员）；数组 = 受限管理员白名单 -->
+              <span v-if="u.role !== 'admin'" style="color:#6e6e73;">-</span>
+              <span v-else-if="u.perms == null" style="color:#0a3d7a;">{{ $t('users.permAll') }}</span>
+              <span v-else :title="(u.perms || []).map(permLabel).join('、')" style="color:#c0392b;">
+                {{ $t('users.permCount', { count: (u.perms || []).length }) }}
+              </span>
             </td>
             <td>
               <span v-if="u.must_change_password" style="color:#c0392b; font-size:11px;">{{ $t('users.mustChange') }}</span>
@@ -67,8 +76,10 @@
     </div>
 
     <Teleport to="body">
+      <!-- 右键菜单：必须由 contextMenu.show 控制显隐，否则挂载时会在 (0,0) 位置显示一个空菜单 -->
       <div v-if="contextMenu.show" class="context-menu" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }" @click.stop>
         <div class="menu-item" @click="menuResetPwd">{{ $t('users.resetPassword') }}</div>
+        <div class="menu-item" @click="menuPermEdit">{{ $t('users.permEdit') }}</div>
         <div class="menu-item" @click="menuToggleRole">{{ contextMenu.item?.role === 'admin' ? $t('users.demote') : $t('users.promote') }}</div>
         <div class="menu-item danger" @click="menuDelete">{{ $t('users.delete') }}</div>
       </div>
@@ -93,6 +104,23 @@
             <option value="admin">{{ $t('users.admin') }}</option>
           </select>
         </label>
+        <!-- 模块授权（仅管理员角色）：默认「完整管理员」；取消勾选后可指定白名单 -->
+        <div v-if="form.role === 'admin'" class="perm-block">
+          <label class="field checkbox">
+            <input type="checkbox" v-model="form.permsFull" />
+            <span>{{ $t('users.permFullLabel') }}</span>
+          </label>
+          <div v-if="!form.permsFull" class="perm-list">
+            <div class="perm-actions">
+              <button type="button" class="btn-link" @click="form.perms = [...moduleList]">{{ $t('users.permSelectAll') }}</button>
+              <button type="button" class="btn-link" @click="form.perms = []">{{ $t('users.permClear') }}</button>
+            </div>
+            <label v-for="m in moduleList" :key="m" class="perm-item">
+              <input type="checkbox" :value="m" v-model="form.perms" />
+              <span>{{ permLabel(m) }}</span>
+            </label>
+          </div>
+        </div>
         <div v-if="modalError" class="error">{{ modalError }}</div>
         <div class="modal-actions">
           <button class="btn" @click="showCreate = false">{{ $t('common.cancel') }}</button>
@@ -119,6 +147,34 @@
         <div class="modal-actions">
           <button class="btn" @click="showReset = false">{{ $t('common.cancel') }}</button>
           <button class="btn-primary" :disabled="saving" @click="submitReset">
+            {{ saving ? $t('common.saving') : $t('common.save') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 模块授权对话框（受限管理员）：全量开关 + 模块白名单多选 -->
+    <div v-if="permEdit.show" class="modal-mask" @click.self="permEdit.show = false">
+      <div class="modal">
+        <div class="modal-title">{{ $t('users.permTitle', { username: permEdit.username }) }}</div>
+        <label class="field checkbox">
+          <input type="checkbox" v-model="permEdit.full" />
+          <span>{{ $t('users.permFullLabel') }}</span>
+        </label>
+        <div v-if="!permEdit.full" class="perm-list">
+          <div class="perm-actions">
+            <button type="button" class="btn-link" @click="permEdit.selected = [...moduleList]">{{ $t('users.permSelectAll') }}</button>
+            <button type="button" class="btn-link" @click="permEdit.selected = []">{{ $t('users.permClear') }}</button>
+          </div>
+          <label v-for="m in moduleList" :key="m" class="perm-item">
+            <input type="checkbox" :value="m" v-model="permEdit.selected" />
+            <span>{{ permLabel(m) }}</span>
+          </label>
+        </div>
+        <div v-if="modalError" class="error">{{ modalError }}</div>
+        <div class="modal-actions">
+          <button class="btn" @click="permEdit.show = false">{{ $t('common.cancel') }}</button>
+          <button class="btn-primary" :disabled="saving" @click="submitPermEdit">
             {{ saving ? $t('common.saving') : $t('common.save') }}
           </button>
         </div>
@@ -154,15 +210,35 @@ const showReset = ref(false)     // 重置密码弹窗是否展开
 const resetTarget = ref(null)    // 要重置密码的目标用户
 const resetPwd = ref('')         // 重置密码弹窗里的新密码
 const resetMustChange = ref(true)   // 重置后是否强制下次登录改密（默认开）
-const form = ref({ username: '', password: '', role: 'user' })   // 创建用户表单
+const form = ref({ username: '', password: '', role: 'user', permsFull: true, perms: [] })   // 创建用户表单（含模块授权）
 const saving = ref(false)        // 创建 / 重置请求提交中
 const modalError = ref('')       // 弹窗内错误提示
 const contextMenu = ref({ show: false, x: 0, y: 0, item: null })   // 右键菜单位置与命中的用户
+// 模块授权（受限管理员）：key 清单来自后端 /auth/modules（单一来源，避免前端清单漂移）
+const moduleList = ref([])
+const permEdit = ref({ show: false, username: '', full: true, selected: [] })   // 模块授权编辑弹窗
 // 高风险操作二次确认：记录待删除用户
 const confirm = ref({ show: false, username: '' })
 let timer = null   // 10 秒自动刷新定时器句柄
 
 const currentUser = auth.user?.username   // 当前登录用户名，用于标「我」与自删保护
+
+// --- 加载可授权模块清单（失败不阻塞页面，仅记录告警） ---
+async function loadModules() {
+  try {
+    const r = await authApi.listModules()
+    moduleList.value = Array.isArray(r?.modules) ? r.modules : []
+  } catch (e) {
+    console.warn('list modules failed', e)
+  }
+}
+
+// --- 模块显示名：优先取 i18n，缺翻译时回退显示原始 key（避免界面出现裸 key） ---
+function permLabel(m) {
+  const key = 'users.perm.' + m
+  const v = t(key)
+  return v === key ? m : v
+}
 
 // --- 拉取用户列表，按创建时间升序排列 ---
 async function refresh() {
@@ -176,9 +252,9 @@ async function refresh() {
   }
 }
 
-// --- 打开创建用户弹窗：重置表单 ---
+// --- 打开创建用户弹窗：重置表单（模块授权默认「完整管理员」） ---
 function openCreate() {
-  form.value = { username: '', password: '', role: 'user' }   // 默认普通用户角色，管理员需显式选择
+  form.value = { username: '', password: '', role: 'user', permsFull: true, perms: [...moduleList.value] }
   modalError.value = ''
   showCreate.value = true
 }
@@ -187,14 +263,47 @@ async function submitCreate() {
   if (saving.value) return   // 提交进行中直接退出，防止重复创建
   if (form.value.username.length < 2) { modalError.value = t('users.usernameTooShort'); return }
   if (form.value.password.length < 6) { modalError.value = t('users.passwordTooShort'); return }
+  // 模块白名单：勾选「完整管理员」→ null（全量）；否则提交所选模块数组
+  const perms = form.value.role === 'admin'
+    ? (form.value.permsFull ? null : form.value.perms)
+    : null
   saving.value = true
   modalError.value = ''
   try {
-    await authApi.createUser(form.value.username, form.value.password, form.value.role)
+    await authApi.createUser(form.value.username, form.value.password, form.value.role, perms)
     showCreate.value = false
     await refresh()
   } catch (e) {
     modalError.value = e?.response?.data?.detail || t('users.createFailed')
+  } finally {
+    saving.value = false
+  }
+}
+
+// --- 打开模块授权弹窗（仅管理员账号可配置） ---
+function openPermEdit(u) {
+  if (u.role !== 'admin') { alert(t('users.permOnlyAdmin')); return }
+  permEdit.value = {
+    show: true,
+    username: u.username,
+    full: u.perms == null,                                  // null/缺失 = 全量（完整管理员）
+    selected: Array.isArray(u.perms) ? [...u.perms] : [...moduleList.value],
+  }
+  modalError.value = ''
+}
+
+// --- 提交模块授权：full=true 传 null（恢复全量），否则传白名单数组 ---
+async function submitPermEdit() {
+  if (saving.value) return
+  saving.value = true
+  modalError.value = ''
+  try {
+    const { username, full, selected } = permEdit.value
+    await authApi.updateUser(username, { perms: full ? null : selected })
+    permEdit.value.show = false
+    await refresh()
+  } catch (e) {
+    modalError.value = e?.response?.data?.detail || t('users.permUpdateFailed')
   } finally {
     saving.value = false
   }
@@ -276,8 +385,30 @@ function closeMenus() {
   contextMenu.value.show = false
 }
 
+// --- 点击菜单外的任意位置（其它窗口 / 桌面 / 任务栏 / 表格空白）自动收起 ---
+// 菜单经 Teleport 挂到 body，不属于本组件根节点，只靠根节点的 @click 覆盖不到窗口外部，
+// 因此必须挂文档级监听；命中菜单内部时跳过，交给菜单项自身处理（它们会先 closeMenus 再执行动作）。
+function onDocMouseDown(e) {
+  if (!contextMenu.value.show) return
+  if (e.target instanceof Element && e.target.closest('.context-menu')) return
+  closeMenus()
+}
+
+// --- 在非表格行处再次右键同样收起（行上的右键会被 onContextMenu 阻止冒泡到文档） ---
+function onDocContextMenu(e) {
+  if (!contextMenu.value.show) return
+  if (e.target instanceof Element && e.target.closest('.context-menu')) return
+  closeMenus()
+}
+
+// --- Esc 也收起菜单（与桌面其它右键菜单的交互习惯一致） ---
+function onDocKeydown(e) {
+  if (e.key === 'Escape' && contextMenu.value.show) closeMenus()
+}
+
 // --- 在用户行上右键：记录点击位置与命中的用户 ---
 function onContextMenu(e, u) {
+  e.stopPropagation()   // 阻止冒泡，避免文档级 contextmenu 监听把刚打开的菜单又立刻关掉
   contextMenu.value = { show: true, x: e.clientX, y: e.clientY, item: u }
 }
 
@@ -286,6 +417,13 @@ function menuResetPwd() {
   const u = contextMenu.value.item
   closeMenus()
   if (u) openResetPwd(u)
+}
+
+// --- 菜单项：模块授权 ---
+function menuPermEdit() {
+  const u = contextMenu.value.item
+  closeMenus()
+  if (u) openPermEdit(u)
 }
 
 // --- 菜单项：提升 / 降级角色 ---
@@ -302,8 +440,22 @@ function menuDelete() {
   if (u) del(u)
 }
 
-onMounted(() => { refresh(); timer = setInterval(refresh, 10000) })   // 打开即拉列表，之后每 10 秒自动同步
-onUnmounted(() => clearInterval(timer))   // 窗口关闭后停掉自动刷新
+onMounted(() => {
+  refresh()
+  loadModules()   // 模块清单用于创建/授权弹窗的多选渲染（失败时静默，不阻塞列表）
+  timer = setInterval(refresh, 10000)
+  // 右键菜单的文档级收起监听：窗口打开期间生效
+  document.addEventListener('mousedown', onDocMouseDown)
+  document.addEventListener('contextmenu', onDocContextMenu)
+  document.addEventListener('keydown', onDocKeydown)
+})   // 打开即拉列表，之后每 10 秒自动同步
+onUnmounted(() => {
+  clearInterval(timer)   // 窗口关闭后停掉自动刷新
+  // 同步移除文档级监听，避免窗口关闭后残留监听（内存泄漏 / 误收起其它菜单）
+  document.removeEventListener('mousedown', onDocMouseDown)
+  document.removeEventListener('contextmenu', onDocContextMenu)
+  document.removeEventListener('keydown', onDocKeydown)
+})
 </script>
 
 <style scoped>
@@ -316,6 +468,48 @@ onUnmounted(() => clearInterval(timer))   // 窗口关闭后停掉自动刷新
 }
 .role-pill.admin { background: rgba(10, 132, 255, 0.12); color: #0a3d7a; }
 .role-pill.user { background: rgba(0, 0, 0, 0.06); color: #1d1d1f; }
+
+/* --- 模块授权（受限管理员）多选区 --- */
+.perm-block {
+  margin-bottom: 12px;
+}
+
+.perm-list {
+  max-height: 190px;
+  overflow: auto;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fafafa;
+}
+
+.perm-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.btn-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 11px;
+  color: #0a84ff;
+  cursor: pointer;
+  font-family: inherit;
+}
+.btn-link:hover { text-decoration: underline; }
+
+.perm-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #1d1d1f;
+  padding: 2px 0;
+  cursor: pointer;
+}
+.perm-item input { width: auto; }
 
 .menu-item { padding: 8px 12px; font-size: 12px; cursor: pointer; }
 .menu-item:hover { background: #f5f5f7; }

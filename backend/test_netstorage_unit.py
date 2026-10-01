@@ -206,9 +206,17 @@ class TestS3Paths(unittest.TestCase):
 
 
 class TestAdminGuard(unittest.TestCase):
+    """模块权限门卫：完整管理员（perms 缺失=全量）放行，受限管理员按白名单判定。"""
+
     def test_admin_ok(self):
-        ns._require_admin_user({"role": "admin"})
-        ns._require_admin_user({"is_admin": True})
+        ns._require_admin_user({"role": "admin"})                 # 存量管理员：无 perms 字段 = 全量
+        ns._require_admin_user({"role": "admin", "perms": None})  # 显式 null = 全量
+        ns._require_admin_user({"role": "admin", "perms": ["netstorage"]})   # 白名单命中
+        ns._require_admin_user({"role": "admin", "perms": ["netstorage", "docker"]})
+
+    def test_admin_without_module_forbidden(self):
+        with self.assertRaises(Exception):
+            ns._require_admin_user({"role": "admin", "perms": ["docker"]})   # 受限但无 netstorage
 
     def test_user_forbidden(self):
         with self.assertRaises(Exception):

@@ -40,7 +40,8 @@ def _make_app():
 
     # 覆盖 get_current_user（PROTECTED 依赖中引用的是模块级函数对象）
     app.dependency_overrides[loginlog.get_current_user] = fake_current_user
-    app.dependency_overrides[loginlog.require_admin] = fake_admin
+    # 管理接口使用模块级 _PERM（require_perm("loginlog") 的闭包），整体覆盖为管理员
+    app.dependency_overrides[loginlog._PERM] = fake_admin
     return app
 
 

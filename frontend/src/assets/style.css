@@ -1077,3 +1077,24 @@ table.dt tr:hover td { background: #f5f5f7; }
 .ui-context-menu .menu-item.danger { color: var(--ui-danger-fg); }
 .ui-context-menu .menu-item.danger:hover { background: var(--ui-danger-bg); }
 .ui-context-menu .menu-divider { height: 1px; background: var(--ui-border); margin: 4px 0; }
+
+/* ---- 模块权限提示条（受限管理员点开无权限模块时的轻量提示） ---- */
+.perm-notice {
+  position: fixed;
+  left: 50%;
+  bottom: 72px;
+  transform: translateX(-50%);
+  z-index: 3000;
+  padding: 10px 18px;
+  border-radius: var(--ui-radius-sm);
+  background: rgba(17, 24, 39, 0.92);
+  color: #fff;
+  font-size: 13px;
+  box-shadow: var(--ui-shadow-md);
+  pointer-events: none;
+  animation: perm-notice-in 0.18s ease-out;
+}
+@keyframes perm-notice-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}

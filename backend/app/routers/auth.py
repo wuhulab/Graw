@@ -18,6 +18,8 @@ from ..auth import (
     otpauth_uri,
     get_current_user,
     require_admin,
+    user_perms,
+    MODULES,
     _load_users,
     _save_users,
     _get_user,
@@ -369,8 +371,12 @@ async def logout(request: Request, user: dict = Depends(get_current_user)):
 async def sessions(
     limit: int = 100, user: dict = Depends(get_current_user)
 ):
-    """列出在线会话：管理员看全部，普通用户只看自己。"""
-    if user.get("role") == "admin":
+    """列出在线会话：完整管理员看全部，受限管理员 / 普通用户只看自己。
+
+    受限管理员（perms 白名单）虽是 admin，但会话列表含他人 IP / 设备信息，
+    按最小权限原则只返回本人的会话。
+    """
+    if user_perms(user) is None:
         items = list_sessions(None, limit)
     else:
         items = list_sessions(user["username"], limit)
@@ -384,7 +390,7 @@ async def kick_session(
     request: Request,
     user: dict = Depends(get_current_user),
 ):
-    """踢出单个设备（强制下线）。管理员可踢任意会话；普通用户仅能踢自己的。"""
+    """踢出单个设备（强制下线）。完整管理员可踢任意会话；其余仅能踢自己的。"""
     # 找到该会话归属账号
     target_owner = None
     for s in list_sessions(None, 500):
@@ -393,7 +399,8 @@ async def kick_session(
             break
     if target_owner is None:
         raise HTTPException(status_code=404, detail="会话不存在或已过期")
-    if user.get("role") != "admin" and target_owner != user["username"]:
+    # 操作他人会话要求完整管理员（受限管理员不得越权到他人账号）
+    if target_owner != user["username"] and user_perms(user) is not None:
         raise HTTPException(status_code=403, detail="只能操作自己的会话")
     if not revoke_session(sid):
         raise HTTPException(status_code=404, detail="会话不存在或已过期")
@@ -503,16 +510,56 @@ async def change_password(
     return {"ok": True, "token": new_token}
 
 
+def _normalize_perms(value) -> Optional[list]:
+    """校验并规整「模块白名单」（受限管理员的细粒度授权）。
+
+    - None            → None（全量权限，等价于未配置）；
+    - 数组            → 去重后按 MODULES 声明顺序返回（存储顺序稳定，便于比对）；
+    - 含未知模块 key 或类型非数组 → 400（拒绝写入脏数据，避免授权被静默忽略）。
+    """
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise HTTPException(status_code=400, detail="perms 必须是模块数组")
+    unknown = sorted({str(x) for x in value if x not in MODULES})
+    if unknown:
+        raise HTTPException(status_code=400, detail="未知模块：" + "、".join(unknown))
+    picked = {str(x) for x in value}
+    return [m for m in MODULES if m in picked]
+
+
+def _super_admin_count(users: dict) -> int:
+    """统计「完整权限的超级管理员」数量（role=admin 且未配置 perms 白名单）。
+
+    受限管理员（perms 为数组）本身已被模块白名单收窄，无法执行用户管理 / 插件 /
+    面板更新等「面板自身安全边界」操作，因此不能充当兜底管理员，不计入本统计。
+    `user_perms()` 对完整管理员返回 None（对非管理员返回空集合），可据此判定。
+    """
+    return sum(1 for u in users.values() if isinstance(u, dict) and user_perms(u) is None)
+
+
 class CreateUserRequest(BaseModel):
     username: str = Field(min_length=2, max_length=32, pattern=r"^[A-Za-z0-9_.-]+$")
     password: str = Field(min_length=MIN_PASSWORD_LEN, max_length=128)
     role: str = Field(default="user")
+    # 受限管理员的模块白名单（仅 role=admin 有意义）；null / 省略 = 全量权限
+    perms: Optional[list] = None
 
 
 @router.get("/users")
 async def list_users(_: dict = Depends(require_admin)):
     users = _load_users() or {}
     return [_public_user(u) for u in users.values()]
+
+
+@router.get("/modules")
+async def list_modules(_: dict = Depends(require_admin)):
+    """返回可授权的模块 key 清单（供用户管理界面的「模块授权」多选渲染）。
+
+    单一来源：与后端 require_perm 使用的模块 key 完全一致，避免前端维护重复
+    清单产生漂移；模块的显示名由前端 i18n（userMgmt.perm.<key>）提供。
+    """
+    return {"modules": list(MODULES)}
 
 
 @router.post("/users")
@@ -524,6 +571,8 @@ async def create_user(req: CreateUserRequest, request: Request, admin: dict = De
         raise HTTPException(status_code=400, detail="不能将默认密码作为账号密码")
     # 密码策略校验（严格模式：字母+数字）
     _validate_password_strength(req.password, req.username, strict=True)
+    # 模块白名单校验（未知 key 直接 400，避免写入无效授权）
+    perms = _normalize_perms(req.perms) if req.role == "admin" else None
     users = _load_users() or {}
     if req.username in users:
         raise HTTPException(status_code=400, detail="用户已存在")
@@ -531,12 +580,14 @@ async def create_user(req: CreateUserRequest, request: Request, admin: dict = De
         "username": req.username,
         "password": hash_password(req.password),
         "role": req.role,
+        # null = 全量权限；数组 = 受限管理员白名单（普通用户恒为 null）
+        "perms": perms,
         "must_change_password": False,
         "token_version": 0,
         "created_at": time.time(),
     }
     _save_users(users)
-    logger.info("管理员创建账号 %s（角色 %s）", req.username, req.role)
+    logger.info("管理员创建账号 %s（角色 %s，模块权限 %s）", req.username, req.role, perms if perms is not None else "全量")
     auditlog.record("创建用户", admin["username"], get_client_ip(request), f"目标:{req.username} 角色:{req.role}")
     return {"ok": True}
 
@@ -545,6 +596,8 @@ class UpdateUserRequest(BaseModel):
     password: Optional[str] = Field(default=None, max_length=128)
     role: Optional[str] = None
     must_change_password: Optional[bool] = None
+    # 模块白名单：显式传 null = 恢复全量权限；不传 = 保持原值（PATCH 语义）
+    perms: Optional[list] = None
 
 
 @router.put("/users/{username}")
@@ -555,6 +608,8 @@ async def update_user(
     target = users.get(username)
     if target is None:
         raise HTTPException(status_code=404, detail="用户不存在")
+    # 兜底基线：本次变更前系统内「完整权限超级管理员」的数量（用于判定是否“把最后一个改没了”）
+    super_before = _super_admin_count(users)
     if req.password is not None:
         # ShunX 保护：禁止把密码重置为默认密码
         if req.password == DEFAULT_PASSWORD:
@@ -572,14 +627,25 @@ async def update_user(
     if req.role is not None:
         if req.role not in VALID_ROLES:
             raise HTTPException(status_code=400, detail="角色无效")
-        # 阻止降级最后一个管理员
-        if target.get("role") == "admin" and req.role != "admin":
-            admins = [u for u in users.values() if u.get("role") == "admin"]
-            if len(admins) <= 1:
-                raise HTTPException(status_code=400, detail="至少保留一个管理员账号")
         target["role"] = req.role
+        # 角色降为普通用户时清空白名单（模块授权只在 admin 身份之上生效）
+        if req.role != "admin":
+            target["perms"] = None
     if req.must_change_password is not None:
         target["must_change_password"] = req.must_change_password
+    # 模块白名单：仅当请求显式携带 perms 时更新（PATCH 语义，避免误清空）
+    if "perms" in getattr(req, "model_fields_set", set()):
+        perms = _normalize_perms(req.perms)
+        # 普通用户不保留白名单（升级为 admin 时按全量处理，避免残留授权意外生效）
+        target["perms"] = perms if target.get("role") == "admin" else None
+        logger.info("管理员更新账号 %s 的模块权限：%s", repr(username), perms if perms is not None else "全量")
+    # ShunX 保护：变更后必须仍保留至少一个「完整权限的超级管理员」，否则面板会
+    # 失去可兜底的管理账号（受限管理员做不了用户管理 / 插件 / 更新等面板自身操作），
+    # 无人能再恢复权限。target 与 users 中为同一对象，故此处统计的是变更生效后的状态；
+    # 仅在「原本还有兜底管理员、却被本次变更清零」时拦截（数据本就异常时不阻断修复）。
+    if super_before >= 1 and _super_admin_count(users) < 1:
+        logger.warning("拒绝变更账号 %s：会移除最后一个完整权限超级管理员", repr(username))
+        raise HTTPException(status_code=400, detail="必须保留至少一个完整权限的超级管理员")
     _save_users(users)
     auditlog.record(
         "更新用户", admin["username"], get_client_ip(request),
@@ -596,9 +662,10 @@ async def delete_user(username: str, request: Request, user: dict = Depends(requ
     target = users.get(username)
     if target is None:
         raise HTTPException(status_code=404, detail="用户不存在")
-    admins = [u for u in users.values() if u.get("role") == "admin"]
-    if target.get("role") == "admin" and len(admins) <= 1:
-        raise HTTPException(status_code=400, detail="至少保留一个管理员账号")
+    # ShunX 保护：不能删除最后一个「完整权限的超级管理员」（受限管理员不计入兜底）
+    if user_perms(target) is None and _super_admin_count(users) <= 1:
+        logger.warning("拒绝删除账号 %s：它是最后一个完整权限超级管理员", repr(username))
+        raise HTTPException(status_code=400, detail="必须保留至少一个完整权限的超级管理员")
     del users[username]
     _save_users(users)
     auditlog.record("删除用户", user["username"], get_client_ip(request), f"目标:{username}")

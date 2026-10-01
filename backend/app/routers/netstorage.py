@@ -1147,9 +1147,12 @@ def _validate_lpath(lpath: Optional[str]) -> str:
 # 路由：连接管理
 # ---------------------------------------------------------------------------
 def _require_admin_user(user: dict) -> None:
-    # 兜底：即使前缀未挂依赖，也强制校验管理员（纵深防御）
-    if user.get("role") != "admin" and user.get("is_admin") is not True:
-        raise HTTPException(403, "需要管理员权限")
+    # 纵深防御：即使前缀未挂依赖，也强制校验 netstorage 模块权限
+    # （受限管理员需持有 netstorage 模块授权；完整管理员的 user_perms 为 None → 放行）
+    from app.auth import has_perm
+
+    if not has_perm(user, "netstorage"):
+        raise HTTPException(403, "需要 netstorage 模块权限")
 
 
 @router.get("/connections")

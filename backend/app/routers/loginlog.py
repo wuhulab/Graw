@@ -30,11 +30,15 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
-from ..auth import get_current_user, require_admin, get_client_ip
+from ..auth import get_current_user, require_perm, get_client_ip
 
 logger = logging.getLogger("graw.loginlog")
 
 router = APIRouter()
+
+# loginlog 模块权限依赖（管理接口：查看全部 / 清空 / 告警配置）。
+# 模块级常量：端点复用同一函数对象（依赖缓存友好），也便于测试整体覆盖。
+_PERM = require_perm("loginlog")
 
 # ---------------------------------------------------------------------------
 # 常量与全局状态
@@ -275,9 +279,9 @@ async def list_logs(
     limit: int = 100,
     username: str = "",
     status: str = "",
-    _: dict = Depends(require_admin),
+    _: dict = Depends(_PERM),
 ):
-    """查询全部登录日志（管理员）：支持按账号 / 状态过滤。"""
+    """查询全部登录日志（需 loginlog 模块权限）：支持按账号 / 状态过滤。"""
     limit = max(1, min(limit, 500))
     logs = _load_logs()
     if username:
@@ -299,8 +303,8 @@ async def my_logs(
 
 
 @router.post("/clear")
-async def clear_logs(_: dict = Depends(require_admin)):
-    """清空全部登录日志（管理员）。"""
+async def clear_logs(_: dict = Depends(_PERM)):
+    """清空全部登录日志（需 loginlog 模块权限）。"""
     _save_json(LOG_FILE, [])
     logger.info("登录日志已由管理员清空")
     return {"ok": True}
@@ -311,8 +315,8 @@ class ConfigRequest(BaseModel):
 
 
 @router.put("/config")
-async def update_config(req: ConfigRequest, _: dict = Depends(require_admin)):
-    """开关「异常登录提醒」推送（管理员）。"""
+async def update_config(req: ConfigRequest, _: dict = Depends(_PERM)):
+    """开关「异常登录提醒」推送（需 loginlog 模块权限）。"""
     known = _load_known()
     known["_config"]["alert_enabled"] = req.alert_enabled
     _save_json(KNOWN_FILE, known)
@@ -321,8 +325,8 @@ async def update_config(req: ConfigRequest, _: dict = Depends(require_admin)):
 
 
 @router.post("/test-alert")
-async def test_alert(request: Request, _: dict = Depends(require_admin)):
-    """发送一条测试用异常登录提醒（管理员，用于验证通知渠道）。"""
+async def test_alert(request: Request, _: dict = Depends(_PERM)):
+    """发送一条测试用异常登录提醒（需 loginlog 模块权限，用于验证通知渠道）。"""
     entry = {
         "username": "admin(测试)",
         "ip": get_client_ip(request),

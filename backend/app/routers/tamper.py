@@ -40,7 +40,7 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from pydantic import BaseModel, Field
 
 from app.auth import (
-    require_admin,
+    require_perm,
     require_non_default_password,
     get_current_user_ws_checked,
 )
@@ -88,9 +88,9 @@ DEFAULT_IGNORE_PATTERNS = [
     "**/*.lock",           # 锁文件
 ]
 
-# 只读接口：登录 + 非默认密码；写接口：管理员
+# 只读接口：登录 + 非默认密码；写接口：需 tamper 模块权限（受限管理员可按模块授权）
 _READ = [Depends(require_non_default_password)]
-_WRITE = [Depends(require_admin)]
+_WRITE = [Depends(require_perm("tamper"))]
 
 # 数据文件写锁（防止并发写坏 JSON）
 _file_lock = threading.Lock()

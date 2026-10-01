@@ -186,7 +186,11 @@ def seed_default_users() -> None:
 
 
 def _public_user(user: dict) -> dict:
-    """脱敏后的用户对象（不含密码哈希）。token_version 供客户端展示/调试用。"""
+    """脱敏后的用户对象（不含密码哈希）。token_version 供客户端展示/调试用。
+
+    perms 为模块白名单（受限管理员），null / 缺失表示全量权限——前端据此做入口
+    门控；这不是敏感信息（就是本人自己的权限），可以随用户对象下发。
+    """
     return {
         "username": user["username"],
         "role": user.get("role", "user"),
@@ -194,6 +198,8 @@ def _public_user(user: dict) -> dict:
         "created_at": user.get("created_at", 0),
         "token_version": user.get("token_version", 0),
         "otp_enabled": bool(user.get("otp_enabled")),
+        # 模块白名单（受限管理员）；null / 缺失 = 全量权限，前端 hasPerm() 依此放行
+        "perms": user.get("perms"),
     }
 
 
@@ -554,6 +560,142 @@ async def require_admin(user: dict = Depends(require_non_default_password)) -> d
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="需要管理员权限")
     return user
+
+
+# ---------------------------------------------------------------------------
+# 模块级权限（受限管理员 / 细粒度授权）
+#
+# 背景：此前 role 只有 admin / user 两档，管理员权限「全有或全无」——想让运维
+# 只管理「网站 + 日志」，就只能授予完整管理员（连带文件管理 / 终端 = 等同 RCE）。
+#
+# 模型（数据落在 data/users.json 的 perms 字段）：
+#   - perms 为模块 key 数组 → 该管理员的模块白名单，仅放行列出的模块；
+#   - perms 缺失或为 null   → 全量权限（向后兼容：升级前创建的管理员行为不变）；
+#   - perms 为 []           → 不放行任何模块（可用于临时冻结账号）；
+#   - perms 存在但类型非法  → 按空集合处理（配置被改坏时取最严，避免意外放大权限）；
+#   - role != 'admin' 的用户一律无模块权限（模块授权只在管理员身份之上做「收窄」）。
+#
+# 粒度说明：模块 key 与路由前缀 / 前端快捷方式对齐（见 MODULES），不做接口级
+# 授权——200+ 路由的接口级授权无法维护。面板自身安全边界（多节点 / SSH 密钥 /
+# 插件安装 / 面板更新 / 面板备份 / 用户管理 / 子节点收取模式 / 安全入口）不参与
+# 模块授权，始终要求完整管理员（见 main.py 的 _FULL_ADMIN_PREFIXES）。
+#
+# 安全约定：前端门控（hasPerm 隐藏入口）只是体验层，真正的边界在 require_perm
+# 依赖——所有管理类路由都必须挂它，漏挂等于把该模块向受限管理员全量开放。
+# ---------------------------------------------------------------------------
+MODULES = (
+    "sites",        # 网站 / 引擎模式 / 伪静态 / 站点增强 / WAF / 访问统计 / SSL / PHP 版本
+    "database",     # 数据库连接与查询 / 慢查询分析
+    "docker",       # Docker 容器 / 卷 / 容器编辑 / 镜像扫描 / 运行时容器
+    "files",        # 文件管理 / 回收站
+    "process",      # 进程管理
+    "disks",        # 磁盘管理
+    "cron",         # 计划任务
+    "firewall",     # 防火墙 / 防护中心
+    "logs",         # 系统日志
+    "terminal",     # Web 终端
+    "backup",       # 备份中心 / 配置回滚
+    "notify",       # 通知中心 / 站点可用性 / 证书到期
+    "appstore",     # 应用商店 / 任务中心
+    "netstorage",   # 网络储存（FTP/SMB/WebDAV/S3）
+    "frp",          # 内网穿透
+    "batch",        # 批量操作
+    "gitdeploy",    # 站点 Git 自动部署
+    "report",       # 巡检报告
+    "tamper",       # 网页防篡改
+    "toolbox",      # 工具箱
+    "ftpusers",     # FTP 用户
+    "svcmonitor",   # 服务 / 端口监控
+    "healthcheck",  # 一键系统体检
+    "portforward",  # SSH 端口转发
+    "loginlog",     # 登录日志管理（查看全部 / 清空 / 告警配置）
+)
+
+
+def user_perms(user: dict) -> Optional[set]:
+    """返回用户的模块白名单集合；None 表示「全量权限」。
+
+    - 非管理员一律返回空集合（无任何模块权限）；
+    - 字段缺失 / 显式 null → None（全量，兼容升级前的存量管理员）；
+    - 类型非法 → 空集合（取最严，配置损坏时不放大权限）；
+    - 未知模块 key 会被忽略（避免脏数据被当作有效授权）。
+    """
+    if not isinstance(user, dict) or user.get("role") != "admin":
+        return set()  # 非管理员：空集合 = 全拒绝
+    if "perms" not in user:
+        return None  # 字段缺失（升级前的存量管理员）→ 全量
+    perms = user.get("perms")
+    if perms is None:
+        return None  # 显式 null → 全量
+    if not isinstance(perms, (list, tuple, set)):
+        # 类型非法（手工改坏 / 被篡改）：取最严——按空集合处理，需管理员修复配置
+        logger.warning(
+            "用户 %s 的 perms 字段类型非法（%s），按「无模块权限」处理",
+            repr(user.get("username", "")),
+            type(perms).__name__,
+        )
+        return set()
+    return {str(p) for p in perms if isinstance(p, str) and p in MODULES}
+
+
+def has_perm(user: dict, *modules: str) -> bool:
+    """判断用户是否拥有指定模块中【任意一个】的权限。
+
+    支持多模块共用一个路由组的场景（如 firewall 路由组接受 firewall/protection）。
+    全量权限用户（user_perms 返回 None）恒为 True。
+    """
+    perms = user_perms(user)
+    if perms is None:
+        return True  # 全量权限
+    return any(m in perms for m in modules)
+
+
+def require_perm(*modules: str):
+    """HTTP 依赖工厂：要求当前用户拥有指定模块中任意一个的权限。
+
+    级联 require_non_default_password（内含 get_current_user），因此使用本依赖
+    的路由无需再挂 PROTECTED / ADMIN；非管理员与受限管理员都由此统一 403。
+    """
+    async def _require_perm(user: dict = Depends(require_non_default_password)) -> dict:
+        if not has_perm(user, *modules):
+            raise HTTPException(
+                status_code=403,
+                detail="需要 " + "/".join(modules) + " 模块权限",
+            )
+        return user
+
+    # 具名便于调试 / 启动期自检识别（main._audit_route_perms）
+    _require_perm.__name__ = "require_perm_" + "_".join(modules or ("any",))
+    # 携带模块元组：供 main.py 的启动期自检与 Agent 代理前置鉴权读取
+    # （代理前需在本机做与业务路由等价的模块判定，见 main._proxy_auth_guard）。
+    _require_perm.__perm_modules__ = tuple(modules)
+    return _require_perm
+
+
+def require_perm_ws(*modules: str):
+    """WebSocket 依赖工厂：?token= 鉴权 + 默认密码拦截 + 模块权限判定。
+
+    与 get_current_user_ws_admin 的差别：把「必须是管理员」换成「必须拥有指定
+    模块权限」。鉴权失败 / 无权限时统一 close(4403)，与既有 WS 依赖语义一致。
+    """
+    async def _require_perm_ws(
+        websocket: WebSocket, token: str = Query(default="")
+    ) -> Optional[dict]:
+        user = await get_current_user_ws(websocket, token)
+        if user is None:
+            return None
+        # 默认密码账号必须先改密（与 get_current_user_ws_admin 的拦截一致）
+        full = _get_user(user["username"])
+        if full is not None and is_default_password(full.get("password", "")):
+            await websocket.close(code=4403)
+            return None
+        if not has_perm(user, *modules):
+            await websocket.close(code=4403)
+            return None
+        return user
+
+    _require_perm_ws.__name__ = "require_perm_ws_" + "_".join(modules or ("any",))
+    return _require_perm_ws
 
 
 async def get_current_user_ws_admin(

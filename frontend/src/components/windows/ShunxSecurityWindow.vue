@@ -22,8 +22,11 @@
       </div>
     </div>
 
+    <!-- 无权限标签：按约定不隐藏标签，切到无权限模块时仅在标签内提示，避免吃 403 -->
+    <div v-if="!tabAllowed(mode)" class="hub-body perm-denied">{{ $t('common.noModulePerm') }}</div>
+
     <!-- 防火墙视图（合并自独立的「防火墙」应用） -->
-    <div v-if="mode === 'firewall'" class="hub-body">
+    <div v-else-if="mode === 'firewall'" class="hub-body">
       <FirewallWindow @openFirewallRuleForm="emit('openFirewallRuleForm', $event)" />
     </div>
 
@@ -63,7 +66,7 @@
     </div>
 
     <!-- 面板备份视图（合并自独立的「面板备份」应用） -->
-    <div v-else class="hub-body">
+    <div v-else-if="mode === 'panelbackup'" class="hub-body">
       <PanelBackupWindow />
     </div>
   </div>
@@ -71,6 +74,7 @@
 
 <script setup>
 import { ref } from 'vue'                        // Composition API：响应式（当前子视图）
+import { hasPerm, isFullAdmin } from '../../store/auth'  // 模块权限判定（受限管理员）
 import FirewallWindow from './FirewallWindow.vue' // 子应用：防火墙
 import WafWindow from './WafWindow.vue'           // 子应用：应用防火墙
 import TamperWindow from './TamperWindow.vue'     // 子应用：网页防篡改
@@ -98,6 +102,29 @@ const emit = defineEmits([
 // 视图模式：firewall / waf / tamper / protection / backup / notify / sshkeys / healthcheck / panelbackup
 const mode = ref('firewall')
 
+// 标签 → 权限门：模块 key 数组（任一命中即放行），'full' 表示仅完整管理员
+// （SSH 密钥 / 面板备份属「面板自身安全边界」，不在模块白名单内）。
+// 与后端 require_perm 的模块划分保持一致：WAF 归 sites、数据库保护归 firewall。
+const TAB_GATE = {
+  firewall: ['firewall'],
+  waf: ['sites'],
+  tamper: ['tamper'],
+  protection: ['firewall'],
+  backup: ['backup'],
+  notify: ['notify'],
+  sshkeys: 'full',
+  healthcheck: ['healthcheck'],
+  panelbackup: 'full',
+}
+
+// 当前用户是否可访问该标签：不隐藏标签，无权限时标签内提示（避免点开吃 403）
+function tabAllowed(m) {
+  const gate = TAB_GATE[m]
+  if (!gate) return true
+  if (gate === 'full') return isFullAdmin()
+  return hasPerm(...gate)
+}
+
 function switchMode(m) {
   mode.value = m
 }
@@ -111,4 +138,12 @@ function switchMode(m) {
 .mode-tabs .tab + .tab { border-left: 1px solid #e5e7eb; }
 .mode-tabs .tab.active { background: #111827; color: #fff; }
 .hub-body { flex: 1; min-height: 0; }
+/* 无权限标签：标签内居中提示，不隐藏标签本身 */
+.hub-body.perm-denied {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  font-size: 14px;
+}
 </style>

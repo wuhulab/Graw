@@ -99,7 +99,9 @@ export const authApi = {
   // token 可选：强制改密场景下尚未写入登录态，显式携带临时 token
   changePassword: (old_password, new_password, token) => api.post('/auth/password', { old_password, new_password }, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined).then(r => r.data),
   listUsers: () => api.get('/auth/users').then(r => r.data),
-  createUser: (username, password, role) => api.post('/auth/users', { username, password, role }).then(r => r.data),
+  // 可授权的模块 key 清单（受限管理员的模块白名单；单一来源在后端 auth.MODULES）
+  listModules: () => api.get('/auth/modules').then(r => r.data),
+  createUser: (username, password, role, perms) => api.post('/auth/users', { username, password, role, perms }).then(r => r.data),
   updateUser: (username, body) => api.put(`/auth/users/${username}`, body).then(r => r.data),
   deleteUser: (username) => api.delete(`/auth/users/${username}`).then(r => r.data),
   // 两步验证（2FA / TOTP）

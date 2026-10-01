@@ -8,9 +8,19 @@
 ## [Unreleased]
 
 ### Added
+- **受限管理员（RBAC 模块级权限）**：在管理员身份之上按模块收窄权限——`users.json` 新增 `perms` 白名单字段（字段缺失 / `null` = 全量权限，升级前的存量管理员行为完全不变；`[]` = 不放行；类型非法按空集合取最严）
+  - 后端：`auth.MODULES`（26 个模块 key）+ `user_perms()` / `has_perm()` + `require_perm("模块")` / `require_perm_ws("模块")` 依赖工厂；40 余条业务路由由 `ADMIN` 改为 `PERM("模块")`（多节点 / SSH 密钥 / 插件 / 面板更新 / 面板备份 / 用户管理等「面板自身安全边界」仍要求完整管理员）
+  - Agent 隧道：代理前用 `_proxy_perm_map()`（从路由依赖自动汇总）做等价的模块判定——子节点侧拿到的是 agent 管理员令牌，拦不住越权，必须在主面板本地先拦
+  - WebSocket：终端 / Docker 实时推送改用 `require_perm_ws("模块")`；会话管理对受限管理员降级为「仅本人会话」
+  - 启动期自检 `_audit_route_perms()`：扫描仍走 `ADMIN` 而未登记为面板自身边界的接口并打 warning，避免新路由漏挂
+  - 兜底约束：面板必须始终保留至少一个「完整权限的超级管理员」，改角色 / 收窄 `perms` / 删除账号时校验（`routers/auth._super_admin_count()`），违规返回 400
+  - 用户管理界面：新增「模块权限」列与「模块授权」弹窗（默认「完整管理员」，可切换为模块多选）；模块清单经 `GET /api/auth/modules` 下发（单一来源，避免前后端漂移）
+  - 前端：`store/auth` 新增 `hasPerm()` / `isFullAdmin()`。**按产品约定不按模块隐藏入口**——受限管理员可见全部功能入口，点开无权限模块时提示「该用户无此权限」且不打开窗口（`App.vue` 的 `openWindow()` 提示条、ShunX 聚合窗口的标签级提示）；`fullAdminOnly` 的面板自身功能（账号管理 / 界面设置）仍隐藏
 - 前端工程化：新增 ESLint 扁平配置（`frontend/eslint.config.js`，`@eslint/js` 推荐规则 + `eslint-plugin-vue` Vue3 essential，并用 `eslint-config-prettier` 关闭排版类冲突规则）与 Prettier 配置（`.prettierrc.json` / `.prettierignore`）
 - 前端新增脚本：`lint` / `lint:fix` / `format` / `format:check`
 - CI：恢复 Backend / Frontend 检查工作流（Backend 补装 httpx，修复 TestClient 收集阶段报错）
+- 单元测试：新增 `test_rbac_unit.py`（35 项，覆盖 perms 兼容语义 / 依赖 403 行为 / 入参校验 / 代理映射与自检 / 超级管理员兜底约束）
+- 多语言：补全英语（en）与世界语（eo）的模块权限相关文案（`users.perm.*` 模块名、模块授权界面文案与「无此权限」提示）
 
 ### Changed
 - CI：前端新增 ESLint 检查步骤；后端测试集扩容为「`test_*_unit.py` 整跑 + 其余套件逐文件独立进程」（规避模块级全局状态跨文件污染），并明确排除依赖真实后端 / 会改写 `data/users.json` 的用例

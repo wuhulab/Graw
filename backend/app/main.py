@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 import json as _json
 import os
 import asyncio
+from typing import Optional
 
 from app.routers import (
     system,
@@ -67,6 +68,9 @@ from app.auth import (
     get_current_user,
     require_admin,
     require_non_default_password,
+    require_perm,
+    has_perm,
+    user_perms,
 )
 from app import remote_cap
 from app import agent_auth
@@ -85,6 +89,15 @@ from app import tty_persist
 # require_admin 内部已级联 require_non_default_password + get_current_user。
 PROTECTED = [Depends(get_current_user), Depends(require_non_default_password)]
 ADMIN = [Depends(require_admin)]
+
+
+def PERM(*modules: str) -> list:
+    """模块权限路由组依赖（受限管理员）：include_router(dependencies=PERM("docker"))。
+
+    include_router 的 dependencies 参数要求是序列（Sequence[Depends]），而
+    require_perm 返回的是单个可调用依赖，这里包一层列表以便直接用于路由组。
+    """
+    return [Depends(require_perm(*modules))]
 
 
 def _secure_data_dir() -> None:
@@ -113,6 +126,8 @@ async def lifespan(app: FastAPI):
     seed_default_users()
     # 安全加固：收紧 data 目录及敏感文件权限（Linux）
     _secure_data_dir()
+    # 模块权限自检：提示「仍按完整管理员鉴权且未登记为面板自身边界」的接口
+    _audit_route_perms()
     # 启动统一系统指标采集（供首页三卡片共享单条 WS），预热缓存并后台广播
     await system.start_metrics_producer()
     # 启动 Docker 实时推送协程（/api/docker/ws）：由订阅驱动采集，无订阅时零开销，
@@ -310,19 +325,161 @@ def _proxy_request_user(request: Request):
     return user
 
 
+# ---------------------------------------------------------------------------
+# 模块权限映射（受限管理员的 Agent 代理前置鉴权用）
+#
+# 业务路由的 dependencies=PERM("xxx") 是本机请求的模块权限边界；但经
+# Agent 隧道代理时，转发请求的 Authorization 会被替换为 agent 的【管理员】JWT，
+# 子节点侧不会（也无法）按主面板的模块权限拦截——因此代理前必须在主面板本地
+# 做与业务路由等价的模块判定，否则受限管理员可借隧道绕过模块限制。
+#
+# 映射在首次需要时构建（遍历已注册路由的依赖树，读取 require_perm 携带的
+# __perm_modules__），之后缓存复用，避免每次代理请求遍历全部路由。
+# ---------------------------------------------------------------------------
+_proxy_perm_map_cache = None  # Optional[dict]：/api/<前缀> -> 模块元组
+
+
+def _perm_modules_of(dependant) -> tuple:
+    """从 FastAPI 依赖树中提取 require_perm 的模块元组（取第一个命中的）。"""
+    stack = [dependant]
+    while stack:
+        d = stack.pop()
+        if d is None:
+            continue
+        mods = getattr(getattr(d, "call", None), "__perm_modules__", None)
+        if mods:
+            return tuple(mods)
+        stack.extend(getattr(d, "dependencies", None) or ())
+    return ()
+
+
+def _proxy_perm_map() -> dict:
+    """构建 /api/<前缀> -> 模块元组 的映射（惰性构建并缓存）。"""
+    global _proxy_perm_map_cache
+    if _proxy_perm_map_cache is not None:
+        return _proxy_perm_map_cache
+    mapping = {}
+    for route in getattr(app, "routes", ()) or ():
+        path = getattr(route, "path", "") or ""
+        if not path.startswith("/api/"):
+            continue
+        mods = _perm_modules_of(getattr(route, "dependant", None))
+        if not mods:
+            continue
+        prefix = "/".join(path.split("/")[:3])  # /api/docker/containers/{id} -> /api/docker
+        mapping[prefix] = mods
+    _proxy_perm_map_cache = mapping
+    return mapping
+
+
+def _proxy_perm_for_path(path: str) -> tuple:
+    """返回路径所属的模块元组；不属于模块授权路由时返回空元组（O(1) 前缀查表）。"""
+    parts = (path or "").split("/")
+    if len(parts) < 3:
+        return ()
+    return _proxy_perm_map().get("/".join(parts[:3]), ())
+
+
+def _proxy_readonly_allow(path: str, method: str) -> bool:
+    """只读白名单判定：非管理员的代理请求只允许 READ_ONLY 白名单内的只读方法。"""
+    for prefix, methods in _PROXY_USER_SAFE.items():
+        if path == prefix or path.startswith(prefix + "/"):
+            return method in methods
+    return False
+
+
+# 设计上保留「完整管理员」的接口前缀（面板自身安全边界，不参与模块授权）。
+# 自检时这些前缀下仍走 require_admin 的路由属于预期，其余前缀打 warning。
+_FULL_ADMIN_PREFIXES = (
+    "/api/auth",        # 用户管理（创建/删除账号、改角色、重置密码、会话管理）
+    "/api/agent",       # 子节点「收取模式」配置
+    "/api/nodes",       # 多节点管理（节点凭据）
+    "/api/sshkeys",     # SSH 密钥部署
+    "/api/plugins",     # 插件安装/卸载（等同执行任意代码）
+    "/api/update",      # 面板自身更新
+    "/api/panelbackup", # 面板配置归档导出/导入（含 data/ 密钥）
+    "/api/ui",          # 界面设置（影响全局展示）
+    "/api/system",      # 历史监控清空（只读部分为 PROTECTED）
+    "/api/notes",       # 共享备忘录写入
+    "/api/shunx",       # 安全入口（面板自身防护）
+)
+
+
+def _audit_route_perms() -> None:
+    """启动期自检：提示「仍要求完整管理员、但未登记为面板自身边界」的接口。
+
+    受限管理员（perms 白名单）在模块授权路由上会被 require_perm 403；若新增路由
+    忘记把 ADMIN 换成 require_perm，该接口会对受限管理员全量开放（越权）。此自检
+    不阻断启动（本地调试仍需可启动），只打印 warning 供发布前排查。
+    """
+    import logging
+
+    suspects = set()
+    for route in getattr(app, "routes", ()) or ():
+        path = getattr(route, "path", "") or ""
+        if not path.startswith("/api/"):
+            continue
+        dep = getattr(route, "dependant", None)
+        if dep is None:
+            continue
+        calls = set()
+        stack = [dep]
+        while stack:
+            d = stack.pop()
+            if d is None:
+                continue
+            name = getattr(getattr(d, "call", None), "__name__", "")
+            if name:
+                calls.add(name)
+            stack.extend(getattr(d, "dependencies", None) or ())
+        if "require_admin" not in calls:
+            continue  # 非「完整管理员」路由，无需登记
+        if any(n.startswith("require_perm") for n in calls):
+            continue  # 已是模块授权路由
+        prefix = "/".join(path.split("/")[:3])
+        if prefix in _FULL_ADMIN_PREFIXES:
+            continue  # 面板自身边界，预期行为
+        suspects.add(prefix)
+    if suspects:
+        logging.getLogger("graw.main").warning(
+            "以下接口仍要求「完整管理员」且未登记为面板自身安全边界，"
+            "请确认是否应改用 require_perm(<模块>)：%s",
+            ", ".join(sorted(suspects)),
+        )
+
+
 def _proxy_auth_guard(request: Request, path: str):
-    """代理前鉴权门卫：未通过校验时返回拒绝 Response；通过返回 None。"""
+    """代理前鉴权门卫：未通过校验时返回拒绝 Response；通过返回 None。
+
+    权限判定与业务路由的依赖链等价：
+      - 未认证 / 默认密码账号 → 401；
+      - 非管理员：仅允许 _PROXY_USER_SAFE 的只读路径（与 PROTECTED 对齐）；
+      - 完整管理员（perms 缺失/null）：全量放行；
+      - 受限管理员（perms 白名单）：目标路径命中模块映射时按模块放行；无模块映射
+        的路径（如只读监控 / 备忘录）仅放行只读白名单，其余默认拒绝（默认闭合，
+        防止经隧道访问面板自身管理接口越权）。
+    """
     user = _proxy_request_user(request)
     if user is None:
         return JSONResponse(status_code=401, content={"detail": "未认证"})
+    method = (request.method or "GET").upper()
     if user.get("role") != "admin":
-        method = (request.method or "GET").upper()
-        allowed = None
-        for prefix, methods in _PROXY_USER_SAFE.items():
-            if path == prefix or path.startswith(prefix + "/"):
-                allowed = methods
-                break
-        if allowed is None or method not in allowed:
+        # 非管理员：只读白名单之外一律 403
+        if not _proxy_readonly_allow(path, method):
+            return JSONResponse(status_code=403, content={"detail": "需要管理员权限"})
+        return None
+    # 管理员：完整管理员（user_perms 返回 None）直接放行；受限管理员按模块判定
+    if user_perms(user) is not None:
+        mods = _proxy_perm_for_path(path)
+        if mods:
+            if not has_perm(user, *mods):
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "需要 " + "/".join(mods) + " 模块权限"},
+                )
+            return None
+        # 无模块映射：仅放行只读白名单，其余默认拒绝（默认闭合）
+        if not _proxy_readonly_allow(path, method):
             return JSONResponse(status_code=403, content={"detail": "需要管理员权限"})
     return None
 
@@ -537,51 +694,52 @@ app.include_router(
     notes.router, prefix="/api/notes", tags=["notes"], dependencies=PROTECTED
 )
 
-# 管理类路由：仅管理员
+# 管理类路由：需对应【模块权限】。完整管理员（perms 缺失/null）全量放行；
+# 受限管理员（perms 白名单）仅放行其被授权的模块，未授权模块由 require_perm 403。
 app.include_router(
-    docker_api.router, prefix="/api/docker", tags=["docker"], dependencies=ADMIN
+    docker_api.router, prefix="/api/docker", tags=["docker"], dependencies=PERM("docker")
 )
 # Docker 实时数据 WebSocket（/api/docker/ws）：WS 无法携带 Bearer 头，只能 ?token=，
-# 因而不挂 Router 级 ADMIN 依赖，改由端点内部用 get_current_user_ws_admin 强制管理员
+# 因而不挂 Router 级依赖，改由端点内部用 require_perm_ws("docker") 判定模块权限
 # （与 terminal / gitdeploy webhook 同一模式）。
 app.include_router(docker_api.ws_router, prefix="/api/docker", tags=["docker"])
-# Docker 数据卷（volumes）管理：复用 docker_api 的后端探测与 CLI/SDK 工具（管理员）
+# Docker 数据卷（volumes）管理：复用 docker_api 的后端探测与 CLI/SDK 工具（docker 模块）
 app.include_router(
     dockervolumes.router,
     prefix="/api/dockervolumes",
     tags=["dockervolumes"],
-    dependencies=ADMIN,
+    dependencies=PERM("docker"),
 )
-# 容器资源与端口编辑：读取/更新容器 CPU、内存、环境变量、端口映射（管理员）
+# 容器资源与端口编辑：读取/更新容器 CPU、内存、环境变量、端口映射（docker 模块）
 app.include_router(
     containeredit.router,
     prefix="/api/containeredit",
     tags=["containeredit"],
-    dependencies=ADMIN,
+    dependencies=PERM("docker"),
 )
 app.include_router(
-    process.router, prefix="/api/process", tags=["process"], dependencies=ADMIN
+    process.router, prefix="/api/process", tags=["process"], dependencies=PERM("process")
 )
-app.include_router(files.router, prefix="/api/files", tags=["files"], dependencies=ADMIN)
-app.include_router(recycle.router, prefix="/api/recycle", tags=["recycle"], dependencies=ADMIN)
+app.include_router(files.router, prefix="/api/files", tags=["files"], dependencies=PERM("files"))
+app.include_router(recycle.router, prefix="/api/recycle", tags=["recycle"], dependencies=PERM("files"))
 # 终端为 WebSocket，Bearer 头无法在浏览器 WS 中设置，故在处理函数内
-# 通过 ?token= 查询参数鉴权 + 强制管理员校验（见 routers/terminal.py）。
+# 通过 ?token= 查询参数鉴权 + 模块权限校验（见 routers/terminal.py）。
 app.include_router(terminal.router, prefix="/api/terminal", tags=["terminal"])
-app.include_router(sites.router, prefix="/api/sites", tags=["sites"], dependencies=ADMIN)
+app.include_router(sites.router, prefix="/api/sites", tags=["sites"], dependencies=PERM("sites"))
 app.include_router(
-    databases.router, prefix="/api/databases", tags=["databases"], dependencies=ADMIN
+    databases.router, prefix="/api/databases", tags=["databases"], dependencies=PERM("database")
 )
-app.include_router(cron.router, prefix="/api/cron", tags=["cron"], dependencies=ADMIN)
+app.include_router(cron.router, prefix="/api/cron", tags=["cron"], dependencies=PERM("cron"))
 app.include_router(
-    firewall.router, prefix="/api/firewall", tags=["firewall"], dependencies=ADMIN
+    firewall.router, prefix="/api/firewall", tags=["firewall"], dependencies=PERM("firewall")
 )
-app.include_router(ssl.router, prefix="/api/ssl", tags=["ssl"], dependencies=ADMIN)
-app.include_router(logs.router, prefix="/api/logs", tags=["logs"], dependencies=ADMIN)
+app.include_router(ssl.router, prefix="/api/ssl", tags=["ssl"], dependencies=PERM("sites"))
+app.include_router(logs.router, prefix="/api/logs", tags=["logs"], dependencies=PERM("logs"))
 app.include_router(
     protection.router,
     prefix="/api/protection",
     tags=["protection"],
-    dependencies=ADMIN,
+    dependencies=PERM("firewall"),
 )
 
 # ShunX 安全入口：/status 为公开接口，/config 内部自行做登录/管理员鉴权，
@@ -592,31 +750,33 @@ app.include_router(shunx.router, prefix="/api/shunx", tags=["shunx"])
 # 另有 /ws 告警推送 WebSocket（?token= 鉴权），故不挂全局依赖。
 app.include_router(tamper.router, prefix="/api/tamper", tags=["tamper"])
 
-# Graw 社区应用商店（安装会执行 docker compose，需管理员）
+# Graw 社区应用商店（安装会执行 docker compose，appstore 模块）
 app.include_router(
-    appstore.router, prefix="/api/appstore", tags=["appstore"], dependencies=ADMIN
+    appstore.router, prefix="/api/appstore", tags=["appstore"], dependencies=PERM("appstore")
 )
 # 应用图标是 <img> 加载的公开静态资源（无 Bearer token），单独挂载不加鉴权
 app.include_router(
     appstore.icons_router, prefix="/api/appstore", tags=["appstore"]
 )
 
-# 任务中心（长线任务：应用商店安装等，需管理员）
+# 任务中心（长线任务：应用商店安装等，appstore 模块）
 app.include_router(
-    tasks.router, prefix="/api/tasks", tags=["tasks"], dependencies=ADMIN
+    tasks.router, prefix="/api/tasks", tags=["tasks"], dependencies=PERM("appstore")
 )
 
-# 运行环境（创建语言运行时容器，需管理员）
+# 运行环境（创建语言运行时容器，docker 模块）
 app.include_router(
-    runtime.router, prefix="/api/runtime", tags=["runtime"], dependencies=ADMIN
+    runtime.router, prefix="/api/runtime", tags=["runtime"], dependencies=PERM("docker")
 )
 
-# 磁盘管理（查看块设备与分区，管理员）
+# 磁盘管理（查看块设备与分区，disks 模块）
 app.include_router(
-    disks.router, prefix="/api/disks", tags=["disks"], dependencies=ADMIN
+    disks.router, prefix="/api/disks", tags=["disks"], dependencies=PERM("disks")
 )
 
-# 多节点（多机）管理：节点增删改查 / 连接测试 / 切换当前管理主机（管理员）
+# 多节点（多机）管理：节点增删改查 / 连接测试 / 切换当前管理主机。
+# 【面板自身安全边界】不参与模块授权，始终要求完整管理员（节点凭据可用于
+# 控制其它主机，若向受限管理员开放则等同绕过后端全部模块限制）。
 app.include_router(
     nodes.router, prefix="/api/nodes", tags=["nodes"], dependencies=ADMIN
 )
@@ -625,120 +785,124 @@ app.include_router(
 # 故不在此处挂全局 ADMIN 依赖（否则登录页无法公开读取网站名/欢迎语/Logo）。
 app.include_router(ui.router, prefix="/api/ui", tags=["ui"])
 
-# Frp（内网穿透）管理：可视化编辑 frps/frpc 配置 + 代理列表 + 进程启停（管理员）
-app.include_router(frp.router, prefix="/api/frp", tags=["frp"], dependencies=ADMIN)
+# Frp（内网穿透）管理：可视化编辑 frps/frpc 配置 + 代理列表 + 进程启停（frp 模块）
+app.include_router(frp.router, prefix="/api/frp", tags=["frp"], dependencies=PERM("frp"))
 
-# 网络储存（FTP/FTPS/SMB/WebDAV/对象存储）：连接管理 + 远程文件操作（管理员）
+# 网络储存（FTP/FTPS/SMB/WebDAV/对象存储）：连接管理 + 远程文件操作（netstorage 模块）
 app.include_router(
-    netstorage.router, prefix="/api/netstorage", tags=["netstorage"], dependencies=ADMIN
+    netstorage.router, prefix="/api/netstorage", tags=["netstorage"], dependencies=PERM("netstorage")
 )
 
-# 面板自身更新：版本检测（只读）与一键更新（写操作需管理员）
+# 面板自身更新：版本检测（只读）与一键更新。
+# 【面板自身安全边界】不参与模块授权，始终要求完整管理员（更新会替换面板自身代码）。
 app.include_router(update.router, prefix="/api/update", tags=["update"], dependencies=ADMIN)
 
 # WAF 应用防火墙：站点级 Web 应用防火墙（全局开关 + 每站点策略 + 拦截日志/拦截地图）。
-# 全部为读取/写入配置与管理 nginx 片段的管理类接口，挂 ADMIN 依赖。
-app.include_router(waf.router, prefix="/api/waf", tags=["waf"], dependencies=ADMIN)
+# 全部为读取/写入配置与管理 nginx 片段的管理类接口，sites 模块。
+app.include_router(waf.router, prefix="/api/waf", tags=["waf"], dependencies=PERM("sites"))
 
-# Web 服务器引擎模式（NGINX / OpenResty）：查询与切换，仅管理员。
+# Web 服务器引擎模式（NGINX / OpenResty）：查询与切换，sites 模块。
 # 切换只更新引擎选择，sites/waf 等路由按当前模式解析路径与 reload 命令。
-app.include_router(webmode.router, prefix="/api/webmode", tags=["webmode"], dependencies=ADMIN)
+app.include_router(webmode.router, prefix="/api/webmode", tags=["webmode"], dependencies=PERM("sites"))
 
-# 备份中心：目录/文件通用备份（手动 + cron 计划）、轮转、一键恢复（管理员）
-app.include_router(backup.router, prefix="/api/backup", tags=["backup"], dependencies=ADMIN)
+# 备份中心：目录/文件通用备份（手动 + cron 计划）、轮转、一键恢复（backup 模块）
+app.include_router(backup.router, prefix="/api/backup", tags=["backup"], dependencies=PERM("backup"))
 
-# 通知中心：通知渠道（Webhook/Telegram/钉钉/企微/Server酱/邮件）+ 资源阈值告警（管理员）
-app.include_router(notify.router, prefix="/api/notify", tags=["notify"], dependencies=ADMIN)
+# 通知中心：通知渠道（Webhook/Telegram/钉钉/企微/Server酱/邮件）+ 资源阈值告警（notify 模块）
+app.include_router(notify.router, prefix="/api/notify", tags=["notify"], dependencies=PERM("notify"))
 
-# 站点可用性检测：监控网站/服务 HTTP 可用性，宕机/恢复推送通知（管理员）
-app.include_router(uptime.router, prefix="/api/uptime", tags=["uptime"], dependencies=ADMIN)
+# 站点可用性检测：监控网站/服务 HTTP 可用性，宕机/恢复推送通知（notify 模块）
+app.include_router(uptime.router, prefix="/api/uptime", tags=["uptime"], dependencies=PERM("notify"))
 
-# 证书到期提醒：检查面板 SSL 证书剩余天数，临期/过期推送通知（管理员）
-app.include_router(certcheck.router, prefix="/api/certcheck", tags=["certcheck"], dependencies=ADMIN)
+# 证书到期提醒：检查面板 SSL 证书剩余天数，临期/过期推送通知（notify 模块）
+app.include_router(certcheck.router, prefix="/api/certcheck", tags=["certcheck"], dependencies=PERM("notify"))
 
-# 面板自身备份：导出/导入 data/ 全部配置归档（迁移与容灾，管理员）
+# 面板自身备份：导出/导入 data/ 全部配置归档（迁移与容灾）。
+# 【面板自身安全边界】不参与模块授权，始终要求完整管理员（归档含 data/ 密钥）。
 app.include_router(panelbackup.router, prefix="/api/panelbackup", tags=["panelbackup"], dependencies=ADMIN)
 
 # 登录日志 / 异地登录提示：记录登录 IP/时间/设备 + 异常登录检测提醒。
 # 普通用户需要查看「我的登录历史」，故挂 PROTECTED 而非 ADMIN；
-# list / clear / config 等管理接口内部已用 require_admin 保护。
+# list / clear / config 等管理接口内部已用 require_perm("loginlog") 保护。
 app.include_router(loginlog.router, prefix="/api/loginlog", tags=["loginlog"], dependencies=PROTECTED)
 
-# 网站访问统计：解析 nginx 访问日志，输出 PV/UV/IP/来源/热门页面（管理员）
-app.include_router(webstats.router, prefix="/api/webstats", tags=["webstats"], dependencies=ADMIN)
+# 网站访问统计：解析 nginx 访问日志，输出 PV/UV/IP/来源/热门页面（sites 模块）
+app.include_router(webstats.router, prefix="/api/webstats", tags=["webstats"], dependencies=PERM("sites"))
 
-# 伪静态规则库：常用框架一键伪静态（写入 nginx 配置，管理员）
-app.include_router(rewrite.router, prefix="/api/rewrite", tags=["rewrite"], dependencies=ADMIN)
+# 伪静态规则库：常用框架一键伪静态（写入 nginx 配置，sites 模块）
+app.include_router(rewrite.router, prefix="/api/rewrite", tags=["rewrite"], dependencies=PERM("sites"))
 
-# 站点增强配置：防盗链 / gzip / 静态资源缓存（写入 nginx 配置，管理员）
-app.include_router(sitesopts.router, prefix="/api/sitesopts", tags=["sitesopts"], dependencies=ADMIN)
+# 站点增强配置：防盗链 / gzip / 静态资源缓存（写入 nginx 配置，sites 模块）
+app.include_router(sitesopts.router, prefix="/api/sitesopts", tags=["sitesopts"], dependencies=PERM("sites"))
 
-# 配置快照 / 一键回滚：站点 nginx conf 与防火墙规则的写前快照与恢复（管理员）
+# 配置快照 / 一键回滚：站点 nginx conf 与防火墙规则的写前快照与恢复（backup 模块）
 app.include_router(
-    rollback.router, prefix="/api/rollback", tags=["rollback"], dependencies=ADMIN
+    rollback.router, prefix="/api/rollback", tags=["rollback"], dependencies=PERM("backup")
 )
 
-# 批量操作中心：多节点批量命令 / 批量容器启停（管理员；排除 Agent 代理——
+# 批量操作中心：多节点批量命令 / 批量容器启停（batch 模块；排除 Agent 代理——
 # 批量命令由主面板持全部节点凭据直连执行）
-app.include_router(batch.router, prefix="/api/batch", tags=["batch"], dependencies=ADMIN)
+app.include_router(batch.router, prefix="/api/batch", tags=["batch"], dependencies=PERM("batch"))
 
-# 站点 Git 自动部署：CRUD 与手动触发（管理员）；webhook 端点公开、令牌校验
+# 站点 Git 自动部署：CRUD 与手动触发（gitdeploy 模块）；webhook 端点公开、令牌校验
 app.include_router(
-    gitdeploy_api.admin_router, prefix="/api/gitdeploy", tags=["gitdeploy"], dependencies=ADMIN
+    gitdeploy_api.admin_router, prefix="/api/gitdeploy", tags=["gitdeploy"], dependencies=PERM("gitdeploy")
 )
-# webhook 接收端点不能挂全局 ADMIN（Git 平台无面板登录态），端点内校验签名；
+# webhook 接收端点不能挂全局鉴权（Git 平台无面板登录态），端点内校验签名；
 # 且必须排除 Agent 代理——部署要在主面板上依 deploy.node_id 分发执行
 app.include_router(gitdeploy_api.webhook_router, prefix="/api/gitdeploy", tags=["gitdeploy"])
 
-# 巡检报告：手动生成 / 历史查看（管理员；每日 08:00 由 lifespan 协程自动生成）
-app.include_router(report.router, prefix="/api/report", tags=["report"], dependencies=ADMIN)
+# 巡检报告：手动生成 / 历史查看（report 模块；每日 08:00 由 lifespan 协程自动生成）
+app.include_router(report.router, prefix="/api/report", tags=["report"], dependencies=PERM("report"))
 
-# SSH 端口转发：本地直连远程服务（管理员，排除 Agent 代理——隧道建立在
+# SSH 端口转发：本地直连远程服务（portforward 模块，排除 Agent 代理——隧道建立在
 # 主面板与节点之间，不能把请求转发给子节点执行）
-app.include_router(portforward.router, prefix="/api/portforward", tags=["portforward"], dependencies=ADMIN)
+app.include_router(portforward.router, prefix="/api/portforward", tags=["portforward"], dependencies=PERM("portforward"))
 
-# 镜像漏洞扫描：本地 advisory 比对（管理员；扫描在线程池执行，不阻塞事件循环）
-app.include_router(imgsafety.router, prefix="/api/imgsafety", tags=["imgsafety"], dependencies=ADMIN)
+# 镜像漏洞扫描：本地 advisory 比对（docker 模块；扫描在线程池执行，不阻塞事件循环）
+app.include_router(imgsafety.router, prefix="/api/imgsafety", tags=["imgsafety"], dependencies=PERM("docker"))
 
-# MySQL 慢查询分析：解析慢日志 TOP N（管理员）
-app.include_router(slowquery.router, prefix="/api/slowquery", tags=["slowquery"], dependencies=ADMIN)
+# MySQL 慢查询分析：解析慢日志 TOP N（database 模块）
+app.include_router(slowquery.router, prefix="/api/slowquery", tags=["slowquery"], dependencies=PERM("database"))
 
-# 服务/端口监控：自定义监控项（端口/进程/systemd 服务）状态看板（管理员）
+# 服务/端口监控：自定义监控项（端口/进程/systemd 服务）状态看板（svcmonitor 模块）
 app.include_router(
-    svcmonitor.router, prefix="/api/svcmonitor", tags=["svcmonitor"], dependencies=ADMIN
+    svcmonitor.router, prefix="/api/svcmonitor", tags=["svcmonitor"], dependencies=PERM("svcmonitor")
 )
 
-# SSH 密钥管理：生成/导入密钥并一键部署到节点（配合节点管理，管理员）
+# SSH 密钥管理：生成/导入密钥并一键部署到节点。
+# 【面板自身安全边界】不参与模块授权，始终要求完整管理员（私钥可登录其它主机）。
 app.include_router(
     sshkeys.router, prefix="/api/sshkeys", tags=["sshkeys"], dependencies=ADMIN
 )
 
-# 一键系统体检：弱密码/异常登录/危险端口/可疑任务扫描（管理员，只读报告）
+# 一键系统体检：弱密码/异常登录/危险端口/可疑任务扫描（healthcheck 模块，只读报告）
 app.include_router(
-    healthcheck.router, prefix="/api/healthcheck", tags=["healthcheck"], dependencies=ADMIN
+    healthcheck.router, prefix="/api/healthcheck", tags=["healthcheck"], dependencies=PERM("healthcheck")
 )
 
-# 虚拟 FTP 用户管理：纯 Python 维护 data/ftp_users.json，无需系统用户（管理员）
+# 虚拟 FTP 用户管理：纯 Python 维护 data/ftp_users.json，无需系统用户（ftpusers 模块）
 app.include_router(
-    ftpusers.router, prefix="/api/ftpusers", tags=["ftpusers"], dependencies=ADMIN
+    ftpusers.router, prefix="/api/ftpusers", tags=["ftpusers"], dependencies=PERM("ftpusers")
 )
 
-# 工具箱：Base64 / 哈希 / 时间戳 / 端口扫描 / Whois（执行外部命令与网络连接，仅管理员）
+# 工具箱：Base64 / 哈希 / 时间戳 / 端口扫描 / Whois（执行外部命令与网络连接，toolbox 模块）
 app.include_router(
-    toolbox.router, prefix="/api/toolbox", tags=["toolbox"], dependencies=ADMIN
+    toolbox.router, prefix="/api/toolbox", tags=["toolbox"], dependencies=PERM("toolbox")
 )
 
-# PHP 多版本管理：探测系统 PHP/FPM 版本 + 站点 PHP 版本关联（管理员）
+# PHP 多版本管理：探测系统 PHP/FPM 版本 + 站点 PHP 版本关联（sites 模块）
 app.include_router(
     phpversions.router,
     prefix="/api/phpversions",
     tags=["phpversions"],
-    dependencies=ADMIN,
+    dependencies=PERM("sites"),
 )
 
 # 应用接口开放协议（GPOP）：
 # - /api/plugins/settings 为插件功能总开关（始终注册，否则关闭后无法重新打开）；
-# - /api/plugins 为插件管理接口（安装/启停/卸载/轮换令牌），需管理员；
+# - /api/plugins 为插件管理接口（安装/启停/卸载/轮换令牌）——【面板自身安全边界】
+#   不参与模块授权，始终要求完整管理员（安装插件等同执行任意代码）；
 # - /api/op 为插件开放接口（插件凭令牌调用，内部自行鉴权）。
 # 插件功能关闭时（data/plugins.json 的 enabled=false）静默切换为「不加载插件
 # 相关代码」：仅注册 settings 开关路由，业务/开放路由整体不注册。

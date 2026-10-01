@@ -64,3 +64,25 @@ export function isLoggedIn() {
 export function isAdmin() {
   return auth.user?.role === 'admin'                          // 用可选链兜住「未登录时 user 为 null」的情况，避免取属性报错
 }
+
+// --- 判断是否拥有指定模块中任意一个的权限（受限管理员的模块白名单） ---
+// 语义与后端 app/auth.py 的 has_perm 对齐：
+//   perms 缺失 / null → 全量权限（完整管理员，或升级前的存量账号）一律放行；
+//   perms 为数组      → 白名单，仅放行列出的模块（[] 表示不放行任何模块）；
+//   perms 类型非法    → 视为无权限（与后端“取最严”一致）；
+//   非管理员          → 恒为 false。
+export function hasPerm(...mods) {
+  const u = auth.user
+  if (!u || u.role !== 'admin') return false
+  const perms = u.perms
+  if (perms === null || perms === undefined) return true     // 全量权限（兼容分支）
+  if (!Array.isArray(perms)) return false                    // 配置异常：取最严
+  return mods.some((m) => perms.includes(m))
+}
+
+// --- 是否「完整管理员」：perms 未配置（全量），可用于区分受限管理员 ---
+export function isFullAdmin() {
+  const u = auth.user
+  if (!u || u.role !== 'admin') return false
+  return u.perms === null || u.perms === undefined
+}

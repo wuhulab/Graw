@@ -125,7 +125,7 @@
           <div style="font-size:11px;color:#6e6e73;">{{ $t(auth.user?.role === 'admin' ? 'app.admin' : 'app.normalUser') }}</div>
         </div>
         <div class="start-list">
-          <button v-if="isAdmin()" class="start-item" @click="openUsers(); startMenuOpen = false"><UserCircle2 :size="16" /> {{ $t('app.accountManage') }}</button>
+          <button v-if="isFullAdmin()" class="start-item" @click="openUsers(); startMenuOpen = false"><UserCircle2 :size="16" /> {{ $t('app.accountManage') }}</button>
           <button class="start-item" @click="openChangePwd(); startMenuOpen = false"><UserCircle2 :size="16" /> {{ $t('app.changePassword') }}</button>
           <button class="start-item" @click="openSettings(); startMenuOpen = false"><Settings :size="16" /> {{ $t('app.settings') }}</button>
           <button class="start-item" @click="reportIssue(); startMenuOpen = false"><Bug :size="16" /> {{ $t('app.reportIssue') }}</button>
@@ -179,6 +179,9 @@
 
   <!-- 全局快捷搜索（Ctrl+K / Spotlight）：搜索功能/节点/站点/容器并直达 -->
   <CommandPalette v-if="loggedIn" ref="paletteRef" :app-items="paletteItems" @open="onPaletteOpen" />
+
+  <!-- 模块权限提示条：受限管理员点开「无权限模块」时不隐藏入口，只提示无权限 -->
+  <div v-if="permNotice" class="perm-notice">{{ permNotice }}</div>
 </template>
 
 <script setup>
@@ -220,7 +223,7 @@ import InstallCheckAlert from './components/InstallCheckAlert.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import Login from './views/Login.vue'
 import { shunxApi, systemApi } from './api'
-import { auth, clearAuth, isAdmin } from './store/auth'
+import { auth, clearAuth, isAdmin, isFullAdmin, hasPerm } from './store/auth'
 import { uiState, loadUi, loadUiEffective } from './store/ui'
 import { settings } from './store/settings'
 import { desktopPrefs, bindUser as bindDesktopUser, hideShortcut, pinShortcut, unpinShortcut } from './store/desktopPrefs'
@@ -324,96 +327,130 @@ function onLoggedIn() {
 }
 
 // --- 桌面快捷方式清单：key/图标/窗口组件/尺寸/权限/远端能力 ---
+// perm：对应后端 require_perm(<模块>) 的模块 key（受限管理员按此门控入口）；
+//       省略 = 不受模块限制（只读监控 / 面板自身功能，仍是 adminOnly）。
+// 显示名 / 门控三处共用：桌面图标、面板模式侧边栏、Ctrl+K 全局搜索（均取 visibleShortcuts）。
 const shortcuts = ref([
   // remoteCap：host（缺省）可在远端节点使用；local 为面板自身管理项，远端节点隐藏
-  { key: 'sites', label: '网站', titleKey: 'app.shortcut.sites', icon: markRaw(Globe), component: markRaw(SitesWindow), w: 900, h: 560, adminOnly: true, remoteCap: 'local' },
-  { key: 'database', label: '数据库', titleKey: 'app.shortcut.database', icon: markRaw(Database), component: markRaw(DatabaseWindow), w: 860, h: 540, adminOnly: true, remoteCap: 'local' },
+  { key: 'sites', label: '网站', titleKey: 'app.shortcut.sites', icon: markRaw(Globe), component: markRaw(SitesWindow), w: 900, h: 560, adminOnly: true, perm: 'sites', remoteCap: 'local' },
+  { key: 'database', label: '数据库', titleKey: 'app.shortcut.database', icon: markRaw(Database), component: markRaw(DatabaseWindow), w: 860, h: 540, adminOnly: true, perm: 'database', remoteCap: 'local' },
   // 计划任务已合并进「任务」应用，桌面不再单独保留
-  // { key: 'cron', label: '计划任务', titleKey: 'app.shortcut.cron', icon: markRaw(Clock), component: markRaw(CronWindow), w: 800, h: 520, adminOnly: true, remoteCap: 'local' },
+  // { key: 'cron', label: '计划任务', titleKey: 'app.shortcut.cron', icon: markRaw(Clock), component: markRaw(CronWindow), w: 800, h: 520, adminOnly: true, perm: 'cron', remoteCap: 'local' },
   // 防火墙已合并进「ShunX保护机制」应用，桌面不再单独保留
-  // { key: 'firewall', label: '防火墙', titleKey: 'app.shortcut.firewall', icon: markRaw(Shield), component: markRaw(FirewallWindow), w: 800, h: 540, adminOnly: true },
-  { key: 'frp', label: 'Frp内网穿透', titleKey: 'app.shortcut.frp', icon: markRaw(Radio), component: markRaw(FrpWindow), w: 900, h: 600, adminOnly: true, remoteCap: 'local' },
+  // { key: 'firewall', label: '防火墙', titleKey: 'app.shortcut.firewall', icon: markRaw(Shield), component: markRaw(FirewallWindow), w: 800, h: 540, adminOnly: true, perm: 'firewall' },
+  { key: 'frp', label: 'Frp内网穿透', titleKey: 'app.shortcut.frp', icon: markRaw(Radio), component: markRaw(FrpWindow), w: 900, h: 600, adminOnly: true, perm: 'frp', remoteCap: 'local' },
   // SSL 已合并进「网站」应用的 SSL证书 标签页，桌面不再单独保留
-  // { key: 'ssl', label: 'SSL', titleKey: 'app.shortcut.ssl', icon: markRaw(Lock), component: markRaw(SSLWindow), w: 820, h: 520, adminOnly: true, remoteCap: 'local' },
-  { key: 'logs', label: '日志', titleKey: 'app.shortcut.logs', icon: markRaw(ScrollText), component: markRaw(LogsWindow), w: 900, h: 560, adminOnly: true },
+  // { key: 'ssl', label: 'SSL', titleKey: 'app.shortcut.ssl', icon: markRaw(Lock), component: markRaw(SSLWindow), w: 820, h: 520, adminOnly: true, perm: 'sites', remoteCap: 'local' },
+  { key: 'logs', label: '日志', titleKey: 'app.shortcut.logs', icon: markRaw(ScrollText), component: markRaw(LogsWindow), w: 900, h: 560, adminOnly: true, perm: 'logs' },
   // 审计日志已合并进「日志」应用的审计日志标签页，桌面不再单独保留
-  // { key: 'auditlog', label: '审计日志', titleKey: 'app.shortcut.auditlog', icon: markRaw(ScrollText), component: markRaw(AuditLogWindow), w: 900, h: 560, adminOnly: true, remoteCap: 'local' },
-  { key: 'docker', label: 'Docker', titleKey: 'app.shortcut.docker', icon: markRaw(Container), component: markRaw(DockerWindow), w: 820, h: 520, adminOnly: true },
+  // { key: 'auditlog', label: '审计日志', titleKey: 'app.shortcut.auditlog', icon: markRaw(ScrollText), component: markRaw(AuditLogWindow), w: 900, h: 560, adminOnly: true, perm: 'logs', remoteCap: 'local' },
+  { key: 'docker', label: 'Docker', titleKey: 'app.shortcut.docker', icon: markRaw(Container), component: markRaw(DockerWindow), w: 820, h: 520, adminOnly: true, perm: 'docker' },
   // Docker 数据卷已合并进「Docker」应用的数据卷视图，桌面不再单独保留
-  // { key: 'dockervolumes', label: 'Docker卷', titleKey: 'app.shortcut.dockervolumes', icon: markRaw(DatabaseBackup), component: markRaw(DockerVolumesWindow), w: 860, h: 540, adminOnly: true },
+  // { key: 'dockervolumes', label: 'Docker卷', titleKey: 'app.shortcut.dockervolumes', icon: markRaw(DatabaseBackup), component: markRaw(DockerVolumesWindow), w: 860, h: 540, adminOnly: true, perm: 'docker' },
   // 容器资源与端口编辑（CPU/内存/环境变量/端口映射，管理员专属）
   // 已从桌面隐藏，仅保留 Docker 容器右键「编辑」入口（openContainerEdit）
-  // { key: 'containeredit', label: '容器编辑', titleKey: 'app.shortcut.containeredit', icon: markRaw(Settings2), component: markRaw(ContainerEditWindow), w: 760, h: 660, adminOnly: true },
-  { key: 'appstore', label: '应用商店', titleKey: 'app.shortcut.appstore', icon: markRaw(Store), component: markRaw(AppStoreWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local' },
+  // { key: 'containeredit', label: '容器编辑', titleKey: 'app.shortcut.containeredit', icon: markRaw(Settings2), component: markRaw(ContainerEditWindow), w: 760, h: 660, adminOnly: true, perm: 'docker' },
+  { key: 'appstore', label: '应用商店', titleKey: 'app.shortcut.appstore', icon: markRaw(Store), component: markRaw(AppStoreWindow), w: 920, h: 580, adminOnly: true, perm: 'appstore', remoteCap: 'local' },
   // 任务 = 计划任务 + 任务中心 合并
-  { key: 'tasks', label: '任务', titleKey: 'app.shortcut.tasks', icon: markRaw(ListChecks), component: markRaw(TasksWindow), w: 900, h: 560, adminOnly: true, remoteCap: 'local' },
+  { key: 'tasks', label: '任务', titleKey: 'app.shortcut.tasks', icon: markRaw(ListChecks), component: markRaw(TasksWindow), w: 900, h: 560, adminOnly: true, perm: 'appstore', remoteCap: 'local' },
   // ShunX保护机制 = 防火墙 + 应用防火墙 + 网页防篡改 + 数据库保护 + 系统体检 + 面板备份 + 备份中心 + 通知中心 + SSH密钥 合并
-  { key: 'shunxprotection', label: 'ShunX保护机制', titleKey: 'app.shortcut.shunxprotection', icon: markRaw(ShieldCheck), component: markRaw(ShunxSecurityWindow), w: 980, h: 620, adminOnly: true },
+  // 聚合窗口：任一相关模块在授权范围内即可打开（窗口内无权限的标签页由后端 403 兜底）
+  { key: 'shunxprotection', label: 'ShunX保护机制', titleKey: 'app.shortcut.shunxprotection', icon: markRaw(ShieldCheck), component: markRaw(ShunxSecurityWindow), w: 980, h: 620, adminOnly: true, perm: ['firewall', 'sites', 'tamper', 'backup', 'notify', 'healthcheck'] },
   // 下述应用已合并进「ShunX保护机制」，桌面不再单独保留
-  // { key: 'protection', label: 'Graw数据库保护机制', titleKey: 'app.shortcut.protection', icon: markRaw(ShieldCheck), component: markRaw(ProtectionWindow), w: 860, h: 560, adminOnly: true, remoteCap: 'local' },
-  // { key: 'tamper', label: 'ShunX网页防篡改', titleKey: 'app.shortcut.tamper', icon: markRaw(ShieldAlert), component: markRaw(TamperWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local' },
-  // { key: 'waf', label: '应用防火墙', titleKey: 'app.shortcut.waf', icon: markRaw(ShieldBan), component: markRaw(WafWindow), w: 980, h: 620, adminOnly: true, remoteCap: 'local' },
-  { key: 'runtime', label: '运行环境', titleKey: 'app.shortcut.runtime', icon: markRaw(Cpu), component: markRaw(RuntimeWindow), w: 900, h: 560, adminOnly: true, remoteCap: 'local' },
-  { key: 'process', label: '进程管理', titleKey: 'app.shortcut.process', icon: markRaw(Settings), component: markRaw(ProcessWindow), w: 780, h: 520, adminOnly: true },
-  { key: 'files', label: '文件管理', titleKey: 'app.shortcut.files', icon: markRaw(Folder), component: markRaw(FilesWindow), w: 820, h: 540, adminOnly: true },
-  { key: 'recycle', label: '回收站', titleKey: 'app.shortcut.recycle', icon: markRaw(Trash2), component: markRaw(RecycleBinWindow), w: 760, h: 480, adminOnly: true },
-  { key: 'netstorage', label: '网络储存', titleKey: 'app.shortcut.netstorage', icon: markRaw(Cloud), component: markRaw(NetStorageWindow), w: 860, h: 540, adminOnly: true, remoteCap: 'local' },
-  { key: 'uisettings', label: '界面设置', titleKey: 'app.shortcut.uisettings', icon: markRaw(Palette), component: markRaw(UISettingsWindow), w: 520, h: 540, adminOnly: true, remoteCap: 'local' },
-  { key: 'disks', label: '磁盘管理', titleKey: 'app.shortcut.disks', icon: markRaw(HardDrive), component: markRaw(DisksWindow), w: 900, h: 560, adminOnly: true },
+  // { key: 'protection', label: 'Graw数据库保护机制', titleKey: 'app.shortcut.protection', icon: markRaw(ShieldCheck), component: markRaw(ProtectionWindow), w: 860, h: 560, adminOnly: true, perm: 'firewall', remoteCap: 'local' },
+  // { key: 'tamper', label: 'ShunX网页防篡改', titleKey: 'app.shortcut.tamper', icon: markRaw(ShieldAlert), component: markRaw(TamperWindow), w: 920, h: 580, adminOnly: true, perm: 'tamper', remoteCap: 'local' },
+  // { key: 'waf', label: '应用防火墙', titleKey: 'app.shortcut.waf', icon: markRaw(ShieldBan), component: markRaw(WafWindow), w: 980, h: 620, adminOnly: true, perm: 'sites', remoteCap: 'local' },
+  { key: 'runtime', label: '运行环境', titleKey: 'app.shortcut.runtime', icon: markRaw(Cpu), component: markRaw(RuntimeWindow), w: 900, h: 560, adminOnly: true, perm: 'docker', remoteCap: 'local' },
+  { key: 'process', label: '进程管理', titleKey: 'app.shortcut.process', icon: markRaw(Settings), component: markRaw(ProcessWindow), w: 780, h: 520, adminOnly: true, perm: 'process' },
+  { key: 'files', label: '文件管理', titleKey: 'app.shortcut.files', icon: markRaw(Folder), component: markRaw(FilesWindow), w: 820, h: 540, adminOnly: true, perm: 'files' },
+  { key: 'recycle', label: '回收站', titleKey: 'app.shortcut.recycle', icon: markRaw(Trash2), component: markRaw(RecycleBinWindow), w: 760, h: 480, adminOnly: true, perm: 'files' },
+  { key: 'netstorage', label: '网络储存', titleKey: 'app.shortcut.netstorage', icon: markRaw(Cloud), component: markRaw(NetStorageWindow), w: 860, h: 540, adminOnly: true, perm: 'netstorage', remoteCap: 'local' },
+  // 界面设置影响全局展示，属面板自身功能：始终要求完整管理员（无 perm + fullAdminOnly）
+  { key: 'uisettings', label: '界面设置', titleKey: 'app.shortcut.uisettings', icon: markRaw(Palette), component: markRaw(UISettingsWindow), w: 520, h: 540, adminOnly: true, fullAdminOnly: true, remoteCap: 'local' },
+  { key: 'disks', label: '磁盘管理', titleKey: 'app.shortcut.disks', icon: markRaw(HardDrive), component: markRaw(DisksWindow), w: 900, h: 560, adminOnly: true, perm: 'disks' },
   // 备份中心已合并进「ShunX保护机制」应用，桌面不再单独保留
-  // { key: 'backup', label: '备份中心', titleKey: 'app.shortcut.backup', icon: markRaw(DatabaseBackup), component: markRaw(BackupWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local' },
+  // { key: 'backup', label: '备份中心', titleKey: 'app.shortcut.backup', icon: markRaw(DatabaseBackup), component: markRaw(BackupWindow), w: 920, h: 580, adminOnly: true, perm: 'backup', remoteCap: 'local' },
   // 通知中心已合并进「ShunX保护机制」应用，桌面不再单独保留
-  // { key: 'notify', label: '通知中心', titleKey: 'app.shortcut.notify', icon: markRaw(BellRing), component: markRaw(NotifyWindow), w: 860, h: 560, adminOnly: true, remoteCap: 'local' },
-  // 站点监控 + 服务监控 合并为「监控」
+  // { key: 'notify', label: '通知中心', titleKey: 'app.shortcut.notify', icon: markRaw(BellRing), component: markRaw(NotifyWindow), w: 860, h: 560, adminOnly: true, perm: 'notify', remoteCap: 'local' },
+  // 站点监控 + 服务监控 合并为「监控」（只读监控数据，不受模块限制）
   { key: 'monitoring', label: '监控', titleKey: 'app.shortcut.monitoring', icon: markRaw(Activity), component: markRaw(MonitoringWindow), w: 920, h: 580, adminOnly: true, remoteCap: 'local' },
-  // { key: 'uptime', label: '站点监控', titleKey: 'app.shortcut.uptime', icon: markRaw(Activity), component: markRaw(UptimeWindow), w: 860, h: 560, adminOnly: true, remoteCap: 'local' },
-  { key: 'webstats', label: '访问统计', titleKey: 'app.shortcut.webstats', icon: markRaw(BarChart3), component: markRaw(WebStatsWindow), w: 980, h: 640, adminOnly: true, remoteCap: 'local' },
-  { key: 'rewrite', label: '伪静态规则', titleKey: 'app.shortcut.rewrite', icon: markRaw(FileCode2), component: markRaw(RewriteWindow), w: 780, h: 560, adminOnly: true, remoteCap: 'local' },
-  { key: 'siteopts', label: '防盗链缓存', titleKey: 'app.shortcut.siteopts', icon: markRaw(Unlink), component: markRaw(SiteOptsWindow), w: 860, h: 600, adminOnly: true, remoteCap: 'local' },
+  // { key: 'uptime', label: '站点监控', titleKey: 'app.shortcut.uptime', icon: markRaw(Activity), component: markRaw(UptimeWindow), w: 860, h: 560, adminOnly: true, perm: 'notify', remoteCap: 'local' },
+  { key: 'webstats', label: '访问统计', titleKey: 'app.shortcut.webstats', icon: markRaw(BarChart3), component: markRaw(WebStatsWindow), w: 980, h: 640, adminOnly: true, perm: 'sites', remoteCap: 'local' },
+  { key: 'rewrite', label: '伪静态规则', titleKey: 'app.shortcut.rewrite', icon: markRaw(FileCode2), component: markRaw(RewriteWindow), w: 780, h: 560, adminOnly: true, perm: 'sites', remoteCap: 'local' },
+  { key: 'siteopts', label: '防盗链缓存', titleKey: 'app.shortcut.siteopts', icon: markRaw(Unlink), component: markRaw(SiteOptsWindow), w: 860, h: 600, adminOnly: true, perm: 'sites', remoteCap: 'local' },
+  // 历史监控为只读指标数据，不受模块限制
   { key: 'metricshistory', label: '历史监控', titleKey: 'app.shortcut.metricshistory', icon: markRaw(History), component: markRaw(MetricsHistoryWindow), w: 980, h: 640, adminOnly: true, remoteCap: 'local' },
   // 服务监控已合并进「监控」应用，桌面不再单独保留
-  // { key: 'svcmonitor', label: '服务监控', titleKey: 'app.shortcut.svcmonitor', icon: markRaw(Server), component: markRaw(ServiceMonitorWindow), w: 920, h: 560, adminOnly: true },
+  // { key: 'svcmonitor', label: '服务监控', titleKey: 'app.shortcut.svcmonitor', icon: markRaw(Server), component: markRaw(ServiceMonitorWindow), w: 920, h: 560, adminOnly: true, perm: 'svcmonitor' },
   // SSH 密钥已合并进「ShunX保护机制」应用，桌面不再单独保留
   // { key: 'sshkeys', label: 'SSH 密钥', titleKey: 'app.shortcut.sshkeys', icon: markRaw(KeyRound), component: markRaw(SSHKeysWindow), w: 880, h: 540, adminOnly: true, remoteCap: 'local' },
-  { key: 'certcheck', label: '证书到期', titleKey: 'app.shortcut.certcheck', icon: markRaw(Lock), component: markRaw(CertWindow), w: 820, h: 540, adminOnly: true, remoteCap: 'local' },
+  { key: 'certcheck', label: '证书到期', titleKey: 'app.shortcut.certcheck', icon: markRaw(Lock), component: markRaw(CertWindow), w: 820, h: 540, adminOnly: true, perm: 'notify', remoteCap: 'local' },
   // 系统体检已合并进「ShunX保护机制」应用，桌面不再单独保留
-  // { key: 'healthcheck', label: '系统体检', titleKey: 'app.shortcut.healthcheck', icon: markRaw(Stethoscope), component: markRaw(HealthCheckWindow), w: 820, h: 600, adminOnly: true, remoteCap: 'local' },
-  { key: 'ftpusers', label: 'FTP用户', titleKey: 'app.shortcut.ftpusers', icon: markRaw(UserCheck), component: markRaw(FtpUsersWindow), w: 860, h: 560, adminOnly: true, remoteCap: 'local' },
+  // { key: 'healthcheck', label: '系统体检', titleKey: 'app.shortcut.healthcheck', icon: markRaw(Stethoscope), component: markRaw(HealthCheckWindow), w: 820, h: 600, adminOnly: true, perm: 'healthcheck', remoteCap: 'local' },
+  { key: 'ftpusers', label: 'FTP用户', titleKey: 'app.shortcut.ftpusers', icon: markRaw(UserCheck), component: markRaw(FtpUsersWindow), w: 860, h: 560, adminOnly: true, perm: 'ftpusers', remoteCap: 'local' },
   // PHP 多版本管理：探测系统 PHP/FPM + 站点 PHP 版本关联（仅管理员）
-  { key: 'phpversions', label: 'PHP版本', titleKey: 'app.shortcut.phpversions', icon: markRaw(ServerCog), component: markRaw(PhpVersionsWindow), w: 900, h: 580, adminOnly: true, remoteCap: 'local' },
+  { key: 'phpversions', label: 'PHP版本', titleKey: 'app.shortcut.phpversions', icon: markRaw(ServerCog), component: markRaw(PhpVersionsWindow), w: 900, h: 580, adminOnly: true, perm: 'sites', remoteCap: 'local' },
   // 面板备份已合并进「ShunX保护机制」应用，桌面不再单独保留
   // { key: 'panelbackup', label: '面板备份', titleKey: 'app.shortcut.panelbackup', icon: markRaw(Archive), component: markRaw(PanelBackupWindow), w: 860, h: 540, adminOnly: true, remoteCap: 'local' },
   // 系统更新已从桌面移除（面板自身更新入口走其他渠道）
   // { key: 'update', label: '系统更新', titleKey: 'app.shortcut.update', icon: markRaw(RefreshCw), component: markRaw(UpdateWindow), w: 640, h: 420, adminOnly: true, remoteCap: 'local' },
   // 登录日志已合并进「日志」应用的登录日志标签页，桌面不再单独保留
-  // { key: 'loginlog', label: '登录日志', titleKey: 'app.shortcut.loginlog', icon: markRaw(Fingerprint), component: markRaw(LoginLogWindow), w: 900, h: 560, adminOnly: false, remoteCap: 'local' },
+  // { key: 'loginlog', label: '登录日志', titleKey: 'app.shortcut.loginlog', icon: markRaw(Fingerprint), component: markRaw(LoginLogWindow), w: 900, h: 560, adminOnly: false, perm: 'loginlog', remoteCap: 'local' },
   // 会话管理：在线会话列表、踢出单设备、强制全部下线（普通用户仅管理自己的会话）
   { key: 'sessions', label: '会话管理', titleKey: 'app.shortcut.sessions', icon: markRaw(MonitorSmartphone), component: markRaw(SessionsWindow), w: 900, h: 560, adminOnly: false, remoteCap: 'local' },
-  { key: 'terminal', label: '终端', titleKey: 'app.shortcut.terminal', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true },
-  // Foxcode：双击打开终端并自动输入 foxcode 命令启动
-  { key: 'foxcode', label: 'Foxcode', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true, props: { autoCommand: 'foxcode' } },
+  { key: 'terminal', label: '终端', titleKey: 'app.shortcut.terminal', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true, perm: 'terminal' },
+  // Foxcode：双击打开终端并自动输入 foxcode 命令启动（同终端模块权限）
+  { key: 'foxcode', label: 'Foxcode', icon: markRaw(Terminal), component: markRaw(TerminalWindow), w: 780, h: 460, adminOnly: true, perm: 'terminal', props: { autoCommand: 'foxcode' } },
   // 配置回滚：站点/防火墙配置的写前快照 + 一键恢复（管理员）
-  { key: 'rollback', label: '配置回滚', titleKey: 'app.shortcut.rollback', icon: markRaw(History), component: markRaw(RollbackWindow), w: 980, h: 580, adminOnly: true },
+  { key: 'rollback', label: '配置回滚', titleKey: 'app.shortcut.rollback', icon: markRaw(History), component: markRaw(RollbackWindow), w: 980, h: 580, adminOnly: true, perm: 'backup' },
   // 批量操作中心：多节点批量命令 / 批量容器启停（管理员）
-  { key: 'batch', label: '批量操作', titleKey: 'app.shortcut.batch', icon: markRaw(ServerCog), component: markRaw(BatchWindow), w: 1000, h: 620, adminOnly: true },
+  { key: 'batch', label: '批量操作', titleKey: 'app.shortcut.batch', icon: markRaw(ServerCog), component: markRaw(BatchWindow), w: 1000, h: 620, adminOnly: true, perm: 'batch' },
   // 站点 Git 自动部署：绑定仓库 + Webhook 自动发布（管理员，面板自身管理项）
-  { key: 'gitdeploy', label: 'Git 部署', titleKey: 'app.shortcut.gitdeploy', icon: markRaw(FileCode2), component: markRaw(GitDeployWindow), w: 960, h: 600, adminOnly: true, remoteCap: 'local' },
+  { key: 'gitdeploy', label: 'Git 部署', titleKey: 'app.shortcut.gitdeploy', icon: markRaw(FileCode2), component: markRaw(GitDeployWindow), w: 960, h: 600, adminOnly: true, perm: 'gitdeploy', remoteCap: 'local' },
   // 巡检报告：每日/手动生成系统健康汇总并推送（管理员）
-  { key: 'report', label: '巡检报告', titleKey: 'app.shortcut.report', icon: markRaw(BarChart3), component: markRaw(ReportWindow), w: 960, h: 600, adminOnly: true },
+  { key: 'report', label: '巡检报告', titleKey: 'app.shortcut.report', icon: markRaw(BarChart3), component: markRaw(ReportWindow), w: 960, h: 600, adminOnly: true, perm: 'report' },
   // SSH 端口转发：本地直连远程节点服务（管理员，面向远程节点的隧道）
-  { key: 'portforward', label: '端口转发', titleKey: 'app.shortcut.portforward', icon: markRaw(Unlink), component: markRaw(PortForwardWindow), w: 880, h: 580, adminOnly: true },
+  { key: 'portforward', label: '端口转发', titleKey: 'app.shortcut.portforward', icon: markRaw(Unlink), component: markRaw(PortForwardWindow), w: 880, h: 580, adminOnly: true, perm: 'portforward' },
   // 镜像漏洞扫描：本地 advisory 比对（管理员）
-  { key: 'imgsafety', label: '镜像扫描', titleKey: 'app.shortcut.imgsafety', icon: markRaw(ShieldCheck), component: markRaw(ImageScanWindow), w: 980, h: 600, adminOnly: true },
+  { key: 'imgsafety', label: '镜像扫描', titleKey: 'app.shortcut.imgsafety', icon: markRaw(ShieldCheck), component: markRaw(ImageScanWindow), w: 980, h: 600, adminOnly: true, perm: 'docker' },
   // MySQL 慢查询分析：慢日志 TOP N 与建议（管理员）
-  { key: 'slowquery', label: '慢查询分析', titleKey: 'app.shortcut.slowquery', icon: markRaw(Activity), component: markRaw(SlowQueryWindow), w: 1000, h: 620, adminOnly: true }
+  { key: 'slowquery', label: '慢查询分析', titleKey: 'app.shortcut.slowquery', icon: markRaw(Activity), component: markRaw(SlowQueryWindow), w: 1000, h: 620, adminOnly: true, perm: 'database' }
 ])
 
 // 桌面快捷方式：管理员可见全部，普通用户仅可见非管理功能。
 // 远端节点下：未配置 Agent 时隐藏 local 类（面板自身管理项）应用，避免误操作本机；
 // 已配置 Agent 时 local 类经 Agent 代理在子节点可用，正常显示。
-// --- 快捷方式可见性：管理员 / 隐藏 Foxcode / 远端节点 local 类门控 / 用户隐藏 ---
+// --- 统一入口门控：管理员身份 / 隐藏偏好 / 远端 local 类 ---
+// 真正的权限边界在后端 require_perm。按产品约定：**不按模块隐藏入口**——受限管理员
+// 也能看到全部功能入口（保持界面一致、便于知晓系统有哪些能力），点开无权限的模块时
+// 由 openWindow() 提示「无此权限」而不打开窗口，避免出现空白窗口。
+// 桌面、面板模式侧边栏、Ctrl+K 全局搜索共用 `visibleShortcuts`，因此三处门控天然一致。
+// 模块权限判定：perm 支持单 key 或 key 数组（任一命中即放行，如聚合窗口）。
+function allowsPerm(perm) {
+  if (!perm) return true
+  return hasPerm(...(Array.isArray(perm) ? perm : [perm]))
+}
+
+function canAccess(s) {
+  if (s.adminOnly && !isAdmin()) return false
+  // fullAdminOnly：面板自身安全边界（如用户管理 / 界面设置），受限管理员不可见
+  if (s.fullAdminOnly && !isFullAdmin()) return false
+  return true
+}
+
+// 模块权限提示：受限管理员点开无权限模块时短暂显示（2.5s 自动消失）
+const permNotice = ref('')
+let permNoticeTimer = null
+function showPermNotice() {
+  permNotice.value = t('common.noModulePerm')
+  if (permNoticeTimer) clearTimeout(permNoticeTimer)
+  permNoticeTimer = setTimeout(() => { permNotice.value = '' }, 2500)
+}
+
+// --- 快捷方式可见性：管理员 / 隐藏 Foxcode / 远端节点 local 类 / 用户隐藏
+//     （不按模块权限隐藏：受限管理员可见全部模块入口，点开无权限时提示） ---
 const visibleShortcuts = computed(() => shortcuts.value.filter(s =>
-  (!s.adminOnly || isAdmin()) &&
+  canAccess(s) &&
   !(s.key === 'foxcode' && settings.hideFoxcode) &&
   !desktopPrefs.hiddenKeys.includes(s.key) &&
   !(isCurrentHostRemote.value && !currentHostAgentReady.value && s.remoteCap === 'local')
@@ -709,7 +746,7 @@ function openWindow(key) {
   let def = shortcuts.value.find(s => s.key === key)
   if (!def) {
     const extras = {
-      users: { label: '账号管理', titleKey: 'app.winTitle.users', icon: markRaw(UserCircle2), component: markRaw(UserWindow), w: 600, h: 460, adminOnly: true },
+      users: { label: '账号管理', titleKey: 'app.winTitle.users', icon: markRaw(UserCircle2), component: markRaw(UserWindow), w: 600, h: 460, adminOnly: true, fullAdminOnly: true },
       changepwd: { label: '修改密码', titleKey: 'app.winTitle.changepwd', icon: markRaw(UserCircle2), component: markRaw(ChangePasswordWindow), w: 420, h: 360 },
       settings: { label: '设置', titleKey: 'app.winTitle.settings', icon: markRaw(Settings), component: markRaw(SettingsWindow), w: 520, h: 480 },
       // 面板模式「主页」：系统概览 + 实时监控 + 系统信息/备忘录（非窗口外壳的全屏视图）
@@ -721,6 +758,15 @@ function openWindow(key) {
   // 统一守卫：无论主快捷方式还是 extras，adminOnly 窗口都要求管理员
   // （后端 API 已有鉴权，此处为前端纵深防御，避免普通用户残留窗口 UI）
   if (def.adminOnly && !isAdmin()) return
+  // 完整管理员专属（面板自身安全边界：用户管理 / 更新 / 插件等）
+  if (def.fullAdminOnly && !isFullAdmin()) return
+  // 模块权限守卫（受限管理员）：入口不再隐藏，点开无权限模块时不打开窗口、
+  // 仅提示「无此权限」，避免出现空白窗口。此处覆盖所有入口（桌面图标、面板模式
+  // 侧边栏、Ctrl+K 搜索、面板模式事件透传）；后端 require_perm 仍会返回 403 兜底。
+  if (!allowsPerm(def.perm)) {
+    showPermNotice()
+    return
+  }
   // 远程能力守卫：未配置 Agent 的远端节点下，local 类（面板自身管理项）应用
   // 禁止打开（后端同一守护返回 403，此处前端提前拦截并提示，避免空白窗口）。
   // 已配置 Agent 时 local 类经 Agent 代理在子节点可用，正常打开。
@@ -1988,13 +2034,11 @@ function startRealtime() {
   startMetrics()
   // 网页防篡改告警订阅：登录即建立（篡改发生时对在线用户弹窗）
   startTamper()
-  // Docker 为管理员功能：登录即订阅后端实时推送（/api/docker/ws）。
-  // 注意：这里不再调用任何 HTTP 拉取——数据由后端按周期推送，窗口打开时后端
-  // 会先回放最近一次快照（并立即补采一轮），因此无需前端预取即可秒开。
-  if (isAdmin()) {
-    startDocker()
-    refreshNodes()
-  }
+  // Docker 为模块授权功能：仅在持有 docker 模块权限时订阅实时推送（/api/docker/ws），
+  // 否则受限管理员会持续收到 403 并无谓重连。
+  if (hasPerm('docker')) startDocker()
+  // 节点列表仅完整管理员可见（多节点管理属面板自身安全边界）
+  if (isFullAdmin()) refreshNodes()
 }
 function stopRealtime() {
   stopMetrics()

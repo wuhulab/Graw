@@ -15,12 +15,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSock
 from app import hostfs
 from app import node_manager
 from app import agent_client
-# WebSocket 鉴权依赖：Docker 属管理员功能，WS 用 ?token= + 强制管理员（get_current_user_ws_admin）
-from app.auth import get_current_user_ws_admin
+# WebSocket 鉴权依赖：Docker 属模块授权功能，WS 用 ?token= + require_perm_ws("docker")
+from app.auth import require_perm_ws
 from pydantic import BaseModel
 from typing import Optional, List
 
 logger = logging.getLogger("graw.docker_api")
+
+# Docker 模块权限（WebSocket 版）：受限管理员需持有 docker 模块授权
+_DOCKER_PERM_WS = require_perm_ws("docker")
 
 router = APIRouter()
 # WebSocket 专用路由：/api/docker 的 HTTP 路由挂了 ADMIN 全局依赖，而 WS 无法携带
@@ -2343,13 +2346,14 @@ async def stop_docker_producer() -> None:
 @ws_router.websocket("/ws")
 async def docker_ws(
     websocket: WebSocket,
-    user: Optional[dict] = Depends(get_current_user_ws_admin),
+    user: Optional[dict] = Depends(_DOCKER_PERM_WS),
     node: str = Query(default=""),
 ):
     """Docker 实时数据 WebSocket（引擎状态 + 容器列表）。
 
-    鉴权：?token= 查询参数 + 强制管理员（get_current_user_ws_admin），与
-    /api/docker/* 的 ADMIN 依赖语义一致；鉴权失败时依赖内部已关闭连接，直接返回。
+    鉴权：?token= 查询参数 + require_perm_ws("docker")（受限管理员需 docker
+    模块授权，与 /api/docker/* 的 require_perm("docker") 依赖语义一致）；
+    鉴权失败时依赖内部已关闭连接，直接返回。
 
     协议：
       - 服务端→客户端：{"type":"docker","data":{"status":…,"containers":[…],"ts":…}}
@@ -2358,7 +2362,7 @@ async def docker_ws(
     ?node= 指定订阅的管理节点（缺省 = 当前管理主机）；节点不存在时回落到当前主机。
     """
     if user is None:
-        # get_current_user_ws_admin 内部已在鉴权失败时 close(4401/4403)
+        # require_perm_ws 内部已在鉴权失败 / 无模块权限时 close(4401/4403)
         return
     await websocket.accept()
 

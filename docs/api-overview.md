@@ -28,21 +28,39 @@
 |------|------|----------|
 | 公开 | 无需登录：`/api/auth/login`、`/api/health` | `main.py` 路由定义 |
 | `PROTECTED` | 仅需登录（只读信息类） | `main.py`：`PROTECTED = [Depends(get_current_user), Depends(require_non_default_password)]` |
-| `ADMIN` | 需管理员 | `main.py`：`ADMIN = [Depends(require_admin)]` |
+| `ADMIN` | 需**完整**管理员（面板自身安全边界：多节点 / SSH 密钥 / 插件 / 更新 / 面板备份 / 用户管理） | `main.py`：`ADMIN = [Depends(require_admin)]` |
+| `PERM("模块")` | 需该模块权限（受限管理员按 `perms` 白名单收窄；完整管理员全量放行） | `main.py`：`PERM("模块") = [Depends(require_perm("模块"))]` |
 | 端点内自鉴权 | 不挂全局依赖，由处理函数内部校验 | WebSocket（`?token=`）、`/api/shunx`、`/api/tamper`、`/api/ui`、`/api/system`、`/api/loginlog` 部分、`/api/agent` 等 |
 
 ### 2.2 鉴权链的级联关系
 
 ```
-require_admin
+require_admin / require_perm("模块")
   └─ require_non_default_password
        └─ get_current_user
             └─ (解析并校验 Bearer JWT)
 ```
 
-- `require_admin` **内部已级联** `require_non_default_password` + `get_current_user`，因此标注为 ADMIN 的路由无需再声明登录依赖。
+- `require_admin` / `require_perm` **内部已级联** `require_non_default_password` + `get_current_user`，因此标注为 ADMIN / PERM 的路由无需再声明登录依赖。
 - 校验链包含：签名有效 → 用户存在 → token 版本一致（改密 / 注销会使旧令牌失效）→ 会话未吊销（`sid` 在会话表中）→ **非默认密码**。
 - 使用默认密码的账号（例如重置回 `admin123`）会被 `require_non_default_password` 拦下，必须先在面板改密（HTTP 返回相应错误，前端引导改密）。
+
+### 2.3 模块级权限（受限管理员）
+
+`data/users.json` 的用户记录可带 `perms` 字段（模块 key 数组）：
+
+| 取值 | 含义 |
+|------|------|
+| 缺失 / `null` | 全量权限（完整管理员，兼容升级前的存量账号） |
+| 模块数组 | 白名单，仅放行列出的模块；`[]` 表示不放行任何模块 |
+| 类型非法 | 按空集合处理（取最严） |
+
+- 模块 key 唯一来源：`backend/app/auth.py` 的 `MODULES`；`GET /api/auth/modules`（管理员）返回清单供前端渲染。
+- 受限管理员访问未授权模块返回 **403**（`detail` 形如 `需要 docker 模块权限`）。
+- **前端不按模块隐藏入口**：受限管理员同样能看到全部功能入口，点开无权限模块时前端提示「该用户无此权限」且不打开窗口（真正的边界仍是后端 403）。
+- **兜底约束**：面板必须始终保留至少一个「完整权限的超级管理员」（`role=admin` 且 `perms` 为空）。用户管理接口在改角色、收窄 `perms`、删除账号时校验，会把最后一个兜底账号改没的操作返回 **400**「必须保留至少一个完整权限的超级管理员」。
+- **Agent 隧道**：代理到子节点前会在主面板本地做等价的模块判定（`main._proxy_perm_map()` 从路由依赖自动汇总），未授权模块直接 403——子节点侧拿到的是 agent 管理员令牌，不会代为拦截。
+- 完整管理员（无 `perms`）行为与旧版本完全一致。
 
 > 关于多节点：业务请求可带请求头 **`X-Graw-Node: <节点ID>`** 临时切换「当前管理主机」（主面板按窗口聚焦节点下发）；WebSocket 因无法带请求头改用查询参数 `?node=`。详见 [docs/node-agent.md](./node-agent.md) 第 4 节。
 
@@ -71,10 +89,11 @@ require_admin
 
 | 端点 | 鉴权依赖 | 语义 |
 |------|----------|------|
-| `/api/terminal/ws` | `get_current_user_ws_admin` | 登录 + **强制管理员** + 非默认密码 |
+| `/api/terminal/ws` | `require_perm_ws("terminal")` | 登录 + 终端模块权限 + 非默认密码 |
 | `/api/terminal/ws/container` | 同上 | 容器终端 |
-| `/api/system/ws` | `get_current_user_ws_checked` | 登录 + 非默认密码（与 `/api/system/*` 的只读语义一致） |
-| `/api/tamper/ws` | 同 WS 校验链 | 防篡改实时告警推送 |
+| `/api/docker/ws` | `require_perm_ws("docker")` | 登录 + Docker 模块权限 + 非默认密码 |
+| `/api/system/ws` | `get_current_user_ws_checked` | 登录 + 非默认密码（与 `/api/system/*` 的只读语义一致，不受模块限制） |
+| `/api/tamper/ws` | 同 WS 校验链 | 防篡改实时告警推送（只读） |
 
 节点参数：
 
@@ -83,7 +102,7 @@ require_admin
   WS 断开只摘客户端、进程继续运行；重连时先回放最近 256KB 输出快照再继续交互，用于长时间任务不因
   刷新面板而中断。接入时后端会先下发控制帧 `{"type":"persist",...}`（前端只用于状态展示，不写入终端）。
   配套管理接口 `GET /api/terminal/persist`（列出常驻会话的脱敏状态）与
-  `DELETE /api/terminal/persist?node=<节点ID>`（结束常驻会话，均为 `ADMIN`）。
+  `DELETE /api/terminal/persist?node=<节点ID>`（结束常驻会话，均需 `terminal` 模块权限）。
 - `/api/system/ws?node=<节点ID>`：目标为已配置 Agent 的 SSH 子节点时，桥接到子节点自身的 `/api/system/ws`；**`?node=` 仅管理员生效**，非管理员会被忽略并回落到全局当前节点（与 HTTP 只读接口的可视范围一致）。
 
 示例：
@@ -99,6 +118,8 @@ ws://<host>/api/system/ws?token=<JWT>
 ## 5. 路由分组总表
 
 前缀与鉴权级别来自 `backend/app/main.py` 的 `include_router(...)`。「local-only」表示该前缀属于 `remote_cap.LOCAL_PREFIX`：当前管理主机为**远程节点且未配置 Agent** 时会被门控返回 403。
+
+> 鉴权级别读法：表中标注「管理员」的业务前缀现为 **`PERM("<模块>")`**（模块 key 见 2.3，多数与前缀同名，如 `/api/docker` → `docker`）；仅 `/api/nodes`、`/api/sshkeys`、`/api/plugins`、`/api/update`、`/api/panelbackup`、`/api/auth` 的用户管理、`/api/ui` 的 `/config` 仍要求**完整管理员**（面板自身安全边界，不受 `perms` 影响）。完整管理员（无 `perms`）在所有前缀上行为不变。
 
 | 前缀 | 鉴权级别 | local-only | 说明 |
 |------|----------|:---:|------|

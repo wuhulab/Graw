@@ -10,8 +10,8 @@ import subprocess
 
 from app.auth import (
     get_current_user,
-    get_current_user_ws_admin,
-    require_admin,
+    require_perm,
+    require_perm_ws,
     ws_session_still_valid,
 )
 from app.hostfs import get_host_root
@@ -22,6 +22,11 @@ from app.routers.docker_api import get_backend, _find_podman
 router = APIRouter()
 
 logger = logging.getLogger("graw.terminal")
+
+# 终端模块权限依赖（受限管理员）：HTTP 端点与 WebSocket 端点各一份。
+# 复用同一函数对象可让 FastAPI 依赖缓存生效，也便于 Agent 代理映射识别模块。
+_TERMINAL_PERM = require_perm("terminal")
+_TERMINAL_PERM_WS = require_perm_ws("terminal")
 
 IS_WINDOWS = platform.system() == "Windows"
 
@@ -172,7 +177,7 @@ async def terminal_mouse_capability(user=Depends(get_current_user)):
 
 
 @router.get("/persist")
-async def list_persist_sessions(user=Depends(require_admin)):
+async def list_persist_sessions(user=Depends(_TERMINAL_PERM)):
     """列出当前常驻的「持久化终端」会话。
 
     仅返回脱敏状态（节点、创建时间、接入客户端数、缓冲字节数），不含任何
@@ -184,7 +189,7 @@ async def list_persist_sessions(user=Depends(require_admin)):
 
 
 @router.delete("/persist")
-async def destroy_persist_session(node: str = "", user=Depends(require_admin)):
+async def destroy_persist_session(node: str = "", user=Depends(_TERMINAL_PERM)):
     """结束指定节点的持久化终端会话（进程随之退出）。
 
     前端在用户取消勾选「保留持久化终端」时调用：删除后该节点的常驻 shell
@@ -208,7 +213,7 @@ async def destroy_persist_session(node: str = "", user=Depends(require_admin)):
 async def container_terminal_ws(
     websocket: WebSocket,
     container: str,
-    user=Depends(get_current_user_ws_admin),
+    user=Depends(_TERMINAL_PERM_WS),
 ):
     """进入指定容器的交互终端（exec -it /bin/sh）。
 
@@ -258,7 +263,7 @@ async def terminal_ws(
     websocket: WebSocket,
     node: str = "",
     persist: int = 0,
-    user=Depends(get_current_user_ws_admin),
+    user=Depends(_TERMINAL_PERM_WS),
 ):
     """交互终端 WebSocket。
 
@@ -266,7 +271,7 @@ async def terminal_ws(
     重开窗口）只摘除客户端，重连按「节点」键接回同一会话并回放最近输出，
     用于长时间任务不因刷新而中断（实现见 app/tty_persist.py）。
     """
-    # get_current_user_ws_admin 在鉴权失败时会关闭连接并返回 None
+    # require_perm_ws("terminal") 在鉴权失败 / 无终端模块权限时已关闭连接并返回 None
     if user is None:
         return
     await websocket.accept()
