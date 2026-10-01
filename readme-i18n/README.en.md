@@ -345,7 +345,7 @@ If Graw has been helpful to you, you're welcome to buy the author a cup of coffe
 
 - Afdian: <https://afdian.com/a/shunianssy>
 - RainYun (sponsor, affordable servers): <https://www.rainyun.com/NjQwNjg5_>
-- You can also use the **Sponsor** button at the top of the repository page (powered by `.github/FUNDING.yml`).
+- You can also use the **Sponsor** button at the top of the repository page (powered by the root-level `FUNDING.yml`).
 
 ## License
 

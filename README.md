@@ -358,7 +358,7 @@ server: {
 
 - 爱发电：<https://afdian.com/a/shunianssy>
 - 雨云（赞助商，便宜服务器）：<https://www.rainyun.com/NjQwNjg5_>
-- 也可以点击仓库页右上角的 **Sponsor** 按钮（由 `.github/FUNDING.yml` 提供）。
+- 也可以点击仓库页右上角的 **Sponsor** 按钮（由仓库根目录的 `FUNDING.yml` 提供）。
 
 ## License
 
