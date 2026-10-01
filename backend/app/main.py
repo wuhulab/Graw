@@ -115,6 +115,9 @@ async def lifespan(app: FastAPI):
     _secure_data_dir()
     # 启动统一系统指标采集（供首页三卡片共享单条 WS），预热缓存并后台广播
     await system.start_metrics_producer()
+    # 启动 Docker 实时推送协程（/api/docker/ws）：由订阅驱动采集，无订阅时零开销，
+    # 替代前端登录后对 /api/docker/status|containers 的持续 HTTP 轮询
+    await docker_api.start_docker_producer()
     # 启动 ShunX 网页防篡改后台监控（定时备份 + 篡改检测回滚 + 在线告警推送）
     await tamper.start_tamper_monitor()
     # 启动通知中心后台监控（资源阈值告警检查 + 渠道推送）
@@ -134,6 +137,7 @@ async def lifespan(app: FastAPI):
     yield
     # 关闭后台采集协程
     await system.stop_metrics_producer()
+    await docker_api.stop_docker_producer()
     await tamper.stop_tamper_monitor()
     await notify.stop_monitor()
     await uptime.stop_monitor()
@@ -537,6 +541,10 @@ app.include_router(
 app.include_router(
     docker_api.router, prefix="/api/docker", tags=["docker"], dependencies=ADMIN
 )
+# Docker 实时数据 WebSocket（/api/docker/ws）：WS 无法携带 Bearer 头，只能 ?token=，
+# 因而不挂 Router 级 ADMIN 依赖，改由端点内部用 get_current_user_ws_admin 强制管理员
+# （与 terminal / gitdeploy webhook 同一模式）。
+app.include_router(docker_api.ws_router, prefix="/api/docker", tags=["docker"])
 # Docker 数据卷（volumes）管理：复用 docker_api 的后端探测与 CLI/SDK 工具（管理员）
 app.include_router(
     dockervolumes.router,

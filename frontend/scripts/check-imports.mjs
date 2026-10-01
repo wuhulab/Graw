@@ -19,7 +19,27 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
 const src = path.join(root, 'src')
 const appVue = path.join(src, 'App.vue')
-const content = fs.readFileSync(appVue, 'utf8')
+
+/**
+ * 剔除源码中的注释（行注释 + 块注释）。
+ *
+ * 为什么必须先剔除：shortcuts/extras 里保留了大量「已合并 / 已下线」的注释条目，
+ * 例如 `// { key: 'update', component: markRaw(UpdateWindow) }` 与
+ * `// import UpdateWindow from './components/windows/UpdateWindow.vue'`。
+ * 若不剔除注释，注释里的 markRaw 引用和注释里的 import 会互相「配对成功」，
+ * 脚本看着通过、实际对真实代码零校验（历史误报与漏报的根源）。
+ * 行注释只匹配非 `://` 的 `//`，避免把 'https://...' 这类型地址截断。
+ *
+ * @param {string} code 原始源码
+ * @returns {string} 去掉注释后的源码
+ */
+function stripComments(code) {
+  return code
+    .replace(/\/\*[\s\S]*?\*\//g, '')       // 块注释 /* ... */
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1')   // 行注释 // ...（保留 // 前的字符）
+}
+
+const content = stripComments(fs.readFileSync(appVue, 'utf8'))
 
 // 1. 收集所有已导入标识符（含 as 别名）
 const imported = new Set()

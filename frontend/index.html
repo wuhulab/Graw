@@ -2,7 +2,10 @@
      浏览器加载后仅含一个 #app 挂载点；Vue 经 /src/main.js 模块脚本启动并渲染整个桌面界面。
      后端 API 经 Vite 代理（开发期）或同源托管（生产）提供，本页不含任何业务 HTML。
      PWA：manifest + theme-color + Service Worker 注册（https/localhost 才注册，
-     http+IP 环境注册失败时静默降级，不影响面板使用）。 -->
+     http+IP 环境注册失败时静默降级，不影响面板使用）。
+     启动加载动画：#boot-splash 为纯 HTML/CSS 的启动占位（不依赖任何 JS 框架），
+     JS 体积较大（Vue + 各功能窗口按需分包）时先给出视觉反馈，避免白屏等待；
+     应用挂载完成后由 main.js 淡出并移除。 -->
 
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -16,8 +19,60 @@
     <title>Graw Server Panel</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- 启动动画样式：内联在 head 中（不额外请求、不阻塞首屏渲染），
+         与应用主样式表解耦，淡出后随元素一起移除。
+         样式极简：白底 + 右下角「Graw（静止）+ 小圈（旋转）」，不做任何装饰性动效 -->
+    <style>
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        background: #ffffff;                     /* 白底启动页 */
+        transition: opacity 0.25s ease;
+      }
+      #boot-splash.bs-hide { opacity: 0; pointer-events: none; }
+
+      /* 右下角标识容器：品牌字与旋转小圈横向并排（文字本身保持静止） */
+      #boot-splash .bs-logo {
+        position: absolute;
+        right: 20px;
+        bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;                                /* 文字与小圈之间的间距 */
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        color: #5aa9e6;                          /* 淡蓝色（白底上需略深，否则看不清） */
+      }
+
+      /* 旋转小圈：圆环 + 一段高亮缺口，仅「圈」旋转、文字不旋转 */
+      #boot-splash .bs-spinner {
+        width: 12px;
+        height: 12px;
+        border: 2px solid rgba(90, 169, 230, 0.25);  /* 底环：淡蓝低透明度 */
+        border-top-color: #5aa9e6;                   /* 缺口：同色高亮，形成转动感 */
+        border-radius: 50%;
+        animation: bs-spin 0.8s linear infinite;
+      }
+
+      @keyframes bs-spin { to { transform: rotate(360deg); } }
+      /* 弱化动效偏好：保留小圈但不旋转 */
+      @media (prefers-reduced-motion: reduce) {
+        #boot-splash .bs-spinner { animation: none; }
+      }
+    </style>
   </head>
   <body>
+    <!-- 启动加载动画：右下角「Graw（静止）+ 旋转小圈」（应用挂载后由 main.js 移除） -->
+    <div id="boot-splash" aria-hidden="true">
+      <div class="bs-logo">
+        <span>Graw</span>
+        <span class="bs-spinner"></span>
+      </div>
+    </div>
     <div id="app"></div>
     <!-- 入口模块：Vite 以 ES Module 方式加载并启动 Vue 应用 -->
     <script type="module" src="/src/main.js"></script>

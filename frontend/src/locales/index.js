@@ -11,35 +11,14 @@
 import { createI18n } from 'vue-i18n'       // 创建 i18n 实例（Composition API 模式）
 import { settings } from '../store/settings' // 读取/写入用户语言偏好（持久化在 localStorage）
 
-// 28 个语言包：结构一致（key 对齐），供 $t() 按当前 locale 取词
+// 语言包「按需加载」（本轮启动提速的关键改动之一）：
+//   28 个语言包合计约 3.4MB 源码——此前全部静态 import，会被整体打进首屏 chunk，
+//   用户一进面板就要下载/解析全部 28 种语言（实际一次只用一种），是启动慢的最大单一原因。
+//   现改为：只静态内置源语言 zh-CN（同时是 fallbackLocale 的兜底语言，必须内置），
+//   其余语言包通过动态 import 注册成独立 chunk，首次用到时才下载：
+//     - 启动：main.js 先 await ensureLocale(当前语言) 再挂载，避免「先中文后翻译」闪现；
+//     - 切换：setLocale() 内部触发加载，语言包到位后 vue-i18n 自动重新渲染。
 import zhCN from './zh-CN'   // 简体中文（源语言，缺失键的回退目标）
-import zhTW from './zh-TW'   // 繁体中文
-import en from './en'        // 英语
-import ja from './ja'        // 日语
-import ru from './ru'        // 俄语
-import es from './es'        // 西班牙语
-import de from './de'        // 德语
-import fr from './fr'        // 法语
-import pt from './pt'        // 葡萄牙语
-import ko from './ko'        // 韩语
-import eo from './eo'        // 世界语
-import ar from './ar'        // 阿拉伯语
-import arz from './arz'      // 埃及语（埃及阿拉伯语）
-import egy from './egy'      // 古埃及语
-import ga from './ga'        // 爱尔兰语
-import vi from './vi'        // 越南文
-import el from './el'        // 希腊文
-import pl from './pl'        // 波兰语
-import it from './it'        // 意大利语
-import la from './la'        // 拉丁语
-import bo from './bo'        // 藏语
-import za from './za'        // 壮语
-import sux from './sux'      // 苏美尔语（楔形文字）
-import akk from './akk'      // 阿卡德语（楔形文字）
-import hit from './hit'      // 赫梯语（楔形文字）
-import phn from './phn'      // 腓尼基语（腓尼基字母）
-import grc from './grc'      // 古希腊语（阿提卡方言）
-import non from './non'      // 古北欧语（卢恩文）
 
 // 支持的语言列表（设置页下拉使用）
 // code: i18n locale code；name: 该语言下自身的名称
@@ -74,37 +53,40 @@ export const LANGUAGES = [
   { code: 'non', name: 'ᚠᚢᚦᚨᚱᚲ (Futhark)' },
 ]
 
-// 语言 code → 语言包 的映射（code 与 LANGUAGES 保持一致）
-const messages = {
-  'zh-CN': zhCN,
-  'zh-TW': zhTW,
-  en,
-  ja,
-  ru,
-  es,
-  de,
-  fr,
-  pt,
-  ko,
-  eo,
-  ar,
-  arz,
-  egy,
-  ga,
-  vi,
-  el,
-  pl,
-  it,
-  la,
-  bo,
-  za,
-  sux,
-  akk,
-  hit,
-  phn,
-  grc,
-  non,
+// 语言 code → 语言包「动态加载器」（code 与 LANGUAGES 保持一致）
+// 注意：每个 () => import(...) 都会被 Vite 切成独立 chunk，只有真正用到才下载。
+const LOADERS = {
+  'zh-TW': () => import('./zh-TW.js'),   // 繁体中文
+  en: () => import('./en.js'),           // 英语
+  ja: () => import('./ja.js'),           // 日语
+  ru: () => import('./ru.js'),           // 俄语
+  es: () => import('./es.js'),           // 西班牙语
+  de: () => import('./de.js'),           // 德语
+  fr: () => import('./fr.js'),           // 法语
+  pt: () => import('./pt.js'),           // 葡萄牙语
+  ko: () => import('./ko.js'),           // 韩语
+  eo: () => import('./eo.js'),           // 世界语
+  ar: () => import('./ar.js'),           // 阿拉伯语
+  arz: () => import('./arz.js'),         // 埃及语（埃及阿拉伯语）
+  egy: () => import('./egy.js'),         // 古埃及语
+  ga: () => import('./ga.js'),           // 爱尔兰语
+  vi: () => import('./vi.js'),           // 越南文
+  el: () => import('./el.js'),           // 希腊文
+  pl: () => import('./pl.js'),           // 波兰语
+  it: () => import('./it.js'),           // 意大利语
+  la: () => import('./la.js'),           // 拉丁语
+  bo: () => import('./bo.js'),           // 藏语
+  za: () => import('./za.js'),           // 壮语
+  sux: () => import('./sux.js'),         // 苏美尔语（楔形文字）
+  akk: () => import('./akk.js'),         // 阿卡德语（楔形文字）
+  hit: () => import('./hit.js'),         // 赫梯语（楔形文字）
+  phn: () => import('./phn.js'),         // 腓尼基语（腓尼基字母）
+  grc: () => import('./grc.js'),         // 古希腊语（阿提卡方言）
+  non: () => import('./non.js'),         // 古北欧语（卢恩文）
 }
+
+// 已注册到 i18n 的语言包：zh-CN 为静态内置，其余在 ensureLocale 首次调用时注入
+const messages = { 'zh-CN': zhCN }
 
 // 合法性校验：非法 locale 回退到简体中文
 function normalizeLocale(code) {
@@ -170,9 +152,51 @@ const i18n = createI18n({
   postTranslation: (translated) => applyBracketStyle(translated),
 })
 
+// --- 动作说明：按需加载指定语言的文案（语言包懒加载核心） ---
+// 已就绪的语言集合（zh-CN 静态内置，无需下载）
+const _loadedLocales = new Set(['zh-CN'])
+// 正在加载的 Promise（同一语言并发请求只发起一次下载）
+const _pendingLocales = new Map()
+
+/**
+ * 确保指定语言的文案已注册到 i18n（首次调用时动态下载对应语言包）。
+ *
+ * @param {string} code 语言代码（非法值按 zh-CN 处理）
+ * @returns {Promise<boolean>} true = 文案已就绪；false = 未注册/加载失败（界面保持回退语言）
+ */
+export async function ensureLocale(code) {
+  const target = normalizeLocale(code)   // 非法 code 归一为 zh-CN
+  if (_loadedLocales.has(target)) return true
+  const loader = LOADERS[target]
+  if (!loader) return false              // 未注册的语言包：保持回退语言，不影响面板使用
+  if (!_pendingLocales.has(target)) {
+    _pendingLocales.set(
+      target,
+      loader()
+        .then((mod) => {
+          // 语言包统一 `export default {...}`；兼容命名导出形态（mod.default 兜底为整个模块）
+          i18n.global.setLocaleMessage(target, mod.default || mod)
+          _loadedLocales.add(target)
+          return true
+        })
+        .catch((e) => {
+          // 下载/解析失败（离线、chunk 哈希失效等）：记日志并回退语言，不阻断面板
+          console.error('[graw] 加载语言包失败：', target, e)
+          return false
+        })
+        .finally(() => _pendingLocales.delete(target))
+    )
+  }
+  return _pendingLocales.get(target)
+}
+
 // --- 动作说明：切换界面语言（设置页语言下拉调用） ---
 /**
  * 切换界面语言
+ *
+ * 语言包按需加载：先切 locale（未加载完的键自动回退 zh-CN），随后异步加载目标语言包，
+ * 加载完成由 vue-i18n 自动触发相关组件重新渲染，无需手动刷新。
+ *
  * @param {string} code - 语言代码（见 LANGUAGES）
  */
 export function setLocale(code) {
@@ -183,6 +207,8 @@ export function setLocale(code) {
   if (typeof document !== 'undefined') {
     document.documentElement.setAttribute('lang', target)
   }
+  // 目标语言包尚未内置时触发按需下载（设置页切换 / 启动预加载都会走到这里）
+  ensureLocale(target).catch(() => false)
 }
 
 // 启动时同步一次 html lang（让浏览器/翻译器一开始就识别当前语言）

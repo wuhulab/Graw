@@ -182,94 +182,37 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted, shallowRef, markRaw, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, shallowRef, markRaw, watch, defineAsyncComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
-import RingCard from './components/cards/RingCard.vue'
-import MonitorCard from './components/cards/MonitorCard.vue'
-import InfoNotesCard from './components/cards/InfoNotesCard.vue'
 import WindowFrame from './components/WindowFrame.vue'
 import WindowContent from './components/WindowContent.vue'
 import PanelLayout from './components/PanelLayout.vue'
 import PanelHome from './components/PanelHome.vue'
-import DockerWindow from './components/windows/DockerWindow.vue'
-import ProcessWindow from './components/windows/ProcessWindow.vue'
-import FilesWindow from './components/windows/FilesWindow.vue'
-import RecycleBinWindow from './components/windows/RecycleBinWindow.vue'
-import TerminalWindow from './components/windows/TerminalWindow.vue'
-import SitesWindow from './components/windows/SitesWindow.vue'
-import SiteEditWindow from './components/windows/SiteEditWindow.vue'
-import DatabaseWindow from './components/windows/DatabaseWindow.vue'
-import EditorWindow from './components/windows/EditorWindow.vue'
-import MediaWindow from './components/windows/MediaWindow.vue'
-import UserWindow from './components/windows/UserWindow.vue'
-import ChangePasswordWindow from './components/windows/ChangePasswordWindow.vue'
-import FrpWindow from './components/windows/FrpWindow.vue'
-import LogsWindow from './components/windows/LogsWindow.vue'
-import SettingsWindow from './components/windows/SettingsWindow.vue'
-import ContainerLogsWindow from './components/windows/ContainerLogsWindow.vue'
-import ContainerDetailWindow from './components/windows/ContainerDetailWindow.vue'
-import ContainerStatsWindow from './components/windows/ContainerStatsWindow.vue'
-import ContainerEditWindow from './components/windows/ContainerEditWindow.vue'
-import DockerConfigEditorWindow from './components/windows/DockerConfigEditorWindow.vue'
-import AppStoreWindow from './components/windows/AppStoreWindow.vue'
-import AppStoreInstallWindow from './components/windows/AppStoreInstallWindow.vue'
-import AppStoreComposeEditorWindow from './components/windows/AppStoreComposeEditorWindow.vue'
-import AppStoreInstallLogWindow from './components/windows/AppStoreInstallLogWindow.vue'
-import AppStoreReadmeWindow from './components/windows/AppStoreReadmeWindow.vue'
-import FirewallRuleFormWindow from './components/windows/FirewallRuleFormWindow.vue'
-import BackupTaskFormWindow from './components/windows/BackupTaskFormWindow.vue'
-import BackupRemoteFormWindow from './components/windows/BackupRemoteFormWindow.vue'
-import DatabaseManageWindow from './components/windows/DatabaseManageWindow.vue'
-import DatabaseCreateWindow from './components/windows/DatabaseCreateWindow.vue'
-import TamperFormWindow from './components/windows/TamperFormWindow.vue'
-import SiteMaintenanceWindow from './components/windows/SiteMaintenanceWindow.vue'
-import AppStoreConfigWindow from './components/windows/AppStoreConfigWindow.vue'
-import CronTaskFormWindow from './components/windows/CronTaskFormWindow.vue'
-import NotifyChannelFormWindow from './components/windows/NotifyChannelFormWindow.vue'
-import NotifyRuleFormWindow from './components/windows/NotifyRuleFormWindow.vue'
-import FrpProxyFormWindow from './components/windows/FrpProxyFormWindow.vue'
-import GitDeployFormWindow from './components/windows/GitDeployFormWindow.vue'
-import LogCollectFormWindow from './components/windows/LogCollectFormWindow.vue'
-import ServiceMonitorFormWindow from './components/windows/ServiceMonitorFormWindow.vue'
-import UptimeFormWindow from './components/windows/UptimeFormWindow.vue'
-import FtpUserFormWindow from './components/windows/FtpUserFormWindow.vue'
-import WafAclFormWindow from './components/windows/WafAclFormWindow.vue'
-import SslUploadWindow from './components/windows/SslUploadWindow.vue'
-import SslLeFormWindow from './components/windows/SslLeFormWindow.vue'
-import SshKeyGenWindow from './components/windows/SshKeyGenWindow.vue'
-import SshKeyImportWindow from './components/windows/SshKeyImportWindow.vue'
-import SshKeyDeployWindow from './components/windows/SshKeyDeployWindow.vue'
-import TasksWindow from './components/windows/TasksWindow.vue'
-import ShunxSecurityWindow from './components/windows/ShunxSecurityWindow.vue'
-import UISettingsWindow from './components/windows/UISettingsWindow.vue'
-import ConnectionFormWindow from './components/windows/ConnectionFormWindow.vue'
-import NetStorageWindow from './components/windows/NetStorageWindow.vue'
-import NetStorageBrowseWindow from './components/windows/NetStorageBrowseWindow.vue'
-import NetStorageFormWindow from './components/windows/NetStorageFormWindow.vue'
-import RuntimeWindow from './components/windows/RuntimeWindow.vue'
-import RuntimeCreateWindow from './components/windows/RuntimeCreateWindow.vue'
-import DisksWindow from './components/windows/DisksWindow.vue'
-import MonitoringWindow from './components/windows/MonitoringWindow.vue'
-import CertWindow from './components/windows/CertWindow.vue'
-// 面板备份已合并进「ShunX保护机制」应用（详见 ShunxSecurityWindow）
-// import PanelBackupWindow from './components/windows/PanelBackupWindow.vue'
-import WebStatsWindow from './components/windows/WebStatsWindow.vue'
-import RewriteWindow from './components/windows/RewriteWindow.vue'
-import SiteOptsWindow from './components/windows/SiteOptsWindow.vue'
-import MetricsHistoryWindow from './components/windows/MetricsHistoryWindow.vue'
-import RollbackWindow from './components/windows/RollbackWindow.vue'
-import BatchWindow from './components/windows/BatchWindow.vue'
-import GitDeployWindow from './components/windows/GitDeployWindow.vue'
-import ReportWindow from './components/windows/ReportWindow.vue'
-import PortForwardWindow from './components/windows/PortForwardWindow.vue'
-import PortForwardFormWindow from './components/windows/PortForwardFormWindow.vue'
-import ImageScanWindow from './components/windows/ImageScanWindow.vue'
-import SlowQueryWindow from './components/windows/SlowQueryWindow.vue'
-// 系统体检已合并进「ShunX保护机制」应用（详见 ShunxSecurityWindow）
-// import HealthCheckWindow from './components/windows/HealthCheckWindow.vue'
-import FtpUsersWindow from './components/windows/FtpUsersWindow.vue'
-import PhpVersionsWindow from './components/windows/PhpVersionsWindow.vue'
-import SessionsWindow from './components/windows/SessionsWindow.vue'
+// 功能窗口组件：统一从「按需加载」注册表命名导入（见 components/windows/lazyWindows.js）。
+// 每个窗口会被 Vite 切成独立 chunk，只在真正打开时才下载/执行——首屏不再需要解析
+// 全部功能代码（含 ECharts / xterm / markdown-it 等重依赖），这是面板启动提速的关键。
+// 使用方式与静态导入完全一致：component: markRaw(XxxWindow)。
+// 注：模板中直接渲染的基础组件（Login / PanelLayout / PanelHome / WindowContent /
+// 告警层 / CommandPalette）仍保持静态导入，它们属于首屏必需，不能延迟。
+import {
+  DockerWindow, ProcessWindow, FilesWindow, RecycleBinWindow, TerminalWindow,
+  SitesWindow, SiteEditWindow, DatabaseWindow, EditorWindow, MediaWindow,
+  UserWindow, ChangePasswordWindow, FrpWindow, LogsWindow, SettingsWindow,
+  ContainerLogsWindow, ContainerDetailWindow, ContainerStatsWindow, ContainerEditWindow,
+  DockerConfigEditorWindow, AppStoreWindow, AppStoreInstallWindow, AppStoreComposeEditorWindow,
+  AppStoreInstallLogWindow, AppStoreReadmeWindow, FirewallRuleFormWindow, BackupTaskFormWindow,
+  BackupRemoteFormWindow, DatabaseManageWindow, DatabaseCreateWindow, TamperFormWindow,
+  SiteMaintenanceWindow, AppStoreConfigWindow, CronTaskFormWindow, NotifyChannelFormWindow,
+  NotifyRuleFormWindow, FrpProxyFormWindow, GitDeployFormWindow, LogCollectFormWindow,
+  ServiceMonitorFormWindow, UptimeFormWindow, FtpUserFormWindow, WafAclFormWindow,
+  SslUploadWindow, SslLeFormWindow, SshKeyGenWindow, SshKeyImportWindow, SshKeyDeployWindow,
+  TasksWindow, ShunxSecurityWindow, UISettingsWindow, ConnectionFormWindow, NetStorageWindow,
+  NetStorageBrowseWindow, NetStorageFormWindow, RuntimeWindow, RuntimeCreateWindow, DisksWindow,
+  MonitoringWindow, CertWindow, WebStatsWindow, RewriteWindow, SiteOptsWindow,
+  MetricsHistoryWindow, RollbackWindow, BatchWindow, GitDeployWindow, ReportWindow,
+  PortForwardWindow, PortForwardFormWindow, ImageScanWindow, SlowQueryWindow, FtpUsersWindow,
+  PhpVersionsWindow, SessionsWindow,
+} from './components/windows/lazyWindows.js'
 import ShunXSetup from './components/ShunXSetup.vue'
 import TamperAlert from './components/TamperAlert.vue'
 import InstallCheckAlert from './components/InstallCheckAlert.vue'
@@ -281,11 +224,19 @@ import { uiState, loadUi, loadUiEffective } from './store/ui'
 import { settings } from './store/settings'
 import { desktopPrefs, bindUser as bindDesktopUser, hideShortcut, pinShortcut, unpinShortcut } from './store/desktopPrefs'
 import { systemState, startMetrics, stopMetrics } from './store/systemMetrics'
-import { startDocker, stopDocker, refresh as refreshDocker } from './store/docker'
+import { startDocker, stopDocker } from './store/docker'
 import { nodes as nodesStore, refreshNodes } from './store/nodes'
 import { setRequestNode } from './store/requestNode'
 import { tamperState, startTamper, stopTamper } from './store/tamper'
-import { Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, Shield, ShieldAlert, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, BarChart3, FileCode2, History, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug, Pin, PinOff, EyeOff, Clock, BellRing, Gauge, KeyRound, FileUp, Send, Home, Github, Heart } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用）
+import { Archive, Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, Shield, ShieldAlert, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, BarChart3, FileCode2, History, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug, Pin, PinOff, EyeOff, Clock, BellRing, Gauge, KeyRound, FileUp, Send, Home, Github, Heart } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用）
+
+// 桌面「系统概览」三张卡片：按需加载（异步组件）。
+// RingCard / MonitorCard 依赖 ECharts（体积大），且只在「类桌面」形态的首屏渲染——
+// 「标准面板模式」完全不使用它们。改为异步组件后 ECharts 不再进入入口 chunk，
+// 面板模式的启动因此不必再下载/解析图表库。
+const RingCard = defineAsyncComponent(() => import('./components/cards/RingCard.vue'))
+const MonitorCard = defineAsyncComponent(() => import('./components/cards/MonitorCard.vue'))
+const InfoNotesCard = defineAsyncComponent(() => import('./components/cards/InfoNotesCard.vue'))
 
 // --- 桌面根状态：登录态、动态壁纸、底栏主机徽标 ---
 const loggedIn = computed(() => !!auth.token)
@@ -2036,16 +1987,17 @@ function taskClick(id) {
 // --- 系统概览 + 实时数据（指标 WS / 防篡改 / Docker）启停 ---
 const overview = computed(() => systemState.overview)
 
-// 连接池启动/停止：登录后统一建立共享指标 WS，并预启动 Docker 后台轮询；
+// 连接池启动/停止：登录后统一建立共享指标 WS（系统概览）与 Docker 实时推送 WS；
 // 退出登录时全部停止，避免未登录时持续请求。
 function startRealtime() {
   startMetrics()
   // 网页防篡改告警订阅：登录即建立（篡改发生时对在线用户弹窗）
   startTamper()
-  // Docker 为管理员功能：登录即后台预热并缓存，打开窗口可直接渲染上次数据
+  // Docker 为管理员功能：登录即订阅后端实时推送（/api/docker/ws）。
+  // 注意：这里不再调用任何 HTTP 拉取——数据由后端按周期推送，窗口打开时后端
+  // 会先回放最近一次快照（并立即补采一轮），因此无需前端预取即可秒开。
   if (isAdmin()) {
     startDocker()
-    refreshDocker()
     refreshNodes()
   }
 }

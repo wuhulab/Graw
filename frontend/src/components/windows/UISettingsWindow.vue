@@ -140,6 +140,14 @@
             <span>{{ $t('ui.ringAlarm') }}</span>
           </label>
         </div>
+        <!-- 系统概览数值精度：本机偏好（localStorage），即改即存，无需点「保存」 -->
+        <div class="row">
+          <label class="switch-label">
+            <input type="checkbox" v-model="settings.overviewDecimals" />
+            <span>{{ $t('ui.overviewDecimals') }}</span>
+          </label>
+        </div>
+        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('ui.overviewDecimalsHint') }}</div>
         <!-- 仅用于这个账号：勾选后环形图配色只对该账号生效，否则走全局 -->
         <label class="switch-label">
           <input type="checkbox" v-model="ringPersonal" />

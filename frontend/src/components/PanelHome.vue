@@ -20,11 +20,17 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'                              // 计算属性（与桌面 overview 同源）
-import RingCard from './cards/RingCard.vue'                // 系统概览环形统计卡片
-import MonitorCard from './cards/MonitorCard.vue'          // 实时流量 / 磁盘IO 监控卡片
-import InfoNotesCard from './cards/InfoNotesCard.vue'      // 系统信息 / 备忘录卡片（fixed 拆分）
+import { computed, defineAsyncComponent } from 'vue'        // 计算属性（与桌面 overview 同源）+ 异步组件
 import { systemState } from '../store/systemMetrics'        // 共享系统指标状态
+
+// 三张卡片改为「按需加载」：RingCard / MonitorCard 依赖 ECharts，属于重量级依赖。
+// 此前它们被本组件静态引入，进而被 App.vue 静态引入 → ECharts 被打进入口 chunk，
+// 面板模式即便不打开主页也要先下载解析整个图表库。改为异步组件后：
+//   - 入口 chunk 不再包含 ECharts（首屏更小、启动更快）；
+//   - 卡片 chunk 与入口并行下载，本页渲染时机基本不受影响。
+const RingCard = defineAsyncComponent(() => import('./cards/RingCard.vue'))          // 系统概览环形统计卡片
+const MonitorCard = defineAsyncComponent(() => import('./cards/MonitorCard.vue'))    // 实时流量 / 磁盘IO 监控卡片
+const InfoNotesCard = defineAsyncComponent(() => import('./cards/InfoNotesCard.vue')) // 系统信息 / 备忘录卡片（fixed 拆分）
 
 // 概览数据：由共享「单条 WS」指标推送驱动（与桌面 RingCard 传入的 overview 一致）
 const overview = computed(() => systemState.overview)

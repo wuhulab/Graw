@@ -1902,6 +1902,8 @@ Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队
     ringColorHint: '系统概览四个环形图使用的统一主色，所有用户桌面共享生效。',
     ringAlarm: '使用率超过 90% 时该环形图变红告警',
     ringColorInvalid: '颜色需为 #RRGGBB 格式（如 #409eff）',
+    overviewDecimals: '系统概览显示到后两位',
+    overviewDecimalsHint: '开启后环形统计中心的百分比保留两位小数（如 31.25%），关闭则取整（31%）；本机偏好，即改即存。',
     personalOnly: '仅用于这个账号',
     personalOnlyHint: '勾选后该项只对当前账号生效；不勾选则写入全局，其它账号共用。',
     saved: '界面设置已保存',

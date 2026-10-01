@@ -17,6 +17,8 @@
         古代语言（古埃及语、苏美尔语、阿卡德语…）的语言包约定所有文案写成
         `本语言书写形式 (中文原文/拉丁转写)`。这两个开关控制该括号注释是否展示、
         以及展示括号内的哪种内容，由 locales/index.js 的 postTranslation 钩子生效。
+    overviewDecimals —— 系统概览数值精度：开启后环形统计中心百分比保留两位小数
+        （如 31.25%），关闭则取整（31%）。
 
   用法：任意组件直接读 settings 的响应式字段即可；修改会自动被 watch 落盘，
   无需手动保存。
@@ -47,6 +49,8 @@ const defaults = {
   bracketEnabled: true,
   // 括号内展示的内容：both=中文+转写（默认）/ zh=仅中文原文 / latin=仅拉丁转写
   bracketLang: 'both',
+  // 系统概览数值精度：true=环形统计中心百分比保留两位小数（31.25%），false=取整（31%）
+  overviewDecimals: true,
 }
 
 // 启动时读取本地偏好；没有缓存 / 内容损坏时回退默认值
@@ -78,6 +82,7 @@ watch(
     shortcutLabelStroke: settings.shortcutLabelStroke,
     bracketEnabled: settings.bracketEnabled,
     bracketLang: settings.bracketLang,
+    overviewDecimals: settings.overviewDecimals,
   }),
   (val) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(val))   // 整份快照覆盖写，保持存储结构与 defaults 对齐
