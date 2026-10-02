@@ -32,6 +32,7 @@
 - 模块权限路由映射与启动自检在 FastAPI ≥ 0.141 下**静默失效**：该版本起 `include_router` 不再把子路由复制进 `app.routes`，而是登记 `_IncludedRouter` 包装（前缀与 router 级依赖留在包装里），导致 `_proxy_perm_map()` 取不到任何模块前缀（Agent 隧道代理的模块判定退化为空映射）、`_audit_route_perms()` 也扫不到漏挂路由。改用官方 `iter_route_contexts()` 展开生效路由（旧版本无该函数则直读 `app.routes`），并优先从路由 `dependencies` 读取 `require_perm` 的模块元数据；另加「映射条数异常」启动告警，避免同类静默退化
 - Windows 计划备份命令在非 Windows 主机上生成时路径切分错误：`_build_cron_command` 的 Windows 分支改用 `ntpath`（`os.path` 在 Linux 上是 posixpath，会把 `C:\site` 整条当作文件名），修复 CI 下 `test_cron_command_windows_escape` 失败
 - `test_frp_unit.py` 不再依赖系统目录权限：`_write_toml` 会对配置文件父目录 `makedirs`，默认 `/etc/frp` 在非 root 的 CI 上不可写，改为在用例内把 `_config_path` 指向临时目录
+- `test_phpversions_discovery.py` 在 Linux 上取不到 PHP 版本：用例用 `open(...,"w")` 造的桩文件是 0644，而 `_detect_linux()` 用 `os.access(X_OK)` 过滤真实二进制（Windows 无执行位，本地不暴露该差异）；改为造桩后 `chmod 0o755`
 - 计划任务「新增 → 标准」表单崩溃：`CronTaskFormWindow` 调用了未定义的 `defaultStd()`，补齐默认值工厂函数
 - 防篡改告警弹窗操作报错：`TamperAlert` 使用未定义的 `t()`（漏了 `useI18n`），并修复「完全关闭」提示显示为原始 key 文本的问题
 - 日志审计窗口空态误判：`AuditLogWindow` 对 computed 漏写 `.value`，导致恒显示「文件不存在」

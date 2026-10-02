@@ -26,10 +26,13 @@ class PhpHostRootDetectTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             for rel in ("usr/bin", "usr/sbin"):
                 os.makedirs(os.path.join(root, rel))
-            with open(os.path.join(root, "usr/bin/php8.2"), "w") as f:
-                f.write("")
-            with open(os.path.join(root, "usr/sbin/php-fpm8.3"), "w") as f:
-                f.write("")
+            # 必须写成「可执行文件」：_detect_linux 用 os.access(X_OK) 过滤真正的
+            # 二进制，Linux 上 0644 的普通文件会被跳过（Windows 无执行位，本地不暴露该差异）
+            for rel, name in (("usr/bin", "php8.2"), ("usr/sbin", "php-fpm8.3")):
+                p = os.path.join(root, rel, name)
+                with open(p, "w") as f:
+                    f.write("")
+                os.chmod(p, 0o755)
             with mock.patch("app.hostfs.HOST_ROOT", root):
                 with mock.patch("platform.system", return_value="Linux"):
                     found = phpversions._detect_linux()
