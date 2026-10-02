@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- 临时调试页：隔离挂载「设置窗口」组件，用于复现/验证语言切换 bug。验证完成后删除。 -->
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>lang-switch-test</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { createApp } from 'vue'
+    import i18n from '/src/locales/index.js'
+    import SettingsWindow from '/src/components/windows/SettingsWindow.vue'
+    // 隔离挂载设置窗口：只验证语言切换是否即时生效
+    createApp(SettingsWindow).use(i18n).mount('#app')
+  </script>
+</body>
+</html>
