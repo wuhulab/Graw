@@ -166,7 +166,7 @@ cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
   - `PERM("模块") = [Depends(require_perm("模块"))]` —— 模块级权限（受限管理员按 `users.json` 的 `perms` 白名单收窄；完整管理员全量放行）。**新增业务管理路由默认用 `PERM(...)`**，只有面板自身安全边界才用 `ADMIN`（登记进 `main._FULL_ADMIN_PREFIXES`，否则启动期自检会打 warning）。
   - 部分路由**必须**在端点内部自行鉴权、不要挂全局依赖：`system`/`terminal`（WS 用 `?token=`）、`tamper`、`shunx`（/status 公开）、`ui`（/public 公开）、`agent`（机器间密钥）、`appstore` 的图标路由、`gitdeploy` 的 webhook、`op`（插件令牌）。
 - `require_admin` 已级联 `require_non_default_password` + `get_current_user`，无需重复声明；`require_perm` 同样级联（非管理员一律 403）。
-- **模块权限三处保持一致**：`auth.MODULES`（key 唯一来源）→ `main.py` 路由的 `PERM("模块")` → 前端 `App.vue` 快捷方式的 `perm` 字段（前端只是体验层门控，边界永远在后端）。**前端约定：不按模块隐藏入口**——受限管理员可见全部入口，点开无权限模块仅提示「该用户无此权限」且不打开窗口（`fullAdminOnly` 的面板自身功能除外）。WS 端点用 `require_perm_ws("模块")`；Agent 代理的等价判定由 `main._proxy_perm_map()` 从路由依赖自动汇总，**新路由只要挂对 `PERM(...)` 就自动生效**，无需另行登记。
+- **模块权限三处保持一致**：`auth.MODULES`（key 唯一来源）→ `main.py` 路由的 `PERM("模块")` → 前端 `App.vue` 快捷方式的 `perm` 字段（前端只是体验层门控，边界永远在后端）。**前端约定：不按模块隐藏入口**——受限管理员可见全部入口，点开无权限模块仅提示「该用户无此权限」且不打开窗口（`fullAdminOnly` 的面板自身功能除外）。WS 端点用 `require_perm_ws("模块")`；Agent 代理的等价判定由 `main._proxy_perm_map()` 从路由依赖自动汇总，**新路由只要挂对 `PERM(...)` 就自动生效**，无需另行登记。注意：FastAPI ≥ 0.141 起 `include_router` 只登记 `_IncludedRouter` 包装，直接遍历 `app.routes` 拿不到前缀与依赖（映射会静默变空），因此汇总统一走 `main._iter_effective_api_routes()`（内部用官方 `iter_route_contexts()` 展开，旧版本自动回退直读）。
 - **必须保留一个完整权限的超级管理员**：用户管理接口（改角色 / 收窄 `perms` / 删除账号）通过 `routers/auth._super_admin_count()` 校验，禁止把「最后一个 `role=admin` 且 `perms` 为空」的账号改没（受限管理员不计入兜底）。新增涉及管理员角色 / 权限的写操作时请沿用该约束。
 - **local-only 标记**：新增面板自身管理类接口时，同步在 `remote_cap.LOCAL_PREFIX` 登记，否则它在裸 SSH 远端节点上会被放行到没有意义的本机数据上。
 

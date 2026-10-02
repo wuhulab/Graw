@@ -520,9 +520,19 @@ def _build_cron_command(source: str, target: str, safe: str) -> str:
                     detail=f"计划备份命令构造中止：{name} 含非法字符 \"（命令注入防护）",
                 )
     source = source.rstrip("/\\")
-    parent, base = os.path.split(source)
-    if not parent:
-        parent = os.sep
+    if IS_WINDOWS:
+        # Windows 分支固定用 ntpath 语义切分（与本机 OS 无关）：单测会在 Linux 上
+        # 验证该分支，而 os.path 是 posixpath，会把 "C:\site" 整条当成文件名，
+        # 使 tar 的 -C 参数与 base 参数错位。ntpath 在真实 Windows 上与 os.path 等价。
+        import ntpath
+
+        parent, base = ntpath.split(source)
+        if not parent:
+            parent = ntpath.sep
+    else:
+        parent, base = os.path.split(source)
+        if not parent:
+            parent = os.sep
     if not base:
         base = safe
     # 创建目标目录 + tar 打包（与手动备份同名产物，轮转由后端统一执行）

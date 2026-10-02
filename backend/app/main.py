@@ -339,7 +339,42 @@ def _proxy_request_user(request: Request):
 _proxy_perm_map_cache = None  # Optional[dict]：/api/<前缀> -> 模块元组
 
 
-def _perm_modules_of(dependant) -> tuple:
+def _iter_effective_api_routes() -> list:
+    """枚举「实际生效」的全部路由（兼容 FastAPI 新旧两种路由组织方式）。
+
+    FastAPI ≥ 0.141 起 `include_router` 不再把子路由复制进 `app.routes`，而是登记
+    一个 `_IncludedRouter` 包装对象（前缀与 router 级 dependencies 都留在包装里），
+    直接遍历 `app.routes` 既拿不到完整路径、也取不到依赖 —— 会让下面的模块映射与
+    启动自检**静默失效**（受限管理员的模块边界在该路径上形同虚设）。
+    官方为此提供了 `iter_route_contexts()`：展开包装并合并 prefix / dependencies
+    （返回的 RouteContext 透传 path / dependencies / dependant）。
+    旧版本没有该函数，`app.routes` 本身就是扁平路由列表，直接返回即可。
+    """
+    routes = list(getattr(app, "routes", ()) or ())
+    try:
+        from fastapi.routing import iter_route_contexts
+    except ImportError:
+        return routes
+    try:
+        return list(iter_route_contexts(routes))
+    except Exception:  # pragma: no cover - 展开失败退回直读（功能退化为旧行为）
+        logging.getLogger("graw.main").exception("展开路由上下文失败，退回直读 app.routes")
+        return routes
+
+
+def _route_dependencies(route) -> list:
+    """取路由携带的依赖声明列表。
+
+    普通 HTTP 路由读 `route.dependencies`（含 include_router 传入的 router 级依赖，
+    不同 FastAPI 版本都保留该属性）；WebSocket 路由的合并依赖挂在 starlette_route 上。
+    """
+    deps = getattr(route, "dependencies", None)
+    if deps:
+        return list(deps)
+    return list(getattr(getattr(route, "starlette_route", None), "dependencies", None) or ())
+
+
+def _perm_modules_of_dependant(dependant) -> tuple:
     """从 FastAPI 依赖树中提取 require_perm 的模块元组（取第一个命中的）。"""
     stack = [dependant]
     while stack:
@@ -353,21 +388,36 @@ def _perm_modules_of(dependant) -> tuple:
     return ()
 
 
+def _perm_modules_of_route(route) -> tuple:
+    """从路由提取 require_perm 的模块元组。
+
+    优先读路由的 dependencies（原始 Depends 对象，跨 FastAPI 版本稳定），
+    取不到时再退回遍历依赖树（兼容旧版布局）。
+    """
+    for dep in _route_dependencies(route):
+        mods = getattr(getattr(dep, "dependency", None), "__perm_modules__", None)
+        if mods:
+            return tuple(mods)
+    return _perm_modules_of_dependant(getattr(route, "dependant", None))
+
+
 def _proxy_perm_map() -> dict:
     """构建 /api/<前缀> -> 模块元组 的映射（惰性构建并缓存）。"""
     global _proxy_perm_map_cache
     if _proxy_perm_map_cache is not None:
         return _proxy_perm_map_cache
     mapping = {}
-    for route in getattr(app, "routes", ()) or ():
+    for route in _iter_effective_api_routes():
         path = getattr(route, "path", "") or ""
         if not path.startswith("/api/"):
             continue
-        mods = _perm_modules_of(getattr(route, "dependant", None))
+        mods = _perm_modules_of_route(route)
         if not mods:
             continue
         prefix = "/".join(path.split("/")[:3])  # /api/docker/containers/{id} -> /api/docker
-        mapping[prefix] = mods
+        # 同一前缀可能注册多次（如 /api/docker 另有不带依赖的 WS 子路由），
+        # 只认带模块声明的那次，先到先得，避免被无依赖路由覆盖成空。
+        mapping.setdefault(prefix, mods)
     _proxy_perm_map_cache = mapping
     return mapping
 
@@ -414,16 +464,22 @@ def _audit_route_perms() -> None:
     """
     import logging
 
+    logger = logging.getLogger("graw.main")
     suspects = set()
-    for route in getattr(app, "routes", ()) or ():
+    # 用「生效路由」枚举（见 _iter_effective_api_routes）：FastAPI ≥0.141 下
+    # 直接遍历 app.routes 只能看到 include_router 的包装对象，本自检会静默失效。
+    for route in _iter_effective_api_routes():
         path = getattr(route, "path", "") or ""
         if not path.startswith("/api/"):
             continue
-        dep = getattr(route, "dependant", None)
-        if dep is None:
-            continue
         calls = set()
-        stack = [dep]
+        # 路由声明的原始依赖（含 include_router 传入的 router 级 dependencies）
+        for dep in _route_dependencies(route):
+            name = getattr(getattr(dep, "dependency", None), "__name__", "")
+            if name:
+                calls.add(name)
+        # 依赖树（端点参数里声明的 Depends 也在其中）
+        stack = [getattr(route, "dependant", None)]
         while stack:
             d = stack.pop()
             if d is None:
@@ -441,10 +497,20 @@ def _audit_route_perms() -> None:
             continue  # 面板自身边界，预期行为
         suspects.add(prefix)
     if suspects:
-        logging.getLogger("graw.main").warning(
+        logger.warning(
             "以下接口仍要求「完整管理员」且未登记为面板自身安全边界，"
             "请确认是否应改用 require_perm(<模块>)：%s",
             ", ".join(sorted(suspects)),
+        )
+    # fail-loud 兜底：路由枚举若因 FastAPI 升级而失效，模块映射会整体为空，
+    # 经 Agent 隧道代理的受限管理员将全部被拒（fail-closed，但面板不可用）。
+    # 这里显式告警，避免「静默退化」到发布后才被发现。
+    perm_map_size = len(_proxy_perm_map())
+    if perm_map_size < 10:
+        logger.warning(
+            "模块权限映射仅构建出 %d 条，疑似路由枚举失效（FastAPI 版本变更？），"
+            "请检查 _iter_effective_api_routes() / _perm_modules_of_route()",
+            perm_map_size,
         )
 
 

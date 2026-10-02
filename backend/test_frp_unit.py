@@ -123,6 +123,9 @@ class FrpApiTest(unittest.TestCase):
         frp.node_manager.host_path = lambda p: p
         # 避免真实探测系统 frp / 写系统路径
         frp.node_manager.write_text = lambda path, content: None
+        # 配置文件路径改指临时目录：_write_toml 会对配置文件父目录做 makedirs，
+        # 默认 /etc/frp 在 CI（非 root 运行）下不可写，会让用例依赖系统目录权限
+        frp._config_path = lambda data: os.path.join(self._tmp, "frpc.toml")
         frp.node_manager.host_cmd = lambda *a, **k: _FakeProc("", "")
         frp.node_manager.host_shell = lambda *a, **k: _FakeProc("", "")
         frp.node_manager.host_which = lambda c: "/usr/bin/" + c
