@@ -80,23 +80,29 @@ class RemoteBranchTest(unittest.TestCase):
     def test_overview_sync_branches_remote(self):
         with mock.patch.object(system.node_manager, "is_remote", return_value=True), \
              mock.patch.object(system, "_remote_overview", return_value={"cpu": 12.3, "remote": True}), \
+             mock.patch.object(system, "_remote_temps", return_value=[{"name": "Package id 0", "value": 45.0, "kind": "cpu"}]), \
              mock.patch.object(system, "psutil") as p:
             out = system._overview_sync()
         self.assertEqual(out["remote"], True)
         self.assertEqual(out["cpu"], 12.3)
+        # 远端概览应附带温度传感器列表（新增字段）
+        self.assertEqual(out["temps"][0]["value"], 45.0)
         # 不应调用本地 psutil 采集
         p.cpu_percent.assert_not_called()
 
     def test_overview_sync_stays_local_when_not_remote(self):
         with mock.patch.object(system.node_manager, "is_remote", return_value=False), \
+             mock.patch.object(system.temps_mod, "collect_temps", return_value=[]), \
              mock.patch.object(system, "psutil") as p:
             p.cpu_percent.return_value = 5.0
             p.cpu_count.return_value = 2
             p.getloadavg.return_value = (0.5, 0.4, 0.3)
-            system._overview_sync()
+            out = system._overview_sync()
         p.cpu_percent.assert_called()
         p.virtual_memory.assert_called()
         p.disk_usage.assert_called()
+        # 本地概览同样应附带温度字段（无传感器时为空列表）
+        self.assertEqual(out.get("temps"), [])
 
     def test_network_sync_branches_remote(self):
         with mock.patch.object(system.node_manager, "is_remote", return_value=True), \

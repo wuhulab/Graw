@@ -188,7 +188,7 @@ const typeLabels = {
   webhook: '通用 Webhook', telegram: 'Telegram', dingtalk: '钉钉',
   wecom: '企业微信', serverchan: 'Server酱', smtp: 'SMTP 邮件',
 }
-const metricLabels = { cpu: 'CPU 使用率', mem: '内存使用率', disk: '磁盘使用率', load: '系统负载' }
+const metricLabels = { cpu: 'CPU 使用率', mem: '内存使用率', disk: '磁盘使用率', load: '系统负载', temp: 'CPU 温度' }
 const typeLabel = (tp) => typeLabels[tp] || tp
 const metricLabel = (m) => metricLabels[m] || m
 

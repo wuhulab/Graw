@@ -4,7 +4,7 @@
   业务作用：
     原内嵌于 NotifyWindow 的「添加/编辑告警规则」modal 弹窗独立为
     桌面窗口，避免点击灰色遮罩误关丢已填内容。维护资源指标（CPU/
-    内存/磁盘/负载）的使用率阈值与启用开关。
+    内存/磁盘/负载/CPU温度）的阈值与启用开关。
   后端模块：
     /api/notify 的 createRule / updateRule。
   关键状态：
@@ -28,7 +28,8 @@
     </label>
 
     <label class="ui-field">
-      <span class="ui-label">阈值（%）</span>
+      <!-- 单位随指标变化：温度用 °C，其余为百分比 -->
+      <span class="ui-label">阈值（{{ form.metric === 'temp' ? '°C' : '%' }}）</span>
       <input class="ui-input" type="number" min="0" max="10000" v-model.number="form.threshold" />
     </label>
 
@@ -63,10 +64,10 @@ const emit = defineEmits(['close'])
 const saving = ref(false)   // 保存中（禁用按钮防重复提交）
 const error = ref('')       // 必填校验 / 后端错误信息
 
-// 可监控的资源指标
-const METRICS = ['cpu', 'mem', 'disk', 'load']
+// 可监控的资源指标（temp=CPU 温度，仅在主机有 CPU 传感器时生效）
+const METRICS = ['cpu', 'mem', 'disk', 'load', 'temp']
 // 指标 → 中文名（展示用）
-const metricLabels = { cpu: 'CPU 使用率', mem: '内存使用率', disk: '磁盘使用率', load: '系统负载' }
+const metricLabels = { cpu: 'CPU 使用率', mem: '内存使用率', disk: '磁盘使用率', load: '系统负载', temp: 'CPU 温度' }
 const metricLabel = (m) => metricLabels[m] || m
 
 // 表单初值：编辑时回填（enabled 用 !== false 兼容历史缺省值），新建用默认值

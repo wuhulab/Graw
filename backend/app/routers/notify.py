@@ -5,8 +5,9 @@ notify.py - Graw 通知中心路由
 功能：
   1. 通知渠道管理：Webhook / Telegram / 钉钉 / 企业微信 / Server酱 / SMTP 邮件，
      支持增删改与「测试发送」。
-  2. 资源阈值告警：CPU / 内存 / 磁盘 / 负载 超过阈值时触发告警（冷却去重），
+  2. 资源阈值告警：CPU / 内存 / 磁盘 / 负载 / CPU温度 超过阈值时触发告警（冷却去重），
      推送到所有已启用渠道，并写入告警记录。
+     注：温度告警仅在主机暴露 CPU 类温度传感器时生效（无传感器主机自动跳过）。
   3. 后台监控：main.py lifespan 启动 asyncio 循环（默认 60s 检查一次），
      复用 psutil 读取系统指标，不依赖 system 路由。
 
@@ -33,6 +34,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.hostfs import host_path
+from app.temps import collect_temps, cpu_temp
 
 logger = logging.getLogger("graw.notify")
 
@@ -52,8 +54,16 @@ IS_WINDOWS = platform.system() == "Windows"
 # 支持的通知渠道类型
 CHANNEL_TYPES = ("webhook", "telegram", "dingtalk", "wecom", "serverchan", "smtp")
 
-# 支持的告警指标
-METRICS = ("cpu", "mem", "disk", "load")
+# 支持的告警指标（temp=CPU 温度，单位见 _METRIC_UNITS）
+METRICS = ("cpu", "mem", "disk", "load", "temp")
+
+# 指标单位后缀：温度用摄氏度，其余为百分比（告警文案 / 日志统一取此处）
+_METRIC_UNITS = {"temp": "°C"}
+
+
+def _metric_unit(metric: str) -> str:
+    """返回指标单位后缀（temp=°C，其余=%）。"""
+    return _METRIC_UNITS.get(metric, "%")
 
 # 默认监控间隔（秒）与告警冷却（秒）
 DEFAULT_INTERVAL = 60
@@ -265,10 +275,12 @@ def _mask_channel(channel: dict) -> dict:
 # 通知推送
 # ---------------------------------------------------------------------------
 def _alert_message(metric: str, value: float, threshold: float) -> str:
-    labels = {"cpu": "CPU 使用率", "mem": "内存使用率", "disk": "磁盘使用率", "load": "系统负载"}
+    labels = {"cpu": "CPU 使用率", "mem": "内存使用率", "disk": "磁盘使用率",
+              "load": "系统负载", "temp": "CPU 温度"}
+    unit = _metric_unit(metric)
     return (
-        f"【Graw 资源告警】{labels.get(metric, metric)} {value:.1f}%"
-        f"（阈值 {threshold:.0f}%）{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        f"【Graw 资源告警】{labels.get(metric, metric)} {value:.1f}{unit}"
+        f"（阈值 {threshold:.0f}{unit}）{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
     )
 
 
@@ -409,7 +421,27 @@ def _read_metrics() -> dict:
     except Exception:
         load1 = cpu / 100 * psutil.cpu_count()
     load_percent = min(100.0, (load1 / max(1, psutil.cpu_count())) * 100)
-    return {"cpu": round(cpu, 1), "mem": round(mem, 1), "disk": round(disk, 1), "load": round(load_percent, 1)}
+    return {
+        "cpu": round(cpu, 1),
+        "mem": round(mem, 1),
+        "disk": round(disk, 1),
+        "load": round(load_percent, 1),
+        # CPU 温度：仅采信 CPU 类传感器；无传感器主机（Windows / 虚拟机）为
+        # None，_check_once 里 value is None 自动跳过，不产生假告警
+        "temp": _read_cpu_temp(),
+    }
+
+
+def _read_cpu_temp() -> Optional[float]:
+    """读取本机 CPU 温度（无 CPU 类传感器时返回 None）。
+
+    采集失败属于「尽力而为」场景：只记 debug 日志，不影响其余指标告警。
+    """
+    try:
+        return cpu_temp(collect_temps())
+    except Exception as e:
+        logger.debug("CPU 温度采集失败: %s", e)
+        return None
 
 
 def _check_once() -> int:
@@ -460,7 +492,10 @@ def _check_once() -> int:
             "failed_channels": failed,
         })
         triggered += 1
-        logger.info("资源告警触发：%s=%.1f%%（阈值 %.0f%%）", metric, value, threshold)
+        logger.info(
+            "资源告警触发：%s=%.1f%s（阈值 %.0f%s）",
+            metric, value, _metric_unit(metric), threshold, _metric_unit(metric),
+        )
     return triggered
 
 

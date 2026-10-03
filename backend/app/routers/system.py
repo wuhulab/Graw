@@ -14,6 +14,7 @@ from datetime import datetime
 from app.hostfs import host_path
 from app import node_manager
 from app import metrics_store
+from app import temps as temps_mod
 from app import agent_client
 from app.auth import (
     get_current_user,
@@ -58,6 +59,8 @@ echo "===BLOCKDISK==="; cat /proc/diskstats 2>/dev/null | awk '{print $6, $10}'
 echo "===BLOCKNAME==="; hostname 2>/dev/null | head -1
 echo "===BLOCKUNAME==="; uname -s 2>/dev/null | head -1; uname -r 2>/dev/null | head -1; uname -v 2>/dev/null | head -1; uname -m 2>/dev/null | head -1
 echo "===BLOCKCPUINFO==="; grep 'model name' /proc/cpuinfo 2>/dev/null | head -1
+echo "===BLOCKHWMON==="; for d in /sys/class/hwmon/hwmon*; do [ -d "$d" ] || continue; n=$(cat "$d/name" 2>/dev/null); for f in "$d"/temp*_input; do [ -f "$f" ] || continue; b=${f%_input}; echo "$n|$(cat "${b}_label" 2>/dev/null)|$(cat "$f" 2>/dev/null)"; done; done
+echo "===BLOCKTHERMAL==="; for z in /sys/class/thermal/thermal_zone*; do [ -d "$z" ] || continue; echo "$(cat "$z/type" 2>/dev/null)|$(cat "$z/temp" 2>/dev/null)"; done
 '''
 
 
@@ -112,6 +115,47 @@ def _remote_parse_stat1() -> tuple:
     if len(parts) < 5:
         return 0, 0
     return sum(int(x) for x in parts[1:] if x.isdigit()), int(parts[4])
+
+
+def _remote_temps() -> list:
+    """远端：解析 HWMON / THERMAL 分段为温度传感器列表（与本地 collect_temps 同构）。
+
+    规则与本地一致：hwmon 优先，完全为空时才回退 thermal zone；
+    仅保留可换算为摄氏度的合理读数，并复用 temps 模块的排序 / 消歧 / 截断。
+    """
+    blocks = _remote_blocks()
+    sensors = []
+    for line in (blocks.get("HWMON") or "").splitlines():
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) != 3:
+            continue
+        hname, label, milli = parts
+        value = temps_mod.milli_to_celsius(milli)
+        if value is None:
+            continue
+        display = (label or hname)[:temps_mod.MAX_NAME]
+        sensors.append({
+            "name": display,
+            "value": value,
+            "kind": "cpu" if temps_mod.is_cpu_sensor(hname, label or display) else "other",
+            "source": hname,
+        })
+    if not sensors:
+        for line in (blocks.get("THERMAL") or "").splitlines():
+            parts = [p.strip() for p in line.split("|")]
+            if len(parts) != 2:
+                continue
+            ztype, milli = parts
+            value = temps_mod.milli_to_celsius(milli)
+            if value is None:
+                continue
+            sensors.append({
+                "name": ztype[:temps_mod.MAX_NAME],
+                "value": value,
+                "kind": "cpu" if temps_mod.is_cpu_sensor(ztype, ztype) else "other",
+                "source": ztype,
+            })
+    return temps_mod.normalize_sensors(sensors)
 
 
 def _remote_overview() -> dict:
@@ -269,9 +313,11 @@ async def overview():
 
 
 def _overview_sync():
-    # 远端节点：读取远端主机指标（复用 _remote_overview）
+    # 远端节点：读取远端主机指标（复用 _remote_overview，并解析温度块）
     if node_manager.is_remote():
-        return _remote_overview()
+        overview = _remote_overview()
+        overview["temps"] = _remote_temps()
+        return overview
     cpu_percent = psutil.cpu_percent(interval=None)
     mem = psutil.virtual_memory()
     # 容器模式下监控宿主机根目录磁盘（映射为 /host），否则为 / 或 C:\
@@ -304,6 +350,9 @@ def _overview_sync():
             "load5": round(load5, 2),
             "load15": round(load15, 2),
         },
+        # 温度传感器（CPU 优先排序）：无传感器的主机（Windows/虚拟机）为空列表，
+        # 前端据此自动隐藏温度展示，不做假数据
+        "temps": temps_mod.collect_temps(),
     }
 
 

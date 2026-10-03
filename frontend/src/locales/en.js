@@ -1826,6 +1826,7 @@ Document version: 1.1.0 | Updated: 2026-08-16`,
     notes: 'Notes',
     realtimeMonitor: 'Realtime Monitor',
     notesPlaceholder: 'Take a note here...',
+    temp: 'Temp',
     ring: {
       load: 'Load',
       cpu: 'CPU',

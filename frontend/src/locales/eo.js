@@ -1248,6 +1248,7 @@ Dokumenta versio: 1.1.0 | Ĝisdatigita: 16-a de aŭgusto 2026`,
     notes: 'Memorando',
     realtimeMonitor: 'Realtempa monitorado',
     notesPlaceholder: 'Notu ĉi tie...',
+    temp: 'Temperaturo',
     ring: { load: 'Ŝarĝo', cpu: 'CPU', memory: 'Memoro', storage: 'Deponejo' },
     info: {
       hostname: 'Gastigantnomo', system: 'Sistemo', arch: 'Arkitekturo',

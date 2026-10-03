@@ -1,10 +1,11 @@
 <!--
   监控历史窗口（后端 /api/system 模块）
-  作用：查询面板持续落盘的历史监控数据（CPU/负载、内存/磁盘、网络流量、磁盘 IO），
-        以四张 ECharts 曲线图展示，支持时间范围切换、30s 自动刷新与清空历史。
+  作用：查询面板持续落盘的历史监控数据（CPU/负载、内存/磁盘、网络流量、磁盘 IO、
+        以及可选的 CPU 温度），以 ECharts 曲线图展示，支持时间范围切换、30s 自动刷新与清空历史。
+        温度图仅在区间内存在温度采样（temp 字段）时出现——无传感器主机自动隐藏。
   后端模块：/api/system（metrics/history 按时间范围+聚合桶查询历史点、metrics/status 采样状态、
             metrics/clear 清空全部历史，清空需管理员权限）。
-  关键状态：rangeKey（时间范围）、series（查询结果点）、四张图表实例（cpu/mem/net/io）、
+  关键状态：rangeKey（时间范围）、series（查询结果点）、图表实例（cpu/mem/net/io/temp，温度为可选）、
             autoRefresh（自动刷新开关）。
   打开方式：桌面「监控历史」卡片；后端常驻采集每 2 秒采样一次并落盘。
 -->
@@ -58,6 +59,11 @@
         <div class="chart-title">磁盘 IO（读 / 写）</div>
         <div ref="ioRef" class="chart-body"></div>
       </div>
+      <!-- CPU 温度：仅有温度传感器的采样（temp 字段有值）时展示，无传感器主机整块隐藏 -->
+      <div v-if="hasTemp" class="chart-box">
+        <div class="chart-title">CPU 温度（°C）</div>
+        <div ref="tempRef" class="chart-body"></div>
+      </div>
     </div>
   </div>
 </template>
@@ -92,6 +98,7 @@ const points = ref(0)          // 原始采样点数量（后端返回的 raw）
 const earliest = ref(null)     // 历史最早采样时间戳
 const latest = ref(null)       // 历史最新采样时间戳
 const hasData = ref(false)     // 当前范围是否有数据（决定空状态/图表）
+const hasTemp = ref(false)     // 当前范围是否有 CPU 温度采样（决定温度图展示）
 
 // 当前查询到的数据
 let series = []
@@ -101,10 +108,12 @@ const cpuRef = ref(null)
 const memRef = ref(null)
 const netRef = ref(null)
 const ioRef = ref(null)
+const tempRef = ref(null)
 let cpuChart = null
 let memChart = null
 let netChart = null
 let ioChart = null
+let tempChart = null
 let timer = null
 
 // 时间格式化（HH:mm:ss 或 MM-dd HH:mm）
@@ -138,6 +147,8 @@ async function load() {
     earliest.value = st.earliest
     latest.value = st.latest
     hasData.value = series.length > 0
+    // 温度图为可选项：区间内存在温度采样（temp 有值）才渲染，否则整块隐藏
+    hasTemp.value = series.some(p => p.temp != null)
     renderCharts()
   } catch (e) {
     err.value = e.response?.data?.detail || e.message
@@ -186,6 +197,16 @@ function renderCharts() {
       { name: '写入', data: series.map(p => p.disk_write), color: '#ff9f0a' }
     ]
   })
+  // CPU 温度（°C）：仅有传感器的主机展示；缺失点（null）在曲线上自然断点
+  if (hasTemp.value) {
+    renderDual(tempRef.value, tempChart, (c) => { tempChart = c }, {
+      title: 'CPU 温度',
+      x: times,
+      series: [
+        { name: '温度 °C', type: 'line', smooth: true, showSymbol: false, yAxisIndex: 0, data: series.map(p => p.temp), color: '#ff3b30' }
+      ]
+    })
+  }
 }
 
 // 双指标折线图（可独立 Y 轴）
@@ -261,9 +282,9 @@ async function doClear() {
   }
 }
 
-// 窗口尺寸变化时同步缩放四张图表
+// 窗口尺寸变化时同步缩放全部图表
 function onResize() {
-  ;[cpuChart, memChart, netChart, ioChart].forEach(c => c && c.resize())
+  ;[cpuChart, memChart, netChart, ioChart, tempChart].forEach(c => c && c.resize())
 }
 
 onMounted(async () => {
@@ -276,8 +297,8 @@ onMounted(async () => {
 onUnmounted(() => {
   stopTimer()
   window.removeEventListener('resize', onResize)
-  ;[cpuChart, memChart, netChart, ioChart].forEach(c => c && c.dispose())
-  cpuChart = memChart = netChart = ioChart = null
+  ;[cpuChart, memChart, netChart, ioChart, tempChart].forEach(c => c && c.dispose())
+  cpuChart = memChart = netChart = ioChart = tempChart = null
 })
 </script>
 

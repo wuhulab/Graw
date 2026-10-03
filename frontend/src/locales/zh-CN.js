@@ -1556,6 +1556,7 @@ Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队
     notes: '备忘录',
     realtimeMonitor: '实时监控',
     notesPlaceholder: '在此记录备忘...',
+    temp: '温度',
     ring: {
       load: '负载',
       cpu: 'CPU',

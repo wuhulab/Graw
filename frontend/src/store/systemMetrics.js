@@ -37,6 +37,8 @@ export const systemState = reactive({
     memory: { percent: 0, total: 0, used: 0, available: 0 },
     storage: { percent: 0, total: 0, used: 0, free: 0 },
     load: { percent: 0, load1: 0, load5: 0, load15: 0 },
+    // 硬件温度传感器（CPU 优先排序）：无传感器主机为空数组，卡片自动隐藏
+    temps: [],
   },
   network: { upload: 0, download: 0, total_sent: 0, total_recv: 0, timestamp: 0 },
   diskio: { read: 0, write: 0, timestamp: 0 },

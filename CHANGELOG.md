@@ -8,6 +8,12 @@
 ## [Unreleased]
 
 ### Added
+- **硬件温度监控（CPU 温度）**：新增 `app/temps.py` 从宿主 sysfs 只读采集温度（hwmon 优先、thermal 回退，容器经 `/host` 映射；Windows / 无传感器主机自动隐藏，不造假数据）
+  - 系统概览随 `/api/system/ws` 与 `/api/system/overview` 附带 `temps` 字段（CPU 优先排序、多设备同名自动消歧、最多 8 条）；桌面与标准面板首页「系统概览」卡片新增温度行（≥80°C 标红，最多展示 3 条 + “+N”）
+  - 历史监控落盘新增可缺省 `temp` 字段（无传感器不写该键、聚合跳过缺失行），历史监控窗口新增温度曲线（区间内有数据才出现）
+  - 通知中心新增「CPU 温度」告警指标（单位 °C，无 CPU 传感器自动跳过；告警文案与日志按单位显示）
+  - SSH 直连远端节点：`_REMOTE_SCRIPT` 新增 HWMON/THERMAL 分段采集，解析规则与本地一致（`_remote_temps`）；Agent 子节点天然由子节点自行采集
+  - 单元测试 `test_temps_unit.py`（20 项：换算过滤 / CPU 判定 / sysfs 扫描 / 消歧 / 落盘聚合 / 告警跳过 / 远端解析）
 - **受限管理员（RBAC 模块级权限）**：在管理员身份之上按模块收窄权限——`users.json` 新增 `perms` 白名单字段（字段缺失 / `null` = 全量权限，升级前的存量管理员行为完全不变；`[]` = 不放行；类型非法按空集合取最严）
   - 后端：`auth.MODULES`（26 个模块 key）+ `user_perms()` / `has_perm()` + `require_perm("模块")` / `require_perm_ws("模块")` 依赖工厂；40 余条业务路由由 `ADMIN` 改为 `PERM("模块")`（多节点 / SSH 密钥 / 插件 / 面板更新 / 面板备份 / 用户管理等「面板自身安全边界」仍要求完整管理员）
   - Agent 隧道：代理前用 `_proxy_perm_map()`（从路由依赖自动汇总）做等价的模块判定——子节点侧拿到的是 agent 管理员令牌，拦不住越权，必须在主面板本地先拦

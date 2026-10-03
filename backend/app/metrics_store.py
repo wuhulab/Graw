@@ -27,6 +27,8 @@ import threading
 from datetime import datetime, timedelta
 from typing import List, Optional
 
+from app.temps import cpu_temp
+
 # 采样落盘周期（秒）：与 WS 推送周期保持一致
 SAMPLE_INTERVAL = 2.0
 # 历史保留天数
@@ -128,6 +130,11 @@ def record_sample(sample: Optional[dict]) -> None:
             "disk_read": _num(diskio.get("read")),
             "disk_write": _num(diskio.get("write")),
         }
+        # CPU 温度：仅在有 CPU 类传感器时落盘。无传感器主机 / 历史老采样行
+        # 缺省该字段，查询侧按缺失跳过（不按 0 参与平均），前端曲线自动断点。
+        cpu_t = cpu_temp(overview.get("temps"))
+        if cpu_t is not None:
+            row["temp"] = round(cpu_t, 1)
     except Exception:
         return
     with _write_lock:
@@ -239,11 +246,13 @@ def history(
       bucket：聚合桶大小（秒）。为 None 或 <=0 时返回原始采样点。
     返回：
       {
-        "points": [ {ts, cpu, mem, disk, load1, net_up, net_down, disk_read, disk_write}, ... ],
+        "points": [ {ts, cpu, mem, disk, load1, net_up, net_down, disk_read,
+                     disk_write, temp?}, ... ],
         "buckets": 聚合后的桶数（未聚合时为原始点数）,
         "raw": 区间内原始采样点数,
         "retention_days": 保留天数,
       }
+    注：temp（CPU 温度）为可缺省字段——无温度传感器的采样行不写该键。
     """
     if end_ts < start_ts:
         start_ts, end_ts = end_ts, start_ts
@@ -256,32 +265,44 @@ def history(
             "raw": raw_count,
             "retention_days": RETENTION_DAYS,
         }
-    # 按 bucket 分桶平均（每桶取该桶时间中点作为 ts）
+    # 按 bucket 分桶平均（每桶取该桶时间中点作为 ts）。
+    # temp 为可缺省字段：按「该键实际有值的行数」独立平均，缺失行不按 0 计入，
+    # 避免无传感器主机被压成 0 曲线（其余字段恒定写入，行为与旧版一致）。
     points: List[dict] = []
-    keys = ["cpu", "mem", "disk", "load1", "net_up", "net_down", "disk_read", "disk_write"]
+    keys = ["cpu", "mem", "disk", "load1", "net_up", "net_down", "disk_read", "disk_write", "temp"]
     cur_start = int(start_ts // bucket) * bucket
     bucket_end = cur_start + bucket
     acc: dict = {k: 0.0 for k in keys}
+    cnt: dict = {k: 0 for k in keys}
     count = 0
+
+    def _flush_bucket() -> None:
+        """把当前桶写入结果（无数据时跳过；缺值的键输出 null）。"""
+        if not count:
+            return
+        point = {"ts": cur_start + bucket / 2}
+        for k in keys:
+            point[k] = round(acc[k] / cnt[k], 2) if cnt[k] else None
+        points.append(point)
+
     for r in rows:
         ts = r.get("ts", 0)
         if ts >= bucket_end:
-            if count:
-                points.append(
-                    {"ts": cur_start + bucket / 2, **{k: round(acc[k] / count, 2) for k in keys}}
-                )
+            _flush_bucket()
             cur_start = int(ts // bucket) * bucket
             bucket_end = cur_start + bucket
             acc = {k: 0.0 for k in keys}
+            cnt = {k: 0 for k in keys}
             count = 0
         if start_ts <= ts <= end_ts:
             for k in keys:
-                acc[k] += _num(r.get(k))
+                v = r.get(k)
+                if v is None:
+                    continue  # 缺失字段（如旧采样行的 temp）跳过，不计入平均
+                acc[k] += _num(v)
+                cnt[k] += 1
             count += 1
-    if count:
-        points.append(
-            {"ts": cur_start + bucket / 2, **{k: round(acc[k] / count, 2) for k in keys}}
-        )
+    _flush_bucket()
     return {
         "points": points,
         "buckets": len(points),
