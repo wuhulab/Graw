@@ -103,6 +103,137 @@ def _is_container() -> bool:
     return os.path.exists("/.dockerenv")
 
 
+# 判定「候选容器是面板自身」的最低特征分（见 _panel_score）。
+# 取 7 以高于「更新执行容器」得分（官方镜像 3 + 名字前缀 1 + docker.sock 1 = 5），
+# 避免把执行容器/兄弟容器误判为面板自身。
+_PANEL_SCORE_MIN = 7
+
+
+def _container_id_from_proc() -> str:
+    """从 /proc 解析 64 位十六进制容器 ID（cgroup v1 或 host cgroupns 时可用）。
+
+    host 网络部署下容器 hostname 是宿主机名、无法用于定位自身；此处作为
+    第二级兜底。取不到（如非容器 / cgroup v2 私有命名空间 / Windows）返回空串。
+    """
+    for path in ("/proc/self/cgroup", "/proc/1/cpuset"):
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                text = f.read()
+        except OSError:
+            # 非 Linux 或文件不存在属预期，继续尝试下一个路径
+            continue
+        m = re.search(r"[0-9a-f]{64}", text)
+        if m:
+            return m.group(0)
+    return ""
+
+
+def _panel_score(container) -> int:
+    """给候选容器打「像面板自身」的分，用于 host 网络下无法按 hostname 定位时兜底。
+
+    评分依据（面板专属特征，权重越高越特异）：
+      - GRAW_HOST_DATA 与本容器 /app/backend/data 绑定源一致 → +6（几乎确定是自己）
+      - 官方镜像 shunx/graw                                     → +3
+      - 容器名恰为 graw-panel / 以 graw 开头                     → +3 / +1
+      - 挂载宿主机根 /host（HOST_ROOT，完整管理宿主机特征）        → +2
+      - 挂载 /app/backend/data（面板数据目录）                    → +2
+      - 挂载 docker.sock（容器管理能力）                          → +1
+    """
+    try:
+        attrs = container.attrs or {}
+    except Exception:  # noqa: BLE001 - 单个候选读取失败不影响其它候选评分
+        return 0
+    config = attrs.get("Config") or {}
+    hconfig = attrs.get("HostConfig") or {}
+    score = 0
+
+    image = (config.get("Image") or "").strip()
+    if image.partition(":")[0] == IMAGE_REPO:
+        score += 3
+
+    name = (getattr(container, "name", "") or "").strip()
+    if name == "graw-panel":
+        score += 3
+    elif name.startswith("graw"):
+        score += 1
+
+    # 汇总绑定源：目标路径（去首尾斜杠）→ 宿主侧来源
+    bind_sources: Dict[str, str] = {}
+    for b in hconfig.get("Binds") or []:
+        parts = b.split(":")
+        if len(parts) >= 2:
+            bind_sources[parts[1].strip("/")] = parts[0]
+    for m in hconfig.get("Mounts") or []:
+        if (m.get("Type") or "").lower() in ("bind", "volume"):
+            dest = (m.get("Destination") or "").strip("/")
+            if dest:
+                bind_sources[dest] = (m.get("Source") or m.get("Name") or "").strip()
+
+    if "host" in bind_sources:
+        score += 2
+    if "app/backend/data" in bind_sources:
+        score += 2
+    if "var/run/docker.sock" in bind_sources:
+        score += 1
+    env_data = (os.environ.get("GRAW_HOST_DATA") or "").strip()
+    if env_data and bind_sources.get("app/backend/data") == env_data:
+        score += 6
+    return score
+
+
+def _self_container(client):
+    """定位「面板自身容器」，兼容 host 网络部署（不依赖 hostname 即容器 ID 的假设）。
+
+    背景（关键修复）：容器以 `--network host` 运行时（README 方式一/方式二与
+    仓库 compose 编排均如此），Docker 会把容器内 hostname 变成**宿主机**
+    hostname，而非默认的短容器 ID；此时 `containers.get(socket.gethostname())`
+    必然 404，一键更新会误报「无法获取面板自身容器信息」并引导用户手动更新。
+
+    定位顺序（逐级降级，任一命中即返回）：
+      1. hostname / HOSTNAME 直接命中（bridge 网络部署的正常路径）；
+      2. /proc 中的 64 位容器 ID（cgroup v1 / host cgroupns 场景）；
+      3. 遍历运行中容器按面板特征打分，唯一最高分（且 ≥ 阈值）者视为自身。
+
+    找不到或存在并列最高分时抛 RuntimeError，由调用方转为可读提示。
+    """
+    # 1) hostname 直接命中
+    for host in (socket.gethostname(), os.environ.get("HOSTNAME") or ""):
+        host = (host or "").strip()
+        if not host:
+            continue
+        try:
+            return client.containers.get(host)
+        except Exception:  # noqa: BLE001 - host 网络下 hostname 非容器 ID，继续降级
+            continue
+
+    # 2) /proc 中的容器 ID
+    cid = _container_id_from_proc()
+    if cid:
+        try:
+            return client.containers.get(cid)
+        except Exception:  # noqa: BLE001 - 取到的不是容器 ID 时继续降级
+            pass
+
+    # 3) 特征打分兜底
+    try:
+        candidates = client.containers.list()
+    except Exception as e:  # noqa: BLE001 - 无法列举容器时统一转为定位失败
+        raise RuntimeError("无法列举容器（docker 守护进程不可用）") from e
+    best = None
+    best_score = 0
+    tie = False
+    for c in candidates:
+        s = _panel_score(c)
+        if s > best_score:
+            best, best_score, tie = c, s, False
+        elif s == best_score and s > 0:
+            tie = True
+    if best is not None and best_score >= _PANEL_SCORE_MIN and not tie:
+        logger.info("已通过特征匹配定位面板自身容器: %s（得分 %d）", getattr(best, "name", "?"), best_score)
+        return best
+    raise RuntimeError("无法唯一确定面板自身容器（host 网络下 hostname 不可用且特征匹配不唯一）")
+
+
 def _compose_context() -> Dict[str, object]:
     """从面板自身容器 labels 定位宿主机 compose 项目上下文。
 
@@ -113,7 +244,7 @@ def _compose_context() -> Dict[str, object]:
         import docker  # 已在 requirements.txt，延迟导入减少启动开销
 
         client = docker.from_env()
-        me = client.containers.get(socket.gethostname())  # 容器内 hostname 即容器 ID
+        me = _self_container(client)  # host 网络下 hostname 非容器 ID，需多级定位
         labels = (me.attrs.get("Config", {}) or {}).get("Labels", {}) or {}
     except Exception as e:  # noqa: BLE001 - 容器信息查询失败属预期（本机/无 socket）
         logger.warning("获取面板自身容器信息失败: %s", e)
@@ -139,7 +270,7 @@ def _docker_run_detect() -> bool:
         import docker  # noqa: PLC0415 - 延迟导入减少启动开销
 
         client = docker.from_env()
-        me = client.containers.get(socket.gethostname())
+        me = _self_container(client)  # host 网络下 hostname 非容器 ID，需多级定位
         img = (me.attrs.get("Config", {}) or {}).get("Image", "") or ""
         return img.partition(":")[0] == IMAGE_REPO
     except Exception as e:  # noqa: BLE001 - 无 docker socket / 本机运行属预期
@@ -204,7 +335,7 @@ def _docker_run_context() -> Dict[str, object]:
         import docker  # noqa: PLC0415
 
         client = docker.from_env()
-        me = client.containers.get(socket.gethostname())  # 容器内 hostname 即容器 ID
+        me = _self_container(client)  # host 网络下 hostname 非容器 ID，需多级定位
         attrs = me.attrs or {}
     except Exception as e:  # noqa: BLE001 - 获取容器信息失败属预期
         logger.warning("获取面板自身容器信息失败: %s", e)

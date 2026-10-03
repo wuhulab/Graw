@@ -166,6 +166,11 @@ docker rm -f graw-panel
 docker run -d --name graw-panel ... shunx/graw:latest
 ```
 
+- **面板内一键更新**（管理员，`/api/update`）：设置 → 关于 / 更新窗口点击「一键更新」，后端会拉取新镜像并重建面板容器，无需手动敲命令。支持两种容器部署：
+  - `docker compose` 部署：定位面板自身的 compose 项目目录，用独立 `docker/compose` 容器执行 `pull` + `up -d`；
+  - `docker run` 单容器部署：按原容器的挂载 / 端口 / 环境变量 / 启动参数原样重建（失败自动回滚旧容器）。
+  - 重建期间面板短暂不可用，执行详情见「更新日志」。本机源码运行、自定义镜像、`container:` 网络模式不支持面板内更新。
+  - 说明：`--network host` 部署时容器内 hostname 是**宿主机名**而非容器 ID，面板改为按「hostname → /proc 容器 ID → 容器特征（镜像 / `/host` 与数据目录挂载 / 容器名 / `GRAW_HOST_DATA`）」多级定位自身容器。
 - **升级前先备份 `data/`**（见下）。数据目录与镜像解耦，重建容器不会丢配置。
 
 ### 4.2 备份

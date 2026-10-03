@@ -653,6 +653,124 @@ def test_updater_script_syntax():
     check("脚本包含回滚逻辑", "回滚成功" in update._UPDATER_SCRIPT)
 
 
+# ------------------------------------------------------------
+# 15. 面板自身容器定位（_self_container / _panel_score / _container_id_from_proc）
+#     重点覆盖 host 网络部署：容器 hostname == 宿主机 hostname，无法用
+#     containers.get(hostname) 定位，必须能按面板特征兜底命中。
+# ------------------------------------------------------------
+class FakeCandidate:
+    def __init__(self, attrs, name):
+        self.attrs = attrs
+        self.name = name
+        self.id = attrs.get("Id", "")
+
+
+def _cand(image="shunx/graw:latest", binds=None, hostname="srv-host"):
+    """构造候选容器的 inspect attrs（仅保留评分相关字段）。"""
+    return {
+        "Id": (hostname or "x").ljust(64, "0"),
+        "Config": {"Image": image, "Hostname": hostname},
+        "HostConfig": {"Binds": binds or []},
+    }
+
+
+class FakeContainerCollection:
+    """假容器集合：get 未登记即抛错（模拟 host 网络下 hostname 查不到）。"""
+
+    def __init__(self, items, get_map=None):
+        self.items = items
+        self.get_map = get_map or {}
+
+    def get(self, ref):
+        if ref in self.get_map:
+            return self.get_map[ref]
+        raise Exception("No such container: " + str(ref))
+
+    def list(self):
+        return self.items
+
+
+class FakeDockerForSelf:
+    def __init__(self, containers):
+        self.containers = containers
+
+
+def test_self_container_detect():
+    print("\n[15] 面板自身容器定位（host 网络兼容）")
+    panel = FakeCandidate(
+        _cand(binds=["/opt/graw/data:/app/backend/data", "/:/host:rslave",
+                     "/var/run/docker.sock:/var/run/docker.sock"]),
+        "graw-panel",
+    )
+    check("面板容器特征得分 ≥ 阈值", update._panel_score(panel) >= update._PANEL_SCORE_MIN,
+          f"score={update._panel_score(panel)}")
+
+    other = FakeCandidate(_cand(image="nginx:latest", binds=["/etc/nginx:/etc/nginx"]), "nginx")
+    check("非面板容器得分为 0", update._panel_score(other) == 0, f"score={update._panel_score(other)}")
+
+    # 更新执行容器：官方镜像 + docker.sock，但无 /host、数据挂在 /data → 不得误判为面板
+    executor = FakeCandidate(
+        _cand(binds=["/tmp/graw-update-x:/work", "/opt/graw/data:/data",
+                     "/var/run/docker.sock:/var/run/docker.sock"]),
+        "graw-updater",
+    )
+    check("更新执行容器得分低于阈值", update._panel_score(executor) < update._PANEL_SCORE_MIN,
+          f"score={update._panel_score(executor)}")
+
+    env = {"HOSTNAME": "my-server-host"}
+    # 场景 A：host 网络 → hostname 查不到，按特征兜底命中面板容器
+    client = FakeDockerForSelf(FakeContainerCollection([other, panel]))
+    with mock.patch.object(update.socket, "gethostname", return_value="my-server-host"):
+        with mock.patch.dict(os.environ, env, clear=False):
+            got = update._self_container(client)
+    check("host 网络下按特征定位到面板容器", got is panel, f"got={getattr(got, 'name', None)}")
+
+    # 场景 B：两个特征相同的面板候选并列最高分 → 拒绝（避免误重建）
+    same_binds = ["/opt/graw/data:/app/backend/data", "/:/host:rslave"]
+    p1 = FakeCandidate(_cand(binds=same_binds), "graw-a")
+    p2 = FakeCandidate(_cand(binds=same_binds), "graw-b")
+    client2 = FakeDockerForSelf(FakeContainerCollection([p1, p2]))
+    with mock.patch.object(update.socket, "gethostname", return_value="my-server-host"):
+        with mock.patch.dict(os.environ, env, clear=False):
+            try:
+                update._self_container(client2)
+                check("并列最高分应拒绝", False, "未拒绝")
+            except RuntimeError:
+                check("并列最高分应拒绝", True)
+
+    # 场景 C：无候选达标 → 拒绝
+    client3 = FakeDockerForSelf(FakeContainerCollection([other]))
+    with mock.patch.object(update.socket, "gethostname", return_value="my-server-host"):
+        with mock.patch.dict(os.environ, env, clear=False):
+            try:
+                update._self_container(client3)
+                check("无达标候选应拒绝", False, "未拒绝")
+            except RuntimeError:
+                check("无达标候选应拒绝", True)
+
+    # 场景 D：bridge 网络 → hostname 即容器 ID，直接命中（不进入打分）
+    client4 = FakeDockerForSelf(FakeContainerCollection([other], get_map={"abc123def456": panel}))
+    with mock.patch.object(update.socket, "gethostname", return_value="abc123def456"):
+        with mock.patch.dict(os.environ, {"HOSTNAME": "abc123def456"}, clear=False):
+            got4 = update._self_container(client4)
+    check("bridge 网络 hostname 直接命中", got4 is panel)
+
+    # 场景 E：GRAW_HOST_DATA 与 /app/backend/data 绑定源一致 → 非官方镜像也能定位
+    custom = FakeCandidate(
+        _cand(image="myreg/graw-custom:1.0", binds=["/srv/graw/data:/app/backend/data"]),
+        "my-panel",
+    )
+    client5 = FakeDockerForSelf(FakeContainerCollection([custom]))
+    with mock.patch.object(update.socket, "gethostname", return_value="my-server-host"):
+        with mock.patch.dict(os.environ, {"HOSTNAME": "my-server-host", "GRAW_HOST_DATA": "/srv/graw/data"}, clear=False):
+            got5 = update._self_container(client5)
+    check("GRAW_HOST_DATA 命中定位自定义镜像容器", got5 is custom)
+
+    # 场景 F：/proc 不可用（非 Linux / cgroup v2 私有命名空间）→ 返回空串不抛错
+    with mock.patch("builtins.open", side_effect=OSError("no proc")):
+        check("/proc 不可用返回空串", update._container_id_from_proc() == "")
+
+
 def main():
     global PASS, FAIL
     print("=" * 60)
@@ -672,6 +790,7 @@ def main():
     test_apply_docker_run()
     test_run_update_bg_docker()
     test_updater_script_syntax()
+    test_self_container_detect()
     print("\n" + "=" * 60)
     total = PASS + FAIL
     print(f"结果: {PASS}/{total} 通过, {FAIL}/{total} 失败")
