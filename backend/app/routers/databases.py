@@ -1,3 +1,5 @@
+import importlib
+import importlib.util
 import json
 import logging
 import os
@@ -101,42 +103,43 @@ _SQLITE_ALLOWED_ROOTS = [
     if x.strip()
 ]
 
-# 各数据库驱动是否可用（缺驱动时接口返回 503 提示，避免崩溃）
-MYSQL_LIBS = False
-REDIS_LIBS = False
-POSTGRES_LIBS = False
-MONGO_LIBS = False
+# 各数据库驱动是否可用（缺驱动时接口返回 503 提示，避免崩溃）。
+#
+# 性能（内存）：这里只用 find_spec 探测「包是否存在」（只查文件系统、不执行
+# 导入），真正的 import 延迟到首次使用时进行（见模块级 __getattr__）。
+# 此前启动即导入四套驱动（pymysql/redis/psycopg2/pymongo），实测让常驻
+# RSS 多出约 40-60MB；而面板大多数时间并不使用数据库管理功能。
+def _has_module(name: str) -> bool:
+    """探测模块是否存在（不触发导入）。"""
+    try:
+        return importlib.util.find_spec(name) is not None
+    except Exception:
+        return False
 
-try:
-    import pymysql
 
-    MYSQL_LIBS = True
-except Exception:
-    pass
+MYSQL_LIBS = _has_module("pymysql")
+REDIS_LIBS = _has_module("redis")
+POSTGRES_LIBS = _has_module("psycopg2")
+MONGO_LIBS = _has_module("pymongo")
 
-try:
-    import redis
 
-    REDIS_LIBS = True
-except Exception:
-    # redis 未安装时降级，隐藏相关功能
-    pass
+def __getattr__(name: str):
+    """模块级懒加载（PEP 562）：首次访问驱动名时才执行 import。
 
-try:
-    import psycopg2
+    代码内直接使用 `pymysql.connect` / `redis.Redis` / `psycopg2.connect` /
+    `pymongo.MongoClient` / `ObjectId`，因此保留同名全局符号——
+    首次属性访问时导入并写回模块全局，后续复用同一模块对象。
+    """
+    if name in ("pymysql", "redis", "psycopg2", "pymongo"):
+        mod = importlib.import_module(name)
+        globals()[name] = mod
+        return mod
+    if name == "ObjectId":
+        from bson import ObjectId
 
-    POSTGRES_LIBS = True
-except Exception:
-    pass
-
-try:
-    import pymongo
-    from bson import ObjectId
-
-    MONGO_LIBS = True
-# 缺少可选驱动 pymongo，导入失败忽略
-except Exception:
-    pass
+        globals()["ObjectId"] = ObjectId
+        return ObjectId
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _load_connections() -> list:

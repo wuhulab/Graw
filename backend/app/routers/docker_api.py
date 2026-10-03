@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import time
 import asyncio
+import importlib.util
 import logging
 import threading
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -51,22 +52,40 @@ def _safe_docker_ref(ref: str, what: str = "标识符") -> str:
         raise HTTPException(status_code=400, detail=f"非法的{what}: {ref!r}")
     return ref
 
-try:
+
+def _has_module(name: str) -> bool:
+    """探测模块是否存在（find_spec 只查文件系统，不触发导入）。"""
+    try:
+        return importlib.util.find_spec(name) is not None
+    except Exception:
+        return False
+
+
+# 性能（内存）：docker SDK 启动即导入会连带 paramiko/requests/urllib3/nacl
+# 等依赖，实测增加约 30-40MB 常驻 RSS（且面板可能根本没用 Docker SDK，
+# 走的是 CLI）。这里改为「存在性探测 + 首次使用时懒加载」（见 _import_docker）。
+DOCKER_SDK = _has_module("docker")
+
+
+def _import_docker():
+    """按需导入 docker SDK（延迟到首次建立 SDK 连接时）。"""
     import docker
-    DOCKER_SDK = True
-except Exception:
-    DOCKER_SDK = False
 
-# 可选依赖 PyYAML：用于解析 compose 项目 services（缺失时降级为空）
-try:
-    import yaml
-    yaml_available = True
-    _safe_yaml_load = yaml.safe_load
-except Exception:
-    yaml_available = False
+    return docker
 
-    def _safe_yaml_load(text):  # pragma: no cover - 仅当 PyYAML 缺失时生效
+
+# 可选依赖 PyYAML：用于解析 compose 项目 services（缺失时降级为空）。
+# 同样延迟导入：yaml_available 仅做存在性探测。
+yaml_available = _has_module("yaml")
+
+
+def _safe_yaml_load(text):
+    """安全解析 YAML；PyYAML 缺失或解析失败时返回 None（调用方按空处理）。"""
+    try:
+        import yaml
+    except Exception:  # pragma: no cover - 仅当 PyYAML 缺失时生效
         return None
+    return yaml.safe_load(text)
 
 _client = None
 _last_reason = None
@@ -404,6 +423,13 @@ def _try_docker_sdk():
             _client = None
     if not DOCKER_SDK:
         return None
+    # 零成本引擎入口检查：本机完全没有 docker/podman 入口（socket / DOCKER_HOST /
+    # CLI）时不导入 SDK——否则打开 Docker 窗口或防护中心就会把 docker SDK
+    # （连带 paramiko/requests 等，约 15-20MB）拉进常驻内存，只为探测一个
+    # 注定失败的引擎。真正的启动延迟探测（Docker Desktop 冷启动）不受影响：
+    # 有入口时行为与之前完全一致。
+    if not _has_engine_endpoint():
+        return None
     now = time.time()
     if now < _docker_fail_until:
         return None
@@ -428,6 +454,12 @@ def _try_docker_sdk():
             candidates += ["npipe:////./pipe/docker_engine"]
         else:
             candidates += ["unix:///var/run/docker.sock", "unix:///run/podman/podman.sock"]
+        try:
+            docker = _import_docker()  # 懒加载：首次建立 SDK 连接时才导入
+        except Exception:
+            # SDK 存在但导入失败（依赖损坏）：短暂退避后走 CLI 探测
+            _docker_fail_until = time.time() + _podman_fail_backoff
+            return None
         for host in candidates:
             try:
                 kwargs = {"base_url": host} if host else {}
@@ -475,6 +507,38 @@ def _is_likely_digest(tag: str) -> bool:
     return bool(tag and re.fullmatch(r"[0-9a-f]{12,}", tag))
 
 
+# 探测成功后的版本号缓存：容器镜像 tag 在进程生命周期内不会变化
+# （升级 = 重建容器并重启面板），因此成功结果只需探测一次。
+_self_version_cache: Optional[str] = None
+
+
+def _has_engine_endpoint() -> bool:
+    """是否存在可用的容器引擎入口（零成本检查：不导入 SDK、不发起连接）。
+
+    /api/health 会调用 get_self_app_version 读取面板自身容器的镜像 tag
+    （仅用于展示版本号），但此前该调用无条件触发一次引擎探测：在没有引擎
+    的机器上（源码直跑 / K8s Pod / 只装了客户端的机器）会把 docker SDK
+    连同 paramiko/requests 等依赖（约 15-20MB）拉进常驻内存，只换来一次
+    注定失败的查询。这里先用环境变量 / socket 路径 / PATH 做存在性判断，
+    判断不到引擎入口就直接回退内置 APP_VERSION。
+    """
+    if IS_WINDOWS:
+        # Windows 的 npipe 无法用路径判断，保持原有探测行为
+        return True
+    for var in ("DOCKER_HOST", "CONTAINER_HOST"):
+        if (os.environ.get(var) or "").strip():
+            return True
+    for sock in (
+        "/var/run/docker.sock",
+        "/run/docker.sock",
+        "/var/run/podman/podman.sock",
+        "/run/podman/podman.sock",
+    ):
+        if os.path.exists(sock):
+            return True
+    return shutil.which("docker") is not None or shutil.which("podman") is not None
+
+
 def get_self_app_version() -> Optional[str]:
     """从承载当前面板的容器读取版本号，替代硬编码常量。
 
@@ -484,7 +548,14 @@ def get_self_app_version() -> Optional[str]:
     任一路由拿到「非 latest、非 digest」的合法版本即返回（去除 v 前缀）。
     Docker 未就绪 / 找不到面板容器 / 解析失败时返回 None，由调用方回退
     到内置 APP_VERSION 常量（本机源码直跑或远端 Agent 均自然回退）。
+    探测成功的结果会缓存复用（见 _self_version_cache）。
     """
+    global _self_version_cache
+    if _self_version_cache:
+        return _self_version_cache
+    if not _has_engine_endpoint():
+        # 没有引擎入口：直接回退，避免为展示版本号导入整个 docker SDK
+        return None
     try:
         kind, client = get_backend()
     except Exception:
@@ -521,7 +592,10 @@ def get_self_app_version() -> Optional[str]:
             version = label
     if not version:
         return None
-    return version.strip().lstrip("vV")
+    value = version.strip().lstrip("vV")
+    # 仅缓存成功结果：引擎未起来时保持可重试（失败路径已有 5s 退避）
+    _self_version_cache = value or None
+    return _self_version_cache
 
 
 class ActionRequest(BaseModel):

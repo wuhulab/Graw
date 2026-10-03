@@ -6,6 +6,7 @@
 """
 
 import os
+import copy
 import json
 import time
 import secrets
@@ -43,19 +44,69 @@ _security = HTTPBearer(auto_error=False)
 _file_lock = threading.Lock()
 
 
+# ---------------------------------------------------------------------------
+# JSON 热文件缓存（users.json / sessions.json）
+#
+# 鉴权依赖链（get_current_user → require_non_default_password → require_perm）
+# 每个请求要读 3-4 次用户表/会话表。实测单次「open + json.load」约 130-150µs，
+# 在小内存 VPS（容器 overlayfs / 网络盘）上更慢，是请求路径上除密码校验外
+# 最大的一笔固定开销。这里缓存解析结果，按「mtime_ns + size」失效：
+#   - 本进程保存（_save_users/_save_sessions）时主动失效；
+#   - 外部修改（reset_password.py、手工编辑、另一实例）靠 stat 变化感知。
+# 返回时统一 deepcopy：调用方（用户管理接口）会就地修改后另存，
+# 共享同一对象会让未保存的修改污染缓存。
+# ---------------------------------------------------------------------------
+_CACHE_INVALID = object()
+_users_cache: dict = {"key": _CACHE_INVALID, "data": None}
+_users_cache_lock = threading.Lock()
+_sessions_cache: dict = {"key": _CACHE_INVALID, "data": {}}
+_sessions_cache_lock = threading.Lock()
+
+
+def _stat_key(path: str):
+    """文件指纹 (mtime_ns, size)；文件不存在返回 None。"""
+    try:
+        st = os.stat(path)
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+
+
+def _read_json_cached(path: str, cache: dict, lock: threading.Lock, missing_default):
+    """读取 JSON 热文件（带 stat 指纹缓存），返回深拷贝。
+
+    missing_default 是「文件不存在」时的返回值（用户表用 None 以区分
+    「未播种」，会话表用 {}）；文件损坏 / 非 dict 时统一返回 {}。
+    """
+    key = _stat_key(path)
+    if key is None:
+        # 文件不存在：不缓存，直接返回缺失语义（播种等流程可能马上创建它）
+        return missing_default
+    with lock:
+        if cache["key"] == key:
+            return copy.deepcopy(cache["data"])
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            data = {}
+    except Exception:
+        data = {}
+    with lock:
+        cache["key"] = key
+        cache["data"] = data
+    return copy.deepcopy(data)
+
+
+def _invalidate(cache: dict, lock: threading.Lock) -> None:
+    with lock:
+        cache["key"] = _CACHE_INVALID
+
+
 def _load_users() -> Optional[dict]:
     """读取用户表。文件不存在返回 None（用于首次播种判定），
     文件存在但损坏返回空 dict（避免误播种覆盖已有数据）。"""
-    if not os.path.exists(USERS_FILE):
-        return None
-    try:
-        with open(USERS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if isinstance(data, dict):
-                return data
-            return {}
-    except Exception:
-        return {}
+    return _read_json_cached(USERS_FILE, _users_cache, _users_cache_lock, None)
 
 
 def _save_users(data: dict) -> None:
@@ -65,6 +116,7 @@ def _save_users(data: dict) -> None:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         os.replace(tmp, USERS_FILE)
+    _invalidate(_users_cache, _users_cache_lock)
 
 
 def _get_secret() -> str:
@@ -109,12 +161,39 @@ def verify_password(password: str, hashed: str) -> bool:
         return False
 
 
+# 默认密码判定缓存：password_hash -> bool。
+# 该判定是「以存储的密码哈希为唯一输入」的纯函数（bcrypt 哈希含随机盐，
+# 同一哈希结果恒定），因此可按哈希缓存；容量有上限，改密产生新哈希时写入
+# 新条目、旧条目随容量淘汰，不会让已改密账号被误判。
+_default_pw_cache: dict = {}
+_default_pw_cache_lock = threading.Lock()
+_DEFAULT_PW_CACHE_MAX = 64
+
+
 def is_default_password(password_hash: str) -> bool:
-    """判断某个密码哈希是否为默认密码（用于强制改密检测）。"""
-    try:
-        return bcrypt.checkpw(DEFAULT_PASSWORD.encode("utf-8"), password_hash.encode("utf-8"))
-    except Exception:
+    """判断某个密码哈希是否为默认密码（用于强制改密检测）。
+
+    性能：bcrypt.checkpw 单次约 0.3s CPU，而本函数会挂在每个业务/管理请求
+    的鉴权依赖（require_non_default_password）以及 Agent 代理前置鉴权上；
+    不做缓存时每个请求都要付一次 bcrypt，面板吞吐被压到个位数 RPS。
+    这里按密码哈希缓存判定结果，避免每请求重复计算。
+    """
+    if not isinstance(password_hash, str) or not password_hash:
         return False
+    hit = _default_pw_cache.get(password_hash)
+    if hit is not None:
+        return hit
+    try:
+        result = bool(
+            bcrypt.checkpw(DEFAULT_PASSWORD.encode("utf-8"), password_hash.encode("utf-8"))
+        )
+    except Exception:
+        result = False
+    with _default_pw_cache_lock:
+        if len(_default_pw_cache) >= _DEFAULT_PW_CACHE_MAX:
+            _default_pw_cache.clear()
+        _default_pw_cache[password_hash] = result
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -230,14 +309,7 @@ def bump_token_version(username: str) -> None:
 # ---------------------------------------------------------------------------
 def _load_sessions() -> dict:
     """读取会话表；缺失/损坏返回空 dict。"""
-    if not os.path.exists(SESSIONS_FILE):
-        return {}
-    try:
-        with open(SESSIONS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    return _read_json_cached(SESSIONS_FILE, _sessions_cache, _sessions_cache_lock, {})
 
 
 # 会话「在线」依据：设备 / 前端打开面板时会持续发起鉴权请求，每次有效鉴权
@@ -327,6 +399,7 @@ def _save_sessions(data: dict) -> None:
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     os.replace(tmp, SESSIONS_FILE)
+    _invalidate(_sessions_cache, _sessions_cache_lock)
 
 
 def create_session(username: str, ip: str, device: str = "") -> str:
