@@ -486,6 +486,58 @@ button {
 .start-item.danger { color: #c0392b; }
 .start-item.danger:hover { background: rgba(255, 59, 48, 0.12); }
 
+/* Launchpad 顶部「社区 Star 支持」提示卡片 */
+.star-tip {
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border-radius: 10px;
+  background: rgba(10, 132, 255, 0.08);
+  border: 1px solid rgba(10, 132, 255, 0.18);
+}
+.star-tip-text {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #1d1d1f;
+}
+.star-tip-icon { flex: none; margin-top: 2px; color: #d68a00; }
+.star-tip-actions { display: flex; gap: 6px; margin-top: 6px; }
+.star-tip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-family: inherit;
+  color: #fff;
+  background: #0a84ff;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.star-tip-btn:hover { background: #0071e3; }
+.star-tip-btn:disabled { opacity: 0.6; cursor: default; }
+.star-tip-btn.secondary { color: #1d1d1f; background: rgba(0, 0, 0, 0.06); }
+.star-tip-btn.secondary:hover { background: rgba(0, 0, 0, 0.1); }
+.star-tip-verify { display: flex; gap: 6px; margin-top: 6px; }
+.star-tip-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  color: #1d1d1f;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 7px;
+  outline: none;
+}
+.star-tip-input:focus { border-color: #0a84ff; }
+.star-tip-input:disabled { background: rgba(0, 0, 0, 0.04); }
+.star-tip-msg { margin-top: 6px; font-size: 11px; line-height: 1.4; color: #c0392b; }
+.star-tip-msg.ok { color: #1a7f37; }
+
 .task-item.icon-only { padding: 2px; }
 .task-item.no-text { padding: 2px; }
 

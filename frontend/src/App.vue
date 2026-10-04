@@ -120,6 +120,35 @@
     <div class="taskbar">
       <div class="start-button" title="Launchpad" @click.stop="toggleStartMenu"><LayoutGrid :size="22" /></div>
       <div v-if="startMenuOpen" class="start-menu" @click.stop>
+        <!-- 社区 Star 支持提示：前往 GitHub 点亮 Star 后，填写 GitHub 用户名在线验证，
+             验证通过写入本地标记（localStorage）后不再显示。纯前端展示逻辑，不影响任何功能。 -->
+        <div v-if="!starTipDone" class="star-tip">
+          <div class="star-tip-text">
+            <Star :size="13" class="star-tip-icon" />
+            <span>{{ $t('app.starTip.text') }}</span>
+          </div>
+          <div class="star-tip-actions">
+            <button class="star-tip-btn" @click="starTipOpenRepo">
+              <Github :size="12" /> {{ $t('app.starTip.openGithub') }}
+            </button>
+            <button v-if="!starTipVerifyOpen" class="star-tip-btn secondary" @click="starTipVerifyOpen = true">
+              {{ $t('app.starTip.verify') }}
+            </button>
+          </div>
+          <div v-if="starTipVerifyOpen" class="star-tip-verify">
+            <input
+              v-model="starTipUsername"
+              class="star-tip-input"
+              :placeholder="$t('app.starTip.placeholder')"
+              :disabled="starTipVerifying"
+              @keyup.enter="verifyStarTip"
+            />
+            <button class="star-tip-btn" :disabled="starTipVerifying" @click="verifyStarTip">
+              {{ starTipVerifying ? $t('app.starTip.verifying') : $t('app.starTip.verify') }}
+            </button>
+          </div>
+          <div v-if="starTipMsg" class="star-tip-msg" :class="{ ok: starTipMsgOk }">{{ starTipMsg }}</div>
+        </div>
         <div class="start-header">
           <div style="font-weight:700;">{{ auth.user?.username }}</div>
           <div style="font-size:11px;color:#6e6e73;">{{ $t(auth.user?.role === 'admin' ? 'app.admin' : 'app.normalUser') }}</div>
@@ -232,7 +261,7 @@ import { startDocker, stopDocker } from './store/docker'
 import { nodes as nodesStore, refreshNodes } from './store/nodes'
 import { setRequestNode } from './store/requestNode'
 import { tamperState, startTamper, stopTamper } from './store/tamper'
-import { Archive, Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, Shield, ShieldAlert, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, BarChart3, FileCode2, History, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug, Pin, PinOff, EyeOff, Clock, BellRing, Gauge, KeyRound, FileUp, Send, Home, Github, Heart } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用）
+import { Archive, Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, Shield, ShieldAlert, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, BarChart3, FileCode2, History, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug, Pin, PinOff, EyeOff, Clock, BellRing, Gauge, KeyRound, FileUp, Send, Home, Github, Heart, Star } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用；Star 用于 Launchpad 社区支持提示）
 
 // 桌面「系统概览」三张卡片：按需加载（异步组件）。
 // RingCard / MonitorCard 依赖 ECharts（体积大），且只在「类桌面」形态的首屏渲染——
@@ -627,6 +656,167 @@ function openExternal(url) {
     alert(`${url}`)
   }
 }
+
+// ---- Launchpad「社区 Star 支持」提示 ----
+// 目标：Graw 为社区推动的开源项目，引导用户前往 GitHub 点亮 Star，并提供
+// 「填写 GitHub 用户名 → 在线校验 → 通过后关闭」的轻量闭环。
+// 校验原理：GitHub 公开 API `GET /users/{name}/starred`（支持 CORS、免令牌），
+// 使用 sort=created&direction=desc 让最新 Star 排在最前，最多查 2 页兜底；
+// 命中目标仓库即视为验证通过。
+// 状态记忆：验证通过后记录「GitHub 用户名 + 验证日期」；之后每次启动面板时，
+// 若当天尚未复查，则静默复查该账号是否仍 Star（当天只查一次）；
+// 若已取消 Star（或账号不可查），清除记录并重新显示提示。
+// 注意：纯前端展示引导，不参与面板权限判定；接口失败/离线时保持现状，不打扰用户。
+const STAR_TIP_STATE_KEY = 'graw.starTip.state'    // 验证状态：{ username, verifiedOn }
+const STAR_TIP_LEGACY_KEY = 'graw.starTip.done'    // 旧版布尔标记（已废弃，读取时自动清除以重置状态）
+const STAR_TIP_REPO = 'wuhulab/Graw'               // 需要验证 Star 的目标仓库（与 SOURCE_REPO_URL 对应）
+
+// 本地日期字符串（YYYY-MM-DD，按浏览器时区）——用于「当天只复查一次」的判定
+function starTipToday() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// 读取本地验证状态：隐私模式 / 存储被禁用 / 内容损坏时一律视为「未验证」，不影响桌面使用
+function readStarTipState() {
+  try {
+    // 旧版实现只存布尔 '1'：读取时直接清除，回到待验证状态（结构升级后的自然重置）
+    if (localStorage.getItem(STAR_TIP_LEGACY_KEY) !== null) {
+      localStorage.removeItem(STAR_TIP_LEGACY_KEY)
+      console.info('[app] 已清除旧版 Star 验证标记，社区支持提示将重新显示')
+    }
+    const raw = JSON.parse(localStorage.getItem(STAR_TIP_STATE_KEY) || 'null')
+    if (raw && typeof raw.username === 'string' && raw.username) {
+      return { username: raw.username, verifiedOn: typeof raw.verifiedOn === 'string' ? raw.verifiedOn : '' }
+    }
+  } catch (e) { /* 存储不可用或内容损坏：视为未验证 */ }
+  return null
+}
+
+const starTipState = ref(readStarTipState())             // null=未验证；{ username, verifiedOn }=已验证
+const starTipDone = computed(() => !!starTipState.value) // 卡片显隐：已有验证记录则隐藏
+const starTipVerifyOpen = ref(false)   // 是否展开「用户名 + 验证」输入区
+const starTipUsername = ref('')        // 待校验的 GitHub 用户名
+const starTipVerifying = ref(false)    // 校验请求进行中（禁用重复点击）
+const starTipMsg = ref('')             // 校验结果提示文案
+const starTipMsgOk = ref(false)        // 提示是否为成功态（用于绿色样式）
+
+// 写入 / 清除验证状态；存储不可用时仅本次会话生效
+function writeStarTipState(next) {
+  starTipState.value = next
+  try {
+    if (next) localStorage.setItem(STAR_TIP_STATE_KEY, JSON.stringify(next))
+    else localStorage.removeItem(STAR_TIP_STATE_KEY)
+  } catch (e) { /* 忽略：存储不可用不影响功能 */ }
+}
+
+// 点击「GitHub 链接」：新标签页打开仓库页并展开验证区，引导用户 Star 后回来验证
+function starTipOpenRepo() {
+  openExternal(SOURCE_REPO_URL)
+  starTipVerifyOpen.value = true
+}
+
+// 手动验证通过：记录「用户名 + 今天」，卡片随即隐藏；当天内不再复查
+function starTipMarkDone(username) {
+  writeStarTipState({ username, verifiedOn: starTipToday() })
+}
+
+/**
+ * 查询 GitHub 用户是否已 Star 目标仓库（纯查询，不改变界面状态）
+ * - 手动验证与启动复查复用同一段逻辑
+ * @returns {Promise<'starred'|'not-starred'|'user-not-found'|'error'>}
+ *   starred=已 Star；not-starred=确认未 Star；user-not-found=用户不存在；
+ *   error=网络异常或接口限流（无法确认，由调用方保守处理）
+ */
+async function queryGithubStarred(name) {
+  const target = STAR_TIP_REPO.toLowerCase()
+  try {
+    // 用户刚 Star 时目标仓库必然出现在「最近 Star」最前面；查 2 页（200 条）足够兜底
+    for (let page = 1; page <= 2; page++) {
+      const url = `https://api.github.com/users/${encodeURIComponent(name)}/starred`
+        + `?per_page=100&sort=created&direction=desc&page=${page}`
+      const res = await fetch(url, { headers: { Accept: 'application/vnd.github.star+json' } })
+      if (res.status === 404) return 'user-not-found'
+      if (!res.ok) {
+        // 403 多为匿名调用限流（60 次/小时）；其余状态码同理视为「无法确认」
+        console.warn('[app] GitHub starred 查询失败:', res.status, url)
+        return 'error'
+      }
+      const list = await res.json()
+      if (!Array.isArray(list) || list.length === 0) return 'not-starred'
+      // star+json 媒体类型下条目为 { starred_at, repo }；不带该头时条目本身即仓库对象，两种都兼容
+      if (list.some(it => ((it.repo && it.repo.full_name) || it.full_name || '').toLowerCase() === target)) return 'starred'
+      if (list.length < 100) return 'not-starred'  // 不足一页说明已到末尾，无需继续翻页
+    }
+    return 'not-starred'
+  } catch (e) {
+    // 网络异常（断网 / 浏览器拦截等）——无法确认
+    console.error('[app] Star 查询请求异常:', e)
+    return 'error'
+  }
+}
+
+/**
+ * 手动验证：校验输入的用户名是否已 Star 目标仓库
+ * - 已 Star → 显示感谢并短暂停顿后关闭卡片
+ * - 未 Star / 用户不存在 / 接口异常 → 给出对应提示，保留输入便于重试
+ */
+async function verifyStarTip() {
+  if (starTipVerifying.value) return
+  const name = starTipUsername.value.trim().replace(/^@/, '')  // 容忍粘贴「@用户名」
+  if (!name) { starTipMsgOk.value = false; starTipMsg.value = t('app.starTip.needUsername'); return }
+  starTipVerifying.value = true
+  starTipMsg.value = ''
+  try {
+    const result = await queryGithubStarred(name)
+    if (result === 'starred') {
+      starTipMsgOk.value = true
+      starTipMsg.value = t('app.starTip.thanks')
+      console.info('[app] Star 验证通过，感谢支持！')
+      setTimeout(() => starTipMarkDone(name), 1000)  // 让用户看到成功提示后再关闭卡片
+    } else if (result === 'user-not-found') {
+      starTipMsgOk.value = false
+      starTipMsg.value = t('app.starTip.userNotFound')
+    } else if (result === 'not-starred') {
+      starTipMsgOk.value = false
+      starTipMsg.value = t('app.starTip.notFound')
+    } else {
+      starTipMsgOk.value = false
+      starTipMsg.value = t('app.starTip.netError')
+    }
+  } finally {
+    starTipVerifying.value = false
+  }
+}
+
+/**
+ * 启动复查：面板启动（登录后）时，若已有验证记录且今天尚未复查，
+ * 则静默确认该账号是否仍 Star 目标仓库：
+ * - 仍已 Star → 刷新验证日期（当天不再复查），提示保持隐藏
+ * - 已取消 Star / 账号不可查 → 清除记录，重新显示提示
+ * - 接口异常 → 无法确认，保持现状，下次启动再复查（避免网络不佳时误打扰）
+ */
+async function autoReverifyStarTip() {
+  const state = starTipState.value
+  if (!state || !auth.token) return
+  if (state.verifiedOn === starTipToday()) return  // 当天已复查过：不再请求
+  const result = await queryGithubStarred(state.username)
+  if (result === 'starred') {
+    // 仍已 Star：记录本次复查日期，今天内不再复查
+    writeStarTipState({ username: state.username, verifiedOn: starTipToday() })
+    console.info('[app] Star 复查通过（当天不再复查）:', state.username)
+  } else if (result === 'not-starred' || result === 'user-not-found') {
+    // 已取消 Star（或账号不可查）：清除记录，重新显示社区支持提示
+    console.info('[app] 未检测到 Star（已取消或账号不可查），重新显示社区支持提示:', state.username)
+    writeStarTipState(null)
+  } else {
+    // 无法确认：保持现状，下次启动再试
+    console.warn('[app] Star 复查无法确认（网络或限流），保持现状，下次启动再试')
+  }
+}
+
+// 面板启动 / 登录后触发一次复查（未登录或当天已复查时内部直接跳过）
+watch(() => auth.token, () => { autoReverifyStarTip() }, { immediate: true })
 
 function doLogout() {
   startMenuOpen.value = false

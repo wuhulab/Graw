@@ -308,6 +308,19 @@ export default {
     settings: 'Settings',
     logout: 'Sign Out',
     launchpad: 'Launchpad',
+    // Community Star support tip at the top of the Launchpad (dismissed locally after verification)
+    starTip: {
+      text: 'Graw is a community-driven open-source project that relies on community contributions. If you could give it a Star, that would also be a contribution to the community.',
+      openGithub: 'GitHub Link',
+      verify: 'I have starred, verify',
+      placeholder: 'GitHub username',
+      verifying: 'Verifying…',
+      needUsername: 'Please enter your GitHub username first',
+      userNotFound: 'GitHub user not found, please check the username',
+      notFound: 'No star record detected: please make sure you have starred and the username is correct; if you just starred, wait a few seconds and retry.',
+      netError: 'Unable to reach the GitHub API, please check your network and retry',
+      thanks: 'Verified, thanks for your support!',
+    },
     closeEditorConfirm: 'The file has been modified. Close anyway?',
     shortcut: {
       sites: 'Websites',

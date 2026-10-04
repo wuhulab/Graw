@@ -1961,6 +1961,19 @@ Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队
     settings: '设置',
     logout: '退出登录',
     launchpad: 'Launchpad',
+    // Launchpad 顶部「社区 Star 支持」提示（验证已 Star 后本地关闭）
+    starTip: {
+      text: 'Graw 是一个由社区推动的开源软件，依赖于社区的贡献，如果您能给予一个 Star，也是对社区的贡献。',
+      openGithub: 'GitHub 链接',
+      verify: '我已 Star，验证',
+      placeholder: 'GitHub 用户名',
+      verifying: '验证中…',
+      needUsername: '请先填写您的 GitHub 用户名',
+      userNotFound: '未找到该 GitHub 用户，请检查用户名是否正确',
+      notFound: '未检测到 Star 记录：请确认已 Star 且用户名无误；若刚 Star，请稍等几秒后重试。',
+      netError: '无法访问 GitHub 接口，请检查网络后重试',
+      thanks: '验证通过，感谢您的支持！',
+    },
     closeEditorConfirm: '文件已修改，是否关闭？',
     // 桌面快捷方式
     shortcut: {
