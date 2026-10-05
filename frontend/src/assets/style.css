@@ -232,6 +232,7 @@ button {
   background: rgba(255, 255, 255, 0.18);
   border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 14px;
+  position: relative;   /* 供 Star 锁角标绝对定位 */
   color: #fff;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -537,6 +538,52 @@ button {
 .star-tip-input:disabled { background: rgba(0, 0, 0, 0.04); }
 .star-tip-msg { margin-top: 6px; font-size: 11px; line-height: 1.4; color: #c0392b; }
 .star-tip-msg.ok { color: #1a7f37; }
+
+/* Star 锁定角标：未点亮 Star 时，高级业务模块图标右下角的小锁（桌面图标） */
+.shortcut-lock {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 50%;
+  pointer-events: none;   /* 不拦截图标的单击选中 / 双击打开 */
+}
+
+/* Star 解锁引导弹窗：未点亮 Star 时点击高级业务模块弹出 */
+.star-gate-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;         /* 高于窗口 / 任务栏与既有弹窗，确保引导可见 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.42);
+}
+.star-gate {
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  padding: 18px 18px 14px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
+  color: #1d1d1f;
+}
+.star-gate-head { display: flex; align-items: center; gap: 8px; }
+.star-gate-icon { flex: none; color: #d68a00; }
+.star-gate-title { font-size: 15px; font-weight: 700; }
+.star-gate-desc { margin-top: 10px; font-size: 12px; line-height: 1.6; color: #3a3a3c; }
+.star-gate-steps { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+.star-gate-step { font-size: 12px; line-height: 1.5; color: #1d1d1f; }
+.star-gate-verify { display: flex; gap: 6px; margin-top: 12px; }
+.star-gate-verify .star-tip-input { font-size: 12px; padding: 6px 10px; }
+.star-gate-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
 .task-item.icon-only { padding: 2px; }
 .task-item.no-text { padding: 2px; }

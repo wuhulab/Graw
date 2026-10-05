@@ -55,7 +55,11 @@
           @dblclick="openShortcut(sc.key)"
           @contextmenu.prevent="openShortcutMenu($event, sc)"
         >
-          <div class="icon"><component :is="sc.icon" :size="32" /></div>
+          <div class="icon">
+            <component :is="sc.icon" :size="32" />
+            <!-- Star 锁定角标：未点亮 Star 时，高级业务模块图标右下角显示小锁 -->
+            <span v-if="sc.starLocked" class="shortcut-lock" :title="$t('app.starTip.gateTitle')"><Lock :size="11" /></span>
+          </div>
           <div class="label" :style="shortcutLabelStyle" :title="sc.titleKey ? $t(sc.titleKey) : sc.label">{{ sc.titleKey ? $t(sc.titleKey) : sc.label }}</div>
         </div>
       </div>
@@ -211,6 +215,41 @@
 
   <!-- 模块权限提示条：受限管理员点开「无权限模块」时不隐藏入口，只提示无权限 -->
   <div v-if="permNotice" class="perm-notice">{{ permNotice }}</div>
+
+  <!-- Star 解锁引导弹窗：未点亮 Star 时点击高级业务模块弹出（桌面 / 面板模式共用）。
+       复用上方 Launchpad 的 GitHub 用户名在线校验状态与函数，验证通过即时解锁。 -->
+  <div v-if="starGateOpen" class="star-gate-mask" @click.self="closeStarGate">
+    <div class="star-gate" role="dialog" aria-modal="true">
+      <div class="star-gate-head">
+        <Star :size="18" class="star-gate-icon" />
+        <div class="star-gate-title">{{ $t('app.starTip.gateTitle') }}</div>
+      </div>
+      <div class="star-gate-desc">{{ $t('app.starTip.gateDesc', { name: starGateModuleName }) }}</div>
+      <div class="star-gate-steps">
+        <div class="star-gate-step">{{ $t('app.starTip.gateStep1') }}</div>
+        <div class="star-gate-step">{{ $t('app.starTip.gateStep2') }}</div>
+      </div>
+      <div class="star-gate-verify">
+        <input
+          v-model="starTipUsername"
+          class="star-tip-input"
+          :placeholder="$t('app.starTip.placeholder')"
+          :disabled="starTipVerifying"
+          @keyup.enter="verifyStarTip"
+        />
+        <button class="star-tip-btn" :disabled="starTipVerifying" @click="verifyStarTip">
+          {{ starTipVerifying ? $t('app.starTip.verifying') : $t('app.starTip.verify') }}
+        </button>
+      </div>
+      <div v-if="starTipMsg" class="star-tip-msg" :class="{ ok: starTipMsgOk }">{{ starTipMsg }}</div>
+      <div class="star-gate-actions">
+        <button class="star-tip-btn secondary" @click="starTipOpenRepo">
+          <Github :size="12" /> {{ $t('app.starTip.openGithub') }}
+        </button>
+        <button class="star-tip-btn secondary" @click="closeStarGate">{{ $t('common.close') }}</button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -477,13 +516,18 @@ function showPermNotice() {
 }
 
 // --- 快捷方式可见性：管理员 / 隐藏 Foxcode / 远端节点 local 类 / 用户隐藏
-//     （不按模块权限隐藏：受限管理员可见全部模块入口，点开无权限时提示） ---
-const visibleShortcuts = computed(() => shortcuts.value.filter(s =>
-  canAccess(s) &&
-  !(s.key === 'foxcode' && settings.hideFoxcode) &&
-  !desktopPrefs.hiddenKeys.includes(s.key) &&
-  !(isCurrentHostRemote.value && !currentHostAgentReady.value && s.remoteCap === 'local')
-))
+//     （不按模块权限隐藏：受限管理员可见全部模块入口，点开无权限时提示）
+//     （也不按 Star 锁隐藏：未 Star 时高级模块入口仍展示，仅加锁角标并在点击时引导解锁） ---
+const visibleShortcuts = computed(() => shortcuts.value
+  .filter(s =>
+    canAccess(s) &&
+    !(s.key === 'foxcode' && settings.hideFoxcode) &&
+    !desktopPrefs.hiddenKeys.includes(s.key) &&
+    !(isCurrentHostRemote.value && !currentHostAgentReady.value && s.remoteCap === 'local')
+  )
+  // 附加 starLocked 标记（不改动原 shortcuts 定义）：供桌面图标 / 面板侧边栏渲染锁角标
+  .map(s => (isStarLocked(s) ? { ...s, starLocked: true } : s))
+)
 
 // --- 桌面快捷方式右键菜单：隐藏 / 固定到任务栏 ---
 const shortcutMenu = ref({ show: false, x: 0, y: 0, sc: null })
@@ -716,9 +760,11 @@ function starTipOpenRepo() {
   starTipVerifyOpen.value = true
 }
 
-// 手动验证通过：记录「用户名 + 今天」，卡片随即隐藏；当天内不再复查
+// 手动验证通过：记录「用户名 + 今天」，卡片随即隐藏；当天内不再复查。
+// 若引导弹窗正开着（点击被锁功能触发），解锁后一并关闭
 function starTipMarkDone(username) {
   writeStarTipState({ username, verifiedOn: starTipToday() })
+  starGateOpen.value = false
 }
 
 /**
@@ -817,6 +863,62 @@ async function autoReverifyStarTip() {
 
 // 面板启动 / 登录后触发一次复查（未登录或当天已复查时内部直接跳过）
 watch(() => auth.token, () => { autoReverifyStarTip() }, { immediate: true })
+
+// ---- Star 解锁：高级业务模块锁定 ----
+// 产品约定：Graw 为社区驱动的开源项目，未点亮 GitHub Star 时锁定「高级业务模块」，
+// 点击时弹出引导弹窗（复用上方 GitHub 用户名在线校验），验证通过即时解锁。
+// 锁定范围：仅「需要配置 / 变更服务器资源」的高级业务模块（建站 / 数据库 / 容器 / 应用商店 /
+// 任务 / 网络 / 安全 / 备份 等）；系统概览、监控、历史监控、终端、文件管理、进程、磁盘、
+// 网络储存、日志、设置等基础功能不受影响。要调整锁定范围，只改本集合即可。
+// 判定策略（尽量不误锁合法用户）：
+//   · 从未验证，或已验证但复查确认「未 Star」→ 视为未解锁（starTipState 为空）
+//   · 已验证且复查无法确认（断网 / GitHub 限流）→ 保持现状，不因网络问题回收解锁状态
+const STAR_LOCKED_KEYS = new Set([
+  // 建站
+  'sites', 'webstats', 'rewrite', 'siteopts', 'phpversions', 'certcheck',
+  // 数据库
+  'database', 'slowquery',
+  // 容器 / 运行环境
+  'docker', 'runtime', 'imgsafety',
+  // 应用 / 任务 / 部署
+  'appstore', 'tasks', 'gitdeploy', 'batch',
+  // 网络 / 安全
+  'frp', 'portforward', 'shunxprotection', 'ftpusers',
+  // 备份 / 报告
+  'rollback', 'report',
+])
+
+// 是否已通过 Star 验证：localStorage 存在有效记录即视为解锁
+const starUnlocked = computed(() => !!starTipState.value)
+
+/**
+ * 判定某功能入口是否因未 Star 被锁
+ * @param {{key?: string}} def - 快捷方式定义
+ * @returns {boolean} true=锁定（点击应弹引导弹窗，不打开窗口）
+ */
+function isStarLocked(def) {
+  if (!def || !def.key) return false
+  return !starUnlocked.value && STAR_LOCKED_KEYS.has(def.key)
+}
+
+// ---- Star 引导弹窗：点击被锁功能时弹出（桌面模式与面板模式共用） ----
+const starGateOpen = ref(false)        // 弹窗显隐
+const starGateModuleName = ref('')     // 被锁功能显示名（用于文案）
+
+/**
+ * 打开 Star 引导弹窗（被锁功能被点击时调用）
+ * @param {{titleKey?: string, label?: string, key?: string}} def - 被锁功能定义
+ */
+function openStarGate(def) {
+  starGateModuleName.value = def.titleKey ? t(def.titleKey) : (def.label || def.key || '')
+  starTipMsg.value = ''   // 清掉上一次的校验提示，避免残留
+  starGateOpen.value = true
+}
+
+// 关闭引导弹窗（点击遮罩或关闭按钮）
+function closeStarGate() {
+  starGateOpen.value = false
+}
 
 function doLogout() {
   startMenuOpen.value = false
@@ -955,6 +1057,12 @@ function openWindow(key) {
   // 侧边栏、Ctrl+K 搜索、面板模式事件透传）；后端 require_perm 仍会返回 403 兜底。
   if (!allowsPerm(def.perm)) {
     showPermNotice()
+    return
+  }
+  // Star 解锁守卫：未点亮 Star 时，高级业务模块不打开窗口，改为弹出引导弹窗。
+  // 置于模块权限之后：本就无权限的模块先提示「无权限」，避免对受限管理员显示 Star 引导。
+  if (isStarLocked(def)) {
+    openStarGate(def)
     return
   }
   // 远程能力守卫：未配置 Agent 的远端节点下，local 类（面板自身管理项）应用

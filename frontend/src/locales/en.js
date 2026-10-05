@@ -320,6 +320,11 @@ export default {
       notFound: 'No star record detected: please make sure you have starred and the username is correct; if you just starred, wait a few seconds and retry.',
       netError: 'Unable to reach the GitHub API, please check your network and retry',
       thanks: 'Verified, thanks for your support!',
+      // Star unlock: guidance shown when clicking a locked advanced module
+      gateTitle: 'Star to unlock',
+      gateDesc: '"{name}" is an advanced feature. Star Graw on GitHub to unlock it.',
+      gateStep1: '① Open the GitHub repo and click Star (⭐) at the top right',
+      gateStep2: '② Come back, enter your GitHub username and click "I have starred, verify"',
     },
     closeEditorConfirm: 'The file has been modified. Close anyway?',
     shortcut: {

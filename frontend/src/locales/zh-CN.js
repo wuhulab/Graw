@@ -1973,6 +1973,11 @@ Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队
       notFound: '未检测到 Star 记录：请确认已 Star 且用户名无误；若刚 Star，请稍等几秒后重试。',
       netError: '无法访问 GitHub 接口，请检查网络后重试',
       thanks: '验证通过，感谢您的支持！',
+      // Star 解锁：未点亮 Star 时点击高级业务模块的引导文案
+      gateTitle: '需要 Star 解锁',
+      gateDesc: '「{name}」属于高级功能，点亮 Graw 的 GitHub Star 后即可解锁使用。',
+      gateStep1: '① 打开 GitHub 仓库，点击右上角 Star（⭐）',
+      gateStep2: '② 返回此处填写 GitHub 用户名，点击「我已 Star，验证」',
     },
     closeEditorConfirm: '文件已修改，是否关闭？',
     // 桌面快捷方式

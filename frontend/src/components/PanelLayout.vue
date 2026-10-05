@@ -127,7 +127,11 @@
                   :title="itemName(it)"
                   @click="menuAction(it.key)"
                 >
-                  <span class="pnl-item-icon"><component :is="it.icon" :size="16" /></span>
+                  <span class="pnl-item-icon">
+                    <component :is="it.icon" :size="16" />
+                    <!-- Star 锁定角标：未点亮 Star 时，高级业务模块图标右下角显示小锁 -->
+                    <Lock v-if="it.starLocked" :size="9" class="pnl-item-lock" />
+                  </span>
                   <span v-if="!(collapsed && !isMobile)" class="pnl-item-label">{{ itemName(it) }}</span>
                 </button>
               </div>
@@ -195,7 +199,7 @@ import { ref, reactive, computed, onMounted, onUnmounted, markRaw, watch } from 
 import { useI18n } from 'vue-i18n'
 import {
   Menu, X, Search, LogOut, Settings, UserCircle2, KeyRound, Palette,
-  ChevronDown, LayoutGrid, Home, Server, Github, Heart,
+  ChevronDown, LayoutGrid, Home, Server, Github, Heart, Lock,
 } from 'lucide-vue-next'
 import WindowContent from './WindowContent.vue'
 import { isAdmin } from '../store/auth'
@@ -694,7 +698,18 @@ watch(searching, (v) => {
   color: #fff;
   font-weight: 500;
 }
-.pnl-item-icon { display: inline-flex; flex-shrink: 0; }
+.pnl-item-icon { position: relative; display: inline-flex; flex-shrink: 0; }
+/* Star 锁定角标：未点亮 Star 时，高级业务模块图标右下角的小锁 */
+.pnl-item-lock {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  padding: 1px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 50%;
+  pointer-events: none;
+}
 .pnl-item-label { overflow: hidden; text-overflow: ellipsis; }
 
 /* 主页固定入口：与分组菜单之间留出分隔 */

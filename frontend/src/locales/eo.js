@@ -1515,7 +1515,12 @@ Dokumenta versio: 1.1.0 | Ĝisdatigita: 16-a de aŭgusto 2026`,
       userNotFound: 'GitHub-uzanto ne trovita, bonvolu kontroli la uzantnomon',
       notFound: 'Neniu stelo-registro trovita: bonvolu certigi, ke vi stelumis kaj la uzantnomo ĝustas; se vi ĵus stelumis, atendu kelkajn sekundojn kaj reprovu.',
       netError: 'Ne eblas atingi la GitHub-API, bonvolu kontroli vian reton kaj reprovi',
-      thanks: 'Kontrolo sukcesis, dankon pro via subteno!',
+      thanks: 'Kontrolo sukcesis, danko pro via subteno!',
+      // Star-malŝloso: gvidoteksto montrata kiam oni alklakas ŝlositan altnivelan modulon
+      gateTitle: 'Stelu por malŝlosi',
+      gateDesc: '«{name}» estas altnivela funkcio. Stelu Graw sur GitHub por malŝlosi ĝin.',
+      gateStep1: '① Malfermu la GitHub-deponejon kaj alklaku Stelon (⭐) supre dekstre',
+      gateStep2: '② Revenu, entajpu vian GitHub-uzantnomon kaj alklaku "Mi jam stelumis, kontrolu"',
     },
     closeEditorConfirm: 'La dosiero estis modifita. Ĉu fermi?',
     shortcut: {
