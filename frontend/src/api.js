@@ -397,7 +397,11 @@ export const nodesApi = {
   create: (body) => api.post('/nodes', body).then(r => r.data),
   update: (node_id, body) => api.put(`/nodes/${encodeURIComponent(node_id)}`, body).then(r => r.data),
   delete: (node_id) => api.delete(`/nodes/${encodeURIComponent(node_id)}`).then(r => r.data),
-  test: (node_id) => api.post(`/nodes/${encodeURIComponent(node_id)}/test`).then(r => r.data)
+  test: (node_id) => api.post(`/nodes/${encodeURIComponent(node_id)}/test`).then(r => r.data),
+  // 节点资源聚合视图：全部节点的指标与在线状态
+  overview: () => api.get('/nodes/overview').then(r => r.data),
+  // 更新节点（含本机）的分组 / 标签元数据
+  setMeta: (node_id, body) => api.post(`/nodes/${encodeURIComponent(node_id)}/meta`, body).then(r => r.data)
 }
 
 export const agentApi = {

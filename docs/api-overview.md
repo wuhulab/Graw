@@ -148,7 +148,7 @@ ws://<host>/api/system/ws?token=<JWT>
 | `/api/tasks` | `ADMIN` | ✔ | 任务中心 |
 | `/api/runtime` | `ADMIN` | ✔ | 语言运行时容器 |
 | `/api/disks` | `ADMIN` | — | 磁盘 / 分区 |
-| `/api/nodes` | `ADMIN` | — | 多节点管理与主机切换 |
+| `/api/nodes` | `ADMIN` | — | 多节点管理与主机切换；`GET /overview` 节点资源聚合视图（全节点指标 + 在线状态），`POST /{id}/meta` 分组/标签元数据 |
 | `/api/ui` | 端点内（`/public` 公开、`/config` 管理员） | — | 界面设置 |
 | `/api/frp` | `ADMIN` | — | 内网穿透 |
 | `/api/netstorage` | `ADMIN` | ✔ | 网络储存（FTP/SMB/WebDAV/对象存储） |

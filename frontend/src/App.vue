@@ -282,7 +282,7 @@ import {
   MonitoringWindow, CertWindow, WebStatsWindow, RewriteWindow, SiteOptsWindow,
   MetricsHistoryWindow, RollbackWindow, BatchWindow, GitDeployWindow, ReportWindow,
   PortForwardWindow, PortForwardFormWindow, ImageScanWindow, SlowQueryWindow, FtpUsersWindow,
-  PhpVersionsWindow, SessionsWindow,
+  PhpVersionsWindow, SessionsWindow, NodeOverviewWindow,
   preloadWindows,   // 空闲预加载：桌面模式下分批预取全部窗口 chunk（打开即渲染）
 } from './components/windows/lazyWindows.js'
 import ShunXSetup from './components/ShunXSetup.vue'
@@ -473,6 +473,9 @@ const shortcuts = ref([
   { key: 'rollback', label: '配置回滚', titleKey: 'app.shortcut.rollback', icon: markRaw(History), component: markRaw(RollbackWindow), w: 980, h: 580, adminOnly: true, perm: 'backup' },
   // 批量操作中心：多节点批量命令 / 批量容器启停（管理员）
   { key: 'batch', label: '批量操作', titleKey: 'app.shortcut.batch', icon: markRaw(ServerCog), component: markRaw(BatchWindow), w: 1000, h: 620, adminOnly: true, perm: 'batch' },
+  // 节点总览：全节点资源聚合视图（指标卡片 + 分组 + 标签筛选 + 批量操作）。
+  // /api/nodes 属面板自身安全边界（节点凭据），故要求完整管理员
+  { key: 'nodeoverview', label: '节点总览', titleKey: 'app.shortcut.nodeoverview', icon: markRaw(Gauge), component: markRaw(NodeOverviewWindow), w: 1060, h: 660, adminOnly: true, fullAdminOnly: true },
   // 站点 Git 自动部署：绑定仓库 + Webhook 自动发布（管理员，面板自身管理项）
   { key: 'gitdeploy', label: 'Git 部署', titleKey: 'app.shortcut.gitdeploy', icon: markRaw(FileCode2), component: markRaw(GitDeployWindow), w: 960, h: 600, adminOnly: true, perm: 'gitdeploy', remoteCap: 'local' },
   // 巡检报告：每日/手动生成系统健康汇总并推送（管理员）

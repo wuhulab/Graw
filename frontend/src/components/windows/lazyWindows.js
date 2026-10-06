@@ -64,6 +64,7 @@ export const MonitoringWindow = lazy(() => import('./MonitoringWindow.vue'))
 export const MetricsHistoryWindow = lazy(() => import('./MetricsHistoryWindow.vue'))
 export const RollbackWindow = lazy(() => import('./RollbackWindow.vue'))
 export const BatchWindow = lazy(() => import('./BatchWindow.vue'))
+export const NodeOverviewWindow = lazy(() => import('./NodeOverviewWindow.vue'))
 export const ReportWindow = lazy(() => import('./ReportWindow.vue'))
 
 // ---------------- 网站 / 数据库 / SSL ----------------

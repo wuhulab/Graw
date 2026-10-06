@@ -208,7 +208,7 @@ import { nodes, refreshNodes, setCurrentNode } from '../store/nodes'   // 多节
 // 主窗口面板模式：菜单分组定义（组标题 i18n key + 成员 key 清单）。
 // 成员 key 与 App.vue shortcuts/extras（openWindow）保持一致，缺失的项自动跳过。
 const MENU_GROUPS = [
-  { key: 'monitor', titleKey: 'panel.menu.monitor', items: ['monitoring', 'metricshistory', 'webstats'] },
+  { key: 'monitor', titleKey: 'panel.menu.monitor', items: ['nodeoverview', 'monitoring', 'metricshistory', 'webstats'] },
   { key: 'site', titleKey: 'panel.menu.site', items: ['sites', 'rewrite', 'siteopts', 'certcheck', 'gitdeploy'] },
   { key: 'database', titleKey: 'panel.menu.database', items: ['database'] },
   { key: 'container', titleKey: 'panel.menu.container', items: ['docker', 'runtime', 'process', 'imgsafety', 'slowquery'] },

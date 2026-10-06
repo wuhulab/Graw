@@ -106,6 +106,10 @@
               <input v-model.number="form.port" type="number" placeholder="22" style="width:70px;" />
             </div>
             <input v-model="form.user" :placeholder="$t('nodes.userPlaceholder')" spellcheck="false" />
+            <div class="row" style="gap:6px;">
+              <input v-model="form.group" :placeholder="$t('nodeoverview.groupPlaceholder')" spellcheck="false" style="flex:1;" />
+              <input v-model="form.tags" :placeholder="$t('nodeoverview.tagsPlaceholder')" spellcheck="false" style="flex:1;" />
+            </div>
             <div class="row" style="gap:12px;">
               <label class="switch-label"><input type="radio" name="auth" value="password" v-model="form.auth" /><span>{{ $t('nodes.authPassword') }}</span></label>
               <label class="switch-label"><input type="radio" name="auth" value="key" v-model="form.auth" /><span>{{ $t('nodes.authKey') }}</span></label>
@@ -977,7 +981,7 @@ const current = computed(() => {
 })
 const showEditor = ref(false)
 const editingId = ref(null)
-const form = reactive({ id: '', name: '', host: '', port: 22, user: '', auth: 'password', password: '', key_path: '', agent_enabled: false, agent_port: 8000, agent_key: '', agent_secret: '' })
+const form = reactive({ id: '', name: '', host: '', port: 22, user: '', auth: 'password', password: '', key_path: '', agent_enabled: false, agent_port: 8000, agent_key: '', agent_secret: '', group: '', tags: '' })
 const savingNode = ref(false)
 const testingId = ref('')
 const editorMsg = ref('')
@@ -1000,7 +1004,7 @@ async function loadNodes() {
 
 function startAdd() {
   editingId.value = null
-  Object.assign(form, { id: '', name: '', host: '', port: 22, user: '', auth: 'password', password: '', key_path: '', agent_enabled: false, agent_port: 8000, agent_key: '', agent_secret: '' })
+  Object.assign(form, { id: '', name: '', host: '', port: 22, user: '', auth: 'password', password: '', key_path: '', agent_enabled: false, agent_port: 8000, agent_key: '', agent_secret: '', group: '', tags: '' })
   editorMsg.value = ''
   showEditor.value = true
 }
@@ -1021,6 +1025,8 @@ function startEdit(n) {
     agent_port: n.agent_port || 8000,
     agent_key: '',
     agent_secret: '',
+    group: n.group || '',
+    tags: (n.tags || []).join(', '),
   })
   editorMsg.value = ''
   showEditor.value = true
@@ -1061,6 +1067,8 @@ async function saveNode() {
       agent_key: form.agent_enabled ? (form.agent_key || '').trim() : '',
       agent_secret: form.agent_enabled ? (form.agent_secret || '').trim() : '',
       agent_enabled: !!form.agent_enabled,
+      group: (form.group || '').trim(),
+      tags: (form.tags || '').split(',').map((s) => s.trim()).filter(Boolean),
     }
     if (editingId.value) {
       await nodesApi.update(editingId.value, body)

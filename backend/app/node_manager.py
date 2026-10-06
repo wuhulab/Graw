@@ -58,6 +58,47 @@ _SSH_PRE_CHECK_TIMEOUT = 5
 _SSH_HOST_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.\-:]*[A-Za-z0-9])?$")
 _SSH_USER_RE = re.compile(r"^[A-Za-z0-9_]([A-Za-z0-9_.\-]*[A-Za-z0-9_\-])?$")
 
+# 节点元数据（分组 / 标签）约束：分组与标签仅用于前端聚合展示，但同样
+# 会写进 nodes.json 并在接口间往返，限制长度与数量避免被当作垃圾场。
+NODE_GROUP_MAX = 64    # 分组名最大长度（字符）
+NODE_TAG_MAX = 32      # 单个标签最大长度（字符）
+NODE_TAGS_MAX = 12     # 每节点标签数量上限
+
+
+def clean_node_group(group) -> str:
+    """清洗并校验节点分组名；返回去空格后的字符串（超长/非法字符抛 ValueError）。"""
+    s = (str(group or "")).strip()
+    if len(s) > NODE_GROUP_MAX:
+        raise ValueError(f"分组名过长（最多 {NODE_GROUP_MAX} 字符）")
+    # 分组名会参与前端分组渲染，禁掉控制字符即可，不限制语言
+    if s and re.search(r"[\x00-\x1f\x7f]", s):
+        raise ValueError("分组名含非法控制字符")
+    return s
+
+
+def clean_node_tags(tags) -> list:
+    """清洗节点标签列表：去重、截断数量；单个标签超长抛 ValueError。"""
+    if tags is None:
+        return []
+    if not isinstance(tags, (list, tuple)):
+        raise ValueError("tags 必须是字符串数组")
+    out = []
+    seen = set()
+    for raw in tags:
+        s = (str(raw or "")).strip()
+        if not s:
+            continue
+        if len(s) > NODE_TAG_MAX:
+            raise ValueError(f"标签过长（最多 {NODE_TAG_MAX} 字符）: {s[:16]}…")
+        if re.search(r"[\x00-\x1f\x7f]", s):
+            raise ValueError("标签含非法控制字符")
+        if s not in seen:
+            seen.add(s)
+            out.append(s)
+        if len(out) >= NODE_TAGS_MAX:
+            break
+    return out
+
 
 def _validate_ssh_target(host: str, user: str, key_path: str = "") -> None:
     """校验 SSH 节点的 host / user / key_path，阻止 ssh 参数注入。"""
@@ -178,6 +219,9 @@ def list_nodes() -> list:
     out = []
     for nid, node in store["nodes"].items():
         pub = {"id": nid, "name": node.get("name") or nid, "type": node.get("type")}
+        # 分组 / 标签元数据（可缺省，向前兼容旧数据）
+        pub["group"] = str(node.get("group") or "")
+        pub["tags"] = list(node.get("tags") or [])
         if node.get("type") == "ssh":
             pub.update(
                 {
@@ -304,6 +348,18 @@ def upsert_ssh_node(node: dict) -> dict:
             cleaned["agent_secret"] = existing.get("agent_secret", "")
     cleaned["agent_port"] = int(node.get("agent_port") or existing.get("agent_port") or 8000)
 
+    # 分组 / 标签元数据（仅用于聚合展示；清洗在 clean_node_group/clean_node_tags 内做）。
+    # 语义与密码一致：未提供（None）时保留原值，避免旧调用方（不带这两个字段的
+    # 设置表单）在编辑节点时把已有分组/标签意外清空；显式传值（含空串）才更新。
+    if node.get("group") is None:
+        cleaned["group"] = existing.get("group", "")
+    else:
+        cleaned["group"] = clean_node_group(node.get("group"))
+    if node.get("tags") is None:
+        cleaned["tags"] = existing.get("tags", [])
+    else:
+        cleaned["tags"] = clean_node_tags(node.get("tags"))
+
     # 基础字段校验
     if not cleaned["host"] or not cleaned["user"]:
         raise ValueError("host 与 user 不能为空")
@@ -329,6 +385,23 @@ def upsert_ssh_node(node: dict) -> dict:
     except Exception:
         pass
     logger.info("已保存 SSH 节点 %s (%s@%s)", repr(node_id), repr(cleaned["user"]), repr(cleaned["host"]))
+    return next((n for n in list_nodes() if n["id"] == node_id), None)
+
+
+def update_node_meta(node_id: str, group, tags) -> dict:
+    """更新任意节点（含本机）的分组 / 标签元数据，返回脱敏后的节点。
+
+    与凭据编辑（upsert_ssh_node）分离：本机节点没有 SSH 凭据，但同样
+    需要在聚合视图里参与分组与标签筛选，故提供独立的元数据更新入口。
+    """
+    store = _get_store()
+    node = store["nodes"].get(node_id)
+    if node is None:
+        raise ValueError(f"节点不存在: {node_id}")
+    node["group"] = clean_node_group(group)
+    node["tags"] = clean_node_tags(tags)
+    _save_store(store)
+    logger.info("更新节点元数据 node_id=%s group_len=%s tags=%d", len(node_id), len(node["group"]), len(node["tags"]))
     return next((n for n in list_nodes() if n["id"] == node_id), None)
 
 
