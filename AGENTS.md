@@ -19,7 +19,7 @@
 界面有两套壳（同一套功能）：类桌面（窗口/任务栏，默认）与 **标准面板模式**（1Panel 风格侧边栏 + 多标签，`settings.panelMode` 切换）；
 界面文案支持 **22 个语言包**（`frontend/src/locales/`）。
 
-- 当前版本：`backend/app/main.py` 中的 `APP_VERSION = "1.6.1"`
+- 当前版本：`backend/app/main.py` 中的 `APP_VERSION = "1.8.0"`
 - 许可证：AGPLv3
 - Docker 镜像命名空间：`shunx/graw`
 

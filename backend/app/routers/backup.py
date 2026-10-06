@@ -724,7 +724,13 @@ def _do_restore_sync(task: dict, file_name: str, target: str) -> dict:
                 joined_norm = os.path.normcase(joined)
                 if joined_norm != base_norm and not joined_norm.startswith(base_norm + os.sep):
                     raise HTTPException(status_code=400, detail="备份内包含越界路径，已中止恢复")
-            tf.extractall(real_target, members=members)
+            # Python 3.9.17+ / 3.12+ 提供 data 过滤器（拒绝绝对路径、越界
+            # 链接、设备文件），作为上方逐成员校验之外的第二道防线；
+            # 旧版本无该参数，降级走已校验路径。
+            try:
+                tf.extractall(real_target, members=members, filter="data")
+            except TypeError:
+                tf.extractall(real_target, members=members)  # lgtm[py/tarslip]
     except tarfile.TarError as e:
         logger.error("恢复 %s 失败: %s", file_name, e)
         raise HTTPException(status_code=500, detail=f"恢复失败：{e}")

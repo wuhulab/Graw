@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+### Fixed
+- 备份恢复（`backup.py`）与面板备份导入（`panelbackup.py`）的 `tarfile.extractall` 增加 `filter="data"` 参数（旧版本 Python 自动降级），消除 Python 3.14 起的 DeprecationWarning，同时作为既有逐成员校验之外的第二道防线
+
+## [1.8.0] - 2026-10-06
+
 ### Added
 - **节点资源聚合视图（节点总览）**：新增全节点资源总览窗口，一屏掌握所有节点的健康状态
   - 后端 `/api/nodes/overview`：并发采集全部节点的 CPU / 内存 / 磁盘 / 负载 / 运行时长 / 主机名与在线状态（本机走 psutil，SSH 子节点单次连接脚本采集，与 system.py 远端采集同思路）；并发上限 3，单节点失败标记 `offline` 不中断整批，附采集延迟（`latency_ms`）
@@ -15,12 +20,22 @@
   - 节点增删改表单（`SSHNodeIn`）同步支持分组 / 标签
   - 单元测试 `test_node_overview_unit.py`（16 项：分组/标签清洗校验、元数据更新、远端脚本解析、聚合接口结构与单节点故障隔离）
   - 多语言：28 个语言包补全「节点总览」全部文案
-- **硬件温度监控（CPU 温度）**：新增 `app/temps.py` 从宿主 sysfs 只读采集温度（hwmon 优先、thermal 回退，容器经 `/host` 映射；Windows / 无传感器主机自动隐藏，不造假数据）
-  - 系统概览随 `/api/system/ws` 与 `/api/system/overview` 附带 `temps` 字段（CPU 优先排序、多设备同名自动消歧、最多 8 条）；桌面与标准面板首页「系统概览」卡片新增温度行（≥80°C 标红，最多展示 3 条 + “+N”）
-  - 历史监控落盘新增可缺省 `temp` 字段（无传感器不写该键、聚合跳过缺失行），历史监控窗口新增温度曲线（区间内有数据才出现）
-  - 通知中心新增「CPU 温度」告警指标（单位 °C，无 CPU 传感器自动跳过；告警文案与日志按单位显示）
-  - SSH 直连远端节点：`_REMOTE_SCRIPT` 新增 HWMON/THERMAL 分段采集，解析规则与本地一致（`_remote_temps`）；Agent 子节点天然由子节点自行采集
-  - 单元测试 `test_temps_unit.py`（20 项：换算过滤 / CPU 判定 / sysfs 扫描 / 消歧 / 落盘聚合 / 告警跳过 / 远端解析）
+- **Star 引导（GitHub Star 激活引导）**：建站 / 数据库 / 容器 / 应用商店 / 备份回滚 / 报告等 20 个核心功能入口在未 Star 时显示小锁角标，点击弹出引导弹窗引导前往 GitHub Star
+  - 校验通过（Star 已完成）后解锁，支持复查；断网 / GitHub 限流导致无法确认时保持现状，不因网络问题回收解锁状态
+  - 纯前端引导性质（localStorage 记忆，清掉即绕过），不是后端权限边界（真正的边界仍是后端 `require_perm`）；桌面与标准面板模式共用
+
+## [1.7.6] - 2026-10-03
+
+### Fixed
+- 面板一键更新：增强「面板自身容器」的识别。host 网络部署下容器 hostname 是宿主机名、无法按名称定位自身，新增按特征评分兜底（`GRAW_HOST_DATA` 绑定源一致性 / 官方镜像 `shunx/graw` / 容器名 / 关键挂载，最低分 7 高于「更新执行容器」避免误判）+ `/proc` cgroup 解析容器 ID 的二级兜底，避免误把执行容器 / 兄弟容器当作面板重建；新增 `test_update_unit.py` 单测，`docs/deployment.md` 补充说明
+
+## [1.7.5] - 2026-10-03
+
+仅版本号同步，无功能变更。
+
+## [1.7.4] - 2026-10-03
+
+### Added
 - **受限管理员（RBAC 模块级权限）**：在管理员身份之上按模块收窄权限——`users.json` 新增 `perms` 白名单字段（字段缺失 / `null` = 全量权限，升级前的存量管理员行为完全不变；`[]` = 不放行；类型非法按空集合取最严）
   - 后端：`auth.MODULES`（26 个模块 key）+ `user_perms()` / `has_perm()` + `require_perm("模块")` / `require_perm_ws("模块")` 依赖工厂；40 余条业务路由由 `ADMIN` 改为 `PERM("模块")`（多节点 / SSH 密钥 / 插件 / 面板更新 / 面板备份 / 用户管理等「面板自身安全边界」仍要求完整管理员）
   - Agent 隧道：代理前用 `_proxy_perm_map()`（从路由依赖自动汇总）做等价的模块判定——子节点侧拿到的是 agent 管理员令牌，拦不住越权，必须在主面板本地先拦
@@ -29,6 +44,14 @@
   - 兜底约束：面板必须始终保留至少一个「完整权限的超级管理员」，改角色 / 收窄 `perms` / 删除账号时校验（`routers/auth._super_admin_count()`），违规返回 400
   - 用户管理界面：新增「模块权限」列与「模块授权」弹窗（默认「完整管理员」，可切换为模块多选）；模块清单经 `GET /api/auth/modules` 下发（单一来源，避免前后端漂移）
   - 前端：`store/auth` 新增 `hasPerm()` / `isFullAdmin()`。**按产品约定不按模块隐藏入口**——受限管理员可见全部功能入口，点开无权限模块时提示「该用户无此权限」且不打开窗口（`App.vue` 的 `openWindow()` 提示条、ShunX 聚合窗口的标签级提示）；`fullAdminOnly` 的面板自身功能（账号管理 / 界面设置）仍隐藏
+- **硬件温度监控（CPU 温度）**：新增 `app/temps.py` 从宿主 sysfs 只读采集温度（hwmon 优先、thermal 回退，容器经 `/host` 映射；Windows / 无传感器主机自动隐藏，不造假数据）
+  - 系统概览随 `/api/system/ws` 与 `/api/system/overview` 附带 `temps` 字段（CPU 优先排序、多设备同名自动消歧、最多 8 条）；桌面与标准面板首页「系统概览」卡片新增温度行（≥80°C 标红，最多展示 3 条 + “+N”）
+  - 历史监控落盘新增可缺省 `temp` 字段（无传感器不写该键、聚合跳过缺失行），历史监控窗口新增温度曲线（区间内有数据才出现）
+  - 通知中心新增「CPU 温度」告警指标（单位 °C，无 CPU 传感器自动跳过；告警文案与日志按单位显示）
+  - SSH 直连远端节点：`_REMOTE_SCRIPT` 新增 HWMON/THERMAL 分段采集，解析规则与本地一致（`_remote_temps`）；Agent 子节点天然由子节点自行采集
+  - 单元测试 `test_temps_unit.py`（20 项：换算过滤 / CPU 判定 / sysfs 扫描 / 消歧 / 落盘聚合 / 告警跳过 / 远端解析）
+- **内存占用优化**：`users.json` / `sessions.json` 增加 stat 指纹热缓存（按 `mtime_ns + size` 失效，本进程保存时主动失效，外部修改靠 stat 变化感知），鉴权依赖链每请求 3-4 次读表不再逐次落盘；`databases` / `docker_api` 同步调优，降低小内存 VPS 上的请求路径开销
+- **组件后加载**：`lazyWindows` 进一步拆分窗口组件，加快面板启动
 - 前端工程化：新增 ESLint 扁平配置（`frontend/eslint.config.js`，`@eslint/js` 推荐规则 + `eslint-plugin-vue` Vue3 essential，并用 `eslint-config-prettier` 关闭排版类冲突规则）与 Prettier 配置（`.prettierrc.json` / `.prettierignore`）
 - 前端新增脚本：`lint` / `lint:fix` / `format` / `format:check`
 - CI：恢复 Backend / Frontend 检查工作流（Backend 补装 httpx，修复 TestClient 收集阶段报错）
@@ -168,7 +191,11 @@
 与远端子节点能力门控（remote_cap）等功能逐步演进上线，详细变更
 请查看对应 git tag 提交记录。
 
-[Unreleased]: https://github.com/wuhulab/Graw/compare/v1.7.3...HEAD
+[Unreleased]: https://github.com/wuhulab/Graw/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/wuhulab/Graw/releases/tag/v1.8.0
+[1.7.6]: https://github.com/wuhulab/Graw/releases/tag/v1.7.6
+[1.7.5]: https://github.com/wuhulab/Graw/releases/tag/v1.7.5
+[1.7.4]: https://github.com/wuhulab/Graw/releases/tag/v1.7.4
 [1.7.3]: https://github.com/wuhulab/Graw/releases/tag/v1.7.3
 [1.7.2]: https://github.com/wuhulab/Graw/releases/tag/v1.7.2
 [1.7.1]: https://github.com/wuhulab/Graw/releases/tag/v1.7.1

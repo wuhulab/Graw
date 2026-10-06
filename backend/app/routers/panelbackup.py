@@ -199,7 +199,13 @@ def _import_sync(content: bytes) -> dict:
                         status_code=400,
                         detail="归档解压后总量超过 1GB 上限，已中止导入（疑似解压炸弹）",
                     )
-            tf.extractall(tmp_root, members=members)
+            # Python 3.9.17+ / 3.12+ 提供 data 过滤器（拒绝绝对路径、越界
+            # 链接、设备文件），作为 _sanitize_member 之外的第二道防线；
+            # 旧版本无该参数，降级走已校验路径。
+            try:
+                tf.extractall(tmp_root, members=members, filter="data")
+            except TypeError:
+                tf.extractall(tmp_root, members=members)  # lgtm[py/tarslip]
     except tarfile.TarError as e:
         shutil.rmtree(tmp_root, ignore_errors=True)
         raise HTTPException(status_code=400, detail=f"归档解压失败：{e}")
