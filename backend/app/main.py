@@ -52,6 +52,7 @@ from app.routers import (
     gitdeploy as gitdeploy_api,
     report,
     portforward,
+    netmap,
     imgsafety,
     slowquery,
     svcmonitor,
@@ -924,6 +925,13 @@ app.include_router(report.router, prefix="/api/report", tags=["report"], depende
 # SSH 端口转发：本地直连远程服务（portforward 模块，排除 Agent 代理——隧道建立在
 # 主面板与节点之间，不能把请求转发给子节点执行）
 app.include_router(portforward.router, prefix="/api/portforward", tags=["portforward"], dependencies=PERM("portforward"))
+
+# 内网映射：节点内网 HTTP 服务反代（netmap 模块）。CRUD 组挂 PERM("netmap")；
+# 代理组自带「Bearer 或 ?token=」弹性鉴权依赖（iframe 场景无法携带自定义头）。
+# 数据按「当前节点视角」存于节点本地 data/netmap.json：远端节点经 Agent 隧道
+# 自动代理到子节点执行（CRUD 与代理均落在子节点本机），无需额外登记。
+app.include_router(netmap.router, prefix="/api/netmap", tags=["netmap"], dependencies=PERM("netmap"))
+app.include_router(netmap.proxy_router, prefix="/api/netmap", tags=["netmap"])
 
 # 镜像漏洞扫描：本地 advisory 比对（docker 模块；扫描在线程池执行，不阻塞事件循环）
 app.include_router(imgsafety.router, prefix="/api/imgsafety", tags=["imgsafety"], dependencies=PERM("docker"))

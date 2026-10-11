@@ -253,7 +253,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted, markRaw, watch, defineAsyncComponent } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, markRaw, watch, defineAsyncComponent, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import WindowFrame from './components/WindowFrame.vue'
 import WindowContent from './components/WindowContent.vue'
@@ -281,7 +281,7 @@ import {
   NetStorageBrowseWindow, NetStorageFormWindow, RuntimeWindow, RuntimeCreateWindow, DisksWindow,
   MonitoringWindow, CertWindow, WebStatsWindow, RewriteWindow, SiteOptsWindow,
   MetricsHistoryWindow, RollbackWindow, BatchWindow, GitDeployWindow, ReportWindow,
-  PortForwardWindow, PortForwardFormWindow, ImageScanWindow, SlowQueryWindow, FtpUsersWindow,
+  PortForwardWindow, PortForwardFormWindow, NetmapWindow, ImageScanWindow, SlowQueryWindow, FtpUsersWindow,
   PhpVersionsWindow, SessionsWindow, NodeOverviewWindow,
   preloadWindows,   // 空闲预加载：桌面模式下分批预取全部窗口 chunk（打开即渲染）
 } from './components/windows/lazyWindows.js'
@@ -297,10 +297,10 @@ import { settings } from './store/settings'
 import { desktopPrefs, bindUser as bindDesktopUser, hideShortcut, pinShortcut, unpinShortcut } from './store/desktopPrefs'
 import { systemState, startMetrics, stopMetrics } from './store/systemMetrics'
 import { startDocker, stopDocker } from './store/docker'
-import { nodes as nodesStore, refreshNodes } from './store/nodes'
+import { nodes as nodesStore, refreshNodes, setCurrentNode } from './store/nodes'
 import { setRequestNode } from './store/requestNode'
 import { tamperState, startTamper, stopTamper } from './store/tamper'
-import { Archive, Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, Shield, ShieldAlert, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, BarChart3, FileCode2, History, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug, Pin, PinOff, EyeOff, Clock, BellRing, Gauge, KeyRound, FileUp, Send, Home, Github, Heart, Star } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用；Star 用于 Launchpad 社区支持提示）
+import { Archive, Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, Shield, ShieldAlert, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, BarChart3, FileCode2, History, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug, Pin, PinOff, EyeOff, Clock, BellRing, Gauge, KeyRound, FileUp, Send, Home, Github, Heart, Star, Network } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用；Star 用于 Launchpad 社区支持提示）
 
 // 桌面「系统概览」三张卡片：按需加载（异步组件）。
 // RingCard / MonitorCard 依赖 ECharts（体积大），且只在「类桌面」形态的首屏渲染——
@@ -482,6 +482,8 @@ const shortcuts = ref([
   { key: 'report', label: '巡检报告', titleKey: 'app.shortcut.report', icon: markRaw(BarChart3), component: markRaw(ReportWindow), w: 960, h: 600, adminOnly: true, perm: 'report' },
   // SSH 端口转发：本地直连远程节点服务（管理员，面向远程节点的隧道）
   { key: 'portforward', label: '端口转发', titleKey: 'app.shortcut.portforward', icon: markRaw(Unlink), component: markRaw(PortForwardWindow), w: 880, h: 580, adminOnly: true, perm: 'portforward' },
+  // 内网映射：当前节点的内网 HTTP 服务反代访问（数据随节点走，远端经 Agent 代理）
+  { key: 'netmap', label: '内网映射', titleKey: 'app.shortcut.netmap', icon: markRaw(Network), component: markRaw(NetmapWindow), w: 900, h: 600, adminOnly: true, perm: 'netmap', remoteCap: 'local' },
   // 镜像漏洞扫描：本地 advisory 比对（管理员）
   { key: 'imgsafety', label: '镜像扫描', titleKey: 'app.shortcut.imgsafety', icon: markRaw(ShieldCheck), component: markRaw(ImageScanWindow), w: 980, h: 600, adminOnly: true, perm: 'docker' },
   // MySQL 慢查询分析：慢日志 TOP N 与建议（管理员）
@@ -867,6 +869,44 @@ async function autoReverifyStarTip() {
 // 面板启动 / 登录后触发一次复查（未登录或当天已复查时内部直接跳过）
 watch(() => auth.token, () => { autoReverifyStarTip() }, { immediate: true })
 
+// ---- 内网映射深链：?c=<本机|节点名|节点id>&s=<服务地址> ----
+// 形如 http://localhost:5173?c=本机&s=http://localhost:3000 —— 登录后按 c
+// 切换节点（本机/local/缺省 = 不切），再打开「内网映射」窗口并把 s 传给窗口
+// 自动填表/直达（NetmapWindow 的 autoService prop）。每次页面加载只处理一次。
+const netmapDeepLinkDone = ref(false)
+async function handleNetmapDeepLink() {
+  if (netmapDeepLinkDone.value) return   // 幂等：刷新/重复登录不重复弹窗
+  const q = new URLSearchParams(window.location.search)
+  const svc = q.get('s')
+  if (!svc) return
+  netmapDeepLinkDone.value = true
+  const c = (q.get('c') || '').trim()
+  try {
+    // c 指定具体节点：按名称或 id 匹配并切换（找不到则保持当前节点，不静默乱跳）
+    if (c && c !== '本机' && c.toLowerCase() !== 'local') {
+      if (!nodesStore.loaded) await refreshNodes().catch(() => {})
+      const hit = nodesStore.list.find((n) => n.id === c || n.name === c)
+      if (hit && hit.id !== nodesStore.currentId) {
+        await setCurrentNode(hit.id)
+      }
+    }
+    // skipStarGate：深链是显式直达指令，未点亮 Star 也直接打开（不走引导弹窗）
+    openWindow('netmap', { autoService: svc }, { skipStarGate: true })
+  } catch (e) {
+    // 深链失败不影响面板正常启动，仅记录便于排查
+    console.warn('[app] 内网映射深链处理失败:', e)
+  }
+}
+watch(() => auth.token, (v) => {
+  if (!v) return
+  // 深链绝不能在 setup 同步阶段执行：immediate 触发时组件尚未挂载完成，
+  // openWindow 链路引用的部分 const/let（如 Star 引导弹窗的 ref 等）还没
+  // 初始化，同步调用会踩 TDZ（ReferenceError）并被深链的 try/catch 静默
+  // 吞掉——现象就是「深链打开后仍是光秃秃的面板」。推迟到挂载后的宏任务
+  // 里执行，保证全部响应式状态已就绪。
+  nextTick(() => { setTimeout(handleNetmapDeepLink, 0) })
+}, { immediate: true })
+
 // ---- Star 解锁：高级业务模块锁定 ----
 // 产品约定：Graw 为社区驱动的开源项目，未点亮 GitHub Star 时锁定「高级业务模块」，
 // 点击时弹出引导弹窗（复用上方 GitHub 用户名在线校验），验证通过即时解锁。
@@ -886,7 +926,7 @@ const STAR_LOCKED_KEYS = new Set([
   // 应用 / 任务 / 部署
   'appstore', 'tasks', 'gitdeploy', 'batch',
   // 网络 / 安全
-  'frp', 'portforward', 'shunxprotection', 'ftpusers',
+  'frp', 'portforward', 'netmap', 'shunxprotection', 'ftpusers',
   // 备份 / 报告
   'rollback', 'report',
 ])
@@ -1037,7 +1077,7 @@ function onPaletteGlobalKey(e) {
 }
 
 // --- 通用窗口打开：含 adminOnly / remoteCap 双重门控 ---
-function openWindow(key) {
+function openWindow(key, extraProps, opts) {
   let def = shortcuts.value.find(s => s.key === key)
   if (!def) {
     const extras = {
@@ -1064,7 +1104,8 @@ function openWindow(key) {
   }
   // Star 解锁守卫：未点亮 Star 时，高级业务模块不打开窗口，改为弹出引导弹窗。
   // 置于模块权限之后：本就无权限的模块先提示「无权限」，避免对受限管理员显示 Star 引导。
-  if (isStarLocked(def)) {
+  // 深链直达（opts.skipStarGate）是用户的显式打开指令，绕过引导直接进入。
+  if (!opts?.skipStarGate && isStarLocked(def)) {
     openStarGate(def)
     return
   }
@@ -1087,7 +1128,8 @@ function openWindow(key) {
     titleArgs: def.titleArgs,
     icon: def.icon,
     component: def.component,
-    props: def.props ? { ...def.props } : {},
+    // 静态 props 与调用方追加 props 合并：深链场景把 autoService 之类传给窗口
+    props: { ...(def.props || {}), ...(extraProps || {}) },
     x: 140 + (openWindows.value.length * 30),
     y: 60 + (openWindows.value.length * 25),
     width: def.w,

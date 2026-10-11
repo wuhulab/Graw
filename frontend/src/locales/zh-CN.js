@@ -752,6 +752,25 @@ export default {
     needPorts: '请填写本地端口与远程端口',
     deleteConfirm: '确定删除该转发并从本地释放端口吗？',
   },
+  // 内网映射：节点内网 HTTP 服务反代访问
+  nm: {
+    create: '新建映射',
+    edit: '编辑映射',
+    hint: '访问当前节点（{node}）的内网服务',
+    name: '名称',
+    namePh: '可留空，默认显示服务地址',
+    url: '服务地址',
+    urlPh: '例如 http://localhost:3000',
+    autoFilled: '已从链接自动填入服务地址',
+    errUrl: '请填写服务地址',
+    errScheme: '地址必须以 http:// 或 https:// 开头',
+    empty: '还没有映射条目。把节点内网服务（如 http://localhost:3000）加进来，面板里即可直接访问',
+    open: '打开',
+    newTab: '新标签',
+    deleteConfirm: '确定删除映射「{name}」吗？',
+    back: '返回列表',
+    wsHint: '提示：暂不支持 WebSocket 代理；目标页面内指向其它域名的链接将离开代理',
+  },
   // 巡检报告
   report: {
     generate: '立即生成并推送',
@@ -2077,6 +2096,7 @@ Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队
       gitdeploy: 'Git 部署',
       report: '巡检报告',
       portforward: '端口转发',
+      netmap: '内网映射',
       imgsafety: '镜像扫描',
       slowquery: '慢查询分析',
       nodeoverview: '节点总览',

@@ -300,6 +300,16 @@ export const portforwardApi = {
   remove: (id) => api.delete(`/portforward/${id}`).then(r => r.data)
 }
 
+// 内网映射：节点内网 HTTP 服务反代访问（数据按当前节点视角存储）
+export const netmapApi = {
+  list: () => api.get('/netmap').then(r => r.data),
+  create: (body) => api.post('/netmap', body).then(r => r.data),
+  update: (id, body) => api.put(`/netmap/${id}`, body).then(r => r.data),
+  remove: (id) => api.delete(`/netmap/${id}`).then(r => r.data),
+  // 代理访问地址：iframe / 新标签打开用；token 以 __graw_token= 传递（后端转发前剥离）
+  proxyUrl: (id, token) => `/api/netmap/proxy/${id}/?__graw_token=${encodeURIComponent(token || '')}`
+}
+
 export const imgsafetyApi = {
   scan: (image) => api.post('/imgsafety/scan', { image }).then(r => r.data),
   advisory: () => api.get('/imgsafety/advisory').then(r => r.data),

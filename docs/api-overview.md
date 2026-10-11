@@ -169,6 +169,7 @@ ws://<host>/api/system/ws?token=<JWT>
 | `/api/gitdeploy` | `ADMIN`（webhook 端点内部校验签名） | — | 站点 Git 自动部署 |
 | `/api/report` | `ADMIN` | — | 巡检报告 |
 | `/api/portforward` | `ADMIN` | — | SSH 端口转发 |
+| `/api/netmap` | `ADMIN`（代理端点支持 `?__graw_token=` 弹性鉴权） | ✔ | 内网映射：节点内网 HTTP 服务反代访问（CRUD + `/proxy/{id}/{path}` 流式反代） |
 | `/api/imgsafety` | `ADMIN` | — | 镜像漏洞扫描 |
 | `/api/slowquery` | `ADMIN` | — | MySQL 慢查询分析 |
 | `/api/svcmonitor` | `ADMIN` | — | 服务 / 端口监控 |

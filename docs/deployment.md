@@ -83,6 +83,36 @@ docker compose up -d --build
 
 该编排 `network_mode: host`，因此宿主机直接占用 8000 端口，无需 `ports` 映射。
 
+### 方式四：不用 Docker——源码构建 + 守护进程一键命令
+
+仓库根目录提供两个等价的「生产形态」脚本（区别于开发用的 `start.sh` / `start.bat` 热重载模式）：先构建 `frontend/dist`，再由后端同源托管，uvicorn 以**守护进程**后台运行。数据仍落在 `backend/data/`，无需任何容器。
+
+```bash
+# Linux / macOS
+chmod +x graw.sh       # 首次使用先加可执行权限（Windows 下创建的文件无执行位）
+./graw.sh start        # 首次运行自动装依赖 + 构建前端，再启动守护进程
+./graw.sh status       # 进程 + /api/health 健康检查
+./graw.sh log          # 跟踪运行日志（logs/graw.log）
+./graw.sh restart      # 重启；stop 停止
+```
+
+```bat
+:: Windows（在仓库根目录）
+graw.bat start
+graw.bat status
+graw.bat log
+```
+
+| 子命令 | 作用 |
+|--------|------|
+| `deps` | 创建 venv + `pip install -r requirements.txt` + `npm install`（幂等，已装跳过） |
+| `build` | `npm run build` 产出 `frontend/dist` |
+| `start` | 依赖 / 构建缺失时自动补齐，然后以脱离控制台的方式启动 uvicorn（Linux `nohup` / Windows `DETACHED_PROCESS`），PID 写 `logs/graw.pid`，日志写 `logs/graw.log`，并轮询 `/api/health` 等待就绪 |
+| `stop` / `restart` | 按 PID 文件停止（SIGTERM → SIGKILL 兜底）/ 重启 |
+| `status` / `log` | 运行状态与健康检查 / 跟踪日志 |
+
+环境变量：`GRAW_PORT`（默认 8000）、`GRAW_HOST`（默认 `0.0.0.0`，仅本机使用可改 `127.0.0.1`）；`FORCE_BUILD=1`（Linux）可在 start 时强制重新构建前端。Windows 守护进程与当前控制台完全脱离，关闭命令行窗口不影响服务；如需开机自启，把 `graw.bat start`（或 `./graw.sh start`）加入计划任务 / systemd 即可。
+
 ### 关键参数为什么必需
 
 | 参数 | 作用 | 缺了会怎样 |

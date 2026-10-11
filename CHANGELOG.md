@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+### Added
+- **内网映射（netmap）**：把「当前节点」的内网 HTTP 服务（如 `http://localhost:3000`）反代到面板侧，窗口内 iframe 直达或新标签打开；数据按节点视角存于节点本地 `data/netmap.json`，远端节点经 Agent 隧道在子节点执行（CRUD 与反代全自动透传）
+  - 后端 `routers/netmap.py`：条目 CRUD + `/api/netmap/proxy/{id}/{path}` 流式反代（`?__graw_token=` 弹性鉴权兼容 iframe、剥目标防嵌套头并放宽为 `SAMEORIGIN`、绝对 `Location` 重写回代理路径、显式绕开系统代理、同步 requests 放线程池）；`auth.MODULES` 新增 `netmap` 模块（`PERM("netmap")`），登记 `remote_cap.LOCAL_PREFIX`（裸 SSH 远端禁用）；依赖 `requests` 显式入 `requirements.txt`
+  - 前端「内网映射」窗口（桌面 + 面板模式侧边栏「网络」分组，Star 解锁范围）：列表 / 内联新建编辑表单 / iframe 预览；支持深链 `?c=<本机|节点名|节点id>&s=<服务地址>` 登录后自动切节点：已有同地址条目直接预览，没有则自动创建并立即打开目标内容，无需手动保存
+  - 反代目标不可达（端口未开放 / 服务未启动）时不再返回裸 JSON，改为渲染友好的 HTML 提示页（「无映射端口」+ 处理建议，带 SAMEORIGIN 头保证 iframe 内可见）
+  - 修复深链失效（真实浏览器回归发现的两处）：`immediate` watch 在 setup 同步阶段执行 `openWindow` 踩 TDZ（部分 ref 尚未初始化）被静默吞掉——深链推迟到挂载后的宏任务执行；代理端点弹性鉴权 Query 参数名与前端 `__graw_token` 不一致导致 401——改为 `Query(alias="__graw_token")`；深链直达同时绕过 Star 引导弹窗（`openWindow(key, props, { skipStarGate })`，手动点击入口的引导不变）
+- **非 Docker 守护进程一键命令**：仓库根目录新增 `graw.sh`（Linux/macOS）与 `graw.bat`（Windows）——`deps` / `build` / `start` / `stop` / `restart` / `status` / `log` 七个子命令：自动补齐依赖与前端构建后，以脱离控制台的方式启动 uvicorn 守护进程（PID 写 `logs/graw.pid`、日志 `logs/graw.log`、轮询 `/api/health` 就绪）；支持 `GRAW_PORT` / `GRAW_HOST`，详见 `docs/deployment.md` 方式四
+- **启动页语录彩蛋**：加载动画（boot-splash）的 Graw 字样前随机展示一句诗（露从今夜白 / 见人初解语呕哑 / 欲渡黄河冰塞川），纯内联实现，失败静默跳过不影响启动
+
 ### Fixed
 - 备份恢复（`backup.py`）与面板备份导入（`panelbackup.py`）的 `tarfile.extractall` 增加 `filter="data"` 参数（旧版本 Python 自动降级），消除 Python 3.14 起的 DeprecationWarning，同时作为既有逐成员校验之外的第二道防线
 

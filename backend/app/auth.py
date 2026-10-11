@@ -681,6 +681,7 @@ MODULES = (
     "svcmonitor",   # 服务 / 端口监控
     "healthcheck",  # 一键系统体检
     "portforward",  # SSH 端口转发
+    "netmap",       # 内网映射（节点内网 HTTP 服务反代访问）
     "loginlog",     # 登录日志管理（查看全部 / 清空 / 告警配置）
 )
 

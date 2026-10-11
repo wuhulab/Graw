@@ -49,6 +49,7 @@ LOCAL_PREFIX = (
     "/api/update",
     "/api/webmode",
     "/api/loginlog",
+    "/api/netmap",
     "/api/plugins",
     "/api/op",
 )
