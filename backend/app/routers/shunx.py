@@ -15,6 +15,9 @@ shunx.py - ShunX 安全入口保护机制路由
     绝不泄露已配置的入口路径本身，防止陌生设备通过接口探测到入口。
   - 登录接口在入口已配置时，校验请求头 X-ShunX-Entry（由前端根据浏览器
     实际地址栏路径设置），不匹配则拒绝登录（403）。
+  - 日志脱敏（CWE-532）：entry_path 是登录面板的唯一硬门，任何日志
+    （含校验失败告警、配置更新记录）都不得写出明文路径或其长度特征，
+    避免攻击者经日志聚合/备份/宿主机文件读取面反推入口。
 """
 
 import json
@@ -181,7 +184,14 @@ async def set_config(req: SetConfigRequest, _: dict = Depends(require_admin)):
     config["entry_path"] = entry_path if entry_path else None
     config["enabled"] = req.enabled and bool(entry_path)
     _save_config(config)
-    logger.info("ShunX 安全入口已更新: %s", repr(config))
+    # 敏感信息保护（CWE-532）：entry_path 是登录面板的唯一硬门，
+    # 日志只记录「是否已启用 / 是否已设置」布尔量，绝不落明文路径，
+    # 防止攻击者经日志聚合、备份或宿主机文件读取面拿到入口。
+    logger.info(
+        "ShunX 安全入口已更新: enabled=%s, entry_set=%s",
+        config.get("enabled"),
+        bool(config.get("entry_path")),
+    )
     return {"ok": True, "config": config}
 
 
@@ -200,7 +210,15 @@ def verify_entry(request: Request) -> None:
 
     entry_header = (request.headers.get("X-ShunX-Entry") or "").strip().strip("/").lower()
     if entry_header != entry.lower():
-        logger.warning("安全入口校验失败: 期望=%s, 收到=%s", entry, entry_header)
+        # 敏感信息保护（CWE-532）：既不记录期望的 entry_path（服务端秘密），
+        # 也不记录客户端提交的原始值（可能被植入日志注入载荷/伪造内容）。
+        # 仅保留「来源 IP + 是否携带入口凭据」用于审计，攻击者即便能读取
+        # 日志也无法反推入口路径。
+        logger.warning(
+            "安全入口校验失败: 来源 IP=%s, 是否携带入口凭据=%s",
+            get_client_ip(request),
+            bool(entry_header),
+        )
         raise HTTPException(
             status_code=403,
             detail="请通过安全入口访问（当前访问路径不是已配置的安全入口）",
