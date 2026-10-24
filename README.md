@@ -2,6 +2,8 @@
 
 一个基于 Web 的服务器管理面板，采用「类桌面操作系统」的交互设计（窗口、任务栏、桌面快捷方式），并内置一套经典侧边栏风格的标准面板模式。前端使用 Vue 3 + Vite，后端使用 Go（`backend-go/`）。
 
+
+
 除本机外，Graw 还能通过 **Agent 隧道 + 成对访问密钥** 把其它主机作为「子节点」纳入统一面板管理：在一处即可切换主机，管理多台服务器的容器、网站、文件、终端与防火墙。
 
 **English** — Graw is an open-source, self-hosted **server management panel** with a desktop-like UI: a modern alternative to Cockpit. Real-time monitoring, Docker & App Store, websites, databases, web terminal and multi-node management — all in one panel, built with Vue 3 + Go and deployable with one Docker command.
