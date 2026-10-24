@@ -412,11 +412,15 @@ func tamperBackupSite(site map[string]any) int {
 	hashes := map[string]any{}
 	count := 0
 	for _, rel := range toStringSlice(site["protected_files"]) {
+		relPath := filepath.FromSlash(strings.TrimLeft(strings.ReplaceAll(rel, "\\", "/"), "/"))
+		if !filepath.IsLocal(relPath) {
+			continue
+		}
 		real, ok := siteResolveFile(root, rel)
 		if !ok || !Exists(real) {
 			continue
 		}
-		dst := filepath.Join(backupDir, filepath.FromSlash(strings.TrimLeft(rel, "/")))
+		dst := filepath.Join(backupDir, relPath)
 		_ = os.MkdirAll(filepath.Dir(dst), 0o700)
 		_ = CopyFile(real, dst)
 		hashes[rel] = fileSHA256(real)

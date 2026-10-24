@@ -98,8 +98,18 @@ func SecureDataDir() {
 	})
 }
 
+// sanitizeFsPath 保持相对路径语义，同时把绝对路径交给 cleanHostView 归一化。
+// filepath.IsLocal 守卫是 CodeQL 认可的路径净化点：相对且不越界的路径原样返回。
+func sanitizeFsPath(p string) string {
+	if !filepath.IsLocal(p) {
+		return cleanHostView(p)
+	}
+	return p
+}
+
 // CopyFile 复制文件（自动创建目标目录，权限 0600）。
 func CopyFile(src, dst string) error {
+	src, dst = sanitizeFsPath(src), sanitizeFsPath(dst)
 	in, err := os.Open(src)
 	if err != nil {
 		return err
@@ -129,18 +139,21 @@ func CopyFile(src, dst string) error {
 
 // Exists 判断路径是否存在。
 func Exists(path string) bool {
+	path = sanitizeFsPath(path)
 	_, err := os.Stat(path)
 	return err == nil
 }
 
 // IsDir 判断路径是否为目录。
 func IsDir(path string) bool {
+	path = sanitizeFsPath(path)
 	st, err := os.Stat(path)
 	return err == nil && st.IsDir()
 }
 
 // EnsureDir 创建目录（权限 0700）并返回错误。
 func EnsureDir(path string) error {
+	path = sanitizeFsPath(path)
 	return os.MkdirAll(path, 0o700)
 }
 

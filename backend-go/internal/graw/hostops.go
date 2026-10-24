@@ -110,7 +110,7 @@ func remoteExec(node map[string]any, timeout time.Duration, command string, stdi
 		session.Stdin = bytes.NewReader(stdin)
 	}
 	done := make(chan error, 1)
-	go func() { done <- session.Run(command) }()
+	go func(cmd string) { done <- session.Run(cmd) }(command)
 	select {
 	case runErr := <-done:
 		code := 0
