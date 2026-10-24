@@ -377,7 +377,8 @@ func tamperSummary(site map[string]any) map[string]any {
 }
 
 func tamperSiteBackupDir(siteID string) string {
-	return DataPath("tamper_backups", siteID)
+	// site_id 来自站点配置：归一化后再拼 data 目录，避免跳出备份根目录。
+	return DataPath("tamper_backups", strings.TrimPrefix(cleanHostView(siteID), "/"))
 }
 
 func siteResolveFile(root, rel string) (string, bool) {
