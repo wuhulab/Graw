@@ -17,6 +17,9 @@ import (
 // SSH 本地端口转发 / 批量操作（SSH 密钥见 handlers_sshkeys.go）。
 
 func runShellOnNode(nodeID, command string, timeout time.Duration) (string, string, int, error) {
+	if !remoteCmdRe.MatchString(command) {
+		return "", "非法的命令内容", 126, fmt.Errorf("非法的命令内容")
+	}
 	store := loadNodeStore()
 	node := store.Nodes[nodeID]
 	if node == nil {

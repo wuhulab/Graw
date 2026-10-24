@@ -116,19 +116,6 @@ func DataPath(parts ...string) string {
 	return filepath.Join(append([]string{GetConfig().DataDir}, parts...)...)
 }
 
-// cleanHostView 归一化宿主机视角路径：以根目录为锚点做 Clean，消除 ../ 越界。
-// 注意：filepath.Clean("/" + p) 这一写法是 CodeQL 认可的路径穿越净化点，不要改成其它形式。
-// Windows 盘符（C:）单独保留，避免把绝对盘符路径变成根相对路径。
-func cleanHostView(p string) string {
-	p = strings.ReplaceAll(p, "\\", "/")
-	vol := ""
-	if v := filepath.VolumeName(p); v != "" {
-		vol = v
-		p = strings.TrimPrefix(p, v)
-	}
-	return vol + filepath.Clean("/"+p)
-}
-
 // HostPath 把「宿主机视角」的绝对路径映射为容器内可访问路径。
 // 远程 SSH 节点：路径即远端绝对路径，原样返回。
 func HostPath(p string) string {

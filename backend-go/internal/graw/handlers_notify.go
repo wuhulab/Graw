@@ -63,6 +63,11 @@ func notifyChannels() []map[string]any {
 	return notifyList(loadNotify(), "channels")
 }
 
+// stripCRLF 去除邮件头字段中的换行，避免头注入（CWE-640）。
+func stripCRLF(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\r", ""), "\n", "")
+}
+
 func sendChannel(ch map[string]any, message string) error {
 	cfg := mapOf(ch["config"])
 	typ := str(ch["type"])
@@ -153,7 +158,7 @@ func sendChannel(ch map[string]any, message string) error {
 		if host == "" || to == "" {
 			return fmt.Errorf("SMTP 配置不完整")
 		}
-		headers := "From: " + from + "\r\nTo: " + to + "\r\nSubject: Graw 通知\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n"
+		headers := "From: " + stripCRLF(from) + "\r\nTo: " + stripCRLF(to) + "\r\nSubject: Graw 通知\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n"
 		msg := []byte(headers + message)
 		if port == "465" {
 			conn, err := tls.Dial("tcp", host+":"+port, &tls.Config{ServerName: host})
