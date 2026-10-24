@@ -1,13 +1,15 @@
 # ============================================================
 # Graw CI —— 每次 push / PR 自动执行的检查
 #
-# 包含两个相互独立的 job（任一失败不影响另一个产出结果）：
-#   1. backend   : Python 语法体检 + 后端回归测试（pytest）
-#   2. frontend  : ESLint 检查 + i18n / import 静态检查 + 依赖安装 + 生产构建（vite build）
+# 包含三个相互独立的 job（任一失败不影响另一个产出结果）：
+#   1. backend-go : Go 重构版后端编译、vet 与单元测试（当前镜像 / 部署默认后端）
+#   2. backend    : Python 旧版后端语法体检 + 回归测试（pytest，保留兼容性验证）
+#   3. frontend   : ESLint 检查 + i18n / import 静态检查 + 依赖安装 + 生产构建（vite build）
 #
 # 说明：
-#   - 测试集纳入「可移植、无需真实系统环境」的 pytest 用例（约 450+ 项）。
-#   - 后端分两段执行：
+#   - backend-go 与 Python backend 并行执行，二者共用同一套 data 格式与接口约定。
+#   - Python 测试集纳入「可移植、无需真实系统环境」的 pytest 用例（约 450+ 项）。
+#   - Python 后端分两段执行：
 #       (1) test_*_unit.py 互相隔离，可整跑一次；
 #       (2) 其余 pytest 风格文件会改写 app 模块级全局状态（USERS_FILE /
 #           DATA_DIR / 插件注册表等），同进程内互相污染（单独跑全绿、合并跑
@@ -34,8 +36,37 @@ permissions:
   contents: read
 
 jobs:
+  backend-go:
+    name: Go backend build & test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend-go
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend-go/go.mod
+          cache-dependency-path: backend-go/go.sum
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build (static binary)
+        run: CGO_ENABLED=0 go build ./...
+
+      - name: Run tests
+        run: go test ./... -count=1
+
   backend:
-    name: Backend check & test
+    name: Python backend check & test (legacy)
     runs-on: ubuntu-latest
     # 上限时长，防止依赖安装卡死导致任务长时间占用
     timeout-minutes: 20

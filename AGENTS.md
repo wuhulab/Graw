@@ -19,7 +19,7 @@
 界面有两套壳（同一套功能）：类桌面（窗口/任务栏，默认）与 **标准面板模式**（1Panel 风格侧边栏 + 多标签，`settings.panelMode` 切换）；
 界面文案支持 **22 个语言包**（`frontend/src/locales/`）。
 
-- 当前版本：`backend/app/main.py` 中的 `APP_VERSION = "1.8.0"`
+- 当前版本：Go 后端 `backend-go/internal/graw/cfg.go` 的 `AppVersion = "1.8.1"`（Python 旧版 `backend/app/main.py` 的 `APP_VERSION` 需同步）
 - 许可证：AGPLv3
 - Docker 镜像命名空间：`shunx/graw`
 
@@ -30,11 +30,11 @@
 | 层级 | 技术 |
 |------|------|
 | 前端 | Vue 3（Composition API）、Vite 5、Axios、ECharts / vue-echarts、xterm.js、vue-i18n |
-| 后端 | Python 3.11、FastAPI 0.115、Uvicorn、Pydantic 2、psutil、docker SDK |
+| 后端 | **Go 1.23（默认，`backend-go/`）**：标准库 HTTP、gorilla/websocket、gopsutil、JWT；Python 3.11 / FastAPI / Uvicorn 旧版保留在 `backend/` |
 | 通信 | REST API（`/api/*`）+ WebSocket（监控流、终端） |
-| 部署 | 多阶段 Docker 构建（前端 Node 构建 → 后端 Python 运行时） |
+| 部署 | 多阶段 Docker 构建（前端 Node 构建 → Go 交叉编译 → Alpine 运行时） |
 
-依赖清单：`backend/requirements.txt`、`frontend/package.json`。
+依赖清单：`backend-go/go.mod`（默认）、`backend/requirements.txt`（Python 旧版）、`frontend/package.json`。
 
 ---
 
@@ -42,7 +42,7 @@
 
 ```
 Graw/
-├── backend/
+├── backend/                     # Python/FastAPI 旧版后端（保留兼容与回归测试）
 │   ├── app/
 │   │   ├── main.py              # 应用入口：路由注册、中间件、lifespan 后台任务、静态托管
 │   │   ├── auth.py              # JWT 鉴权依赖：get_current_user / require_admin / seed_default_users
@@ -61,7 +61,7 @@ Graw/
 │   ├── test_*_unit.py / test_*_e2e.py  # pytest 单测与端到端用例
 │   ├── reset_password.py        # 离线重置管理员密码脚本（读 data/users.json）
 │   └── requirements.txt
-├── backend-go/                  # Go 语言完整重构版后端（接口与 Python 版兼容）
+├── backend-go/                  # Go 后端（默认；接口/数据兼容 Python 旧版）
 │   ├── main.go                  # 进程入口：配置/播种账号/后台协程/HTTP 服务
 │   ├── internal/graw/           # 单包实现：路由、鉴权、SSH/Agent、中间件、各业务模块
 │   ├── go.mod / go.sum
@@ -84,15 +84,15 @@ Graw/
 ├── GETMEREAD/                   # 「大白话 + Mermaid」运行逻辑文档（11 篇）
 ├── readme-i18n/                 # 多语言 README（10 个语种）
 ├── agent/skills/                # 项目内技能（hop / secreview）
-├── Dockerfile                   # 多阶段构建（前端构建 → 后端运行时）
+├── Dockerfile                   # 多阶段构建（前端构建 → Go 交叉编译 → Alpine 运行时）
 ├── docker-compose.yml           # 「完整管理宿主机」高权限编排
-├── start.sh / start.bat         # 本地开发一键启动（后端 + 前端）
+├── start.sh / start.bat         # 本地开发一键启动（Go 后端 + 前端）
 ├── AGENTS.md                    # 本文件：架构、约定与陷阱（改代码前必读）
 ├── CHANGELOG.md / SECURITY.md / CONTRIBUTING.md
 └── README.md
 ```
 
-### 后端路由清单（`backend/app/routers/`）
+### 后端路由清单（Go 默认：`backend-go/internal/graw/handlers_*.go`；Python 旧版：`backend/app/routers/`）
 
 | 前缀 | 模块 | 鉴权 |
 |------|------|------|
@@ -127,16 +127,16 @@ Graw/
 ## 4. 环境要求与快速开始
 
 ### 环境要求
-- Python 3.11（生产镜像）；本地开发 3.8+ 可跑后端
+- Go 1.23+（默认后端；生产镜像基于 Alpine 静态二进制）
 - Node.js 16+（前端）；Docker 引擎（Docker 管理功能可选）
+- Python 3.11（仅运行 `backend/` 旧版或跑 pytest 时需要）
 
 ### 本地开发（前后端分离）
 ```bash
-# 后端
-cd backend
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+# 后端（Go 默认）
+cd backend-go
+go mod download
+go run .                    # 默认 :8000，可用 GRAW_ADDR 覆盖（如 :8001）
 
 # 前端（另开终端）
 cd frontend
@@ -144,44 +144,41 @@ npm install      # 或 pnpm install
 npm run dev      # → http://localhost:5173，Vite 代理 /api 到 :8000
 ```
 
-### Go 重构版后端（backend-go）
-
-接口路径、请求/响应结构与数据文件格式与 Python 版保持兼容，默认复用
-`backend/data`（可用 `GRAW_DATA_DIR` 覆盖）。前端无需改动。
-
-```bash
-cd backend-go
-go build ./...
-go run .                    # 默认 :8000，可用 GRAW_ADDR 覆盖（如 :8001）
-# 生产：先构建前端，再运行 Go 二进制（自动托管 frontend/dist）
-```
+`backend/` 为 Python/FastAPI 旧版后端，接口路径、请求/响应结构与数据文件格式与 Go 版保持兼容；
+Go 后端默认复用 `backend/data`（可用 `GRAW_DATA_DIR` 覆盖），前端无需改动。如需运行旧版：
+`cd backend && python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`。
 
 依赖：`docker`/`podman` CLI（Docker 模块）、`certbot`、`crontab`、`smbclient`/`mc`
-（可选，按功能使用）；容器镜像见 `backend-go/Dockerfile`。
+（可选，按功能使用）；容器镜像见根 `Dockerfile` 或 `backend-go/Dockerfile`。
 
 
 ### 生产构建 / 部署
 ```bash
 cd frontend && npm run build      # 输出 frontend/dist
-# 后端会自动检测并挂载 frontend/dist 作为静态资源（SPA 回退到 index.html）
-cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+# Go 后端会自动检测并挂载 frontend/dist 作为静态资源（SPA 回退到 index.html）
+cd ../backend-go
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o graw-go .
+./graw-go                         # 默认监听 :8000
 # 随后访问 http://localhost:8000 即完整应用
 ```
+也可用仓库根脚本 `./graw.sh start` / `graw.bat start` 一键构建并后台运行。
 容器化部署见 `docker-compose.yml`（**高权限**，见第 7 节陷阱）。
 
 ### 默认账号
 首次启动在 `backend/data/users.json` 自动播种：
 - 账号 `admin` / 密码 `admin123`，首次登录强制改密。
 - 签名密钥持久化于 `backend/data/secret.key`（首次自动生成）。
-- 忘记密码可用 `cd backend && python reset_password.py admin` 离线重置；Go 版等价命令为
-  `cd backend-go && go run ./cmd/reset-password admin`（实现见 `internal/graw/reset_password.go` 与 `internal/resetpw/`）。
+- 忘记密码可用 `cd backend-go && go run ./cmd/reset-password admin` 离线重置
+  （实现见 `internal/graw/reset_password.go` 与 `internal/resetpw/`）；Python 旧版为
+  `cd backend && python reset_password.py admin`。
 
 ---
 
 ## 5. 后端开发约定
 
 ### 5.1 路由注册与鉴权模型
-- 所有业务路由集中在 `backend/app/main.py` 用 `app.include_router(..., prefix="/api/xxx")`。**新增模块必须在此注册**，否则前端无法访问。
+- **Go 默认后端**：路由与中间件在 `backend-go/internal/graw/httpx.go` 的 `NewApp()` 注册，业务实现在 `handlers_*.go`、鉴权在 `auth.go`/`sessions.go`。**新增模块必须在 `NewApp()` 注册**，否则前端无法访问。
+- **Python 旧版**：所有业务路由集中在 `backend/app/main.py` 用 `app.include_router(..., prefix="/api/xxx")`。新增模块必须在此注册，否则前端无法访问。以下分级约定两套后端保持一致。
 - 鉴权分级（定义在 `main.py` 顶部）：
   - `PROTECTED = [Depends(get_current_user), Depends(require_non_default_password)]` —— 仅需登录（只读信息类）。
   - `ADMIN = [Depends(require_admin)]` —— 完整管理员（面板自身安全边界：多节点/SSH 密钥/插件/更新/面板备份/用户管理）。
@@ -194,10 +191,12 @@ cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ### 5.2 数据持久化
 - 面板所有配置/凭据以 **JSON 文件** 存于 `backend/data/`（如 `users.json`、`nodes.json`、`databases.json`、`agent.json`、`ftp_users.json`）。
-- 该目录含敏感信息（SSH 凭据、数据库密码、JWT 密钥）。启动时 `_secure_data_dir()` 在 Linux 上收紧为 `0700`/`0600`，**不要**在代码里放宽其权限。
-- 写入配置时优先采用「原子写」：写临时文件后 `os.replace()`（参考 `agent_cfg._save()`）。
+- 该目录含敏感信息（SSH 凭据、数据库密码、JWT 密钥）。启动时 Go 的 `SecureDataDir()` / Python 的 `_secure_data_dir()` 在 Linux 上收紧为 `0700`/`0600`，**不要**在代码里放宽其权限。
+- 写入配置时优先采用「原子写」：写临时文件后原子替换（Go `os.Rename()` / Python `os.replace()`）。
 
 ### 5.3 多节点 / Agent 架构（重点）
+- **Go 默认后端**：Agent 鉴权、隧道代理、节点上下文与远端能力门控集中在 `backend-go/internal/graw/agent.go`；业务请求代理中间件在 `httpx.go`。
+- **Python 旧版**实现（下述文件仅用于对照）：
 - **主面板 ↔ 子节点** 通过 Agent 隧道通信：
   - `agent_auth.py`：`/api/agent/issue` 用成对 `key+secret` 换取子节点 JWT（不依赖面板登录）。
   - `agent_cfg.py`：子节点「收取模式」持久化（`data/agent.json`），支持设置界面热开关，无需重启/改环境变量。
@@ -213,10 +212,12 @@ cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 - **新增业务接口若需对子节点透传**，确认它不在 `_AGENT_PROXY_EXCLUDE_PREFIX`（auth/nodes/terminal/agent/ui/shunx/health/batch/gitdeploy/portforward/vpn）中即可自动被代理，无需额外改动。
 
 ### 5.4 后台任务
-- 在 `lifespan()` 中启停的 7 个常驻协程：系统指标采集（`system.start_metrics_producer`）、防篡改监控、通知中心、站点可用性、证书到期、服务/端口监控、回收站过期清理（`trash.start_auto_purge`）。另有每日巡检报告协程（`reporting.start_daily`，08:00 生成并推送）、启动时恢复的 SSH 端口转发隧道（`portforward.restore_all`），以及 VPN 转发策略的核心恢复与低占用看门狗（`vpn_policy.restore()` + `start_monitor()`，空闲自动停核心、初次请求唤醒）。**新增常驻监控请在此配对启停**，避免泄漏协程。
+- **Go 默认后端**：后台任务在 `backend-go/main.go` 中成组启动（`StartMetricsBackground`、`StartTrashAutoPurge`、`StartDailyReport`、`StartMonitors`、`StartTamperMonitor`、`RestorePortForwards`、`RestoreVPN`），关闭时由进程退出统一回收；新增常驻监控需在此登记。
+- **Python 旧版**：在 `lifespan()` 中启停的 7 个常驻协程：系统指标采集（`system.start_metrics_producer`）、防篡改监控、通知中心、站点可用性、证书到期、服务/端口监控、回收站过期清理（`trash.start_auto_purge`）。另有每日巡检报告协程（`reporting.start_daily`，08:00 生成并推送）、启动时恢复的 SSH 端口转发隧道（`portforward.restore_all`），以及 VPN 转发策略的核心恢复与低占用看门狗（`vpn_policy.restore()` + `start_monitor()`，空闲自动停核心、初次请求唤醒）。**新增常驻监控请在此配对启停**，避免泄漏协程。
 
 ### 5.5 安全中间件
-- `security_headers` 给所有响应附加 CSP / `X-Content-Type-Options: nosniff` / `X-Frame-Options: DENY` / `Referrer-Policy: same-origin`。改动前端注入资源（如新 CDN）时需注意 CSP 限制（`script-src` 已放行 `unsafe-inline` + `unsafe-eval`）。
+- **Go 默认后端**：请求体限制、远端能力门控、安全响应头等中间件在 `backend-go/internal/graw/httpx.go` 中按顺序包装。
+- **Python 旧版**的 `security_headers` 给所有响应附加 CSP / `X-Content-Type-Options: nosniff` / `X-Frame-Options: DENY` / `Referrer-Policy: same-origin`。改动前端注入资源（如新 CDN）时需注意 CSP 限制（`script-src` 已放行 `unsafe-inline` + `unsafe-eval`）。
 - 请求体大小限制见 5.3；未认证的大 body 在进业务前就被拒，新增「接收上传」的端点时注意 `multipart/` 与非 multipart 走的是两档限额。
 
 ---
@@ -245,16 +246,15 @@ cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ## 7. 关键约定与陷阱（务必注意）
 
-1. **API 文档默认关闭**：`/docs`、`/redoc`、`/openapi.json` 在生产默认 `None`。调试时设环境变量 `GRAW_ENABLE_DOCS=1` 再访问 `/docs`。
-2. **CORS 关闭**：`allow_origins=[]` + `allow_credentials=False`（同源部署）。不要为「方便本地联调」改成 `*`，这会暴露攻击面。
+1. **API 文档默认关闭**：Go 后端不提供 `/docs`、`/redoc`、`/openapi.json`；Python 旧版默认关闭，调试时设 `GRAW_ENABLE_DOCS=1`。
+2. **CORS 关闭**：同源部署，不开放跨域。不要为「方便本地联调」改成 `*`，这会暴露攻击面。
 3. **WebSocket 鉴权用 `?token=`**：终端（`/api/terminal`）和监控 WS 无法在浏览器里带 Bearer 头，处理函数内用查询参数 token 鉴权并强制管理员。改动 WS 端点时保持此方式。
 4. **`data/` 权限与凭据**：含 SSH/数据库/JWT 密钥，勿提交到仓库、勿放宽权限、勿明文回传前端（`agent_cfg.public_status()` 已脱敏，照此模式）。
 5. **容器高权限（仅可信环境）**：`docker-compose.yml` 使用 `privileged` + `network_mode: host` + `pid: host` + `-v /:/host:rslave` + docker.sock。目的是让面板完整管理宿主机；**Docker Desktop for Windows 上这些无法完整生效**。开发阶段建议本地直接跑前后端，而非依赖该 compose。
-6. **前端构建产物由后端托管**：`npm run build` 输出 `frontend/dist`，`main.py` 自动挂载 `/assets` 与 SPA 回退。改了前端后若生产不生效，先确认 `frontend/dist` 已生成。
-7. **版本号单一来源**：升级版本只改 `main.py` 的 `APP_VERSION`；Go 重构版对应
-   `backend-go/internal/graw/cfg.go` 的 `AppVersion`，两处需同步。`/api/health`
-   在容器部署时优先读镜像 tag/label。
-8. **不要绕过 remote_cap / Agent 代理**：设计新接口时明确它是 local-only 还是需要子节点透传，避免越权或代理失效。`batch` / `gitdeploy` / `portforward` 三类**永远留在主面板执行**（已进 `_AGENT_PROXY_EXCLUDE_PREFIX`），别把它们改成可代理。
+6. **前端构建产物由后端托管**：`npm run build` 输出 `frontend/dist`，Go 的 `registerStatic`（`httpx.go`）自动挂载 `/assets` 与 SPA 回退。改了前端后若生产不生效，先确认 `frontend/dist` 已生成。
+7. **版本号单一来源**：升级版本改 `backend-go/internal/graw/cfg.go` 的 `AppVersion`；Python 旧版对应
+   `backend/app/main.py` 的 `APP_VERSION`，两处需同步。`/api/health` 在容器部署时优先读镜像 tag/label。
+8. **不要绕过远端能力门控 / Agent 代理**：设计新接口时明确它是 local-only 还是需要子节点透传，避免越权或代理失效。`batch` / `gitdeploy` / `portforward` 三类**永远留在主面板执行**，别把它们改成可代理。
 9. **请求体大小受限**：全局中间件对 `Transfer-Encoding` 返回 411、超限返回 413（普通 16MB / multipart 2GB）。新增接收大负载的端点时不能用 chunked 上传，必要时改环境变量而不是改代码常量。
 10. **文档要跟着改**：功能变更后同步更新 `docs/`（面向开发者/运维）与 `GETMEREAD/`（大白话运行逻辑，规矩见 `GETMEREAD/README.md`：在对应模块文件里追加一节并刷新文字与图，别新建同名文件）。
 
@@ -262,9 +262,10 @@ cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ## 8. 代码风格
 
-- **后端**：类型注解 + Pydantic 模型；docstring 用中文描述背景与安全约束（项目大量此类注释，请保持）；日志用 `logging.getLogger("graw.xxx")`；敏感操作前做鉴权断言。
+- **Go 后端（默认）**：错误显式返回、注释用中文描述背景与安全约束；日志用 `log.Printf`；敏感操作前做鉴权断言。
+- **Python 旧版**：类型注解 + Pydantic 模型；docstring 用中文描述背景与安全约束；日志用 `logging.getLogger("graw.xxx")`。
 - **前端**：`<script setup>` Composition API；组件用 PascalCase；样式优先 scoped；避免在 `main.js` 之外挂载全局插件。
-- 提交前确保 `backend` 无语法错误、前端 `npm run build` 通过。
+- 提交前确保 `cd backend-go && go vet ./... && go test ./...` 通过（Python 旧版无语法错误）、前端 `npm run build` 通过。
 
 ---
 
@@ -272,15 +273,14 @@ cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 | 我想做的事 | 去哪里 |
 |-----------|--------|
-| 加一个新 REST 业务模块 | 新建 `backend/app/routers/xxx.py`，在 `main.py` 注册并选 `PROTECTED`/`ADMIN`，必要时登记 `remote_cap.LOCAL_PREFIX` |
+| 加一个新 REST 业务模块 | Go 默认：新建 `backend-go/internal/graw/handlers_xxx.go`，在 `httpx.go` 的 `NewApp()` 注册；Python 旧版：`backend/app/routers/xxx.py` + `main.py` |
 | 加一个前端功能页 | 新建 `frontend/src/components/windows/XxxWindow.vue` 并在 `App.vue` 的 shortcuts 注册 |
-| 改登录/鉴权/用户 | `backend/app/auth.py`、`routers/auth.py` |
-| 调 Agent / 子节点接入 | `agent_auth.py`、`agent_cfg.py`、`agent_client.py`、`node_manager.py`（实操见 `docs/node-agent.md`） |
-| 改监控/指标采集 | `routers/system.py`、`store/systemMetrics.js` |
+| 改登录/鉴权/用户 | Go：`backend-go/internal/graw/{auth,sessions,handlers_auth}.go`；Python 旧版：`backend/app/auth.py`、`routers/auth.py` |
+| 调 Agent / 子节点接入 | Go：`backend-go/internal/graw/agent.go`；Python 旧版：`agent_auth.py`、`agent_cfg.py`、`agent_client.py`、`node_manager.py`（实操见 `docs/node-agent.md`） |
+| 改监控/指标采集 | Go：`backend-go/internal/graw/{sysmon,metrics_store,handlers_system}.go`、`store/systemMetrics.js` |
 | 调应用商店配方 | `app-store/` 目录（YAML），机制见 `docs/app-store-recipe.md` |
-| 写插件（GPOP） | `plugin_protocol.py`、`routers/plugins.py`，规范见 `docs/plugin-protocol.md` |
-| 改网站 / WAF / 引擎模式 | `routers/sites.py`、`waf.py`、`webmode.py`、`webserver.py`（原理见 `GETMEREAD/09`）；Go 版见 `backend-go/internal/graw/handlers_sites.go`、`handlers_siteopts_ssl.go` |
-| 查看 Go 重构实现 | `backend-go/internal/graw/`（`httpx.go` 路由与中间件、`agent.go` 多节点/Agent、各 `handlers_*.go` 业务模块） |
-| 改部署方式 / 环境变量 | `docker-compose.yml`、`Dockerfile`、`docs/deployment.md` |
-| 重置/查凭据/用户数据 | `backend/data/`、`reset_password.py`；Go 版 `backend-go/cmd/reset-password` |
-| 升级版本号 | 只改 `main.py` 的 `APP_VERSION`（Go 版同步 `backend-go/internal/graw/cfg.go` 的 `AppVersion`），并在 `CHANGELOG.md` 记一笔 |
+| 写插件（GPOP） | Go：`backend-go/internal/graw/handlers_plugins.go`；Python 旧版：`plugin_protocol.py`、`routers/plugins.py`，规范见 `docs/plugin-protocol.md` |
+| 改网站 / WAF / 引擎模式 | Go：`backend-go/internal/graw/handlers_sites.go`、`handlers_siteopts_ssl.go`（原理见 `GETMEREAD/09`）；Python 旧版：`routers/sites.py`、`waf.py`、`webmode.py`、`webserver.py` |
+| 改部署方式 / 环境变量 | 根 `Dockerfile`、`backend-go/Dockerfile`、`docker-compose.yml`、`graw.sh`/`graw.bat`、`docs/deployment.md` |
+| 重置/查凭据/用户数据 | `backend/data/`、`backend-go/cmd/reset-password`；Python 旧版 `backend/reset_password.py` |
+| 升级版本号 | 改 `backend-go/internal/graw/cfg.go` 的 `AppVersion`（Python 旧版同步 `backend/app/main.py` 的 `APP_VERSION`），并在 `CHANGELOG.md` 记一笔 |

@@ -1,17 +1,16 @@
 # ============================================================
-# Graw Server Panel - Docker 多阶段构建
+# Graw Server Panel - Docker 多阶段构建（Go 后端）
 # 阶段 1: 构建前端静态资源 (Node)
-# 阶段 2: 运行后端服务 (Python)
+# 阶段 2: 编译 Go 后端（按目标平台交叉编译为纯静态二进制）
+# 阶段 3: 精简运行时（Alpine + 宿主机管理常用 CLI）
 # ============================================================
 
 # ---------- 阶段 1: 前端构建 ----------
 # 关键优化：固定使用 BUILDPLATFORM（构建宿主，即 GitHub runner 的 amd64）来
 # 构建前端。前端 dist 是平台无关的静态文件，无需为 arm64 再用 QEMU 模拟
 # 跑 npm install / npm run build（模拟执行极慢，是构建卡顿的主因）。
-# 只有下面的 runtime 阶段才会按 TARGETPLATFORM 分别构建 amd64/arm64。
 FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend-builder
 
-# 设置工作目录
 WORKDIR /build/frontend
 
 # 先复制依赖清单，充分利用 Docker 层缓存
@@ -24,35 +23,48 @@ RUN npm install --no-audit --no-fund
 COPY frontend/ .
 RUN npm run build
 
-# ---------- 阶段 2: 后端运行时 ----------
-FROM python:3.11-slim AS runtime
+# ---------- 阶段 2: Go 后端编译 ----------
+# 同样固定在构建宿主平台执行，再通过 GOOS/GOARCH 交叉编译出目标平台二进制，
+# 避免 arm64 走 QEMU 模拟编译。CGO_ENABLED=0 保证产物为纯静态二进制，
+# 可直接运行在 Alpine 运行时阶段。
+FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS go-builder
 
-# 设置环境变量
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    TZ=Asia/Shanghai
+ARG TARGETOS
+ARG TARGETARCH
 
-# 安装系统依赖与清理（保持镜像精简）
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        curl \
-        tzdata \
-    && rm -rf /var/lib/apt/lists/*
+WORKDIR /build/backend-go
+
+# 先复制 go.mod / go.sum 并下载依赖，利用层缓存
+COPY backend-go/go.mod backend-go/go.sum ./
+RUN go mod download
+
+# 复制源码并交叉编译
+COPY backend-go/ .
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags "-s -w" -o /out/graw-go .
+
+# ---------- 阶段 3: 后端运行时 ----------
+FROM alpine:3.20 AS runtime
+
+ENV TZ=Asia/Shanghai \
+    GRAW_DATA_DIR=/app/backend/data \
+    GRAW_FRONTEND_DIST=/app/frontend/dist
 
 # 说明：作为服务器管理面板，容器需以 root 高权限运行，才能管理宿主机
 # 系统资源（进程、网站配置、Docker、防火墙、文件系统等）。仅部署于可信环境。
-# 因此这里不创建低权限用户，直接以 root 运行（见文件末尾 CMD）。
-WORKDIR /app/backend
+# docker-cli 供容器/镜像/卷管理，openssh-client 供子节点 SSH 与 Git 部署，
+# git/iproute2/procps 供部署与端口排查。
+RUN apk add --no-cache \
+        ca-certificates curl tzdata \
+        docker-cli docker-cli-compose \
+        openssh-client git iproute2 procps \
+    && rm -rf /var/cache/apk/*
 
-# 先复制依赖清单并安装，利用层缓存
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+WORKDIR /app/backend-go
 
-# 复制后端源码
-COPY backend/ .
-
-# 复制阶段 1 构建出的前端静态资源（保持与 app/main.py 中 FRONTEND_DIST 一致的目录结构）
+# 复制编译产物与前端静态资源（保持与 backend-go/internal/graw/cfg.go 的
+# GRAW_FRONTEND_DIST 默认探测目录结构一致）
+COPY --from=go-builder /out/graw-go /app/backend-go/graw-go
 COPY --from=frontend-builder /build/frontend/dist /app/frontend/dist
 
 # 创建数据目录（面板数据持久化）
@@ -65,5 +77,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # 暴露后端端口
 EXPOSE 8000
 
-# 启动命令（生产模式，不开启 reload）
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 启动命令
+CMD ["/app/backend-go/graw-go"]

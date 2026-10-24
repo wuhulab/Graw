@@ -17,6 +17,11 @@ __pycache__
 *.pyc
 backend/data/*
 
+# Go 构建产物与本地数据
+backend-go/graw-go
+backend-go/graw-go.exe
+backend-go/data
+
 # 日志
 logs
 *.log

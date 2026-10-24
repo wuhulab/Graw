@@ -2,12 +2,12 @@
 # =============================================================================
 # graw.sh — Graw 非 Docker「本地构建 + 守护进程」一键命令（Linux / macOS）
 #
-# 与开发用的 start.sh（前后端热重载）不同，本脚本走「生产形态」：
-#   构建前端 dist -> 后端静态托管 -> uvicorn 以守护进程后台运行。
+# 与开发用的 start.sh（前后端分开热启动）不同，本脚本走「生产形态」：
+#   构建前端 dist -> 编译 Go 后端 -> 由后端静态托管 -> 守护进程后台运行。
 #
 # 用法：
-#   ./graw.sh deps       安装依赖（venv + pip + npm install）
-#   ./graw.sh build      构建前端（frontend/dist）
+#   ./graw.sh deps       安装依赖（Go module + npm install）
+#   ./graw.sh build      构建前端（frontend/dist）与 Go 后端二进制
 #   ./graw.sh start      依赖/构建缺失时自动补齐，然后启动守护进程
 #   ./graw.sh stop       停止守护进程
 #   ./graw.sh restart    重启
@@ -16,44 +16,54 @@
 #
 # 环境变量：
 #   GRAW_PORT=8000       面板监听端口
-#   GRAW_HOST=0.0.0.0    监听地址（仅内网可改 127.0.0.1）
+#   GRAW_HOST=0.0.0.0    监听地址（仅本机可改 127.0.0.1）
 #   FORCE_BUILD=1        start 时强制重新构建前端
 # =============================================================================
 set -e
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-BACKEND_DIR="$ROOT/backend"
+BACKEND_GO_DIR="$ROOT/backend-go"
 FRONTEND_DIR="$ROOT/frontend"
-VENV_DIR="$BACKEND_DIR/.venv"
-PY="$VENV_DIR/bin/python"
+BIN="$BACKEND_GO_DIR/graw-go"
 LOG_DIR="$ROOT/logs"
 LOG_FILE="$LOG_DIR/graw.log"
 PID_FILE="$LOG_DIR/graw.pid"
 HOST="${GRAW_HOST:-0.0.0.0}"
 PORT="${GRAW_PORT:-8000}"
+ADDR="$HOST:$PORT"
 
 log()  { echo "[graw] $*"; }
 fail() { echo "[graw] 错误: $*" >&2; exit 1; }
 
-# 安装依赖：venv 不存在则创建；pip/npm 依赖幂等安装（已装则秒过）
+# 安装依赖：Go module 幂等下载；前端 node_modules 缺失时安装
 do_deps() {
-  if [ ! -x "$PY" ]; then
-    log "创建 Python venv..."
-    (cd "$BACKEND_DIR" && python3 -m venv .venv)
-  fi
-  log "安装后端依赖（已安装会自动跳过）..."
-  "$PY" -m pip install -q -r "$BACKEND_DIR/requirements.txt"
+  command -v go >/dev/null 2>&1 || fail "未找到 go 命令，请先安装 Go 1.23+"
+  command -v npm >/dev/null 2>&1 || fail "未找到 npm 命令，请先安装 Node.js 16+"
+  log "下载 Go 模块（已缓存会自动跳过）..."
+  (cd "$BACKEND_GO_DIR" && go mod download)
   if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
     log "安装前端依赖（npm install，首次较慢）..."
     (cd "$FRONTEND_DIR" && npm install --no-audit --no-fund)
   fi
 }
 
-# 构建前端：产物在 frontend/dist，由后端同源托管
-do_build() {
+# 构建前端：产物在 frontend/dist，由 Go 后端同源托管
+do_build_frontend() {
   [ -d "$FRONTEND_DIR/node_modules" ] || do_deps
   log "构建前端（npm run build）..."
   (cd "$FRONTEND_DIR" && npm run build)
+}
+
+# 编译 Go 后端：纯静态二进制，输出到 backend-go/graw-go
+do_build_backend() {
+  command -v go >/dev/null 2>&1 || fail "未找到 go 命令，请先安装 Go 1.23+"
+  log "编译 Go 后端（CGO_ENABLED=0）..."
+  (cd "$BACKEND_GO_DIR" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$BIN" .)
+}
+
+do_build() {
+  do_build_frontend
+  do_build_backend
 }
 
 # 守护进程是否在运行（PID 文件 + 进程存活双确认）
@@ -72,13 +82,19 @@ do_start() {
   fi
   do_deps
   if [ ! -f "$FRONTEND_DIR/dist/index.html" ] || [ -n "$FORCE_BUILD" ]; then
-    do_build
+    do_build_frontend
   fi
+  do_build_backend
   mkdir -p "$LOG_DIR"
-  log "启动守护进程：uvicorn 监听 $HOST:$PORT ..."
-  (cd "$BACKEND_DIR" && nohup "$PY" -m uvicorn app.main:app \
-      --host "$HOST" --port "$PORT" --workers 1 \
-      >> "$LOG_FILE" 2>&1 & echo $! > "$PID_FILE")
+  log "启动守护进程：graw-go 监听 $ADDR ..."
+  (
+    cd "$BACKEND_GO_DIR"
+    GRAW_ADDR="$ADDR" \
+    GRAW_DATA_DIR="$ROOT/backend/data" \
+    GRAW_FRONTEND_DIST="$FRONTEND_DIR/dist" \
+      nohup "$BIN" >> "$LOG_FILE" 2>&1 &
+    echo $! > "$PID_FILE"
+  )
   wait_healthy
 }
 
@@ -97,19 +113,14 @@ wait_healthy() {
   log "警告: 服务未在 30 秒内通过健康检查（可能仍在启动），请查看日志确认"
 }
 
-# 健康探测：优先 curl，缺失时回退 python
+# 健康探测：优先 curl，其次 wget，最后回退 TCP 端口连通性
 health_ok() {
   if command -v curl >/dev/null 2>&1; then
     curl -fsS -o /dev/null --max-time 3 "http://127.0.0.1:$PORT/api/health" 2>/dev/null
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q -O /dev/null -T 3 "http://127.0.0.1:$PORT/api/health" 2>/dev/null
   else
-    "$PY" - <<PYEOF 2>/dev/null
-import urllib.request, sys
-try:
-    urllib.request.urlopen("http://127.0.0.1:$PORT/api/health", timeout=3)
-    sys.exit(0)
-except Exception:
-    sys.exit(1)
-PYEOF
+    (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null
   fi
 }
 
@@ -154,5 +165,5 @@ case "${1:-}" in
   restart) do_stop; do_start ;;
   status)  do_status ;;
   log)     [ -f "$LOG_FILE" ] || fail "暂无日志: $LOG_FILE"; tail -n 100 -f "$LOG_FILE" ;;
-  *)       sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *)       sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

@@ -1,10 +1,10 @@
 # Graw
 
-一个基于 Web 的服务器管理面板，采用「类桌面操作系统」的交互设计（窗口、任务栏、桌面快捷方式），并内置一套经典侧边栏风格的标准面板模式。前端使用 Vue 3 + Vite，后端使用 FastAPI。
+一个基于 Web 的服务器管理面板，采用「类桌面操作系统」的交互设计（窗口、任务栏、桌面快捷方式），并内置一套经典侧边栏风格的标准面板模式。前端使用 Vue 3 + Vite，后端使用 Go（`backend-go/`）。
 
 除本机外，Graw 还能通过 **Agent 隧道 + 成对访问密钥** 把其它主机作为「子节点」纳入统一面板管理：在一处即可切换主机，管理多台服务器的容器、网站、文件、终端与防火墙。
 
-**English** — Graw is an open-source, self-hosted **server management panel** with a desktop-like UI: a modern alternative to Cockpit. Real-time monitoring, Docker & App Store, websites, databases, web terminal and multi-node management — all in one panel, built with Vue 3 + FastAPI and deployable with one Docker command.
+**English** — Graw is an open-source, self-hosted **server management panel** with a desktop-like UI: a modern alternative to Cockpit. Real-time monitoring, Docker & App Store, websites, databases, web terminal and multi-node management — all in one panel, built with Vue 3 + Go and deployable with one Docker command.
 
 <p align="center">
   <a href="https://github.com/wuhulab/Graw/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/wuhulab/Graw?style=flat-square&logo=github&color=4c8bf5&label=Stars"></a>
@@ -139,9 +139,9 @@ docker compose up -d --build
 | 层级 | 技术 |
 |------|------|
 | 前端 | Vue 3（Composition API）、Vite 5、Axios、ECharts / vue-echarts、xterm.js、vue-i18n |
-| 后端 | Python 3.11、FastAPI 0.115、Uvicorn、Pydantic 2、psutil、docker SDK；另有 Go 1.23 完整重构版（`backend-go/`，接口与数据格式兼容） |
+| 后端 | Go 1.23（`backend-go/`，标准库 HTTP + gorilla/websocket + gopsutil）；`backend/` 为 Python/FastAPI 旧版实现，接口与数据格式兼容 |
 | 通信 | REST API（`/api/*`）+ WebSocket（监控流、终端） |
-| 部署 | 多阶段 Docker 构建（前端 Node 构建 → 后端 Python 运行时） |
+| 部署 | 多阶段 Docker 构建（前端 Node 构建 → Go 交叉编译 → Alpine 运行时） |
 
 ## 目录结构
 
@@ -156,7 +156,11 @@ Graw/
 │   │   └── App.vue           # 根组件（桌面环境 / 面板模式切换）
 │   ├── vite.config.js        # 开发代理 /api(含 ws) → :8000
 │   └── package.json
-├── backend/                  # FastAPI 后端
+├── backend-go/               # Go 1.23 后端（默认，接口/数据兼容 Python 版）
+│   ├── main.go               # 进程入口：配置、播种账号、后台协程、HTTP 服务
+│   ├── internal/graw/        # 路由、鉴权、SSH/Agent、中间件与各业务模块
+│   └── Dockerfile            # 前端构建 + Go 编译 + 精简运行时
+├── backend/                  # Python/FastAPI 旧版后端（保留兼容与回归测试）
 │   ├── app/
 │   │   ├── main.py           # 应用入口：路由注册、中间件、lifespan 后台任务
 │   │   ├── auth.py           # JWT 鉴权依赖与用户播种
@@ -167,19 +171,15 @@ Graw/
 │   │   └── data/             # 运行时数据（gitignore，权限收紧）
 │   ├── test_*_unit.py        # pytest 单元测试（test_*_e2e.py 为端到端用例）
 │   └── requirements.txt
-├── backend-go/               # Go 1.23 完整重构版后端（接口/数据兼容 Python 版）
-│   ├── main.go               # 进程入口：配置、播种账号、后台协程、HTTP 服务
-│   ├── internal/graw/        # 路由、鉴权、SSH/Agent、中间件与各业务模块
-│   └── Dockerfile            # 前端构建 + Go 编译 + 精简运行时
 ├── app-store/                # 社区应用商店 YAML 配方与图标
 ├── plugin-examples/          # 插件开放协议（GPOP）示例
 ├── readme-i18n/              # 多语言 README（10 个语种）
 ├── docs/                     # 开发者/运维文档（文档中心见 docs/README.md）
 ├── GETMEREAD/                # 「大白话 + Mermaid」运行逻辑文档
 ├── agent/skills/             # 项目内技能（hop / secreview）
-├── Dockerfile                # 多阶段构建（前端构建 → 后端运行时）
+├── Dockerfile                # 多阶段构建（前端构建 → Go 编译 → 运行时）
 ├── docker-compose.yml        # 「完整管理宿主机」高权限编排
-├── start.sh / start.bat      # 本地开发一键启动（后端 + 前端）
+├── start.sh / start.bat      # 本地开发一键启动（Go 后端 + 前端）
 └── AGENTS.md                 # 代码库架构与开发约定（改代码前必读）
 ```
 
@@ -187,7 +187,7 @@ Graw/
 
 ### 环境要求
 
-- Python 3.8+（生产镜像为 3.11）
+- Go 1.23+
 - Node.js 16+
 - （可选）Docker 引擎，用于 Docker 管理功能
 
@@ -201,21 +201,16 @@ Graw/
 start.bat
 ```
 
-脚本会在需要时创建虚拟环境、安装依赖，并同时拉起后端与前端。
+脚本会在需要时下载 Go 模块、安装前端依赖，并同时拉起 Go 后端与前端。
 
 ### 手动启动
 
-**1. 启动后端**
+**1. 启动后端（Go）**
 
 ```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate        
-# Windows: .venv\Scripts\activate
-pip install -r requirements.txt  # 首次
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-# 或使用开发启动脚本
-python start.py
+cd backend-go
+go mod download                  # 首次拉取依赖；网络受限可先设置 GOPROXY
+go run .                         # 默认监听 :8000
 ```
 
 **2. 启动前端**
@@ -228,31 +223,16 @@ npm run dev                      # → http://localhost:5173，Vite 代理 /api 
 
 > Windows 的 PowerShell/cmd 不支持 `&&`，多命令请用分号 `;` 分隔。
 
-### Go 重构版后端（backend-go）
+### 后端说明（Go 默认）
 
-`backend-go/` 是 Python 后端的完整 Go 重构版：接口路径、响应结构、`data/` 数据文件格式与 Python 版保持兼容，前端无需任何改动。
+`backend-go/` 是当前默认后端：接口路径、响应结构、`data/` 数据文件格式与 Python 旧版（`backend/`）保持兼容，前端无需任何改动。
 
-**环境要求**
+**可选运行依赖**
 
-- Go 1.23+（无需 Python / Node 即可运行后端）
-- （可选）Docker / Podman CLI：Docker 管理、应用商店安装、运行环境等功能需要
-- （可选）`certbot`、`crontab`、`smbclient`/`mc` 等：按需用于证书、计划任务、网络存储、S3 备份
+- Docker / Podman CLI：Docker 管理、应用商店安装、运行环境等功能需要
+- `certbot`、`crontab`、`smbclient`/`mc` 等：按需用于证书、计划任务、网络存储、S3 备份
 
-**开发启动**
-
-```bash
-cd backend-go
-go mod download                  # 首次拉取依赖；网络受限可先设置 GOPROXY
-
-# 方式一：直接运行
-go run .                         # 默认监听 :8000
-
-# 方式二：编译后运行
-go build -o graw-go .
-./graw-go                        # Windows: .\graw-go.exe
-```
-
-启动后访问 `http://localhost:8000`。默认端口与 Python 版相同；若两者需要同时运行，用 `GRAW_ADDR` 换端口：
+启动后访问 `http://localhost:8000`。若 Go 与 Python 旧版需要同时运行，用 `GRAW_ADDR` 换端口：
 
 ```bash
 # Linux / macOS
@@ -310,13 +290,15 @@ CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o graw-go .
 ./graw-go
 ```
 
-也可以直接用 Go 版镜像构建（在仓库根目录执行）：
+也可以直接构建镜像（仓库根 `Dockerfile` 即 Go 版；`backend-go/Dockerfile` 内容等价）：
 
 ```bash
-docker build -f backend-go/Dockerfile -t graw-go .
+docker build -t shunx/graw .
+# 或
+docker build -f backend-go/Dockerfile -t shunx/graw .
 ```
 
-> Go 版同样会在首次启动时向数据目录播种 `admin / admin123` 账号（首次登录强制改密）。
+> 首次启动会向数据目录播种 `admin / admin123` 账号（首次登录强制改密）。
 
 **离线重置密码（忘记密码）**
 
@@ -341,18 +323,22 @@ go build -o reset-password ./cmd/reset-password
 
 - 密码至少 6 个字符，需二次确认；重置后清除「强制改密」标记，可立即用新密码登录。
 - 数据目录解析规则与面板一致：优先 `GRAW_DATA_DIR`，否则复用 `../backend/data`；使用独立数据目录时先设置该变量，例如 `GRAW_DATA_DIR=/opt/graw/data ./reset-password admin`。
-- 与 Python 版一致，重置不会强制下线已登录会话。
+- 重置不会强制下线已登录会话。
 
 ### 生产构建
 
-前端生产构建输出到 `frontend/dist`，后端会自动检测并挂载该目录作为静态资源：
+前端生产构建输出到 `frontend/dist`，Go 后端会自动检测并挂载该目录作为静态资源：
 
 ```bash
 cd frontend
 npm run build
+
+cd ../backend-go
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o graw-go .
+./graw-go                        # 默认监听 :8000，自动托管 ../frontend/dist
 ```
 
-随后直接启动后端，即可通过 `http://localhost:8000` 访问完整应用（前端由后端同源托管，无跨域配置）。也可以直接使用仓库内的 `Dockerfile` / `docker-compose.yml` 构建镜像部署。
+也可以通过 `./graw.sh start`（Windows 为 `graw.bat start`）一键构建并以后台守护进程运行。容器部署直接使用仓库内的 `Dockerfile` / `docker-compose.yml`。
 
 ## API 概览
 
@@ -390,22 +376,22 @@ npm run build
 
 ## 重置密码
 
-如果忘记管理员密码或无法登录 Web 面板，可以在服务器本地直接运行命令行脚本重置密码（无需启动后端服务）：
+如果忘记管理员密码或无法登录 Web 面板，可以在服务器本地直接运行命令行工具重置密码（无需启动后端服务）：
 
 ```bash
-cd backend
+cd backend-go
 
 # 列出所有账号
-python reset_password.py --list
+go run ./cmd/reset-password -l
 
 # 重置指定账号（交互式输入新密码）
-python reset_password.py admin
+go run ./cmd/reset-password admin
 
-# 不指定账号，脚本会提示选择
-python reset_password.py
+# 不指定账号，工具会提示选择
+go run ./cmd/reset-password
 ```
 
-脚本直接读写 `backend/data/users.json`，密码输入会隐藏，重置后自动清除「首次登录必须改密」标志。新密码至少 6 位。
+工具直接读写 `backend/data/users.json`，密码输入会隐藏，重置后自动清除「首次登录必须改密」标志。新密码至少 6 位。Python 旧版的等价命令为 `cd backend && python reset_password.py admin`。
 
 ## 配置
 
@@ -459,7 +445,7 @@ server: {
 
 1. **先查文档** —— [文档中心](./docs/README.md)（部署、子节点 Agent、插件协议、应用商店等）与 [部署与运维文档](./docs/deployment.md)（启动失败、环境变量、数据目录与排障）；官网 <https://graw.shunx.top/> 提供安装说明与界面预览。
 2. **再搜已有 Issue** —— 在 [Issues](https://github.com/wuhulab/Graw/issues)（含已关闭）中搜索关键词，常见问题大多已有现成答案。
-3. **无法登录面板** —— 在服务器本地运行 `cd backend && python reset_password.py admin` 即可离线重置管理员密码，详见 [重置密码](#重置密码)。
+3. **无法登录面板** —— 在服务器本地运行 `cd backend-go && go run ./cmd/reset-password admin` 即可离线重置管理员密码，详见 [重置密码](#重置密码)。
 4. **提交问题请走模板** —— 按模板填写 Graw 版本、部署方式与环境信息（日志请先脱敏），便于快速定位：
    - [Bug 反馈](https://github.com/wuhulab/Graw/issues/new?template=bug_report.yml)
    - [功能建议](https://github.com/wuhulab/Graw/issues/new?template=feature_request.yml)

@@ -7,36 +7,37 @@ echo "==================================="
 echo " Graw Server Panel - Unix Start"
 echo "==================================="
 
-if [ ! -d backend/.venv ]; then
-    echo "[1/3] Creating Python venv..."
-    (cd backend && python3 -m venv .venv)
+if ! command -v go >/dev/null 2>&1; then
+    echo "错误: 未找到 go 命令，请先安装 Go 1.23+" >&2
+    exit 1
 fi
 
-echo "[2/3] Installing backend dependencies..."
-# shellcheck disable=SC1091
-source backend/.venv/bin/activate
-pip install -q -r backend/requirements.txt
+echo "[1/2] Downloading Go modules..."
+(cd backend-go && go mod download)
 
 if [ ! -d frontend/node_modules ]; then
-    echo "[3/3] Installing frontend dependencies..."
+    echo "[2/2] Installing frontend dependencies..."
     (cd frontend && npm install)
 fi
 
 cleanup() {
-    echo "\nStopping..."
-    kill $BACK_PID $FRONT_PID 2>/dev/null || true
+    echo ""
+    echo "Stopping..."
+    kill "$BACK_PID" "$FRONT_PID" 2>/dev/null || true
     exit 0
 }
 trap cleanup INT TERM
 
-(cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload) &
+(cd backend-go && go run .) &
 BACK_PID=$!
 (cd frontend && npm run dev) &
 FRONT_PID=$!
 
 echo ""
-echo "Backend:  http://localhost:8000"
-echo "Frontend: http://localhost:5173"
+echo "Backend (Go): http://localhost:8000"
+echo "Frontend:     http://localhost:5173"
+echo ""
+echo "提示: Go 后端修改后需重启（Ctrl+C 后重新运行脚本）。"
 echo ""
 
-wait $BACK_PID $FRONT_PID
+wait "$BACK_PID" "$FRONT_PID"

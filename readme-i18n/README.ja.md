@@ -1,6 +1,6 @@
 # Graw
 
-Web ベースのサーバー管理パネルで、「デスクトップ OS ライク」なインタラクション設計（ウィンドウ、タスクバー、デスクトップショートカット）を採用し、さらに 1Panel 風の標準パネルモードを内蔵しています。フロントエンドは Vue 3 + Vite、バックエンドは FastAPI を使用します。
+Web ベースのサーバー管理パネルで、「デスクトップ OS ライク」なインタラクション設計（ウィンドウ、タスクバー、デスクトップショートカット）を採用し、さらに 1Panel 風の標準パネルモードを内蔵しています。フロントエンドは Vue 3 + Vite、バックエンドは Go（`backend-go/`、デフォルトのバックエンド）を使用します。旧版の Python/FastAPI 実装は `backend/` に残しています。
 
 Graw はローカルマシンだけでなく、**Agent トンネル + ペアリングされたアクセスキー** によって他のホストを「子ノード」として統一面板管理に取り込めます。1 か所でホストを切り替え、複数サーバーのコンテナ、Web サイト、ファイル、ターミナル、ファイアウォールを管理できます。
 
@@ -107,9 +107,9 @@ docker compose up -d --build
 | レイヤー | 技術 |
 |------|------|
 | フロントエンド | Vue 3（Composition API）、Vite 5、Axios、ECharts / vue-echarts、xterm.js、vue-i18n |
-| バックエンド | Python 3.11、FastAPI 0.115、Uvicorn、Pydantic 2、psutil、docker SDK |
+| バックエンド | Go 1.23（デフォルト、`backend-go/`、標準ライブラリ HTTP + gorilla/websocket + gopsutil）。旧版の Python/FastAPI 実装は `backend/` にあります |
 | 通信 | REST API（`/api/*`）+ WebSocket（監視ストリーム、ターミナル） |
-| デプロイ | マルチステージ Docker ビルド（フロントエンド Node ビルド → バックエンド Python ランタイム） |
+| デプロイ | マルチステージ Docker ビルド（フロントエンド Node ビルド → Go クロスコンパイル → Alpine ランタイム） |
 
 ## ディレクトリ構成
 
@@ -124,7 +124,8 @@ Graw/
 │   │   └── App.vue           # ルートコンポーネント（デスクトップ環境 / パネルモード切り替え）
 │   ├── vite.config.js        # 開発プロキシ /api（ws 含む）→ :8000
 │   └── package.json
-├── backend/                  # FastAPI バックエンド
+├── backend-go/               # Go バックエンド（デフォルト）
+├── backend/                  # Python/FastAPI 旧版バックエンド
 │   ├── app/
 │   │   ├── main.py           # アプリケーションエントリ：ルート登録、ミドルウェア、lifespan バックグラウンドタスク
 │   │   ├── auth.py           # JWT 認証依存関係とユーザーシード
@@ -140,9 +141,9 @@ Graw/
 ├── readme-i18n/              # 多言語 README
 ├── docs/                     # 補足ドキュメント（プラグインプロトコルなど）
 ├── agent/                    # 子ノード Agent 関連のリソースとスキル
-├── Dockerfile                # マルチステージビルド（フロントエンドビルド → バックエンドランタイム）
+├── Dockerfile                # マルチステージビルド（フロントエンドビルド → Go コンパイル → ランタイム）
 ├── docker-compose.yml        # 「完全ホスト管理」高権限オーケストレーション
-├── start.sh / start.bat      # ローカル開発ワンクリック起動（バックエンド + フロントエンド）
+├── start.sh / start.bat      # ローカル開発用起動（Go バックエンド + フロントエンド）
 └── AGENTS.md                 # コードベースのアーキテクチャと開発規約（コード変更前に必読）
 ```
 
@@ -150,7 +151,7 @@ Graw/
 
 ### 必要環境
 
-- Python 3.8+（本番イメージは 3.11）
+- Go 1.23+
 - Node.js 16+
 - （任意）Docker エンジン（Docker 管理機能に必要）
 
@@ -164,20 +165,16 @@ Graw/
 start.bat
 ```
 
-スクリプトは必要に応じて仮想環境を作成し、依存関係をインストールしたうえで、バックエンドとフロントエンドを同時に起動します。
+スクリプトは必要に応じて Go モジュールを取得し、フロントエンドの依存関係をインストールしたうえで、バックエンドとフロントエンドを同時に起動します。
 
 ### 手動起動
 
 **1. バックエンドを起動**
 
 ```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt  # 初回のみ
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-# または開発用起動スクリプトを使用
-python start.py
+cd backend-go
+go mod download                  # 初回のみ
+go run .                         # デフォルト :8000
 ```
 
 **2. フロントエンドを起動**
@@ -197,6 +194,11 @@ npm run dev                      # → http://localhost:5173、Vite が /api と
 ```bash
 cd frontend
 npm run build
+
+# Go バックエンドをコンパイル（静的バイナリ）
+cd ../backend-go
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o graw-go .
+./graw-go                        # デフォルト :8000、../frontend/dist を配信
 ```
 
 その後バックエンドを起動するだけで、`http://localhost:8000` から完全なアプリにアクセスできます（フロントエンドはバックエンドが同一オリジンで配信するため、CORS 設定は不要です）。リポジトリ内の `Dockerfile` / `docker-compose.yml` を使ってイメージをビルドしデプロイすることもできます。

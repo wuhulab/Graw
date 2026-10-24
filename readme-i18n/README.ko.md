@@ -1,6 +1,6 @@
 # Graw
 
-운영체제 데스크톱 스타일의 상호작용 디자인(창, 작업 표시줄, 바탕 화면 바로 가기)을 갖춘 웹 기반 서버 관리 패널이며, 1Panel 스타일의 표준 패널 모드도 내장되어 있습니다. 프론트엔드는 Vue 3 + Vite, 백엔드는 FastAPI를 사용합니다.
+운영체제 데스크톱 스타일의 상호작용 디자인(창, 작업 표시줄, 바탕 화면 바로 가기)을 갖춘 웹 기반 서버 관리 패널이며, 1Panel 스타일의 표준 패널 모드도 내장되어 있습니다. 프론트엔드는 Vue 3 + Vite, 백엔드는 Go(`backend-go/`, 기본 백엔드)를 사용합니다. 레거시 Python/FastAPI 구현은 `backend/`에 남아 있습니다.
 
 Graw는 로컬 머신 외에도 **Agent 터널 + 페어링된 액세스 키**를 통해 다른 호스트를 "자식 노드"로 통합 패널 관리에 편입할 수 있습니다. 한 곳에서 호스트를 전환하며 여러 서버의 컨테이너, 웹사이트, 파일, 터미널, 방화벽을 관리할 수 있습니다.
 
@@ -107,9 +107,9 @@ docker compose up -d --build
 | 계층 | 기술 |
 |------|------|
 | 프론트엔드 | Vue 3(Composition API), Vite 5, Axios, ECharts / vue-echarts, xterm.js, vue-i18n |
-| 백엔드 | Python 3.11, FastAPI 0.115, Uvicorn, Pydantic 2, psutil, docker SDK |
+| 백엔드 | Go 1.23(기본, `backend-go/`, 표준 라이브러리 HTTP + gorilla/websocket + gopsutil). 레거시 Python/FastAPI 구현은 `backend/`에 있습니다 |
 | 통신 | REST API(`/api/*`) + WebSocket(모니터링 스트림, 터미널) |
-| 배포 | 멀티 스테이지 Docker 빌드(프론트엔드 Node 빌드 → 백엔드 Python 런타임) |
+| 배포 | 멀티 스테이지 Docker 빌드(프론트엔드 Node 빌드 → Go 크로스 컴파일 → Alpine 런타임) |
 
 ## 디렉터리 구조
 
@@ -124,7 +124,8 @@ Graw/
 │   │   └── App.vue           # 루트 컴포넌트(데스크톱 환경 / 패널 모드 전환)
 │   ├── vite.config.js        # 개발 프록시 /api(ws 포함) → :8000
 │   └── package.json
-├── backend/                  # FastAPI 백엔드
+├── backend-go/               # Go 백엔드(기본)
+├── backend/                  # Python/FastAPI 레거시 백엔드
 │   ├── app/
 │   │   ├── main.py           # 애플리케이션 진입점: 라우트 등록, 미들웨어, lifespan 백그라운드 작업
 │   │   ├── auth.py           # JWT 인증 의존성과 사용자 시드
@@ -140,9 +141,9 @@ Graw/
 ├── readme-i18n/              # 다국어 README
 ├── docs/                     # 보충 문서(플러그인 프로토콜 등)
 ├── agent/                    # 자식 노드 Agent 관련 리소스와 스킬
-├── Dockerfile                # 멀티 스테이지 빌드(프론트엔드 빌드 → 백엔드 런타임)
+├── Dockerfile                # 멀티 스테이지 빌드(프론트엔드 빌드 → Go 컴파일 → 런타임)
 ├── docker-compose.yml        # "완전 호스트 관리" 고권한 오케스트레이션
-├── start.sh / start.bat      # 로컬 개발 원클릭 시작(백엔드 + 프론트엔드)
+├── start.sh / start.bat      # 로컬 개발 시작(Go 백엔드 + 프론트엔드)
 └── AGENTS.md                 # 코드베이스 아키텍처와 개발 규약(코드 변경 전 필독)
 ```
 
@@ -150,7 +151,7 @@ Graw/
 
 ### 요구 사항
 
-- Python 3.8+(프로덕션 이미지는 3.11)
+- Go 1.23+
 - Node.js 16+
 - (선택) Docker 엔진(Docker 관리 기능에 필요)
 
@@ -164,20 +165,16 @@ Graw/
 start.bat
 ```
 
-스크립트는 필요할 때 가상 환경을 만들고 의존성을 설치한 뒤 백엔드와 프론트엔드를 동시에 시작합니다.
+스크립트는 필요할 때 Go 모듈을 내려받고 프론트엔드 의존성을 설치한 뒤 백엔드와 프론트엔드를 동시에 시작합니다.
 
 ### 수동 시작
 
 **1. 백엔드 시작**
 
 ```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt  # 최초 1회
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-# 또는 개발용 시작 스크립트 사용
-python start.py
+cd backend-go
+go mod download                  # 최초 1회
+go run .                         # 기본 :8000
 ```
 
 **2. 프론트엔드 시작**
@@ -197,6 +194,11 @@ npm run dev                      # → http://localhost:5173, Vite가 /api와 ws
 ```bash
 cd frontend
 npm run build
+
+# Go 백엔드 컴파일(정적 바이너리)
+cd ../backend-go
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o graw-go .
+./graw-go                        # 기본 :8000, ../frontend/dist 제공
 ```
 
 그런 다음 백엔드를 시작하면 `http://localhost:8000`에서 전체 앱에 접속할 수 있습니다(프론트엔드는 백엔드가 동일 출처로 제공하므로 CORS 설정이 필요 없습니다). 저장소의 `Dockerfile` / `docker-compose.yml`로 이미지를 빌드해 배포할 수도 있습니다.

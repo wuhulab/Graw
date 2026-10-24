@@ -5,29 +5,30 @@ echo ====================================
 echo  Graw Server Panel - Windows Start
 echo ====================================
 
-if not exist backend\.venv (
-    echo [1/3] Creating Python venv...
-    pushd backend
-    python -m venv .venv
-    popd
+where go >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] Go not found. Please install Go 1.23+ first.
+    pause
+    exit /b 1
 )
 
-echo [2/3] Installing backend dependencies...
-call backend\.venv\Scripts\activate.bat
-pip install -q -r backend\requirements.txt
+echo [1/2] Downloading Go modules...
+pushd backend-go
+call go mod download
+popd
 
 if not exist frontend\node_modules (
-    echo [3/3] Installing frontend dependencies...
+    echo [2/2] Installing frontend dependencies...
     pushd frontend
     call npm install
     popd
 )
 
-start "Graw Backend" cmd /k "cd /d %~dp0backend && ..\backend\.venv\Scripts\activate.bat && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+start "Graw Backend (Go)" cmd /k "cd /d %~dp0backend-go && go run ."
 start "Graw Frontend" cmd /k "cd /d %~dp0frontend && npm run dev"
 
 echo.
-echo Backend: http://localhost:8000
-echo Frontend: http://localhost:5173
+echo Backend (Go): http://localhost:8000
+echo Frontend:     http://localhost:5173
 echo.
 pause

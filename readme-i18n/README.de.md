@@ -1,6 +1,6 @@
 # Graw
 
-Ein webbasiertes Serververwaltungspanel mit einem Interaktionsdesign „wie ein Desktop-Betriebssystem" (Fenster, Taskleiste, Desktop-Verknüpfungen), das zusätzlich einen Standard-Panelmodus im 1Panel-Stil bietet. Das Frontend nutzt Vue 3 + Vite, das Backend FastAPI.
+Ein webbasiertes Serververwaltungspanel mit einem Interaktionsdesign „wie ein Desktop-Betriebssystem" (Fenster, Taskleiste, Desktop-Verknüpfungen), das zusätzlich einen Standard-Panelmodus im 1Panel-Stil bietet. Das Frontend nutzt Vue 3 + Vite, das Backend Go (Verzeichnis `backend-go/`, Standard-Backend); die alte Python/FastAPI-Implementierung bleibt unter `backend/`.
 
 Über den lokalen Rechner hinaus kann Graw weitere Hosts über einen **Agent-Tunnel + gepaarte Zugriffsschlüssel** als „untergeordnete Knoten" in ein einheitliches Panel einbinden: An einer Stelle den Host wechseln und die Container, Websites, Dateien, Terminals und Firewalls mehrerer Server verwalten.
 
@@ -108,9 +108,9 @@ Bedeutung der einzelnen Parameter (erforderlich, damit das Panel den Host vollst
 | Ebene | Technologie |
 |------|------|
 | Frontend | Vue 3 (Composition API), Vite 5, Axios, ECharts / vue-echarts, xterm.js, vue-i18n |
-| Backend | Python 3.11, FastAPI 0.115, Uvicorn, Pydantic 2, psutil, docker SDK |
+| Backend | Go 1.23 (Standard, `backend-go/`; Standardbibliothek HTTP + gorilla/websocket + gopsutil); die alte Python/FastAPI-Implementierung liegt unter `backend/` |
 | Kommunikation | REST API (`/api/*`) + WebSocket (Überwachungsstream, Terminal) |
-| Deployment | Mehrstufiger Docker-Build (Node-Build des Frontends → Python-Laufzeit des Backends) |
+| Deployment | Mehrstufiger Docker-Build (Node-Build des Frontends → Go-Cross-Compile → Alpine-Laufzeit) |
 
 ## Verzeichnisstruktur
 
@@ -125,7 +125,8 @@ Graw/
 │   │   └── App.vue           # Root-Komponente (Umschalten Desktop-Umgebung / Panelmodus)
 │   ├── vite.config.js        # Dev-Proxy /api (inkl. ws) → :8000
 │   └── package.json
-├── backend/                  # FastAPI-Backend
+├── backend-go/               # Go-Backend (Standard)
+├── backend/                  # Python/FastAPI-Alt-Backend
 │   ├── app/
 │   │   ├── main.py           # Anwendungseinstieg: Routenregistrierung, Middleware, Lifespan-Hintergrundaufgaben
 │   │   ├── auth.py           # JWT-Auth-Abhängigkeiten und Benutzer-Seeding
@@ -141,9 +142,9 @@ Graw/
 ├── readme-i18n/              # mehrsprachige READMEs
 ├── docs/                     # ergänzende Dokumentation (Plugin-Protokoll usw.)
 ├── agent/                    # Ressourcen und Skills zum Agenten untergeordneter Knoten
-├── Dockerfile                # mehrstufiger Build (Frontend-Build → Backend-Laufzeit)
+├── Dockerfile                # mehrstufiger Build (Frontend-Build → Go-Kompilierung → Laufzeit)
 ├── docker-compose.yml        # Orchestrierung mit hohen Rechten für „vollständige Host-Verwaltung"
-├── start.sh / start.bat      # Ein-Klick-Start für die lokale Entwicklung (Backend + Frontend)
+├── start.sh / start.bat      # lokaler Entwicklungsstart (Go-Backend + Frontend)
 └── AGENTS.md                 # Architektur und Entwicklungsrichtlinien der Codebasis (vor Codeänderungen lesen)
 ```
 
@@ -151,7 +152,7 @@ Graw/
 
 ### Anforderungen
 
-- Python 3.8+ (Produktionsimage ist 3.11)
+- Go 1.23+
 - Node.js 16+
 - (Optional) Docker-Engine, für die Docker-Verwaltungsfunktion
 
@@ -165,20 +166,16 @@ Graw/
 start.bat
 ```
 
-Das Skript erstellt bei Bedarf eine virtuelle Umgebung, installiert Abhängigkeiten und startet Backend und Frontend gleichzeitig.
+Das Skript lädt bei Bedarf die Go-Module, installiert die Frontend-Abhängigkeiten und startet Backend und Frontend gleichzeitig.
 
 ### Manueller Start
 
 **1. Backend starten**
 
 ```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt  # nur beim ersten Mal
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-# oder das Entwicklungs-Startskript verwenden
-python start.py
+cd backend-go
+go mod download                  # nur beim ersten Mal
+go run .                         # standardmäßig :8000
 ```
 
 **2. Frontend starten**
@@ -198,9 +195,14 @@ Der Produktions-Build des Frontends wird nach `frontend/dist` geschrieben; das B
 ```bash
 cd frontend
 npm run build
+
+# Go-Backend kompilieren (statisches Binary)
+cd ../backend-go
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o graw-go .
+./graw-go                        # standardmäßig :8000, liefert ../frontend/dist aus
 ```
 
-Danach starten Sie einfach das Backend und erreichen die vollständige Anwendung unter `http://localhost:8000` (das Frontend wird vom Backend aus derselben Origin ausgeliefert, ohne CORS-Konfiguration). Sie können das Image auch direkt mit der im Repository enthaltenen `Dockerfile` / `docker-compose.yml` bauen und einsetzen.
+Danach starten Sie das Backend und erreichen die vollständige Anwendung unter `http://localhost:8000` (das Frontend wird vom Backend aus derselben Origin ausgeliefert, ohne CORS-Konfiguration). Sie können das Image auch direkt mit der im Repository enthaltenen `Dockerfile` / `docker-compose.yml` bauen und einsetzen.
 
 ## API-Überblick
 

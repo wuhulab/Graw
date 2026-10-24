@@ -1,10 +1,10 @@
 # Graw
 
-A web-based server management panel with an operating-system-like desktop interaction design (windows, taskbar, desktop shortcuts), and it also ships a classic sidebar-style standard panel mode. The frontend uses Vue 3 + Vite; the backend uses FastAPI.
+A web-based server management panel with an operating-system-like desktop interaction design (windows, taskbar, desktop shortcuts), and it also ships a classic sidebar-style standard panel mode. The frontend uses Vue 3 + Vite; the backend uses Go (the `backend-go/` directory, the default backend), while the legacy Python/FastAPI implementation is kept in `backend/`.
 
 Beyond the local machine, Graw can also bring other hosts into a unified panel as "child nodes" through an **Agent tunnel + paired access keys**: switch hosts in one place and manage the containers, websites, files, terminals and firewalls of multiple servers.
 
-Graw is an open-source, self-hosted **server management panel** — a desktop-like alternative to Cockpit — covering real-time monitoring, Docker, websites, databases, web terminal and multi-server management, built with Vue 3 + FastAPI and deployable with one Docker command.
+Graw is an open-source, self-hosted **server management panel** — a desktop-like alternative to Cockpit — covering real-time monitoring, Docker, websites, databases, web terminal and multi-server management, built with Vue 3 + Go and deployable with one Docker command.
 
 <p align="center">
   <a href="https://github.com/wuhulab/Graw/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/wuhulab/Graw?style=flat-square&logo=github&color=4c8bf5&label=Stars"></a>
@@ -138,9 +138,9 @@ Meaning of each parameter (required for the panel to fully manage the host):
 | Layer | Technology |
 |------|------|
 | Frontend | Vue 3 (Composition API), Vite 5, Axios, ECharts / vue-echarts, xterm.js, vue-i18n |
-| Backend | Python 3.11, FastAPI 0.115, Uvicorn, Pydantic 2, psutil, docker SDK |
+| Backend | Go 1.23 (default, `backend-go/`; standard library HTTP + gorilla/websocket + gopsutil); the legacy Python/FastAPI implementation is in `backend/` |
 | Communication | REST API (`/api/*`) + WebSocket (monitoring stream, terminal) |
-| Deployment | Multi-stage Docker build (frontend Node build → backend Python runtime) |
+| Deployment | Multi-stage Docker build (frontend Node build → Go cross-compile → Alpine runtime) |
 
 ## Directory structure
 
@@ -155,7 +155,8 @@ Graw/
 │   │   └── App.vue           # root component (desktop environment / panel mode switching)
 │   ├── vite.config.js        # dev proxy /api (incl. ws) → :8000
 │   └── package.json
-├── backend/                  # FastAPI backend
+├── backend-go/               # Go backend (default)
+├── backend/                  # Python/FastAPI legacy backend
 │   ├── app/
 │   │   ├── main.py           # application entry: route registration, middleware, lifespan background tasks
 │   │   ├── auth.py           # JWT auth dependencies and user seeding
@@ -171,9 +172,9 @@ Graw/
 ├── readme-i18n/              # multilingual READMEs
 ├── docs/                     # supplementary docs (plugin protocol, etc.)
 ├── agent/                    # child-node Agent resources and skills
-├── Dockerfile                # multi-stage build (frontend build → backend runtime)
+├── Dockerfile                # multi-stage build (frontend build → Go compile → runtime)
 ├── docker-compose.yml        # "full host management" high-privilege orchestration
-├── start.sh / start.bat      # one-click local dev start (backend + frontend)
+├── start.sh / start.bat      # local dev start (Go backend + frontend)
 └── AGENTS.md                 # codebase architecture and dev conventions (must-read before changing code)
 ```
 
@@ -181,7 +182,7 @@ Graw/
 
 ### Requirements
 
-- Python 3.8+ (production image is 3.11)
+- Go 1.23+
 - Node.js 16+
 - (Optional) Docker engine, for the Docker management feature
 
@@ -195,20 +196,16 @@ Graw/
 start.bat
 ```
 
-The script creates a virtual environment and installs dependencies when needed, and starts both the backend and the frontend.
+The script downloads Go modules and installs frontend dependencies when needed, and starts both the backend and the frontend.
 
 ### Manual start
 
 **1. Start the backend**
 
 ```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt  # first time only
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-# or use the development startup script
-python start.py
+cd backend-go
+go mod download                  # first time only
+go run .                         # default :8000
 ```
 
 **2. Start the frontend**
@@ -228,9 +225,14 @@ The frontend production build outputs to `frontend/dist`, and the backend automa
 ```bash
 cd frontend
 npm run build
+
+# compile the Go backend (static binary)
+cd ../backend-go
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o graw-go .
+./graw-go                        # default :8000, serves ../frontend/dist
 ```
 
-Then simply start the backend and access the complete app at `http://localhost:8000` (the frontend is served same-origin by the backend, with no CORS configuration). You can also build and deploy the image directly with the `Dockerfile` / `docker-compose.yml` provided in the repository.
+Then start the backend and access the complete app at `http://localhost:8000` (the frontend is served same-origin by the backend, with no CORS configuration). You can also build and deploy the image directly with the `Dockerfile` / `docker-compose.yml` provided in the repository.
 
 ## API overview
 

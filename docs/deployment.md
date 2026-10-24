@@ -23,7 +23,7 @@ graph TB
     FS[宿主根目录 /]
     PROCS[宿主进程与内核能力]
     subgraph C[Graw 容器 privileged + pid host]
-      BE[FastAPI 后端 8000]
+      BE[Go 后端 8000]
       FE[frontend/dist 静态资源]
       HOSTFS[hostfs 适配层 chroot /host]
     end
@@ -85,7 +85,7 @@ docker compose up -d --build
 
 ### 方式四：不用 Docker——源码构建 + 守护进程一键命令
 
-仓库根目录提供两个等价的「生产形态」脚本（区别于开发用的 `start.sh` / `start.bat` 热重载模式）：先构建 `frontend/dist`，再由后端同源托管，uvicorn 以**守护进程**后台运行。数据仍落在 `backend/data/`，无需任何容器。
+仓库根目录提供两个等价的「生产形态」脚本（区别于开发用的 `start.sh` / `start.bat`）：先构建 `frontend/dist`，再编译 Go 后端二进制（`backend-go/graw-go`），由后端同源托管并以后台**守护进程**运行。数据仍落在 `backend/data/`，无需任何容器。
 
 ```bash
 # Linux / macOS
@@ -105,13 +105,13 @@ graw.bat log
 
 | 子命令 | 作用 |
 |--------|------|
-| `deps` | 创建 venv + `pip install -r requirements.txt` + `npm install`（幂等，已装跳过） |
-| `build` | `npm run build` 产出 `frontend/dist` |
-| `start` | 依赖 / 构建缺失时自动补齐，然后以脱离控制台的方式启动 uvicorn（Linux `nohup` / Windows `DETACHED_PROCESS`），PID 写 `logs/graw.pid`，日志写 `logs/graw.log`，并轮询 `/api/health` 等待就绪 |
+| `deps` | `go mod download` + `npm install`（幂等，已装跳过） |
+| `build` | `npm run build` 产出 `frontend/dist`，并 `CGO_ENABLED=0 go build` 产出 `backend-go/graw-go` |
+| `start` | 依赖 / 构建缺失时自动补齐，然后以脱离控制台的方式启动 Go 二进制（Linux `nohup` / Windows 隐藏 cmd 包装进程），PID 写 `logs/graw.pid`，日志写 `logs/graw.log`，并轮询 `/api/health` 等待就绪 |
 | `stop` / `restart` | 按 PID 文件停止（SIGTERM → SIGKILL 兜底）/ 重启 |
 | `status` / `log` | 运行状态与健康检查 / 跟踪日志 |
 
-环境变量：`GRAW_PORT`（默认 8000）、`GRAW_HOST`（默认 `0.0.0.0`，仅本机使用可改 `127.0.0.1`）；`FORCE_BUILD=1`（Linux）可在 start 时强制重新构建前端。Windows 守护进程与当前控制台完全脱离，关闭命令行窗口不影响服务；如需开机自启，把 `graw.bat start`（或 `./graw.sh start`）加入计划任务 / systemd 即可。
+环境变量：`GRAW_PORT`（默认 8000）、`GRAW_HOST`（默认 `0.0.0.0`，仅本机使用可改 `127.0.0.1`）；`FORCE_BUILD=1`（Linux）可在 start 时强制重新构建前端。脚本会向 Go 进程注入 `GRAW_ADDR`、`GRAW_DATA_DIR=<仓库>/backend/data` 与 `GRAW_FRONTEND_DIST=<仓库>/frontend/dist`。Windows 守护进程与当前控制台完全脱离，关闭命令行窗口不影响服务；如需开机自启，把 `graw.bat start`（或 `./graw.sh start`）加入计划任务 / systemd 即可。
 
 ### 关键参数为什么必需
 
@@ -120,36 +120,40 @@ graw.bat log
 | `--privileged` | 授予容器全部内核能力（iptables、chroot、挂载、访问设备） | 防火墙规则、`chroot /host`、挂载类操作在容器内不生效 |
 | `--pid host` | 共享宿主机进程命名空间 | 进程管理 / 系统监控只能看到容器内进程 |
 | `--network host` | 使用宿主机网络 | 需改用 `-p` 映射端口；部分宿主网络操作行为不一致 |
-| `-v /:/host:rslave` + `HOST_ROOT=/host` | 把宿主根目录挂进容器 `/host`，面板经适配层（`backend/app/hostfs.py`）读写宿主文件、以 `chroot /host` 执行宿主命令 | 网站配置、证书、日志、crontab 等全部无法作用于宿主机 |
+| `-v /:/host:rslave` + `HOST_ROOT=/host` | 把宿主根目录挂进容器 `/host`，面板经适配层（`backend-go/internal/graw` 的 `HostPath/HostCmd`）读写宿主文件、以 `chroot /host` 执行宿主命令 | 网站配置、证书、日志、crontab 等全部无法作用于宿主机 |
 | `-v /var/run/docker.sock:...` | 对接宿主 Docker 引擎 | 容器 / 镜像 / 日志管理不可用 |
 | `-v /opt/graw/data:/app/backend/data` + `GRAW_HOST_DATA=/opt/graw/data` | 数据目录 bind 到宿主，且告知其宿主路径 | 应用商店安装（宿主 docker 需读到 compose 文件）会失败 |
 
 > 上述容器实质拥有宿主机 root 级操作能力，**仅建议部署于可信环境**。首次登录后请立即修改默认密码（首次启动播种 `admin` / `admin123`，强制改密），并妥善保护 `backend/data/`。
 
-## 2. 环境变量全表
+## 2. 环境变量全表（Go 后端）
 
-以下变量均在**运行时**读取，默认值来自代码；「默认」列为空表示未设置即走默认行为。
+以下变量均被 **Go 后端**在运行时读取，默认值来自代码；「默认」列为空表示未设置即走默认行为。
 
 | 变量 | 含义 | 默认 / 取值 | 来源 |
 |------|------|-------------|------|
-| `HOST_ROOT` | 宿主机根目录在容器内的挂载点；为空表示面板直接在本机运行（非容器），路径与命令原样执行 | 空；容器部署设为 `/host` | `backend/app/hostfs.py` |
-| `GRAW_HOST_DATA` | 面板 `data` 目录在**宿主机**上的实际路径，供宿主 docker 读取 compose / 备份文件 | 空；未配置时退化为 `/host` 前缀拼接 | `backend/app/hostfs.py` |
-| `GRAW_ENABLE_DOCS` | 设为 `1` 时开放 `/docs`、`/redoc`、`/openapi.json` | 空（关闭） | `backend/app/main.py` |
-| `GRAW_SESSION_ONLINE_SECONDS` | 会话「在线」判定的空闲阈值（秒），超时无活跃视为离线 | `7200`（2 小时） | `backend/app/auth.py` |
+| `GRAW_ADDR` | HTTP 监听地址 | `:8000` | `backend-go/main.go` |
+| `GRAW_DATA_DIR` | 面板数据目录（users.json / nodes.json / secret.key 等） | 自动探测 `../backend/data`，否则 `data` | `backend-go/internal/graw/cfg.go` |
+| `GRAW_FRONTEND_DIST` | 前端构建产物目录；存在时由后端同源托管 | 自动探测 `../frontend/dist` 或 `frontend/dist` | `backend-go/internal/graw/cfg.go` |
+| `HOST_ROOT` | 宿主机根目录在容器内的挂载点；为空表示面板直接在本机运行（非容器），路径与命令原样执行 | 空；容器部署设为 `/host` | `backend-go/internal/graw/cfg.go` |
+| `GRAW_HOST_DATA` | 面板 `data` 目录在**宿主机**上的实际路径，供宿主 docker 读取 compose / 备份文件 | 空 | `backend-go/internal/graw/cfg.go` |
+| `GRAW_DOCKER_BIN` | 指定 docker / podman CLI 路径 | 自动探测 | `backend-go/internal/graw/handlers_docker.go` |
+| `GRAW_APP_STORE_DIR` | 本地应用商店目录（`index.json`、`apps/`） | 自动探测 `app-store/` | `backend-go/internal/graw/handlers_appstore.go` |
+| `GRAW_SQLITE_ALLOWED_ROOTS` | 允许数据库模块访问的 SQLite 根目录（逗号分隔） | 空 | `backend-go/internal/graw/handlers_databases.go` |
+| `GRAW_COMPOSE_DIR` | 面板自身 compose 项目目录（面板内一键更新用） | 空（自动探测） | `backend-go/internal/graw/handlers_protection_tamper_update.go` |
+| `GRAW_VERSION` | 覆盖 `/api/health` 返回的版本号（容器镜像 label 读取不到时） | 空（使用内置 `AppVersion`） | `backend-go/internal/graw/sysmon.go` |
+| `GRAW_SESSION_ONLINE_SECONDS` | 会话「在线」判定的空闲阈值（秒），超时无活跃视为离线 | `7200`（2 小时） | `backend-go/internal/graw/cfg.go` |
+| `GRAW_AGENT_KEY` | 子节点「收取模式」访问 key（成对密钥之一，环境变量注入方式） | 空 | `backend-go/internal/graw/agent.go` |
+| `GRAW_AGENT_SECRET` | 子节点校验 secret（成对密钥之一） | 空 | `backend-go/internal/graw/agent.go` |
+| `GRAW_MAX_BODY_MB` | 普通请求体大小上限（MB） | `16` | `backend-go/internal/graw/cfg.go` |
+| `GRAW_MAX_UPLOAD_MB` | multipart 上传大小上限（MB） | `2048` | `backend-go/internal/graw/cfg.go` |
+| `GRAW_APPSTORE_ALLOW_PRIVATE_NET` | 设为 `1` 时允许应用商店索引 / compose 指向内网私有地址（否则拒绝非公网目标，SSRF 防护） | 空（仅公网） | `backend-go/internal/graw/handlers_appstore.go` |
+| `GRAW_RUNTIME_MOUNT_DENY` | 追加禁止作为运行时容器挂载源的宿主路径（逗号分隔） | 空；默认已拒绝 `/etc`、`/usr`、`/var`、`/root` 等系统根 | `backend-go/internal/graw/handlers_runtime.go` |
+| `TRUSTED_PROXY_DEPTH` | 反向代理层数，用于从 `X-Forwarded-For` 还原真实客户端 IP | `0`（直接部署，完全忽略 XFF） | `backend-go/internal/graw/cfg.go` |
 | `TZ` | 容器时区 | 镜像内 `Asia/Shanghai` | `Dockerfile` |
-| `GRAW_AGENT_KEY` | 子节点「收取模式」访问 key（成对密钥之一，传统环境变量注入方式） | 空 | `backend/app/agent_cfg.py` |
-| `GRAW_AGENT_SECRET` | 子节点校验 secret（成对密钥之一） | 空 | `backend/app/agent_cfg.py` |
-| `GRAW_AGENT_TS_WINDOW` | Agent 换取 JWT 时签名时间戳的新鲜度窗口（秒），超窗拒绝 | `300` | `backend/app/agent_cfg.py` |
-| `GRAW_MAX_BODY_MB` | 普通请求体大小上限（MB） | `16` | `backend/app/main.py` |
-| `GRAW_MAX_UPLOAD_MB` | multipart 上传大小上限（MB） | `2048` | `backend/app/main.py` |
-| `GRAW_APPSTORE_ALLOW_PRIVATE_NET` | 设为 `1` 时允许应用商店索引 / compose 指向内网私有地址（否则拒绝非公网目标，SSRF 防护） | 空（仅公网） | `backend/app/routers/appstore.py` |
-| `GRAW_NOTIFY_ALLOW_PRIVATE_NET` | 设为 `1` 时允许通知渠道 webhook 指向私网地址（回环 / 链路本地/云元数据始终拒绝） | 空 | `backend/app/routers/notify.py` |
-| `GRAW_UPTIME_ALLOW_PRIVATE_NET` | 设为 `1` 时允许站点可用性探测指向私网地址 | 空 | `backend/app/routers/uptime.py` |
-| `GRAW_SVCMON_ALLOW_PRIVATE_NET` | 服务/端口监控是否允许私网目标；设为 `0` 关闭 | 默认允许（`!= "0"`） | `backend/app/routers/svcmonitor.py` |
-| `GRAW_CONTAINER_NAME` | 面板自身容器名，用于从容器读取版本号 | `graw-panel` | `backend/app/routers/docker_api.py` |
-| `GRAW_RUNTIME_MOUNT_DENY` | 追加禁止作为运行时容器挂载源的宿主路径（逗号分隔） | 空；默认已拒绝 `/etc`、`/usr`、`/var`、`/root` 等系统根 | `backend/app/routers/runtime.py` |
-| `TRUSTED_PROXY_DEPTH` | 反向代理层数，用于从 `X-Forwarded-For` 还原真实客户端 IP | `0`（直接部署，完全忽略 XFF） | `backend/app/auth.py` |
 
+> Go 版未读取的 Python 旧版变量：`GRAW_ENABLE_DOCS`（Go 版未提供 `/docs`）、`GRAW_NOTIFY_ALLOW_PRIVATE_NET`、`GRAW_UPTIME_ALLOW_PRIVATE_NET`、`GRAW_SVCMON_ALLOW_PRIVATE_NET`、`GRAW_CONTAINER_NAME`、`GRAW_AGENT_TS_WINDOW`（Go 版固定 300 秒）。需要这些开关时请使用 `backend/` 的 Python 旧版。
+>
 > `GRAW_STORE_REPO` 仅用于应用商店索引生成脚本（`app-store/scripts/generate_index.py`）的构建期调用，**不是**面板运行时变量。
 
 ## 3. 数据目录与权限
@@ -174,7 +178,7 @@ graw.bat log
 
 ### 3.2 权限收紧
 
-`main.py` 的 `_secure_data_dir()` 在每次启动（lifespan）时统一收紧权限：**目录 `0700`、文件 `0600`**（递归）。这样即使默认 umask 宽松，同机低权用户也无法读取凭据文件或伪造 JWT。
+Go 后端启动时调用 `SecureDataDir()`（`backend-go/internal/graw`）统一收紧权限：**目录 `0700`、文件 `0600`**（递归）。这样即使默认 umask 宽松，同机低权用户也无法读取凭据文件或伪造 JWT。
 
 - 该操作仅在 Linux 生效；Windows / FAT 等不支持的文件系统会静默忽略（不影响功能）。
 - **不要在代码里放宽这些权限**，也不要将 `data/` 提交进仓库（已在 `.gitignore`）。
@@ -183,7 +187,7 @@ graw.bat log
 
 ### 4.1 升级
 
-- **版本号单一来源**：后端版本常量 `APP_VERSION` 定义在 `backend/app/main.py`。`/api/health` 在容器部署时优先读取面板容器镜像 tag / `org.opencontainers.image.version` label，读取不到才回退到该常量（见 `docker_api.get_self_app_version`）。
+- **版本号单一来源**：Go 后端的 `AppVersion` 定义在 `backend-go/internal/graw/cfg.go`（Python 旧版对应 `backend/app/main.py` 的 `APP_VERSION`，两处需同步）。`/api/health` 在容器部署时优先读取面板容器镜像 tag / `org.opencontainers.image.version` label，读取不到才回退到该常量。
 - 容器化升级推荐流程：
 
 ```bash
@@ -228,7 +232,7 @@ docker start graw-panel
 
 Graw 是**同源部署**设计：开发期由 Vite 代理 `/api`，生产期由后端直接托管 `frontend/dist`。放到 Nginx / Caddy 等反向代理后面时注意：
 
-1. **CORS 已关闭**：后端 `CORSMiddleware` 的 `allow_origins=[]`、`allow_credentials=False`（同源请求不受影响）。**不要**为了图方便改成 `*`，那会向任意来源回显 CORS 头，扩大攻击面。
+1. **CORS 已关闭**：Go 后端不设置跨域允许头，Python 旧版 `allow_origins=[]`、`allow_credentials=False`（同源请求不受影响）。**不要**为了图方便改成 `*`，那会向任意来源回显 CORS 头，扩大攻击面。
 2. **WebSocket 必须透传 Upgrade**：系统监控流（`/api/system/ws`）、终端（`/api/terminal/ws`）、防篡改告警（`/api/tamper/ws`）都是 WebSocket。反代需转发 `Upgrade` / `Connection` 头，否则实时功能全部失效。Nginx 参考：
 
    ```nginx
@@ -253,12 +257,12 @@ Graw 是**同源部署**设计：开发期由 Vite 代理 `/api`，生产期由�
 | 现象 | 原因 | 处理 |
 |------|------|------|
 | 访问根路径 404 或只有 API 能用 | 前端未构建，`frontend/dist` 不存在，后端不会挂载静态资源与 SPA 回退 | 在 `frontend/` 执行 `npm run build`，确认生成 `frontend/dist`（含 `index.html` 与 `assets/`）；容器部署请重新构建镜像 |
-| 访问 `/docs` 提示 404 | API 文档默认关闭 | 设 `GRAW_ENABLE_DOCS=1` 后重启后端 |
+| 访问 `/docs` 提示 404 | Go 后端未提供交互式 API 文档 | 属正常现象；需要 `/docs` 请改用 Python 旧版并设 `GRAW_ENABLE_DOCS=1` |
 | 网站 / 防火墙 / crontab 等操作「没反应」 | 未以 `privileged` + `HOST_ROOT=/host` 运行，命令未真正落到宿主机 | 检查容器参数与 `HOST_ROOT`；`chroot /host` 需要 `privileged` |
 | 进程 / 系统监控只看到容器内进程 | 未使用 `--pid host` | 补上 `pid: host` |
 | 应用商店安装失败，提示找不到 compose 文件 | 宿主 docker 读不到容器内 data 路径（未设置 `GRAW_HOST_DATA`，或 data 未 bind 到宿主） | 用 bind mount 挂载 data 并正确设置 `GRAW_HOST_DATA` 为宿主路径 |
 | 登录后立刻被要求改密码 / 无法使用面板 | 默认密码账号被强制改密（`require_non_default_password`） | 修改默认密码；忘记密码见下 |
-| 忘记管理员密码 | — | 在服务器本地执行 `cd backend && python reset_password.py admin`（直接读写 `users.json`，无需启动服务） |
+| 忘记管理员密码 | — | 在服务器本地执行 `cd backend-go && go run ./cmd/reset-password admin`（直接读写 `users.json`，无需启动服务）；Python 旧版为 `cd backend && python reset_password.py admin` |
 | 实时监控 / 终端连不上 | 反代未透传 WebSocket Upgrade，或超时过短 | 按第 5 节配置 `Upgrade` / `Connection` 与 `proxy_read_timeout` |
 | Docker Desktop for Windows 上功能残缺 | `privileged` / `pid host` / `network host` / `/:/host` 均为 Linux 特性，在 Docker Desktop for Windows 上无法完整生效 | 完整管理宿主机请在 Linux 上部署；Windows 仅建议用于前端开发或本地跑前后端调试 |
 | 多节点切换后监控数据不对 | 请求级节点（`X-Graw-Node`）与全局当前节点不一致 | 见 [docs/node-agent.md](./node-agent.md) 排障清单 |

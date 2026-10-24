@@ -1,6 +1,6 @@
 # Graw
 
-Ret-bazita servila administra panelo, kiu uzas interagodesegnon «similan al labortabla operaciumo» (fenestroj, tasko-strio, labortablaj ŝparvojoj) kaj ankaŭ integrigas norman panelan reĝimon laŭ stilo 1Panel. La fronto uzas Vue 3 + Vite, la malantaŭo uzas FastAPI.
+Ret-bazita servila administra panelo, kiu uzas interagodesegnon «similan al labortabla operaciumo» (fenestroj, tasko-strio, labortablaj ŝparvojoj) kaj ankaŭ integrigas norman panelan reĝimon laŭ stilo 1Panel. La fronto uzas Vue 3 + Vite, la malantaŭo uzas Go (dosierujo `backend-go/`, la defaŭlta malantaŭo); la malnova Python/FastAPI-implemento restas en `backend/`.
 
 Krom la loka maŝino, Graw povas ankaŭ alpreni aliajn gastigojn en unuecan panelon kiel «infano-nodoj» per **Agent-tunelo + parigitaj alirŝlosiloj**: ŝanĝu gastigon en unu loko kaj administru la ujojn, retejojn, dosierojn, terminalojn kaj fajroŝirmilojn de pluraj serviloj.
 
@@ -108,9 +108,9 @@ Signifo de ĉiu parametro (necesaj por ke la panelo plene administru la gastigon
 | Tavolo | Teknologio |
 |------|------|
 | Fronto | Vue 3 (Composition API), Vite 5, Axios, ECharts / vue-echarts, xterm.js, vue-i18n |
-| Malantaŭo | Python 3.11, FastAPI 0.115, Uvicorn, Pydantic 2, psutil, docker SDK |
+| Malantaŭo | Go 1.23 (defaŭlte, `backend-go/`; norma biblioteko HTTP + gorilla/websocket + gopsutil); la malnova Python/FastAPI-implemento troviĝas en `backend/` |
 | Komunikado | REST API (`/api/*`) + WebSocket (monitorada fluo, terminalo) |
-| Disfaldado | Pluretapa Docker-konstruo (fronta Node-konstruo → malantaŭa Python-rultempo) |
+| Disfaldado | Pluretapa Docker-konstruo (fronta Node-konstruo → Go-kompilo → Alpine-rultempo) |
 
 ## Kataloga strukturo
 
@@ -125,7 +125,8 @@ Graw/
 │   │   └── App.vue           # radika komponanto (labortabla medio / panela reĝima ŝanĝo)
 │   ├── vite.config.js        # evoluiga prokurilo /api (inkl. ws) → :8000
 │   └── package.json
-├── backend/                  # FastAPI malantaŭo
+├── backend-go/               # Go-malantaŭo (defaŭlta)
+├── backend/                  # Python/FastAPI-malnova malantaŭo
 │   ├── app/
 │   │   ├── main.py           # aplikaĵa enirpunkto: voja registrado, mezaĵoj, lifespan-fonaj taskoj
 │   │   ├── auth.py           # JWT-aŭtentigaj dependoj kaj uzanta semado
@@ -141,9 +142,9 @@ Graw/
 ├── readme-i18n/              # plurlingvaj README
 ├── docs/                     # suplementaj dokumentoj (kromaĵa protokolo ktp.)
 ├── agent/                    # rimedoj kaj kapabloj rilataj al infano-nodaj Agentoj
-├── Dockerfile                # plur-etapa konstruo (fronta konstruo → malantaŭa rultempo)
+├── Dockerfile                # plur-etapa konstruo (fronta konstruo → Go-kompilo → rultempo)
 ├── docker-compose.yml        # altrajta orkestrado «plena gastiga administrado»
-├── start.sh / start.bat      # unuklaka lanĉo por loka disvolvado (malantaŭo + fronto)
+├── start.sh / start.bat      # loka evoluiga lanĉo (Go-malantaŭo + fronto)
 └── AGENTS.md                 # arkitekturo de la kodobazo kaj disvolvaj konvencioj (legu antaŭ ŝanĝi kodon)
 ```
 
@@ -151,7 +152,7 @@ Graw/
 
 ### Postuloj
 
-- Python 3.8+ (produkta bildo estas 3.11)
+- Go 1.23+
 - Node.js 16+
 - (Opcia) Docker-motoro, por la Docker-administrado
 
@@ -165,20 +166,16 @@ Graw/
 start.bat
 ```
 
-La skripto laŭbezone kreas virtualan medion, instalas dependojn kaj samtempe lanĉas la malantaŭon kaj la fronton.
+La skripto laŭbezone elŝutas Go-modulojn, instalas la frontajn dependojn kaj samtempe lanĉas la malantaŭon kaj la fronton.
 
 ### Mana lanĉo
 
 **1. Lanĉi la malantaŭon**
 
 ```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt  # unuafoje
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-# aŭ uzu la disvolvan lanĉan skripton
-python start.py
+cd backend-go
+go mod download                  # unuafoje
+go run .                         # defaŭlte :8000
 ```
 
 **2. Lanĉi la fronton**
@@ -198,9 +195,14 @@ La produkta konstruo de la fronto estas eligita al `frontend/dist`; la malantaŭ
 ```bash
 cd frontend
 npm run build
+
+# kompili la Go-malantaŭon (statika binaraĵo)
+cd ../backend-go
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o graw-go .
+./graw-go                        # defaŭlte :8000, servas ../frontend/dist
 ```
 
-Poste simple lanĉu la malantaŭon kaj aliru la plenan aplikaĵon ĉe `http://localhost:8000` (la fronto estas servata samorigine de la malantaŭo, sen CORS-agordo). Vi ankaŭ povas rekte konstrui kaj disfaldi la bildon per la `Dockerfile` / `docker-compose.yml` en la deponejo.
+Poste lanĉu la malantaŭon kaj aliru la plenan aplikaĵon ĉe `http://localhost:8000` (la fronto estas servata samorigine de la malantaŭo, sen CORS-agordo). Vi ankaŭ povas rekte konstrui kaj disfaldi la bildon per la `Dockerfile` / `docker-compose.yml` en la deponejo.
 
 ## API-superrigardo
 

@@ -1,5 +1,6 @@
 # ============================================================
 # Graw Server Panel - 自动构建 Docker 镜像并发布到 Docker Hub
+# 镜像后端为 Go 重构版（backend-go/），前端由 Node 阶段构建。
 #
 # 触发方式:
 #   1. 打版本 tag (v1.2.3)        -> 构建并推送 :1.2.3 与 :latest
@@ -46,7 +47,8 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 3. 启用 QEMU 模拟器（仅后端 runtime 阶段按目标平台构建 arm64 时需要）
+      # 3. 启用 QEMU 模拟器（多架构镜像的 runtime 阶段需在目标平台执行 apk，
+      #    前端与 Go 编译都在 BUILDPLATFORM 上完成，不经过 QEMU）
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -76,8 +78,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           # 双缓存：gha 缓存 + 基于镜像仓库的 registry 缓存。
-          # registry 缓存可跨构建持久复用依赖层（node_modules / pip），
-          # 后续版本构建会直接跳过 npm install / pip install，速度大幅提升。
+          # registry 缓存可跨构建持久复用依赖层（node_modules / Go module），
+          # 后续版本构建会直接跳过 npm install / go mod download，速度大幅提升。
           cache-from: |
             type=gha
             type=registry,ref=${{ env.IMAGE_NAME }}:buildcache

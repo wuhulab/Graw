@@ -229,7 +229,7 @@ graph TD
 
 ## 8. 统一错误返回
 
-业务接口统一通过 FastAPI 的 `HTTPException` 返回 JSON：
+业务接口统一返回如下 JSON（Go 后端由 `WriteJSON` 输出，Python 旧版对应 `HTTPException`）：
 
 ```json
 { "detail": "错误说明" }
@@ -252,7 +252,9 @@ graph TD
 
 ## 9. 调试：打开 API 文档
 
-`/docs`、`/redoc`、`/openapi.json` 生产默认**关闭**（避免向任意设备暴露完整接口结构与参数）。调试时：
+Go 后端**不提供** `/docs`、`/redoc`、`/openapi.json`（避免向任意设备暴露完整接口结构与参数）。
+
+如需交互式文档，请使用 `backend/` 的 Python 旧版并显式开启：
 
 ```bash
 # 启动前设置环境变量

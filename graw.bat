@@ -2,12 +2,13 @@
 rem =============================================================================
 rem graw.bat - Graw "non-Docker local build + daemon" one-shot command (Windows)
 rem
-rem Production form, different from start.bat (dev hot-reload):
-rem   build frontend dist -> backend serves it -> uvicorn runs as a detached daemon.
+rem Production form, different from start.bat (dev hot start):
+rem   build frontend dist -> compile Go backend -> backend serves it as a
+rem   detached daemon.
 rem
 rem Usage:
-rem   graw.bat deps      install deps (venv + pip + npm install)
-rem   graw.bat build     build frontend (frontend\dist)
+rem   graw.bat deps      install deps (Go modules + npm install)
+rem   graw.bat build     build frontend (frontend\dist) and Go binary
 rem   graw.bat start     auto deps/build when missing, then start daemon
 rem   graw.bat stop      stop daemon
 rem   graw.bat restart   restart
@@ -20,16 +21,18 @@ rem ============================================================================
 setlocal EnableExtensions
 
 set "ROOT=%~dp0"
-set "BACKEND_DIR=%ROOT%backend"
+set "BACKEND_GO_DIR=%ROOT%backend-go"
 set "FRONTEND_DIR=%ROOT%frontend"
-set "PYEXE=%BACKEND_DIR%\.venv\Scripts\python.exe"
+set "BIN=%BACKEND_GO_DIR%\graw-go.exe"
 set "LOG_DIR=%ROOT%logs"
 set "LOG_FILE=%LOG_DIR%\graw.log"
 set "PID_FILE=%LOG_DIR%\graw.pid"
+set "RUNNER=%LOG_DIR%\graw-runner.cmd"
 set "PORT=8000"
 if defined GRAW_PORT set "PORT=%GRAW_PORT%"
 set "HOST=0.0.0.0"
 if defined GRAW_HOST set "HOST=%GRAW_HOST%"
+set "ADDR=%HOST%:%PORT%"
 
 if "%~1"=="" goto :usage
 if /i "%~1"=="deps"    goto :deps
@@ -42,30 +45,69 @@ if /i "%~1"=="log"     goto :log
 goto :usage
 
 :deps
-if not exist "%PYEXE%" (
-    echo [graw] Creating Python venv...
-    pushd "%BACKEND_DIR%"
-    python -m venv .venv
-    popd
+where go >nul 2>nul
+if errorlevel 1 (
+    echo [graw] Go not found. Please install Go 1.23+ first.
+    exit /b 1
 )
-echo [graw] Installing backend dependencies (skipped if already installed)...
-"%PYEXE%" -m pip install -q -r "%BACKEND_DIR%\requirements.txt"
+echo [graw] Downloading Go modules (skipped if cached)...
+pushd "%BACKEND_GO_DIR%"
+call go mod download
+set "DEPS_RC=%ERRORLEVEL%"
+popd
+if not "%DEPS_RC%"=="0" (
+    echo [graw] Go module download failed.
+    exit /b 1
+)
 if not exist "%FRONTEND_DIR%\node_modules" (
     echo [graw] Installing frontend dependencies (npm install, slow at first time)...
     pushd "%FRONTEND_DIR%"
     call npm install --no-audit --no-fund
+    if errorlevel 1 (
+        popd
+        echo [graw] npm install failed.
+        exit /b 1
+    )
     popd
 )
 echo [graw] Deps ready.
 goto :eof
 
-:build
-if not exist "%PYEXE%" call :deps
+:build_frontend
 if not exist "%FRONTEND_DIR%\node_modules" call :deps
+if errorlevel 1 exit /b 1
 echo [graw] Building frontend (npm run build)...
 pushd "%FRONTEND_DIR%"
 call npm run build
+set "FE_RC=%ERRORLEVEL%"
 popd
+if not "%FE_RC%"=="0" (
+    echo [graw] Frontend build failed.
+    exit /b 1
+)
+goto :eof
+
+:build_backend
+echo [graw] Building Go backend (CGO_ENABLED=0)...
+set "CGO_ENABLED=0"
+pushd "%BACKEND_GO_DIR%"
+call go build -trimpath -ldflags "-s -w" -o "%BIN%" .
+set "BUILD_RC=%ERRORLEVEL%"
+popd
+set "CGO_ENABLED="
+if not "%BUILD_RC%"=="0" (
+    echo [graw] Go build failed. See the output above.
+    exit /b 1
+)
+goto :eof
+
+:build
+call :deps
+if errorlevel 1 exit /b 1
+call :build_frontend
+if errorlevel 1 exit /b 1
+call :build_backend
+if errorlevel 1 exit /b 1
 goto :eof
 
 :start
@@ -75,15 +117,27 @@ if "%RUNNING%"=="1" (
     goto :eof
 )
 call :deps
-if not exist "%FRONTEND_DIR%\dist\index.html" call :build
+if errorlevel 1 exit /b 1
+if not exist "%FRONTEND_DIR%\dist\index.html" call :build_frontend
+if errorlevel 1 exit /b 1
+call :build_backend
+if errorlevel 1 exit /b 1
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
-echo [graw] Starting daemon: uvicorn on %HOST%:%PORT% ...
-rem Launch uvicorn detached from console (DETACHED_PROCESS=8), so closing this
-rem window does not stop the service. stdout/stderr go to logs\graw.log and the
-rem child PID is written to logs\graw.pid.
-pushd "%BACKEND_DIR%"
-"%PYEXE%" -c "import subprocess;log=open(r'%LOG_FILE%','ab',buffering=0);p=subprocess.Popen([r'%PYEXE%','-m','uvicorn','app.main:app','--host','%HOST%','--port','%PORT%','--workers','1'],stdout=log,stderr=subprocess.STDOUT,creationflags=8);open(r'%PID_FILE%','w').write(str(p.pid));print('[graw] daemon pid:',p.pid)"
-popd
+
+rem Runner script keeps stdout/stderr in one log while the daemon stays detached
+rem from the current console (closing this window does not stop the service).
+> "%RUNNER%" (
+    echo @echo off
+    echo cd /d "%BACKEND_GO_DIR%"
+    echo "%BIN%" ^>^> "%LOG_FILE%" 2^>^&1
+)
+
+set "GRAW_ADDR=%ADDR%"
+set "GRAW_DATA_DIR=%ROOT%backend\data"
+set "GRAW_FRONTEND_DIST=%FRONTEND_DIR%\dist"
+
+echo [graw] Starting daemon: graw-go on %ADDR% ...
+powershell -NoProfile -Command "$p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c','graw-runner.cmd' -WorkingDirectory '%LOG_DIR%' -WindowStyle Hidden -PassThru; $p.Id | Out-File -Encoding ascii -NoNewline '%PID_FILE%'"
 call :wait_healthy
 goto :eof
 
@@ -160,8 +214,8 @@ goto :eof
 
 :usage
 echo Usage: graw.bat {deps^|build^|start^|stop^|restart^|status^|log}
-echo   deps     install venv + pip + npm dependencies
-echo   build    build frontend dist
+echo   deps     download Go modules + npm dependencies
+echo   build    build frontend dist and Go backend binary
 echo   start    start as daemon (auto deps/build when missing)
 echo   stop     stop daemon
 echo   restart  stop + start

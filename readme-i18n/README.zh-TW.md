@@ -1,6 +1,6 @@
 # Graw
 
-一個以 Web 為基礎的伺服器管理面板，採用「類桌面作業系統」的互動設計（視窗、工作列、桌面捷徑），並內建一套 1Panel 風格的標準面板模式。前端使用 Vue 3 + Vite，後端使用 FastAPI。
+一個以 Web 為基礎的伺服器管理面板，採用「類桌面作業系統」的互動設計（視窗、工作列、桌面捷徑），並內建一套 1Panel 風格的標準面板模式。前端使用 Vue 3 + Vite，後端使用 Go（`backend-go/`，預設後端）；舊版 Python/FastAPI 實作保留在 `backend/`。
 
 除了本機之外，Graw 還能透過 **Agent 隧道 + 成對存取金鑰** 將其他主機以「子節點」形式納入統一的面板管理：在同一處即可切換主機，管理多台伺服器的容器、網站、檔案、終端與防火牆。
 
@@ -108,9 +108,9 @@ docker compose up -d --build
 | 層級 | 技術 |
 |------|------|
 | 前端 | Vue 3（Composition API）、Vite 5、Axios、ECharts / vue-echarts、xterm.js、vue-i18n |
-| 後端 | Python 3.11、FastAPI 0.115、Uvicorn、Pydantic 2、psutil、docker SDK |
+| 後端 | Go 1.23（預設，`backend-go/`；標準函式庫 HTTP + gorilla/websocket + gopsutil）；`backend/` 為 Python/FastAPI 舊版實作 |
 | 通訊 | REST API（`/api/*`）+ WebSocket（監控串流、終端） |
-| 部署 | 多階段 Docker 建置（前端 Node 建置 → 後端 Python 執行環境） |
+| 部署 | 多階段 Docker 建置（前端 Node 建置 → Go 交叉編譯 → Alpine 執行環境） |
 
 ## 目錄結構
 
@@ -125,7 +125,8 @@ Graw/
 │   │   └── App.vue           # 根元件（桌面環境 / 面板模式切換）
 │   ├── vite.config.js        # 開發代理 /api(含 ws) → :8000
 │   └── package.json
-├── backend/                  # FastAPI 後端
+├── backend-go/               # Go 後端（預設）
+├── backend/                  # Python/FastAPI 舊版後端
 │   ├── app/
 │   │   ├── main.py           # 應用程式入口：路由註冊、中介軟體、lifespan 背景任務
 │   │   ├── auth.py           # JWT 鑑權依賴與使用者播種
@@ -141,9 +142,9 @@ Graw/
 ├── readme-i18n/              # 多語言 README
 ├── docs/                     # 補充文件（外掛程式協議等）
 ├── agent/                    # 子節點 Agent 相關資源與技能
-├── Dockerfile                # 多階段建置（前端建置 → 後端執行環境）
+├── Dockerfile                # 多階段建置（前端建置 → Go 編譯 → 執行環境）
 ├── docker-compose.yml        # 「完整管理實體主機」高權限編排
-├── start.sh / start.bat      # 本機開發一鍵啟動（後端 + 前端）
+├── start.sh / start.bat      # 本機開發啟動（Go 後端 + 前端）
 └── AGENTS.md                 # 程式庫架構與開發約定（改程式碼前必讀）
 ```
 
@@ -151,7 +152,7 @@ Graw/
 
 ### 環境需求
 
-- Python 3.8+（生產映像檔為 3.11）
+- Go 1.23+
 - Node.js 16+
 - （選用）Docker 引擎，用於 Docker 管理功能
 
@@ -165,20 +166,16 @@ Graw/
 start.bat
 ```
 
-指令碼會在需要時建立虛擬環境、安裝相依套件，並同時拉起後端與前端。
+指令碼會在需要時下載 Go 模組、安裝前端相依套件，並同時拉起後端與前端。
 
 ### 手動啟動
 
 **1. 啟動後端**
 
 ```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt  # 首次
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-# 或使用開發啟動指令碼
-python start.py
+cd backend-go
+go mod download                  # 首次
+go run .                         # 預設 :8000
 ```
 
 **2. 啟動前端**
@@ -198,9 +195,14 @@ npm run dev                      # → http://localhost:5173，Vite 代理 /api 
 ```bash
 cd frontend
 npm run build
+
+# 編譯 Go 後端（靜態二進位檔）
+cd ../backend-go
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o graw-go .
+./graw-go                        # 預設 :8000，託管 ../frontend/dist
 ```
 
-隨後直接啟動後端，即可透過 `http://localhost:8000` 存取完整應用程式（前端由後端同源託管，無需跨網域設定）。也可以直接使用儲存庫內的 `Dockerfile` / `docker-compose.yml` 建置映像檔部署。
+隨後啟動後端，即可透過 `http://localhost:8000` 存取完整應用程式（前端由後端同源託管，無需跨網域設定）。也可以直接使用儲存庫內的 `Dockerfile` / `docker-compose.yml` 建置映像檔部署。
 
 ## API 概覽
 

@@ -13,11 +13,15 @@ COPY frontend/ .
 RUN npm run build
 
 FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS go-builder
+# 在构建宿主平台编译，再按目标平台交叉编译，避免 arm64 走 QEMU 模拟编译。
+ARG TARGETOS
+ARG TARGETARCH
 WORKDIR /build/backend-go
 COPY backend-go/go.mod backend-go/go.sum ./
 RUN go mod download
 COPY backend-go/ .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/graw-go .
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags "-s -w" -o /out/graw-go .
 
 FROM alpine:3.20 AS runtime
 

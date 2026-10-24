@@ -3,7 +3,7 @@
 #
 # 方案说明：
 #   将宿主机根目录 "/" 挂载到容器内 "/host"，并通过环境变量
-#   HOST_ROOT=/host 让面板后端（app/hostfs.py 适配层）据此：
+#   HOST_ROOT=/host 让面板后端（Go 版 backend-go 的 hostfs 适配层）据此：
 #     - 读写宿主机文件（文件管理、网站配置、日志、证书等）
 #     - 通过 chroot /host 执行宿主机命令（nginx/certbot/iptables/crontab）
 #   配合 privileged + host 网络 + pid:host，面板可完整管理宿主机。
