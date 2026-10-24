@@ -55,7 +55,7 @@ class BackupUnitTest(unittest.TestCase):
         # SSRF 防护替身：真实校验会做 DNS 解析与主机钉扎，在无外网/无 DNS 的
         # 测试环境中必然失败（返回 400），从而掩盖「上传 / 认证 / 错误码映射」
         # 这些真正被验证的逻辑。此处只放行安全校验，被测代码的其余分支不变。
-        from unittest import mock
+        import unittest.mock as mock
 
         self._ssrf_patchers = [
             mock.patch("app.ssrf_guard.assert_safe_http_url", lambda *a, **k: None),

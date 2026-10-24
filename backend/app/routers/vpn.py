@@ -122,7 +122,8 @@ def save_config(req: ConfigReq):
         try:
             vpn_policy.start_core(reason="apply")
         except ValueError as e:
-            warning = str(e)
+            logger.warning("应用 VPN 配置后启动核心失败: %s", e)
+            warning = "核心启动失败，请查看面板日志"
     else:
         vpn_policy.stop_core("disabled")
     return {"ok": True, "config": store, "status": vpn_policy.get_status(), "warning": warning}
@@ -135,7 +136,8 @@ def start():
     try:
         vpn_policy.start_core(reason="manual")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.warning("手动启动 VPN 核心失败: %s", e)
+        raise HTTPException(status_code=400, detail="核心启动失败，请查看面板日志")
     return {"ok": True, "status": vpn_policy.get_status()}
 
 
@@ -157,7 +159,8 @@ def wake():
             vpn_policy.start_core(reason="wake")
             started = True
         except ValueError as e:
-            detail = str(e)
+            logger.warning("唤醒 VPN 核心失败: %s", e)
+            detail = "核心启动失败，请查看面板日志"
     return {"ok": True, "started": started, "detail": detail, "status": vpn_policy.get_status()}
 
 

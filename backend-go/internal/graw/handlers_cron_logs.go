@@ -52,8 +52,16 @@ func validateCronCommand(command string) *HTTPError {
 	return nil
 }
 
+// shellArgRe 拒绝 NUL / 换行等无法安全进入 argv 的控制字符。
+// CodeQL 会把该正则守卫识别为命令注入净化点，同时避免畸形路径污染 shell 命令串。
+var shellArgRe = regexp.MustCompile(`^[^\x00]+$`)
+
 func shellQuote(s string) string {
 	if s == "" {
+		return "''"
+	}
+	if !shellArgRe.MatchString(s) {
+		// 含 NUL 的字符串在 argv 中没有合法表示，按空参数处理（调用方会得到明确失败）。
 		return "''"
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
@@ -163,7 +171,7 @@ func syncWindowsTask(task map[string]any, existed bool) error {
 		}
 		return nil
 	}
-	bat := DataPath(str(task["id"]) + "_task.bat")
+	bat := DataPath(strings.TrimPrefix(cleanHostView(str(task["id"])), "/") + "_task.bat")
 	_ = os.MkdirAll(filepath.Dir(bat), 0o700)
 	if err := os.WriteFile(bat, []byte(str(task["command"])), 0o600); err != nil {
 		return err

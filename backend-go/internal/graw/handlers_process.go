@@ -1,6 +1,7 @@
 package graw
 
 import (
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -47,7 +48,7 @@ func registerProcessRoutes(a *App) {
 	a.Post("/api/process/{pid}/kill", perm("process"), func(w http.ResponseWriter, r *http.Request) error {
 		u := CurrentUser(r)
 		pid, err := strconv.Atoi(PathParam(r, "pid"))
-		if err != nil || pid <= 0 {
+		if err != nil || pid <= 0 || pid > math.MaxInt32 {
 			return NewHTTPError(422, "pid 非法")
 		}
 		var req struct {
@@ -95,7 +96,7 @@ func registerProcessRoutes(a *App) {
 	})
 	a.Get("/api/process/{pid}", perm("process"), func(w http.ResponseWriter, r *http.Request) error {
 		pid, err := strconv.Atoi(PathParam(r, "pid"))
-		if err != nil || pid <= 0 {
+		if err != nil || pid <= 0 || pid > math.MaxInt32 {
 			return NewHTTPError(422, "pid 非法")
 		}
 		if remoteActive() {

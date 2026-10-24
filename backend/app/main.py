@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 import json as _json
 import os
 import asyncio
-from typing import Optional
 
 from app.routers import (
     system,
@@ -428,7 +427,7 @@ def _proxy_perm_map() -> dict:
         # 只认带模块声明的那次，先到先得，避免被无依赖路由覆盖成空。
         mapping.setdefault(prefix, mods)
     _proxy_perm_map_cache = mapping
-    return mapping
+    return _proxy_perm_map_cache
 
 
 def _proxy_perm_for_path(path: str) -> tuple:

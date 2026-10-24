@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -369,13 +370,16 @@ func frpStart(data map[string]any) error {
 		return nil
 	}
 	binName := frpBinary(data)
-	bin := binName
-	if HostWhich(binName) != "" {
-		bin = HostWhich(binName)
-	} else if Exists(HostPath(binName)) {
-		bin = HostPath(binName)
-	} else {
-		return NewHTTPError(400, "未检测到 frp 可执行文件: "+binName)
+	bin := HostWhich(binName)
+	if bin == "" {
+		local := HostPath(binName)
+		if !Exists(local) {
+			return NewHTTPError(400, "未检测到 frp 可执行文件: "+binName)
+		}
+		bin = local
+	}
+	if !execNameRe.MatchString(bin) {
+		return NewHTTPError(400, "frp 可执行文件路径非法")
 	}
 	cfgView := frpConfigPath(data)
 	cfg := HostPath(cfgView)
@@ -707,6 +711,10 @@ func vpnStart(data map[string]any) error {
 		vpnMu.Unlock()
 		return NewHTTPError(400, "未检测到 mihomo/clash 核心，请在配置中指定 binPath")
 	}
+	if !execNameRe.MatchString(bin) {
+		vpnMu.Unlock()
+		return NewHTTPError(400, "VPN 核心路径非法")
+	}
 	cfgPath := DataPath("vpn", "config.yaml")
 	_ = os.MkdirAll(filepath.Dir(cfgPath), 0o700)
 	if err := os.WriteFile(cfgPath, []byte(vpnProxyYAML(data)), 0o600); err != nil {
@@ -825,7 +833,11 @@ func appendVPNLog(message string) {
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			log.Printf("graw: 关闭 VPN 日志文件失败: %v", cerr)
+		}
+	}()
 	_, _ = f.WriteString("[" + time.Now().Format("2006-01-02 15:04:05") + "] " + message + "\n")
 }
 

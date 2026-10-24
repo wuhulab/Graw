@@ -415,11 +415,11 @@ def _try_docker_sdk():
         try:
             _client.ping()
             return _client
-        except Exception:
+        except Exception as ping_err:
             try:
                 _client.close()
-            except Exception:
-                pass
+            except Exception as close_err:
+                logger.debug("关闭失效 Docker 客户端失败: ping=%s, close=%s", ping_err, close_err)
             _client = None
     if not DOCKER_SDK:
         return None
@@ -456,9 +456,10 @@ def _try_docker_sdk():
             candidates += ["unix:///var/run/docker.sock", "unix:///run/podman/podman.sock"]
         try:
             docker = _import_docker()  # 懒加载：首次建立 SDK 连接时才导入
-        except Exception:
+        except Exception as e:
             # SDK 存在但导入失败（依赖损坏）：短暂退避后走 CLI 探测
             _docker_fail_until = time.time() + _podman_fail_backoff
+            logger.debug("Docker SDK 导入失败，退避至 %.0f: %s", _docker_fail_until, e)
             return None
         for host in candidates:
             try:

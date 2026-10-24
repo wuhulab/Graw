@@ -100,19 +100,17 @@ func TrashRoot() string {
 
 // PathInTrash 判断路径是否位于回收站目录内（不含根目录本身）。
 func PathInTrash(p string) bool {
-	base := path.Clean(TrashRoot())
-	abs := p
 	if !remoteActive() {
-		base = filepath.Clean(TrashRoot())
-		var err error
-		abs, err = filepath.Abs(p)
+		base := filepath.Clean(TrashRoot())
+		abs, err := filepath.Abs(p)
 		if err != nil {
 			return false
 		}
 		rel, err := filepath.Rel(base, abs)
 		return err == nil && rel != "." && !strings.HasPrefix(rel, "..")
 	}
-	abs = path.Clean(p)
+	base := path.Clean(TrashRoot())
+	abs := path.Clean(p)
 	if abs == base {
 		return false
 	}
@@ -431,7 +429,7 @@ func copyFileContents(src, dst string, perm os.FileMode) error {
 		return err
 	}
 	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
+		_ = out.Close()
 		return err
 	}
 	return out.Close()

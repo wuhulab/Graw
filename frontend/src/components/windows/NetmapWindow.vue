@@ -12,7 +12,7 @@
     <!-- 列表视图 -->
     <template v-if="view === 'list'">
       <div class="ui-toolbar">
-        <button class="ui-btn primary" @click="openForm()">{{ $t('nm.create') }}</button>
+        <button class="ui-btn primary" @click="openCreate()">{{ $t('nm.create') }}</button>
         <button class="ui-btn" @click="loadAll">{{ $t('common.refresh') }}</button>
         <span class="ui-hint right">{{ $t('nm.hint', { node: currentNodeName() }) }}</span>
       </div>
@@ -46,7 +46,7 @@
           <div class="nm-row-actions">
             <button class="ui-btn mini primary" @click="openPreview(it)">{{ $t('nm.open') }}</button>
             <button class="ui-btn mini" @click="openNewTab(it)">{{ $t('nm.newTab') }}</button>
-            <button class="ui-btn mini" @click="openForm(it)">{{ $t('common.edit') }}</button>
+            <button class="ui-btn mini" @click="openEdit(it)">{{ $t('common.edit') }}</button>
             <button class="ui-btn mini danger" @click="doRemove(it)">{{ $t('common.delete') }}</button>
           </div>
         </div>
@@ -116,11 +116,20 @@ async function loadAll() {
   }
 }
 
-// 打开表单：不传参=新建；传条目=编辑并回填
-function openForm(it) {
-  formId.value = it ? it.id : ''
-  formName.value = it ? (it.name || '') : ''
-  formUrl.value = it ? (it.url || '') : (props.autoService || '')
+// 打开新建表单（autoService 场景预填地址）
+function openCreate() {
+  formId.value = ''
+  formName.value = ''
+  formUrl.value = props.autoService || ''
+  formError.value = ''
+  formOpen.value = true
+}
+
+// 打开编辑表单：回填条目字段
+function openEdit(it) {
+  formId.value = it.id
+  formName.value = it.name || ''
+  formUrl.value = it.url || ''
   formError.value = ''
   formOpen.value = true
 }
@@ -200,7 +209,7 @@ onMounted(async () => {
       await loadAll()
       openPreview(r.item)
     } catch (e) {
-      openForm()   // openForm 会把 autoService 填入地址框
+      openCreate()   // 新建表单会把 autoService 填入地址框
       formError.value = e?.response?.data?.detail || String(e)
     }
   }

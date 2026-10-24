@@ -69,9 +69,7 @@ GROUP_AUTO = "自动选择"
 
 # 主机名 / IPv4 / IPv6（宽松校验，拒绝空白与控制字符即可）
 _HOST_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.\-:]*[A-Za-z0-9])?$")
-# 名称：拒绝控制字符与换行（进入 YAML 前的最后防线），长度 ≤ 64
-_NAME_RE = re.compile(r"^[^\x00-\x1f\x7f]{1,64}$")
-# 通用令牌（uuid / 密码 / 加密方式等）
+# 通用令牌（uuid / 密码 / 加密方式 / 名称等，拒绝控制字符）
 _TOKEN_RE = re.compile(r"^[^\x00-\x1f\x7f]{1,256}$")
 # 支持的节点类型（Clash / Clash.Meta 兼容）
 NODE_TYPES = ("ss", "vmess", "vless", "trojan", "hysteria2", "socks5", "http")
@@ -474,8 +472,8 @@ def _controller_get(path: str, timeout: float = 2.0):
         )
         if r.status_code == 200:
             return r.json()
-    except (requests.RequestException, ValueError):
-        pass
+    except (requests.RequestException, ValueError) as e:
+        logger.debug("核心控制接口请求失败: %s", e)
     return None
 
 
@@ -502,13 +500,14 @@ def _kill_orphans() -> None:
                     p.terminate()
                     p.wait(timeout=5)
                     logger.info("已清理遗留 VPN 核心进程 pid=%s", p.info["pid"])
-                except (psutil.NoSuchProcess, psutil.AccessDenied, subprocess.TimeoutExpired):
+                except (psutil.NoSuchProcess, psutil.AccessDenied, subprocess.TimeoutExpired) as e:
+                    logger.debug("结束遗留核心进程失败，尝试强制结束: %s", e)
                     try:
                         p.kill()
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
+                    except (psutil.NoSuchProcess, psutil.AccessDenied) as e2:
+                        logger.debug("强制结束遗留核心进程失败: %s", e2)
     except ImportError:
-        pass
+        logger.debug("psutil 不可用，跳过遗留核心进程清理")
     except Exception as e:  # 枚举进程失败不阻塞启动（lgtm[py/empty-except] 尽力而为）
         logger.debug("清理遗留核心进程失败: %s", e)
 
@@ -563,6 +562,7 @@ def start_core(reason: str = "manual") -> dict:
     if not core_running():
         _stop_reason = "error"
         code = _proc.poll() if _proc is not None else -1
+        logger.error("VPN 核心异常退出（exit=%s，reason=%s），详情见 vpn_core.log", code, _stop_reason)
         raise ValueError(f"核心进程异常退出（exit={code}），详情见 vpn_core.log")
     logger.info("VPN 核心已启动（reason=%s, pid=%s, controller=%s）", reason, _proc.pid, ok)
     return get_status()
@@ -614,6 +614,7 @@ def probe_activity() -> dict:
     totals = (int(data.get("downloadTotal") or 0), int(data.get("uploadTotal") or 0))
     active = bool(conns) or totals != _last_totals
     _last_totals = totals
+    logger.debug("VPN 核心累计流量已更新: %s", _last_totals)
     return {"reachable": True, "active": active, "conns": len(conns)}
 
 
@@ -707,8 +708,8 @@ async def stop_monitor() -> None:
         _wd_task.cancel()
         try:
             await _wd_task
-        except (asyncio.CancelledError, Exception):
-            pass
+        except (asyncio.CancelledError, Exception) as e:
+            logger.debug("VPN 看门狗任务已结束: %s", e)
         _wd_task = None
     stop_core("shutdown", silent=True)
 

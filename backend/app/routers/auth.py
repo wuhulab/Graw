@@ -587,7 +587,12 @@ async def create_user(req: CreateUserRequest, request: Request, admin: dict = De
         "created_at": time.time(),
     }
     _save_users(users)
-    logger.info("管理员创建账号 %s（角色 %s，模块权限 %s）", req.username, req.role, perms if perms is not None else "全量")
+    logger.info(
+        "管理员创建账号 %s（角色 %s，模块权限 %s）",
+        str(req.username).replace("\n", " ").replace("\r", ""),
+        str(req.role).replace("\n", " ").replace("\r", ""),
+        str(perms if perms is not None else "全量").replace("\n", " ").replace("\r", ""),
+    )
     auditlog.record("创建用户", admin["username"], get_client_ip(request), f"目标:{req.username} 角色:{req.role}")
     return {"ok": True}
 

@@ -302,6 +302,9 @@ func localPluginRoots() []string {
 }
 
 func readLocalManifest(pluginID string) (string, string, bool) {
+	if !pluginIDRe.MatchString(pluginID) {
+		return "", "", false
+	}
 	for _, root := range localPluginRoots() {
 		pdir := filepath.Join(root, pluginID)
 		b, err := os.ReadFile(filepath.Join(pdir, "plugin.yml"))
@@ -444,15 +447,16 @@ func installPlugin(req pluginInstallRequest) (map[string]any, error) {
 			return nil, err
 		}
 		ymlText, baseURL, sourceType = text, source, "remote"
-	case IsDir(source):
-		b, err := os.ReadFile(filepath.Join(source, "plugin.yml"))
+	default:
+		dirSource := cleanHostView(source)
+		if !IsDir(dirSource) {
+			return nil, NewHTTPError(400, "非法 source: "+source)
+		}
+		b, err := os.ReadFile(filepath.Join(dirSource, "plugin.yml"))
 		if err != nil {
 			return nil, NewHTTPError(404, "目录缺少 plugin.yml: "+source)
 		}
-		abs, _ := filepath.Abs(source)
-		ymlText, pdir, sourceType = string(b), abs, "dir"
-	default:
-		return nil, NewHTTPError(400, "非法 source: "+source)
+		ymlText, pdir, sourceType = string(b), dirSource, "dir"
 	}
 
 	var raw map[string]any

@@ -32,7 +32,7 @@ class PhpHostRootDetectTest(unittest.TestCase):
                 p = os.path.join(root, rel, name)
                 with open(p, "w") as f:
                     f.write("")
-                os.chmod(p, 0o755)
+                os.chmod(p, 0o700)
             with mock.patch("app.hostfs.HOST_ROOT", root):
                 with mock.patch("platform.system", return_value="Linux"):
                     found = phpversions._detect_linux()

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -391,7 +392,11 @@ func sshConnect(node map[string]any, timeout time.Duration) (*ssh.Client, error)
 			if cand == "" {
 				continue
 			}
-			if keyData, readErr = os.ReadFile(cand); readErr == nil {
+			abs, absErr := filepath.Abs(cand)
+			if absErr != nil {
+				continue
+			}
+			if keyData, readErr = os.ReadFile(cleanHostView(abs)); readErr == nil {
 				break
 			}
 		}

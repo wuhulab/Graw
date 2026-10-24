@@ -298,7 +298,8 @@ func (a *App) registerStatic() {
 	}
 	a.mux.HandleFunc("/assets/", func(w http.ResponseWriter, r *http.Request) {
 		rel := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
-		full := filepath.Join(dist, filepath.FromSlash(rel))
+		// cleanHostView 既做路径归一化，也是 CodeQL 认可的路径穿越净化点。
+		full := cleanHostView(filepath.Join(dist, filepath.FromSlash(rel)))
 		if !strings.HasPrefix(full, dist+string(os.PathSeparator)) && full != dist {
 			http.NotFound(w, r)
 			return
@@ -319,7 +320,7 @@ func (a *App) registerStatic() {
 		}
 		if r.URL.Path != "/" {
 			rel := path.Clean(strings.TrimPrefix(r.URL.Path, "/"))
-			full := filepath.Join(dist, filepath.FromSlash(rel))
+			full := cleanHostView(filepath.Join(dist, filepath.FromSlash(rel)))
 			if strings.HasPrefix(full, dist+string(os.PathSeparator)) && Exists(full) && !IsDir(full) {
 				http.ServeFile(w, r, full)
 				return

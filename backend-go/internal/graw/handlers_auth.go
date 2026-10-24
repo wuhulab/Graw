@@ -337,7 +337,10 @@ func loginHandler(w http.ResponseWriter, r *http.Request) error {
 	}
 	AuditRecord("登录成功", req.Username, ip, "")
 	RecordLogin(req.Username, ip, ua, "success", "")
-	log.Printf("graw: 用户 %s 登录成功（IP %s）", user.Username(), ip)
+	// 清除换行后再落日志，避免用户名/来源 IP 伪造日志行（CWE-117）。
+	safeUser := strings.ReplaceAll(strings.ReplaceAll(user.Username(), "\r", ""), "\n", "")
+	safeIP := strings.ReplaceAll(strings.ReplaceAll(ip, "\r", ""), "\n", "")
+	log.Printf("graw: 用户 %s 登录成功（IP %s）", safeUser, safeIP)
 	return WriteJSON(w, 200, map[string]any{"token": token, "user": public})
 }
 

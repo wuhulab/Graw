@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -381,6 +382,9 @@ func tamperSiteBackupDir(siteID string) string {
 
 func siteResolveFile(root, rel string) (string, bool) {
 	rel = strings.TrimLeft(strings.ReplaceAll(rel, "\\", "/"), "/")
+	if !filepath.IsLocal(rel) {
+		return "", false
+	}
 	full := filepath.Join(HostPath(root), filepath.FromSlash(rel))
 	base := filepath.Clean(HostPath(root))
 	if !withinBase(base, filepath.Clean(full)) {
@@ -953,7 +957,11 @@ func registerUpdateRoutes(a *App) {
 			logPath := DataPath("update.log")
 			f, _ := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 			if f != nil {
-				defer f.Close()
+				defer func() {
+					if cerr := f.Close(); cerr != nil {
+						log.Printf("graw: 关闭更新日志失败: %v", cerr)
+					}
+				}()
 				fmt.Fprintf(f, "[%s] 开始一键更新（%s）\n", time.Now().Format("2006-01-02 15:04:05"), dir)
 			}
 			res := runCommand(600*time.Second, "sh", "-c", "cd "+shellQuote(dir)+" && docker compose pull && docker compose up -d")

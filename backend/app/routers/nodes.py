@@ -313,8 +313,8 @@ def _remote_overview(node_id: str) -> dict:
     if len(ld) >= 3:
         try:
             load1, load5, load15 = map(float, ld[:3])
-        except ValueError:
-            pass
+        except ValueError as e:
+            logger.debug("解析负载值失败，按 0 处理: %s", e)
     try:
         ncores = int(blocks.get("NPROC", "").strip() or "1")
     except ValueError:

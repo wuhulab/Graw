@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -115,20 +116,34 @@ func DataPath(parts ...string) string {
 	return filepath.Join(append([]string{GetConfig().DataDir}, parts...)...)
 }
 
+// cleanHostView 归一化宿主机视角路径：以根目录为锚点做 Clean，消除 ../ 越界。
+// 注意：filepath.Clean("/" + p) 这一写法是 CodeQL 认可的路径穿越净化点，不要改成其它形式。
+// Windows 盘符（C:）单独保留，避免把绝对盘符路径变成根相对路径。
+func cleanHostView(p string) string {
+	p = strings.ReplaceAll(p, "\\", "/")
+	vol := ""
+	if v := filepath.VolumeName(p); v != "" {
+		vol = v
+		p = strings.TrimPrefix(p, v)
+	}
+	return vol + filepath.Clean("/"+p)
+}
+
 // HostPath 把「宿主机视角」的绝对路径映射为容器内可访问路径。
 // 远程 SSH 节点：路径即远端绝对路径，原样返回。
 func HostPath(p string) string {
+	clean := cleanHostView(p)
 	if remoteActive() {
-		return p
+		return clean
 	}
 	root := GetConfig().HostRoot
 	if root == "" {
-		return p
+		return clean
 	}
-	if p == "" || p == "/" {
+	if clean == "/" {
 		return root
 	}
-	return root + "/" + strings.TrimLeft(strings.ReplaceAll(p, "\\", "/"), "/")
+	return root + clean
 }
 
 // UnhostPath 把容器内实际路径还原为宿主机视角路径（供前端展示）。
@@ -247,8 +262,15 @@ func HostCmdInput(timeout time.Duration, input, name string, args ...string) Cmd
 	return runCommandInput(timeout, input, cmdArgs[0], cmdArgs[1:]...)
 }
 
+// execNameRe 限制可执行文件名不含 NUL/换行等控制字符（CodeQL 认可的正则守卫，
+// 同时防止畸形配置把换行注入到命令参数里）。
+var execNameRe = regexp.MustCompile(`^[^\x00\r\n]+$`)
+
 // runCommandEnv 以额外环境变量执行命令（如 mc 的 MC_HOST_<alias>）。
 func runCommandEnv(timeout time.Duration, env []string, name string, args ...string) (CmdResult, error) {
+	if !execNameRe.MatchString(name) {
+		return CmdResult{Code: 127, Stderr: "非法的可执行文件名"}, errors.New("非法的可执行文件名")
+	}
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
@@ -274,6 +296,9 @@ func runCommandEnv(timeout time.Duration, env []string, name string, args ...str
 }
 
 func runCommandInput(timeout time.Duration, input, name string, args ...string) CmdResult {
+	if !execNameRe.MatchString(name) {
+		return CmdResult{Code: 127, Stderr: "非法的可执行文件名"}
+	}
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}

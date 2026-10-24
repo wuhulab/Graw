@@ -189,8 +189,8 @@ async def set_config(req: SetConfigRequest, _: dict = Depends(require_admin)):
     # 防止攻击者经日志聚合、备份或宿主机文件读取面拿到入口。
     logger.info(
         "ShunX 安全入口已更新: enabled=%s, entry_set=%s",
-        config.get("enabled"),
-        bool(config.get("entry_path")),
+        str(config.get("enabled")).replace("\n", " ").replace("\r", ""),
+        str(bool(config.get("entry_path"))).replace("\n", " ").replace("\r", ""),
     )
     return {"ok": True, "config": config}
 

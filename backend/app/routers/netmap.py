@@ -42,11 +42,17 @@ import requests as http_client
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 from app import auth as auth_mod
 
 logger = logging.getLogger("graw.netmap")
+
+
+def _safe_log(value) -> str:
+    """日志字段清洗：去掉换行，避免用户可控内容伪造日志行（CWE-117）。"""
+    return str(value).replace("\n", " ").replace("\r", "")
+
 
 router = APIRouter()
 
@@ -213,7 +219,7 @@ def create(req: NetmapReq):
         data = _load()
         data.setdefault("items", []).append(item)
         _save(data)
-    logger.info("创建内网映射 %s -> %s", item["name"], url)
+    logger.info("创建内网映射 %s -> %s", _safe_log(item["name"]), _safe_log(url))
     return {"ok": True, "item": item}
 
 
@@ -234,7 +240,7 @@ def update(iid: str, req: NetmapReq):
         item["name"] = (req.name or "").strip()[:64] or url
         item["url"] = url
         _save(data)
-    logger.info("更新内网映射 %s -> %s", iid, url)
+    logger.info("更新内网映射 %s -> %s", _safe_log(iid), _safe_log(url))
     return {"ok": True, "item": item}
 
 
@@ -250,7 +256,7 @@ def remove(iid: str):
             raise HTTPException(status_code=404, detail="映射条目不存在")
         data["items"] = items
         _save(data)
-    logger.info("删除内网映射 %s", iid)
+    logger.info("删除内网映射 %s", _safe_log(iid))
     return {"ok": True}
 
 
@@ -291,8 +297,8 @@ def _rewrite_location(location: str, base: str, proxy_prefix: str) -> str:
             if base_path and path.startswith(base_path):
                 path = path[len(base_path):] or "/"
             return proxy_prefix + path + (("?" + loc.query) if loc.query else "")
-    except ValueError:
-        pass
+    except ValueError as e:
+        logger.debug("重写代理重定向地址失败: %s", e)
     return location
 
 

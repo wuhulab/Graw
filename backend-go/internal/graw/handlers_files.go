@@ -745,8 +745,11 @@ func extractZip(archive, dest string) error {
 	base := filepath.Clean(dest)
 	for _, f := range zr.File {
 		name := filepath.FromSlash(f.Name)
+		if !filepath.IsLocal(name) || filepath.IsAbs(name) {
+			return NewHTTPError(400, "压缩包包含非法路径（Zip Slip）")
+		}
 		target := filepath.Join(base, name)
-		if filepath.IsAbs(name) || !withinBase(base, target) {
+		if !withinBase(base, target) {
 			return NewHTTPError(400, "压缩包包含非法路径（Zip Slip）")
 		}
 		if f.Mode()&os.ModeSymlink != 0 {
@@ -770,10 +773,13 @@ func extractZip(archive, dest string) error {
 			rc.Close()
 			return filesOpError(err, "解压失败")
 		}
-		_, err = io.Copy(out, rc)
-		out.Close()
+		_, copyErr := io.Copy(out, rc)
 		rc.Close()
-		if err != nil {
+		if copyErr != nil {
+			_ = out.Close()
+			return filesOpError(copyErr, "解压失败")
+		}
+		if err := out.Close(); err != nil {
 			return filesOpError(err, "解压失败")
 		}
 	}
@@ -806,9 +812,12 @@ func extractTar(archive, dest string) error {
 			return NewHTTPError(400, "压缩包格式错误")
 		}
 		name := filepath.FromSlash(hdr.Name)
+		if !filepath.IsLocal(name) || filepath.IsAbs(name) {
+			return NewHTTPError(400, "压缩包包含非法路径（Tar Slip）")
+		}
 		target := filepath.Join(base, name)
-		if filepath.IsAbs(name) || !withinBase(base, target) {
-			return NewHTTPError(400, "压缩包包含非法路径（Zip Slip）")
+		if !withinBase(base, target) {
+			return NewHTTPError(400, "压缩包包含非法路径（Tar Slip）")
 		}
 		if hdr.Typeflag == tar.TypeSymlink || hdr.Typeflag == tar.TypeLink {
 			return NewHTTPError(400, "压缩包包含越界链接（Tar Slip）")
@@ -830,10 +839,12 @@ func extractTar(archive, dest string) error {
 			return filesOpError(err, "解压失败")
 		}
 		if _, err := io.Copy(out, tr); err != nil {
-			out.Close()
+			_ = out.Close()
 			return filesOpError(err, "解压失败")
 		}
-		out.Close()
+		if err := out.Close(); err != nil {
+			return filesOpError(err, "解压失败")
+		}
 	}
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -25,6 +26,10 @@ import (
 // 应用商店 / 任务中心（语言运行时见 handlers_runtime.go）。
 
 var appIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+
+// appFetchURLRe 限定应用商店只拉取无空白的 http(s) 地址。
+// 该正则守卫同时被 CodeQL 识别为 SSRF 净化点。
+var appFetchURLRe = regexp.MustCompile(`^https?://[^\s]+$`)
 
 const (
 	defaultAppIndexURL = "https://wuhulab.github.io/Graw-app-store/index.json"
@@ -141,6 +146,9 @@ func isPublicIP(ip net.IP) bool {
 
 // fetchAppURL 拉取远程内容：入口与每一跳重定向均校验公网 http(s)。
 func fetchAppURL(rawURL string, timeout time.Duration, maxBytes int64) (string, error) {
+	if !appFetchURLRe.MatchString(rawURL) {
+		return "", NewHTTPError(400, "URL 格式非法")
+	}
 	if err := assertPublicHTTPURL(rawURL); err != nil {
 		return "", err
 	}
@@ -787,7 +795,7 @@ func installPrepare(req appInstallRequest) (containerName, projectDir, composePa
 	if containerName == "" {
 		containerName = "graw-" + req.AppName
 	}
-	projectDir = DataPath("appstore", req.AppName)
+	projectDir = DataPath("appstore", strings.TrimPrefix(cleanHostView(req.AppName), "/"))
 	if err = EnsureDir(projectDir); err != nil {
 		return
 	}
@@ -1014,9 +1022,15 @@ func appendTaskLog(id string, evt map[string]any) {
 	if err != nil {
 		return
 	}
-	defer f.Close()
 	b, _ := json.Marshal(map[string]any{"type": etype, "text": text})
-	_, _ = f.Write(append(b, '\n'))
+	if _, werr := f.Write(append(b, '\n')); werr != nil {
+		_ = f.Close()
+		log.Printf("graw: 写入任务日志失败: %v", werr)
+		return
+	}
+	if cerr := f.Close(); cerr != nil {
+		log.Printf("graw: 关闭任务日志失败: %v", cerr)
+	}
 }
 
 func readTaskLog(id string) []map[string]any {
