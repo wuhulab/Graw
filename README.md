@@ -1,4 +1,8 @@
-# Graw
+<p align="center">
+  <img src="demo-photo/graw-logo.svg" alt="Graw logo" width="150" />
+</p>
+
+<h1 align="center">Graw</h1>
 
 一个基于 Web 的服务器管理面板，采用「类桌面操作系统」的交互设计（窗口、任务栏、桌面快捷方式），并内置一套经典侧边栏风格的标准面板模式。前端使用 Vue 3 + Vite，后端使用 Go（`backend-go/`）。
 
