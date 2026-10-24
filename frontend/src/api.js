@@ -300,6 +300,20 @@ export const portforwardApi = {
   remove: (id) => api.delete(`/portforward/${id}`).then(r => r.data)
 }
 
+// VPN 转发策略：Clash 兼容订阅生成 + mihomo/clash 核心托管（面板所在主机）
+export const vpnApi = {
+  get: () => api.get('/vpn').then(r => r.data),
+  status: () => api.get('/vpn/status').then(r => r.data),
+  saveConfig: (body) => api.put('/vpn/config', body).then(r => r.data),
+  start: () => api.post('/vpn/start').then(r => r.data),
+  stop: () => api.post('/vpn/stop').then(r => r.data),
+  wake: () => api.post('/vpn/wake').then(r => r.data),
+  rotateToken: () => api.post('/vpn/subtoken').then(r => r.data),
+  detect: () => api.post('/vpn/detect').then(r => r.data),
+  preview: () => api.get('/vpn/preview').then(r => r.data),
+  log: () => api.get('/vpn/log').then(r => r.data)
+}
+
 // 内网映射：节点内网 HTTP 服务反代访问（数据按当前节点视角存储）
 export const netmapApi = {
   list: () => api.get('/netmap').then(r => r.data),

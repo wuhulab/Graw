@@ -213,7 +213,7 @@ const MENU_GROUPS = [
   { key: 'database', titleKey: 'panel.menu.database', items: ['database'] },
   { key: 'container', titleKey: 'panel.menu.container', items: ['docker', 'runtime', 'process', 'imgsafety', 'slowquery'] },
   { key: 'file', titleKey: 'panel.menu.file', items: ['files', 'recycle', 'netstorage', 'ftpusers'] },
-  { key: 'network', titleKey: 'panel.menu.network', items: ['frp', 'portforward', 'netmap'] },
+  { key: 'network', titleKey: 'panel.menu.network', items: ['frp', 'portforward', 'vpn', 'netmap'] },
   { key: 'security', titleKey: 'panel.menu.security', items: ['shunxprotection', 'sessions'] },
   { key: 'task', titleKey: 'panel.menu.task', items: ['tasks', 'batch', 'report'] },
   { key: 'store', titleKey: 'panel.menu.store', items: ['appstore'] },

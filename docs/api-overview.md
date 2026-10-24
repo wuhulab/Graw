@@ -170,6 +170,7 @@ ws://<host>/api/system/ws?token=<JWT>
 | `/api/report` | `ADMIN` | — | 巡检报告 |
 | `/api/portforward` | `ADMIN` | — | SSH 端口转发 |
 | `/api/netmap` | `ADMIN`（代理端点支持 `?__graw_token=` 弹性鉴权） | ✔ | 内网映射：节点内网 HTTP 服务反代访问（CRUD + `/proxy/{id}/{path}` 流式反代） |
+| `/api/vpn` | `PERM("vpn")`；`/api/vpn/sub` 为订阅端点（32 字节令牌自鉴权，无需登录） | — | VPN 转发策略：Clash 兼容订阅生成 / 宿主机 mihomo/clash 核心托管 / 低占用看门狗（config/status/start/stop/wake/subtoken/detect/preview/log/sub） |
 | `/api/imgsafety` | `ADMIN` | — | 镜像漏洞扫描 |
 | `/api/slowquery` | `ADMIN` | — | MySQL 慢查询分析 |
 | `/api/svcmonitor` | `ADMIN` | — | 服务 / 端口监控 |
@@ -213,13 +214,13 @@ graph TD
 
 ```
 /api/auth  /api/nodes  /api/terminal  /api/agent  /api/ui
-/api/shunx  /api/health  /api/batch  /api/gitdeploy  /api/portforward
+/api/shunx  /api/health  /api/batch  /api/gitdeploy  /api/portforward  /api/vpn
 ```
 
 排除原因分两类：
 
 - **主面板自身职责**：登录（`auth`）、节点管理（`nodes`）、终端（`terminal`，走 paramiko）、Agent 自身（`agent`）、界面设置（`ui`）、安全入口（`shunx`）、健康检查（`health`）。
-- **必须在主面板本地执行**：批量操作（`batch`，主面板持全部节点凭据直连）、Git 部署 webhook（`gitdeploy`，按 `node_id` 分发）、端口转发（`portforward`，隧道建立在主面板与节点之间）。
+- **必须在主面板本地执行**：批量操作（`batch`，主面板持全部节点凭据直连）、Git 部署 webhook（`gitdeploy`，按 `node_id` 分发）、端口转发（`portforward`，隧道建立在主面板与节点之间）、VPN 转发策略（`vpn`，核心进程与订阅令牌都是主面板本机职责）。
 
 另有两点必须知道：
 

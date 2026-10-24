@@ -1984,6 +1984,7 @@ Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队
       imgsafety: 'فحص الصور',
       slowquery: 'تحليل الاستعلام البطيء',
       nodeoverview: 'نظرة عامة على العقد',
+      vpn: 'سياسة VPN',
     },
     // 窗口标题
     winTitle: {

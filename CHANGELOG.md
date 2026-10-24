@@ -8,6 +8,12 @@
 ## [Unreleased]
 
 ### Added
+- **VPN 转发策略**：把面板里维护的 VPN 节点整理成兼容 Clash / Clash.Meta / mihomo 的订阅链接（`/api/vpn/sub?token=`，32 字节随机令牌可随时重置、恒时比较、未启用/令牌错一律 404 防枚举），并可在宿主机托管 mihomo/clash 核心真正跑起来
+  - 策略三项勾选：**端口转发**（每条转发条目生成 `DST-PORT` 分流规则，核心侧以 `listeners: type: tunnel` 落地，可勾选经 VPN 或直连目标）/ **全局代理**（`MATCH,VPN` 兜底规则，核心开放 mixed-port HTTP/SOCKS5 混合端口做网关）/ **低占用模式（默认勾选）**
+  - 低占用模式：看门狗 30 秒轮询核心 `external-controller /connections`（有并发连接或流量增量即活跃），空闲超过阈值（默认 15 分钟）自动关停核心；拉取订阅、`POST /api/vpn/wake`、手动启动等「初次请求」自动重新拉起；非低占用模式下核心意外退出 60 秒限频自愈
+  - 核心仅监听本机（`allow-lan: false`、`external-controller` 绑 `127.0.0.1` + secret）；`binPath` 留空自动探测 mihomo / clash-meta / clash，未装核心时订阅仍可用（端口转发/全局代理提示安装）
+  - 后端 `vpn_policy.py`（配置渲染/进程托管/看门狗）+ `routers/vpn.py`（config/status/start/stop/wake/subtoken/detect/preview/log）；`auth.MODULES` 新增 `vpn` 模块（`PERM("vpn")`），`/api/vpn` 与 portforward 同为面板主机定位（在 `_AGENT_PROXY_EXCLUDE_PREFIX`，不经 Agent 代理）
+  - 前端「VPN转发策略」窗口（桌面 + 面板模式侧边栏「网络」分组，Star 解锁范围）：策略勾选、订阅链接显隐/复制/重置、节点与转发条目内联表单（按节点类型显隐字段）、核心管理（探测/日志）；28 个语言包补全文案
 - **内网映射（netmap）**：把「当前节点」的内网 HTTP 服务（如 `http://localhost:3000`）反代到面板侧，窗口内 iframe 直达或新标签打开；数据按节点视角存于节点本地 `data/netmap.json`，远端节点经 Agent 隧道在子节点执行（CRUD 与反代全自动透传）
   - 后端 `routers/netmap.py`：条目 CRUD + `/api/netmap/proxy/{id}/{path}` 流式反代（`?__graw_token=` 弹性鉴权兼容 iframe、剥目标防嵌套头并放宽为 `SAMEORIGIN`、绝对 `Location` 重写回代理路径、显式绕开系统代理、同步 requests 放线程池）；`auth.MODULES` 新增 `netmap` 模块（`PERM("netmap")`），登记 `remote_cap.LOCAL_PREFIX`（裸 SSH 远端禁用）；依赖 `requests` 显式入 `requirements.txt`
   - 前端「内网映射」窗口（桌面 + 面板模式侧边栏「网络」分组，Star 解锁范围）：列表 / 内联新建编辑表单 / iframe 预览；支持深链 `?c=<本机|节点名|节点id>&s=<服务地址>` 登录后自动切节点：已有同地址条目直接预览，没有则自动创建并立即打开目标内容，无需手动保存

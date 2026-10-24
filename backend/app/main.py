@@ -63,6 +63,7 @@ from app.routers import (
     phpversions,
     recycle,
     plugins,
+    vpn,
 )
 from app.auth import (
     seed_default_users,
@@ -81,6 +82,7 @@ from app import trash
 from app import plugin_protocol
 from app import reporting
 from app import portforward as pf_store
+from app import vpn_policy
 from app import tty_persist
 
 # 权限分级：
@@ -150,6 +152,9 @@ async def lifespan(app: FastAPI):
     reporting.start_daily()
     # 恢复持久化的 SSH 端口转发隧道（enabled=true 条目）
     pf_store.restore_all()
+    # 恢复 VPN 转发核心（低占用模式不随面板启动，等待首次请求唤醒）+ 低占用看门狗
+    vpn_policy.restore()
+    await vpn_policy.start_monitor()
     yield
     # 关闭后台采集协程
     await system.stop_metrics_producer()
@@ -161,6 +166,7 @@ async def lifespan(app: FastAPI):
     await svcmonitor.stop_monitor()
     await trash.stop_auto_purge()
     reporting.stop_daily()
+    await vpn_policy.stop_monitor()
     pf_store.stop_all()
     # 关闭全部「持久化终端」会话：结束常驻 shell，避免面板退出后留下孤儿进程
     tty_persist.get_manager().shutdown_all()
@@ -236,6 +242,8 @@ _AGENT_PROXY_EXCLUDE_PREFIX = (
     "/api/batch",
     "/api/gitdeploy",
     "/api/portforward",
+    # VPN 转发策略：核心托管在面板所在主机、订阅由主面板下发（同 SSH 端口转发定位）
+    "/api/vpn",
 )
 
 
@@ -925,6 +933,12 @@ app.include_router(report.router, prefix="/api/report", tags=["report"], depende
 # SSH 端口转发：本地直连远程服务（portforward 模块，排除 Agent 代理——隧道建立在
 # 主面板与节点之间，不能把请求转发给子节点执行）
 app.include_router(portforward.router, prefix="/api/portforward", tags=["portforward"], dependencies=PERM("portforward"))
+
+# VPN 转发策略：Clash 兼容订阅生成 + mihomo/clash 核心托管（vpn 模块，排除 Agent
+# 代理——核心与订阅都落在面板所在主机）。管理组挂 PERM("vpn")；订阅组（/sub）
+# 自带令牌鉴权（Clash 客户端无法携带 Bearer 头），凭 32 字节随机 token 换取配置。
+app.include_router(vpn.router, prefix="/api/vpn", tags=["vpn"], dependencies=PERM("vpn"))
+app.include_router(vpn.sub_router, prefix="/api/vpn", tags=["vpn"])
 
 # 内网映射：节点内网 HTTP 服务反代（netmap 模块）。CRUD 组挂 PERM("netmap")；
 # 代理组自带「Bearer 或 ?token=」弹性鉴权依赖（iframe 场景无法携带自定义头）。

@@ -1982,6 +1982,7 @@ Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队
       imgsafety: 'Scrutinium imaginum',
       slowquery: 'Analyator interrogationum tardarum',
       nodeoverview: 'Conspectus nodorum',
+      vpn: 'Consilium VPN',
     },
     // 窗口标题
     winTitle: {

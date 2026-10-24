@@ -2028,6 +2028,7 @@ Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队
       imgsafety: '𒅎𒈠𒄀𒈾𒀸 𒄩𒀭𒁕𒀀𒋻 (镜像扫描/imāginaš ḫandātar)',
       slowquery: '𒄩𒀭𒁕𒀀𒋻 𒀭𒁕 (慢查询分析/ḫandātar anda)',
       nodeoverview: '𒄩𒀭𒁕𒀀𒋻 𒄩𒅈𒁕𒀸 (节点总览/ḫandātar ḫardāš)',
+      vpn: 'VPN-šešar',
     },
     // 窗口标题
     winTitle: {

@@ -682,6 +682,7 @@ MODULES = (
     "healthcheck",  # 一键系统体检
     "portforward",  # SSH 端口转发
     "netmap",       # 内网映射（节点内网 HTTP 服务反代访问）
+    "vpn",          # VPN 转发策略（Clash 订阅 / 核心托管）
     "loginlog",     # 登录日志管理（查看全部 / 清空 / 告警配置）
 )
 

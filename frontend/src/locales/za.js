@@ -1986,6 +1986,7 @@ Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队
       imgsafety: 'Siengq saimyau',
       slowquery: 'Manh gyaux faenseg',
       nodeoverview: 'Gyang dauqvan',
+      vpn: 'VPN caegloek',
     },
     // 窗口标题
     winTitle: {

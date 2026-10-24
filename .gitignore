@@ -54,3 +54,5 @@ graw_site/
 graw_vip/
 backend/reset_vip.py
 scripts/
+
+backend-go/

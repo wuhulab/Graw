@@ -107,6 +107,7 @@ Graw/
 | `/api/nodes` `/api/sshkeys` | 多节点管理 / SSH 密钥部署 | ADMIN |
 | `/api/ui` | 界面设置（公开/public + 管理员/config） | 端点内自行鉴权 |
 | `/api/frp` `/api/netstorage` `/api/update` `/api/notify` `/api/uptime` `/api/certcheck` | 内网穿透/网络储存/更新/通知/可用性/证书 | ADMIN |
+| `/api/vpn` | VPN 转发策略（Clash 订阅 / mihomo/clash 核心托管 / 低占用看门狗） | PERM("vpn")（订阅端点 `/api/vpn/sub` 以令牌自鉴权，不挂登录依赖） |
 | `/api/batch` `/api/gitdeploy` `/api/portforward` | 批量操作中心 / 站点 Git 自动部署 / SSH 端口转发（**三者永不经 Agent 代理**） | ADMIN（gitdeploy webhook 端点内验签） |
 | `/api/report` `/api/rollback` `/api/imgsafety` `/api/slowquery` | 巡检报告 / 配置快照回滚 / 镜像漏洞扫描 / 慢查询分析 | ADMIN |
 | `/api/svcmonitor` `/api/healthcheck` | 服务与端口监控 / 一键体检 | ADMIN |
@@ -188,10 +189,10 @@ cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
   3. `remote_capability_guard`：local-only 接口门控（纵深防御；远端配了 Agent 时请求已在上一层被代理走，不会到这里）。
   4. `security_headers` / `CORSMiddleware`：安全响应头与同源策略。
   5. 业务路由 + 鉴权依赖。
-- **新增业务接口若需对子节点透传**，确认它不在 `_AGENT_PROXY_EXCLUDE_PREFIX`（auth/nodes/terminal/agent/ui/shunx/health/batch/gitdeploy/portforward）中即可自动被代理，无需额外改动。
+- **新增业务接口若需对子节点透传**，确认它不在 `_AGENT_PROXY_EXCLUDE_PREFIX`（auth/nodes/terminal/agent/ui/shunx/health/batch/gitdeploy/portforward/vpn）中即可自动被代理，无需额外改动。
 
 ### 5.4 后台任务
-- 在 `lifespan()` 中启停的 7 个常驻协程：系统指标采集（`system.start_metrics_producer`）、防篡改监控、通知中心、站点可用性、证书到期、服务/端口监控、回收站过期清理（`trash.start_auto_purge`）。另有每日巡检报告协程（`reporting.start_daily`，08:00 生成并推送）与启动时恢复的 SSH 端口转发隧道（`portforward.restore_all`）。**新增常驻监控请在此配对启停**，避免泄漏协程。
+- 在 `lifespan()` 中启停的 7 个常驻协程：系统指标采集（`system.start_metrics_producer`）、防篡改监控、通知中心、站点可用性、证书到期、服务/端口监控、回收站过期清理（`trash.start_auto_purge`）。另有每日巡检报告协程（`reporting.start_daily`，08:00 生成并推送）、启动时恢复的 SSH 端口转发隧道（`portforward.restore_all`），以及 VPN 转发策略的核心恢复与低占用看门狗（`vpn_policy.restore()` + `start_monitor()`，空闲自动停核心、初次请求唤醒）。**新增常驻监控请在此配对启停**，避免泄漏协程。
 
 ### 5.5 安全中间件
 - `security_headers` 给所有响应附加 CSP / `X-Content-Type-Options: nosniff` / `X-Frame-Options: DENY` / `Referrer-Policy: same-origin`。改动前端注入资源（如新 CDN）时需注意 CSP 限制（`script-src` 已放行 `unsafe-inline` + `unsafe-eval`）。

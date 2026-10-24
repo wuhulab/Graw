@@ -1982,6 +1982,7 @@ Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队
       imgsafety: 'Scan íomhá',
       slowquery: 'Anailís ceisteanna mall',
       nodeoverview: 'Foramharc nód',
+      vpn: 'Beartas VPN',
     },
     // 窗口标题
     winTitle: {

@@ -34,5 +34,11 @@
     "globals": "^17.13.0",
     "prettier": "^3.9.9",
     "vite": "^5.4.6"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "vue-demi"
+    ]
   }
 }

@@ -2031,6 +2031,7 @@ Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队
       imgsafety: 'σάρωσις εἰδώλων (镜像扫描/sárōsis eidṓlōn)',
       slowquery: 'ἀνάλυσις βραδειῶν ἐπερωτήσεων (慢查询分析/análysis bradeiôn)',
       nodeoverview: 'ἐπισκόπησις κόμβων (节点总览/episkópesis kómbōn)',
+      vpn: 'Πολιτικὴ VPN',
     },
     // 窗口标题
     winTitle: {

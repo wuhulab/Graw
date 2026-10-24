@@ -282,6 +282,7 @@ import {
   MonitoringWindow, CertWindow, WebStatsWindow, RewriteWindow, SiteOptsWindow,
   MetricsHistoryWindow, RollbackWindow, BatchWindow, GitDeployWindow, ReportWindow,
   PortForwardWindow, PortForwardFormWindow, NetmapWindow, ImageScanWindow, SlowQueryWindow, FtpUsersWindow,
+  VpnWindow,
   PhpVersionsWindow, SessionsWindow, NodeOverviewWindow,
   preloadWindows,   // 空闲预加载：桌面模式下分批预取全部窗口 chunk（打开即渲染）
 } from './components/windows/lazyWindows.js'
@@ -482,6 +483,8 @@ const shortcuts = ref([
   { key: 'report', label: '巡检报告', titleKey: 'app.shortcut.report', icon: markRaw(BarChart3), component: markRaw(ReportWindow), w: 960, h: 600, adminOnly: true, perm: 'report' },
   // SSH 端口转发：本地直连远程节点服务（管理员，面向远程节点的隧道）
   { key: 'portforward', label: '端口转发', titleKey: 'app.shortcut.portforward', icon: markRaw(Unlink), component: markRaw(PortForwardWindow), w: 880, h: 580, adminOnly: true, perm: 'portforward' },
+  // VPN 转发策略：Clash 兼容订阅生成 + 核心托管（管理员，面板所在主机执行）
+  { key: 'vpn', label: 'VPN转发策略', titleKey: 'app.shortcut.vpn', icon: markRaw(Network), component: markRaw(VpnWindow), w: 1000, h: 680, adminOnly: true, perm: 'vpn' },
   // 内网映射：当前节点的内网 HTTP 服务反代访问（数据随节点走，远端经 Agent 代理）
   { key: 'netmap', label: '内网映射', titleKey: 'app.shortcut.netmap', icon: markRaw(Network), component: markRaw(NetmapWindow), w: 900, h: 600, adminOnly: true, perm: 'netmap', remoteCap: 'local' },
   // 镜像漏洞扫描：本地 advisory 比对（管理员）
@@ -926,7 +929,7 @@ const STAR_LOCKED_KEYS = new Set([
   // 应用 / 任务 / 部署
   'appstore', 'tasks', 'gitdeploy', 'batch',
   // 网络 / 安全
-  'frp', 'portforward', 'netmap', 'shunxprotection', 'ftpusers',
+  'frp', 'portforward', 'vpn', 'netmap', 'shunxprotection', 'ftpusers',
   // 备份 / 报告
   'rollback', 'report',
 ])
