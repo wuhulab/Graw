@@ -61,6 +61,11 @@ Graw/
 │   ├── test_*_unit.py / test_*_e2e.py  # pytest 单测与端到端用例
 │   ├── reset_password.py        # 离线重置管理员密码脚本（读 data/users.json）
 │   └── requirements.txt
+├── backend-go/                  # Go 语言完整重构版后端（接口与 Python 版兼容）
+│   ├── main.go                  # 进程入口：配置/播种账号/后台协程/HTTP 服务
+│   ├── internal/graw/           # 单包实现：路由、鉴权、SSH/Agent、中间件、各业务模块
+│   ├── go.mod / go.sum
+│   └── Dockerfile               # 前端构建 + Go 编译 + 精简运行时
 ├── frontend/
 │   ├── src/
 │   │   ├── main.js              # 入口：createApp().use(i18n)
@@ -139,6 +144,21 @@ npm install      # 或 pnpm install
 npm run dev      # → http://localhost:5173，Vite 代理 /api 到 :8000
 ```
 
+### Go 重构版后端（backend-go）
+
+接口路径、请求/响应结构与数据文件格式与 Python 版保持兼容，默认复用
+`backend/data`（可用 `GRAW_DATA_DIR` 覆盖）。前端无需改动。
+
+```bash
+cd backend-go
+go build ./...
+go run .                    # 默认 :8000，可用 GRAW_ADDR 覆盖（如 :8001）
+# 生产：先构建前端，再运行 Go 二进制（自动托管 frontend/dist）
+```
+
+依赖：`docker`/`podman` CLI（Docker 模块）、`certbot`、`crontab`、`smbclient`/`mc`
+（可选，按功能使用）；容器镜像见 `backend-go/Dockerfile`。
+
 
 ### 生产构建 / 部署
 ```bash
@@ -153,7 +173,8 @@ cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 首次启动在 `backend/data/users.json` 自动播种：
 - 账号 `admin` / 密码 `admin123`，首次登录强制改密。
 - 签名密钥持久化于 `backend/data/secret.key`（首次自动生成）。
-- 忘记密码可用 `cd backend && python reset_password.py admin` 离线重置。
+- 忘记密码可用 `cd backend && python reset_password.py admin` 离线重置；Go 版等价命令为
+  `cd backend-go && go run ./cmd/reset-password admin`（实现见 `internal/graw/reset_password.go` 与 `internal/resetpw/`）。
 
 ---
 
@@ -230,7 +251,9 @@ cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 4. **`data/` 权限与凭据**：含 SSH/数据库/JWT 密钥，勿提交到仓库、勿放宽权限、勿明文回传前端（`agent_cfg.public_status()` 已脱敏，照此模式）。
 5. **容器高权限（仅可信环境）**：`docker-compose.yml` 使用 `privileged` + `network_mode: host` + `pid: host` + `-v /:/host:rslave` + docker.sock。目的是让面板完整管理宿主机；**Docker Desktop for Windows 上这些无法完整生效**。开发阶段建议本地直接跑前后端，而非依赖该 compose。
 6. **前端构建产物由后端托管**：`npm run build` 输出 `frontend/dist`，`main.py` 自动挂载 `/assets` 与 SPA 回退。改了前端后若生产不生效，先确认 `frontend/dist` 已生成。
-7. **版本号单一来源**：升级版本只改 `main.py` 的 `APP_VERSION`；`/api/health` 在容器部署时优先读镜像 tag/label。
+7. **版本号单一来源**：升级版本只改 `main.py` 的 `APP_VERSION`；Go 重构版对应
+   `backend-go/internal/graw/cfg.go` 的 `AppVersion`，两处需同步。`/api/health`
+   在容器部署时优先读镜像 tag/label。
 8. **不要绕过 remote_cap / Agent 代理**：设计新接口时明确它是 local-only 还是需要子节点透传，避免越权或代理失效。`batch` / `gitdeploy` / `portforward` 三类**永远留在主面板执行**（已进 `_AGENT_PROXY_EXCLUDE_PREFIX`），别把它们改成可代理。
 9. **请求体大小受限**：全局中间件对 `Transfer-Encoding` 返回 411、超限返回 413（普通 16MB / multipart 2GB）。新增接收大负载的端点时不能用 chunked 上传，必要时改环境变量而不是改代码常量。
 10. **文档要跟着改**：功能变更后同步更新 `docs/`（面向开发者/运维）与 `GETMEREAD/`（大白话运行逻辑，规矩见 `GETMEREAD/README.md`：在对应模块文件里追加一节并刷新文字与图，别新建同名文件）。
@@ -256,7 +279,8 @@ cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 | 改监控/指标采集 | `routers/system.py`、`store/systemMetrics.js` |
 | 调应用商店配方 | `app-store/` 目录（YAML），机制见 `docs/app-store-recipe.md` |
 | 写插件（GPOP） | `plugin_protocol.py`、`routers/plugins.py`，规范见 `docs/plugin-protocol.md` |
-| 改网站 / WAF / 引擎模式 | `routers/sites.py`、`waf.py`、`webmode.py`、`webserver.py`（原理见 `GETMEREAD/09`） |
+| 改网站 / WAF / 引擎模式 | `routers/sites.py`、`waf.py`、`webmode.py`、`webserver.py`（原理见 `GETMEREAD/09`）；Go 版见 `backend-go/internal/graw/handlers_sites.go`、`handlers_siteopts_ssl.go` |
+| 查看 Go 重构实现 | `backend-go/internal/graw/`（`httpx.go` 路由与中间件、`agent.go` 多节点/Agent、各 `handlers_*.go` 业务模块） |
 | 改部署方式 / 环境变量 | `docker-compose.yml`、`Dockerfile`、`docs/deployment.md` |
-| 重置/查凭据/用户数据 | `backend/data/`、`reset_password.py` |
-| 升级版本号 | 只改 `main.py` 的 `APP_VERSION`，并在 `CHANGELOG.md` 记一笔 |
+| 重置/查凭据/用户数据 | `backend/data/`、`reset_password.py`；Go 版 `backend-go/cmd/reset-password` |
+| 升级版本号 | 只改 `main.py` 的 `APP_VERSION`（Go 版同步 `backend-go/internal/graw/cfg.go` 的 `AppVersion`），并在 `CHANGELOG.md` 记一笔 |

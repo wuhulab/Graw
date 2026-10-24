@@ -8,6 +8,11 @@
 ## [Unreleased]
 
 ### Added
+- **Go 重构版后端（backend-go）**：用 Go 完整重写 Python/FastAPI 后端，接口路径、请求/响应结构与 `data/` 文件格式保持兼容，前端无需改动即可切换
+  - 单包实现 `backend-go/internal/graw/`：Go 1.22 `ServeMux` 路由、JWT(HS256)+bcrypt+TOTP 鉴权、会话/权限模型、安全响应头与请求体限额、SPA 静态托管
+  - 覆盖原后端全部业务路由（鉴权/系统监控 + WebSocket、Docker/文件/进程/磁盘/终端、网站与 WAF/SSL/伪静态/访问统计、数据库、计划任务/防火墙/日志、应用商店/运行时/任务、备份/面板备份/回滚/巡检报告、通知/可用性/证书/服务监控、多节点与 Agent 隧道、SSH 密钥/端口转发/批量操作、Frp/内网映射/网络储存/VPN/Git 部署/插件协议）
+  - 多节点：SSH 连接池与主机密钥 TOFU、成对密钥换取子节点 JWT、`direct-tcpip` 上的 HTTP 与 WebSocket 隧道桥接（system/docker/terminal/tamper）
+  - 依赖原生驱动（MySQL/PostgreSQL/SQLite/Redis）+ CLI（docker/podman、crontab、certbot、smbclient/mc），提供多阶段 `backend-go/Dockerfile`
 - **VPN 转发策略**：把面板里维护的 VPN 节点整理成兼容 Clash / Clash.Meta / mihomo 的订阅链接（`/api/vpn/sub?token=`，32 字节随机令牌可随时重置、恒时比较、未启用/令牌错一律 404 防枚举），并可在宿主机托管 mihomo/clash 核心真正跑起来
   - 策略三项勾选：**端口转发**（每条转发条目生成 `DST-PORT` 分流规则，核心侧以 `listeners: type: tunnel` 落地，可勾选经 VPN 或直连目标）/ **全局代理**（`MATCH,VPN` 兜底规则，核心开放 mixed-port HTTP/SOCKS5 混合端口做网关）/ **低占用模式（默认勾选）**
   - 低占用模式：看门狗 30 秒轮询核心 `external-controller /connections`（有并发连接或流量增量即活跃），空闲超过阈值（默认 15 分钟）自动关停核心；拉取订阅、`POST /api/vpn/wake`、手动启动等「初次请求」自动重新拉起；非低占用模式下核心意外退出 60 秒限频自愈

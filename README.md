@@ -139,7 +139,7 @@ docker compose up -d --build
 | 层级 | 技术 |
 |------|------|
 | 前端 | Vue 3（Composition API）、Vite 5、Axios、ECharts / vue-echarts、xterm.js、vue-i18n |
-| 后端 | Python 3.11、FastAPI 0.115、Uvicorn、Pydantic 2、psutil、docker SDK |
+| 后端 | Python 3.11、FastAPI 0.115、Uvicorn、Pydantic 2、psutil、docker SDK；另有 Go 1.23 完整重构版（`backend-go/`，接口与数据格式兼容） |
 | 通信 | REST API（`/api/*`）+ WebSocket（监控流、终端） |
 | 部署 | 多阶段 Docker 构建（前端 Node 构建 → 后端 Python 运行时） |
 
@@ -167,6 +167,10 @@ Graw/
 │   │   └── data/             # 运行时数据（gitignore，权限收紧）
 │   ├── test_*_unit.py        # pytest 单元测试（test_*_e2e.py 为端到端用例）
 │   └── requirements.txt
+├── backend-go/               # Go 1.23 完整重构版后端（接口/数据兼容 Python 版）
+│   ├── main.go               # 进程入口：配置、播种账号、后台协程、HTTP 服务
+│   ├── internal/graw/        # 路由、鉴权、SSH/Agent、中间件与各业务模块
+│   └── Dockerfile            # 前端构建 + Go 编译 + 精简运行时
 ├── app-store/                # 社区应用商店 YAML 配方与图标
 ├── plugin-examples/          # 插件开放协议（GPOP）示例
 ├── readme-i18n/              # 多语言 README（10 个语种）
@@ -223,6 +227,121 @@ npm run dev                      # → http://localhost:5173，Vite 代理 /api 
 ```
 
 > Windows 的 PowerShell/cmd 不支持 `&&`，多命令请用分号 `;` 分隔。
+
+### Go 重构版后端（backend-go）
+
+`backend-go/` 是 Python 后端的完整 Go 重构版：接口路径、响应结构、`data/` 数据文件格式与 Python 版保持兼容，前端无需任何改动。
+
+**环境要求**
+
+- Go 1.23+（无需 Python / Node 即可运行后端）
+- （可选）Docker / Podman CLI：Docker 管理、应用商店安装、运行环境等功能需要
+- （可选）`certbot`、`crontab`、`smbclient`/`mc` 等：按需用于证书、计划任务、网络存储、S3 备份
+
+**开发启动**
+
+```bash
+cd backend-go
+go mod download                  # 首次拉取依赖；网络受限可先设置 GOPROXY
+
+# 方式一：直接运行
+go run .                         # 默认监听 :8000
+
+# 方式二：编译后运行
+go build -o graw-go .
+./graw-go                        # Windows: .\graw-go.exe
+```
+
+启动后访问 `http://localhost:8000`。默认端口与 Python 版相同；若两者需要同时运行，用 `GRAW_ADDR` 换端口：
+
+```bash
+# Linux / macOS
+GRAW_ADDR=:8001 ./graw-go
+
+# Windows PowerShell
+$env:GRAW_ADDR = ":8001"
+.\graw-go.exe
+```
+
+**数据目录**
+
+未设置 `GRAW_DATA_DIR` 时，Go 版会优先复用 `backend/data`（从 `backend-go/` 目录运行时读取 `../backend/data`），因此可直接沿用 Python 版的账号、节点、密钥等数据；没有该目录时使用 `backend-go/data`。需要独立数据时：
+
+```bash
+# Linux / macOS
+GRAW_DATA_DIR=/opt/graw/data GRAW_ADDR=:8001 ./graw-go
+
+# Windows PowerShell
+$env:GRAW_DATA_DIR = "C:\GrawData"
+$env:GRAW_ADDR = ":8001"
+.\graw-go.exe
+```
+
+**常用环境变量**
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `GRAW_ADDR` | HTTP 监听地址 | `:8000` |
+| `GRAW_DATA_DIR` | 数据目录（users.json / nodes.json / secret.key 等） | `../backend/data` 或 `data` |
+| `GRAW_FRONTEND_DIST` | 前端构建产物目录；存在时由后端同源托管 | 自动探测 `frontend/dist` |
+| `HOST_ROOT` | 容器部署时的宿主机根目录挂载点（如 `/host`） | 空（本机直跑） |
+| `GRAW_HOST_DATA` | 面板 `data` 目录在宿主机上的实际路径（宿主 Docker 读取 compose/备份用） | 空 |
+| `GRAW_DOCKER_BIN` | 指定 docker/podman CLI 路径 | 自动探测 |
+| `GRAW_APP_STORE_DIR` | 本地应用商店目录（`index.json`、`apps/`） | 自动探测 `app-store/` |
+| `GRAW_MAX_BODY_MB` / `GRAW_MAX_UPLOAD_MB` | 普通请求体 / multipart 上传大小上限（MB） | `16` / `2048` |
+| `GRAW_APPSTORE_ALLOW_PRIVATE_NET` | 设为 `1` 时允许应用商店索引指向内网地址 | 空（仅公网） |
+| `GRAW_RUNTIME_MOUNT_DENY` | 追加禁止作为运行环境容器挂载源的路径（逗号分隔） | 空 |
+
+> 容器化部署时，`HOST_ROOT`、`GRAW_HOST_DATA` 与高权限参数的含义与 Python 版一致，参见 [docs/deployment.md](./docs/deployment.md)。
+
+**生产运行（单二进制 + 前端静态资源）**
+
+```bash
+# 1. 构建前端（仓库根目录）
+cd frontend
+npm install
+npm run build
+
+# 2. 编译 Go 后端（静态二进制）
+cd ../backend-go
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o graw-go .
+
+# 3. 启动（自动托管 ../frontend/dist）
+./graw-go
+```
+
+也可以直接用 Go 版镜像构建（在仓库根目录执行）：
+
+```bash
+docker build -f backend-go/Dockerfile -t graw-go .
+```
+
+> Go 版同样会在首次启动时向数据目录播种 `admin / admin123` 账号（首次登录强制改密）。
+
+**离线重置密码（忘记密码）**
+
+Go 版提供与 `backend/reset_password.py` 等价的离线重置命令，直接读写 `data/users.json`，无需启动面板：
+
+```bash
+cd backend-go
+
+# 交互式：先列出账号，再输入账号与新密码（密码输入不回显）
+go run ./cmd/reset-password
+
+# 指定账号
+go run ./cmd/reset-password admin
+
+# 仅列出账号（含角色与「待改密」标记）
+go run ./cmd/reset-password -l
+
+# 或编译为独立工具
+go build -o reset-password ./cmd/reset-password
+./reset-password admin                 # Windows: .\reset-password.exe admin
+```
+
+- 密码至少 6 个字符，需二次确认；重置后清除「强制改密」标记，可立即用新密码登录。
+- 数据目录解析规则与面板一致：优先 `GRAW_DATA_DIR`，否则复用 `../backend/data`；使用独立数据目录时先设置该变量，例如 `GRAW_DATA_DIR=/opt/graw/data ./reset-password admin`。
+- 与 Python 版一致，重置不会强制下线已登录会话。
 
 ### 生产构建
 
