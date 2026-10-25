@@ -55,6 +55,20 @@
     <!-- 终端主体：阻止浏览器默认右键菜单，改为弹出终端本地操作菜单 -->
     <div ref="termEl" style="flex:1; min-height:0; padding:4px; background:#1e1e1e; overflow:hidden;"
       @contextmenu.prevent.stop="onTermContextMenu"></div>
+    <!-- 底部命令输入框：回车会把整行内容发送到终端并自动回车执行，
+         避免部分场景（输入法/移动端/焦点丢失）直接敲终端导致命令串行或丢字符 -->
+    <div class="term-cmd-row">
+      <span class="term-cmd-prompt">❯</span>
+      <input
+        v-model="cmdInput"
+        class="term-cmd-input"
+        type="text"
+        spellcheck="false"
+        autocomplete="off"
+        :placeholder="$t('terminal.inputPlaceholder')"
+        @keydown.enter="sendCommandInput"
+      />
+    </div>
     <!-- 右键菜单：复制 / 粘贴（类本地终端习惯；Teleport 到 body 顶层避免被窗口裁剪） -->
     <Teleport to="body">
       <div v-if="ctxMenu.show" ref="ctxMenuEl" class="term-ctx-menu"
@@ -83,6 +97,7 @@ const { t } = useI18n()
 
 const termEl = ref(null)          // 终端挂载容器 DOM
 const statusText = ref(t('terminal.notConnected'))   // 顶栏连接状态文案
+const cmdInput = ref('')          // 底部命令输入框内容（回车后清空）
 // 会话绑定的目标节点：由于 App.vue 在打开窗口时已同步设置请求级节点，
 // 此处取到的即为本终端窗口绑定的节点；连接/重连固定使用它，避免切走后串到别的节点。
 const termNode = getRequestNode() || ''
@@ -484,6 +499,32 @@ function reconnect() {
 }
 function clear() { term && term.clear() }
 
+// 底部输入框回车：把整行命令发送给 shell 并补一个回车符（\r）自动执行。
+// 与直接在 xterm 里逐字符敲入相比，这种方式在网络抖动 / 中文输入法 / 移动端
+// 键盘场景下更稳定：要么整行发出，要么明确提示未连接，不会出现半截命令。
+function sendCommandInput(e) {
+  // 中文/日文输入法正在组词时，回车只是确认候选词，不应把半成品命令发出去
+  if (e?.isComposing || e?.keyCode === 229) return
+  e?.preventDefault?.()
+  const line = cmdInput.value
+  if (!line.trim()) return
+  if (!ws || ws.readyState !== 1) {
+    setStatus(t('terminal.notConnected'))
+    return
+  }
+  // 连接假死时先断开触发重连，避免命令发进一个没有响应的通道
+  if (Date.now() - lastAliveAt() > HEARTBEAT_TIMEOUT) {
+    try { ws.close() } catch (e) {}
+    return
+  }
+  try {
+    ws.send(line + '\r')
+    cmdInput.value = ''
+  } catch (e) {
+    setStatus(t('terminal.error'))
+  }
+}
+
 onMounted(async () => {
   alive = true
   document.addEventListener('mousedown', onDocMouseDown)   // 点击菜单外任意处收起右键菜单
@@ -577,4 +618,39 @@ onBeforeUnmount(() => {
   background: #0a3d7a;
   color: #fff;
 }
+
+/* 底部命令输入行：与终端同色系，输入框保持单行、回车即执行 */
+.term-cmd-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: #252526;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex: none;
+}
+.term-cmd-prompt {
+  color: #4ec9b0;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 14px;
+  line-height: 1;
+  user-select: none;
+}
+.term-cmd-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 13px;
+  color: #d4d4d4;
+  background: #1e1e1e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  outline: none;
+}
+.term-cmd-input:focus {
+  border-color: #0a84ff;
+  box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.24);
+}
+.term-cmd-input::placeholder { color: #6e6e73; }
 </style>

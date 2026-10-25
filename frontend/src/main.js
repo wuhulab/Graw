@@ -8,6 +8,7 @@
 import { createApp } from 'vue'                         // Vue 核心：createApp 创建应用实例
 import App from './App.vue'                             // 桌面环境根组件（登录态 + 窗口 / 任务栏 / 桌面）
 import i18n, { ensureLocale } from './locales'          // vue-i18n 插件 + 语言包按需加载
+import { pushError } from './store/errorLog'            // 全局错误日志：收集未捕获异常并弹窗
 import './assets/style.css'                             // 全局基础样式：深色背景、字体、reset
 
 /**
@@ -32,6 +33,57 @@ function removeBootSplash() {
 }
 
 /**
+ * 安装全局错误捕获。
+ *
+ * 覆盖三类来源（接口错误由 api.js 拦截器自行记录，这里不重复）：
+ *   1. Vue 组件运行时异常（app.config.errorHandler）；
+ *   2. window 未捕获异常（脚本错误、资源加载失败等）；
+ *   3. 未处理的 Promise 拒绝（unhandledrejection）。
+ * 已被业务层记录过的错误带 __grawLogged 标记，直接跳过，避免同一条错误弹两次。
+ *
+ * @param {import('vue').App} app Vue 应用实例
+ * @returns {void}
+ */
+function installErrorCapture(app) {
+  // Vue 运行时错误：保留 console.error 便于开发排查，同时写入全局日志
+  app.config.errorHandler = (err, _instance, info) => {
+    const message = err?.message || String(err || '未知组件错误')
+    pushError('vue', message, { detail: `${info || ''}\n${err?.stack || ''}` })
+    console.error('[graw] Vue 错误:', err, info)
+  }
+
+  window.addEventListener('error', (ev) => {
+    // 资源加载失败（img/script/link）的 error 事件不冒泡到 window 的错误对象，
+    // 这里仍记录一条，便于发现 CDN / 静态资源异常。
+    if (ev?.error) {
+      const err = ev.error
+      if (err && typeof err === 'object') {
+        if (err.__grawLogged) return
+        err.__grawLogged = true
+      }
+      pushError('window', err?.message || String(err), {
+        detail: `${ev.filename || ''}:${ev.lineno || 0}:${ev.colno || 0}\n${err.stack || ''}`,
+      })
+      return
+    }
+    // 只记录脚本 / 样式等关键静态资源失败；图片、视频等占位资源失败不打扰用户
+    const target = ev?.target
+    const tag = String(target?.tagName || '').toUpperCase()
+    if ((tag === 'SCRIPT' || tag === 'LINK') && (target.src || target.href)) {
+      pushError('resource', `资源加载失败: ${target.src || target.href}`, { detail: tag })
+    }
+  })
+
+  window.addEventListener('unhandledrejection', (ev) => {
+    const reason = ev?.reason
+    if (reason?.__grawLogged) return
+    if (reason && typeof reason === 'object') reason.__grawLogged = true
+    const message = reason?.message || String(reason || '未处理的 Promise 拒绝')
+    pushError('promise', message, { detail: reason?.stack || '' })
+  })
+}
+
+/**
  * 启动流程。
  *
  * 先确保「当前界面语言」的文案已就绪，再挂载应用：
@@ -45,7 +97,9 @@ function removeBootSplash() {
 async function bootstrap() {
   await ensureLocale(i18n.global.locale.value).catch(() => false)
   try {
-    createApp(App).use(i18n).mount('#app')
+    const app = createApp(App)
+    installErrorCapture(app)                 // 先装全局错误捕获，再挂载应用
+    app.use(i18n).mount('#app')
     removeBootSplash()
   } catch (e) {
     // 挂载失败（例如上游 chunk 加载异常）：保留启动动画而不是白屏，

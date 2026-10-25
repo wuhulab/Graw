@@ -5,6 +5,14 @@
 
 项目内技能放在 `agent/skills/`（`hop`：面向人类编程的代码规范；`secreview`：安全审查），可读取其中的 `SKILL.md`。
 
+## 0. 后端更新策略（2026-10 起，重要）
+
+- **今后版本更新默认只修改 Go 后端 `backend-go/`**：新增功能、接口变更、缺陷修复、安全加固全部落在 Go 侧。
+- **Python 旧版 `backend/` 已冻结**：不再跟随版本更新，不新增功能、不补新接口、不修业务缺陷；仅在确有必要时作为「历史实现参考 / 缺失代码的补充」查阅或复制逻辑。
+- 新增接口只需要在 `backend-go/internal/graw/` 实现并在 `httpx.go` 的 `NewApp()` 注册，**不要**为了「保持两版一致」再写一遍 Python 路由。
+- `backend/` 仅保留用于：对照旧版行为、运行既有 `pytest` 回归用例、排查历史数据格式；其 `APP_VERSION` 与接口清单不再随版本强制同步。
+- 文档、接口说明、前端默认以 Go 实现为准；涉及 Python 的描述统一标注「旧版 / 仅供参考」。
+
 ---
 
 ## 1. 项目简介
@@ -19,7 +27,7 @@
 界面有两套壳（同一套功能）：类桌面（窗口/任务栏，默认）与 **标准面板模式**（1Panel 风格侧边栏 + 多标签，`settings.panelMode` 切换）；
 界面文案支持 **22 个语言包**（`frontend/src/locales/`）。
 
-- 当前版本：Go 后端 `backend-go/internal/graw/cfg.go` 的 `AppVersion = "1.8.1"`（Python 旧版 `backend/app/main.py` 的 `APP_VERSION` 需同步）
+- 当前版本：Go 后端 `backend-go/internal/graw/cfg.go` 的 `AppVersion = "1.8.1"`（版本号只在 Go 侧维护；Python 旧版 `backend/app/main.py` 的 `APP_VERSION` 不再同步）
 - 许可证：AGPLv3
 - Docker 镜像命名空间：`shunx/graw`
 
@@ -30,7 +38,7 @@
 | 层级 | 技术 |
 |------|------|
 | 前端 | Vue 3（Composition API）、Vite 5、Axios、ECharts / vue-echarts、xterm.js、vue-i18n |
-| 后端 | **Go 1.23（默认，`backend-go/`）**：标准库 HTTP、gorilla/websocket、gopsutil、JWT；Python 3.11 / FastAPI / Uvicorn 旧版保留在 `backend/` |
+| 后端 | **Go 1.23（默认且唯一持续维护，`backend-go/`）**：标准库 HTTP、gorilla/websocket、gopsutil、JWT；Python 3.11 / FastAPI / Uvicorn 旧版已冻结在 `backend/`，仅作参考与缺失代码补充 |
 | 通信 | REST API（`/api/*`）+ WebSocket（监控流、终端） |
 | 部署 | 多阶段 Docker 构建（前端 Node 构建 → Go 交叉编译 → Alpine 运行时） |
 
@@ -42,7 +50,7 @@
 
 ```
 Graw/
-├── backend/                     # Python/FastAPI 旧版后端（保留兼容与回归测试）
+├── backend/                     # Python/FastAPI 旧版后端（已冻结，仅参考/回归测试，不再更新）
 │   ├── app/
 │   │   ├── main.py              # 应用入口：路由注册、中间件、lifespan 后台任务、静态托管
 │   │   ├── auth.py              # JWT 鉴权依赖：get_current_user / require_admin / seed_default_users
@@ -96,7 +104,7 @@ Graw/
 
 | 前缀 | 模块 | 鉴权 |
 |------|------|------|
-| `/api/auth` | 登录/当前用户/改密/用户管理 | 登录/管理员（公开登录） |
+| `/api/auth` | 登录/当前用户/改密/用户管理/OAuth2.0（`/oauth/status|start|callback|exchange|config`） | 登录/管理员（公开登录与 OAuth 回调；配置需完整管理员） |
 | `/api/agent` | 子节点 Agent 机器间鉴权（`/issue` 换 JWT、`/cfg` 收取模式配置） | 成对密钥（`/cfg` 内部要求管理员） |
 | `/api/system` | CPU/内存/磁盘/网络/负载 + WS 实时流 | 端点内自行鉴权（WS 用 `?token=`） |
 | `/api/notes` | 备忘录 CRUD | PROTECTED（登录即可；写操作为管理员） |
@@ -178,7 +186,7 @@ CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o graw-go .
 
 ### 5.1 路由注册与鉴权模型
 - **Go 默认后端**：路由与中间件在 `backend-go/internal/graw/httpx.go` 的 `NewApp()` 注册，业务实现在 `handlers_*.go`、鉴权在 `auth.go`/`sessions.go`。**新增模块必须在 `NewApp()` 注册**，否则前端无法访问。
-- **Python 旧版**：所有业务路由集中在 `backend/app/main.py` 用 `app.include_router(..., prefix="/api/xxx")`。新增模块必须在此注册，否则前端无法访问。以下分级约定两套后端保持一致。
+- **Python 旧版（已冻结）**：所有业务路由集中在 `backend/app/main.py` 用 `app.include_router(..., prefix="/api/xxx")`。**新增模块不要在此注册**（Python 不再跟随版本更新）；以下分级约定仅描述 Go 侧，Python 实现只作历史对照。
 - 鉴权分级（定义在 `main.py` 顶部）：
   - `PROTECTED = [Depends(get_current_user), Depends(require_non_default_password)]` —— 仅需登录（只读信息类）。
   - `ADMIN = [Depends(require_admin)]` —— 完整管理员（面板自身安全边界：多节点/SSH 密钥/插件/更新/面板备份/用户管理）。
@@ -263,7 +271,7 @@ CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o graw-go .
 ## 8. 代码风格
 
 - **Go 后端（默认）**：错误显式返回、注释用中文描述背景与安全约束；日志用 `log.Printf`；敏感操作前做鉴权断言。
-- **Python 旧版**：类型注解 + Pydantic 模型；docstring 用中文描述背景与安全约束；日志用 `logging.getLogger("graw.xxx")`。
+- **Python 旧版（冻结，不再新增代码）**：仅维护既有代码可读性；类型注解 + Pydantic 模型；日志用 `logging.getLogger("graw.xxx")`。
 - **前端**：`<script setup>` Composition API；组件用 PascalCase；样式优先 scoped；避免在 `main.js` 之外挂载全局插件。
 - 提交前确保 `cd backend-go && go vet ./... && go test ./...` 通过（Python 旧版无语法错误）、前端 `npm run build` 通过。
 
@@ -273,7 +281,7 @@ CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o graw-go .
 
 | 我想做的事 | 去哪里 |
 |-----------|--------|
-| 加一个新 REST 业务模块 | Go 默认：新建 `backend-go/internal/graw/handlers_xxx.go`，在 `httpx.go` 的 `NewApp()` 注册；Python 旧版：`backend/app/routers/xxx.py` + `main.py` |
+| 加一个新 REST 业务模块 | 只改 Go：新建 `backend-go/internal/graw/handlers_xxx.go`，在 `httpx.go` 的 `NewApp()` 注册（Python `backend/` 已冻结，不再补路由） |
 | 加一个前端功能页 | 新建 `frontend/src/components/windows/XxxWindow.vue` 并在 `App.vue` 的 shortcuts 注册 |
 | 改登录/鉴权/用户 | Go：`backend-go/internal/graw/{auth,sessions,handlers_auth}.go`；Python 旧版：`backend/app/auth.py`、`routers/auth.py` |
 | 调 Agent / 子节点接入 | Go：`backend-go/internal/graw/agent.go`；Python 旧版：`agent_auth.py`、`agent_cfg.py`、`agent_client.py`、`node_manager.py`（实操见 `docs/node-agent.md`） |

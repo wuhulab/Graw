@@ -80,6 +80,14 @@
             {{ loading ? $t('login.loggingIn') : $t('login.login') }}
           </button>
         </form>
+
+        <!-- OAuth2.0 登录（管理员在设置中启用后显示；提供方名称可自定义） -->
+        <template v-if="oauth.enabled">
+          <div class="login-divider"><span>{{ $t('login.oauthDivider') }}</span></div>
+          <a class="btn-oauth" :href="oauthStartHref">
+            {{ $t('login.oauthLogin', { provider: oauth.provider_name || 'OAuth2' }) }}
+          </a>
+        </template>
       </template>
 
       <!-- 强制改密 -->
@@ -168,6 +176,61 @@ const error = ref('')           // 表单顶部错误提示文案
 const otpRequired = ref(false)
 const otpCode = ref('')
 
+// OAuth2.0 登录：后端只公开「是否启用 + 提供方名称」，按钮跳转到 /api/auth/oauth/start
+const oauth = ref({ enabled: false, provider_name: '' })
+// 从当前登录路径发起 OAuth，回调后回到同一路径（保留 ShunX 入口路径）
+const oauthStartHref = computed(() => {
+  const path = window.location.pathname || '/'
+  return `/api/auth/oauth/start?redirect=${encodeURIComponent(path)}`
+})
+
+async function loadOAuthStatus() {
+  try {
+    const s = await authApi.oauthStatus()
+    oauth.value = {
+      enabled: !!s.enabled,
+      provider_name: s.provider_name || 'OAuth2',
+    }
+  } catch (e) {
+    // 旧版后端 / 接口异常：不显示 OAuth 入口，不影响密码登录
+    oauth.value = { enabled: false, provider_name: '' }
+  }
+}
+
+// 处理 OAuth 回调带回来的 ticket / error：
+// ticket 通过后端一次性兑换成 JWT，成功即写入登录态并进入面板；
+// error 直接显示在登录表单顶部；两种情况都清理地址栏参数，避免刷新重放。
+async function handleOAuthReturn() {
+  const params = new URLSearchParams(window.location.search)
+  const ticket = params.get('oauth_ticket')
+  const err = params.get('oauth_error')
+  if (!ticket && !err) return false
+  try {
+    params.delete('oauth_ticket')
+    params.delete('oauth_error')
+    const qs = params.toString()
+    history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash)
+  } catch (e) {
+    // 地址栏清理失败不影响兑换流程
+  }
+  if (err) {
+    error.value = err
+    return false
+  }
+  loading.value = true
+  try {
+    const data = await authApi.oauthExchange(ticket)
+    setAuth(data.token, data.user)
+    emit('login', data.user)
+    return true
+  } catch (e) {
+    error.value = e?.response?.data?.detail || 'OAuth2 登录失败'
+    return false
+  } finally {
+    loading.value = false
+  }
+}
+
 const forceChange = ref(false)
 const forceChangeReason = ref('') // '' | 'default'（默认密码）| 'reset'（重置/首登）
 // 强制改密时暂存登录凭据：改密成功后才写入登录态，避免立即进入桌面
@@ -181,8 +244,11 @@ const confirmPassword = ref('')
 const shunxChecked = ref(false)
 const shunx = ref({ enabled: false, matched: false })
 
-// 挂载后并行初始化：品牌配置 + ShunX 安全入口状态
+// 挂载后并行初始化：OAuth 回调 → 品牌配置 + ShunX 安全入口状态 + OAuth 入口状态
 onMounted(async () => {
+  // 先处理 OAuth 回调票据：兑换成功会直接进入面板，无需再渲染登录表单
+  if (await handleOAuthReturn()) return
+  loadOAuthStatus()
   // 加载界面品牌配置（网站名 / 欢迎语 / Logo / 背景）并更新浏览器标签标题
   try {
     await loadUi()
@@ -428,4 +494,40 @@ async function handleChangePassword() {
 .btn-primary:hover:not(:disabled) { background: #006ee6; }
 .btn-primary:active:not(:disabled) { background: #0058b8; }
 .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* OAuth2.0 登录入口：与主登录按钮拉开层级，浅色描边避免抢主操作视线 */
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 12px;
+  color: #8e8e93;
+  font-size: 11px;
+  user-select: none;
+}
+.login-divider::before,
+.login-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(0, 0, 0, 0.1);
+}
+.btn-oauth {
+  display: block;
+  width: 100%;
+  padding: 9px 14px;
+  text-align: center;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1d1d1f;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn-oauth:hover {
+  background: #f5f5f7;
+  border-color: rgba(0, 0, 0, 0.2);
+}
 </style>

@@ -157,7 +157,7 @@ docker compose up -d --build
 | 层级 | 技术 |
 |------|------|
 | 前端 | Vue 3（Composition API）、Vite 5、Axios、ECharts / vue-echarts、xterm.js、vue-i18n |
-| 后端 | Go 1.23（`backend-go/`，标准库 HTTP + gorilla/websocket + gopsutil）；`backend/` 为 Python/FastAPI 旧版实现，接口与数据格式兼容 |
+| 后端 | Go 1.23（`backend-go/`，标准库 HTTP + gorilla/websocket + gopsutil，唯一持续维护的后端）；`backend/` 为 Python/FastAPI 旧版实现，已冻结，仅作参考与缺失代码补充 |
 | 通信 | REST API（`/api/*`）+ WebSocket（监控流、终端） |
 | 部署 | 多阶段 Docker 构建（前端 Node 构建 → Go 交叉编译 → Alpine 运行时） |
 
@@ -178,7 +178,7 @@ Graw/
 │   ├── main.go               # 进程入口：配置、播种账号、后台协程、HTTP 服务
 │   ├── internal/graw/        # 路由、鉴权、SSH/Agent、中间件与各业务模块
 │   └── Dockerfile            # 前端构建 + Go 编译 + 精简运行时
-├── backend/                  # Python/FastAPI 旧版后端（保留兼容与回归测试）
+├── backend/                  # Python/FastAPI 旧版后端（已冻结，仅参考/回归，不再跟随版本更新）
 │   ├── app/
 │   │   ├── main.py           # 应用入口：路由注册、中间件、lifespan 后台任务
 │   │   ├── auth.py           # JWT 鉴权依赖与用户播种
@@ -243,7 +243,7 @@ npm run dev                      # → http://localhost:5173，Vite 代理 /api 
 
 ### 后端说明（Go 默认）
 
-`backend-go/` 是当前默认后端：接口路径、响应结构、`data/` 数据文件格式与 Python 旧版（`backend/`）保持兼容，前端无需任何改动。
+`backend-go/` 是当前默认且唯一持续维护的后端：接口路径、响应结构、`data/` 数据文件格式与 Python 旧版（`backend/`）保持兼容，前端无需任何改动。Python 旧版已冻结，后续功能与修复只更新 Go 侧。
 
 **可选运行依赖**
 

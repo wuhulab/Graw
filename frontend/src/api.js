@@ -9,6 +9,7 @@
 import axios from 'axios'                               // HTTP 客户端：封装请求 / 响应拦截器
 import { auth, clearAuth } from './store/auth'          // 登录态单例：读取 token、清除登录
 import { getRequestNode } from './store/requestNode'    // 当前请求级目标节点（统一面板兼容）
+import { pushError } from './store/errorLog'            // 全局错误日志：接口异常统一收集并弹窗
 
 const api = axios.create({
   baseURL: '/api',
@@ -34,8 +35,14 @@ function attachToken(config) {
   }
   return config
 }
-api.interceptors.request.use(attachToken)
-dockerHttp.interceptors.request.use(attachToken)
+// 请求阶段异常（请求拦截器/序列化失败）同样收进错误日志；
+// __grawLogged 标记避免与响应拦截器重复记录同一条错误。
+function onRequestError(err) {
+  pushApiError(err)
+  return Promise.reject(err)
+}
+api.interceptors.request.use(attachToken, onRequestError)
+dockerHttp.interceptors.request.use(attachToken, onRequestError)
 
 // 响应拦截：
 // - 401：仅在「曾经登录但 token 失效」时清除登录态并刷新。
@@ -57,12 +64,33 @@ function forceLogout() {
   }
 }
 
-function on401(err) {
-  if (err?.response?.status === 401 && auth.token) forceLogout()
-  return Promise.reject(err)
+// 把一条 Axios 错误整理成人类可读文案并写入全局错误日志。
+// 约定：config.silentError=true 的请求（登录 / 改密 / 2FA 等表单）不弹窗，
+// 因为这些错误已在表单内就地提示；401 属于登录态流程，也不重复弹窗。
+// 取消请求（AbortController）不算业务错误，直接忽略。
+function pushApiError(err) {
+  if (!err || err.__grawLogged) return
+  if (err.config?.silentError) return
+  if (axios.isCancel?.(err) || err.code === 'ERR_CANCELED' || err.name === 'AbortError') return
+  const status = err?.response?.status || 0
+  if (status === 401) return
+  const cfg = err.config || {}
+  const method = String(cfg.method || 'GET').toUpperCase()
+  const url = cfg.url || ''
+  const detail = err?.response?.data?.detail || err?.response?.data?.message ||
+    err?.response?.statusText || err?.message || '请求失败'
+  try { err.__grawLogged = true } catch (e) { /* 冻结对象等极端情况忽略 */ }
+  pushError('api', `${method} ${url} → ${status ? 'HTTP ' + status : '网络错误'}：${detail}`, {
+    method,
+    url,
+    status,
+    detail: typeof detail === 'string' ? detail : JSON.stringify(detail),
+  })
 }
 
-function onDefaultPassword403(err) {
+// 统一响应错误处理：先做原有登录态处置，再记录日志，最后继续把错误抛给调用方。
+function onApiError(err) {
+  if (err?.response?.status === 401 && auth.token) forceLogout()
   if (
     err?.response?.status === 403 &&
     err?.response?.data?.detail === '必须修改默认密码后才能使用面板' &&
@@ -70,13 +98,12 @@ function onDefaultPassword403(err) {
   ) {
     forceLogout()
   }
+  pushApiError(err)
   return Promise.reject(err)
 }
 
-api.interceptors.response.use(r => r, on401)
-dockerHttp.interceptors.response.use(r => r, on401)
-api.interceptors.response.use(r => r, onDefaultPassword403)
-dockerHttp.interceptors.response.use(r => r, onDefaultPassword403)
+api.interceptors.response.use(r => r, onApiError)
+dockerHttp.interceptors.response.use(r => r, onApiError)
 
 export default api                                     // 默认导出通用实例（含 token / 节点拦截），供各模块复用
 
@@ -94,27 +121,39 @@ export const updateApi = {
 
 export const authApi = {
   // path 为浏览器地址栏路径，用于 ShunX 安全入口校验；otpCode 为两步验证码（可选）
-  login: (username, password, path = '', otpCode) => api.post('/auth/login', { username, password, otp_code: otpCode }, { headers: { 'X-ShunX-Entry': path } }).then(r => r.data),
+  // silentError：登录失败已在登录表单内就地提示，不再弹全局错误窗
+  login: (username, password, path = '', otpCode) => api.post('/auth/login', { username, password, otp_code: otpCode }, { headers: { 'X-ShunX-Entry': path }, silentError: true }).then(r => r.data),
   me: () => api.get('/auth/me').then(r => r.data),
   // token 可选：强制改密场景下尚未写入登录态，显式携带临时 token
-  changePassword: (old_password, new_password, token) => api.post('/auth/password', { old_password, new_password }, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined).then(r => r.data),
+  changePassword: (old_password, new_password, token) => {
+    const cfg = { silentError: true }
+    if (token) cfg.headers = { Authorization: `Bearer ${token}` }
+    return api.post('/auth/password', { old_password, new_password }, cfg).then(r => r.data)
+  },
   listUsers: () => api.get('/auth/users').then(r => r.data),
   // 可授权的模块 key 清单（受限管理员的模块白名单；单一来源在后端 auth.MODULES）
   listModules: () => api.get('/auth/modules').then(r => r.data),
   createUser: (username, password, role, perms) => api.post('/auth/users', { username, password, role, perms }).then(r => r.data),
   updateUser: (username, body) => api.put(`/auth/users/${username}`, body).then(r => r.data),
   deleteUser: (username) => api.delete(`/auth/users/${username}`).then(r => r.data),
-  // 两步验证（2FA / TOTP）
+  // 两步验证（2FA / TOTP）：验证码错误在设置区块内提示，不弹全局错误窗
   me2faStatus: () => api.get('/auth/2fa/status').then(r => r.data),
   twoFaSetup: () => api.post('/auth/2fa/setup').then(r => r.data),
-  twoFaEnable: (code) => api.post('/auth/2fa/enable', { code }).then(r => r.data),
-  twoFaDisable: (code) => api.post('/auth/2fa/disable', { code }).then(r => r.data),
+  twoFaEnable: (code) => api.post('/auth/2fa/enable', { code }, { silentError: true }).then(r => r.data),
+  twoFaDisable: (code) => api.post('/auth/2fa/disable', { code }, { silentError: true }).then(r => r.data),
   // 高风险操作二次确认：校验当前登录用户的面板密码
-  verifyPassword: (password) => api.post('/auth/verify-password', { password }).then(r => r.data),
+  verifyPassword: (password) => api.post('/auth/verify-password', { password }, { silentError: true }).then(r => r.data),
   // 会话管理：在线会话列表 / 踢出单设备 / 强制全部下线
   sessions: () => api.get('/auth/sessions').then(r => r.data),
   kickSession: (sid) => api.post(`/auth/sessions/${sid}/kick`, {}).then(r => r.data),
-  kickAllSessions: (username) => api.post('/auth/sessions/kick-all', { username }).then(r => r.data)
+  kickAllSessions: (username) => api.post('/auth/sessions/kick-all', { username }).then(r => r.data),
+
+  // OAuth2.0 登录：公开状态 / 管理员配置 / 回调票据兑换
+  oauthStatus: () => api.get('/auth/oauth/status', { silentError: true }).then(r => r.data),
+  oauthConfig: () => api.get('/auth/oauth/config').then(r => r.data),
+  saveOAuthConfig: (body) => api.put('/auth/oauth/config', body).then(r => r.data),
+  // 票据兑换失败由登录页就地提示（登录态尚未建立），不弹全局错误窗
+  oauthExchange: (ticket) => api.post('/auth/oauth/exchange', { ticket }, { silentError: true }).then(r => r.data)
 }
 
 export const systemApi = {

@@ -118,7 +118,7 @@ func registerFileRoutes(a *App) {
 		if err := DecodeJSON(r, &req); err != nil {
 			return err
 		}
-		res, err := RestoreTrashItem(req.Path, u.Username())
+		res, err := RestoreTrashItem(req.Path)
 		if err != nil {
 			return err
 		}

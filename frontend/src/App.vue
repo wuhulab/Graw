@@ -250,6 +250,9 @@
       </div>
     </div>
   </div>
+
+  <!-- 全局错误日志浮窗：登录页与桌面/面板模式共用，出错时自动弹出 -->
+  <ErrorLogPanel />
 </template>
 
 <script setup>
@@ -290,6 +293,7 @@ import ShunXSetup from './components/ShunXSetup.vue'
 import TamperAlert from './components/TamperAlert.vue'
 import InstallCheckAlert from './components/InstallCheckAlert.vue'
 import CommandPalette from './components/CommandPalette.vue'
+import ErrorLogPanel from './components/ErrorLogPanel.vue'
 import Login from './views/Login.vue'
 import { shunxApi, systemApi } from './api'
 import { auth, clearAuth, isAdmin, isFullAdmin, hasPerm } from './store/auth'

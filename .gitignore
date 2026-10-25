@@ -44,6 +44,8 @@ WorkBuddy/
 skills-lock.json
 tmp_audit/
 .mimosa/
+.agents/
+.claude/
 
 
 # Other projects

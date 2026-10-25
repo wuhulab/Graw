@@ -264,6 +264,8 @@ func registerAuthRoutes(a *App) {
 	a.Post("/api/auth/2fa/setup", loginOnly(), otpSetupHandler)
 	a.Post("/api/auth/2fa/enable", loginOnly(), otpEnableHandler)
 	a.Post("/api/auth/2fa/disable", loginOnly(), otpDisableHandler)
+	// OAuth2.0 登录（可自定义提供方；内置 GitHub 模板由前端填充配置）
+	registerOAuthRoutes(a)
 }
 
 type loginRequest struct {
@@ -720,7 +722,10 @@ func otpSetupHandler(w http.ResponseWriter, r *http.Request) error {
 	if full.Bool("otp_enabled") {
 		return NewHTTPError(400, "两步验证已启用，如需重置请先关闭")
 	}
-	secret := GenerateOTPSecret()
+	secret, err := GenerateOTPSecret()
+	if err != nil {
+		return err
+	}
 	full["otp_secret"] = secret
 	full["otp_enabled"] = false
 	if err := SaveUsers(users); err != nil {

@@ -9,7 +9,8 @@
     locale     —— 界面语言（与 locales/index.js 的 LANGUAGES 对应）
     unifiedPanel —— 统一面板兼容：开启后每个窗口绑定打开时的节点
     hideFoxcode  —— 是否隐藏桌面上的 Foxcode 快捷方式
-    panelMode    —— 标准面板模式：启用后界面切换为 1Panel 式侧边栏布局
+    panelMode    —— 标准面板模式：启用后界面切换为 1Panel 式侧边栏布局；
+                    首次访问按设备推断（手机/窄屏默认启用），用户选择单独持久化
     panelTabs    —— 面板模式多标签缓存：开=标签页保留窗口状态，关=单页切换
     desktopPreload —— 类桌面模式预加载：进入面板、数据就绪后空闲分批预取全部应用代码
     shortcutFontSize / shortcutLabelColor / shortcutLabelStroke ——
@@ -27,6 +28,10 @@
 import { reactive, watch } from 'vue'   // 响应式设置 + watch 自动持久化到 localStorage
 
 const STORAGE_KEY = 'graw_settings'     // 本地存储键名：设置变化时把整份偏好写回这里
+// 界面模式偏好单独存一个键：'panel'（标准面板）/ 'desktop'（类桌面）。
+// 单独存的原因：旧版本可能已经把 panelMode:false 写进整份设置快照，无法区分
+// 「用户明确选了桌面模式」和「旧默认值」；用独立键可在升级后正确套用手机默认值。
+const PANEL_MODE_KEY = 'graw_panel_mode'
 
 // 默认偏好值：首次使用（无缓存）时从这里起
 const defaults = {
@@ -57,14 +62,69 @@ const defaults = {
   overviewDecimals: true,
 }
 
+// 设备是否更适合「传统服务器面板」布局：
+// 手机/平板窄屏默认用标准面板模式（侧边栏 + 单页），避免桌面窗口在手机上难以操作。
+// 用户之后手动切换的偏好会写入 localStorage，后续启动以本地偏好为准。
+function prefersServerPanel() {
+  try {
+    const ua = navigator.userAgent || ''
+    const mobileUA = /Android|iPhone|iPad|iPod|Mobile|HarmonyOS/i.test(ua)
+    const narrow = window.matchMedia
+      ? window.matchMedia('(max-width: 767px)').matches
+      : window.innerWidth < 768
+    // iPadOS 桌面版 UA 伪装成 Macintosh，用触摸点数补充判定
+    const iPad = /Macintosh/i.test(ua) && (navigator.maxTouchPoints || 0) > 1
+    return !!(mobileUA || narrow || iPad)
+  } catch {
+    return false
+  }
+}
+
+// 读取用户明确保存过的界面模式偏好（没有则返回 null）
+function readPanelModePref() {
+  try {
+    const v = localStorage.getItem(PANEL_MODE_KEY)
+    return v === 'panel' || v === 'desktop' ? v : null
+  } catch {
+    return null
+  }
+}
+
+// 保存界面模式偏好：之后无论屏幕宽度如何变化，都以用户选择为准
+function writePanelModePref(panelMode) {
+  try {
+    localStorage.setItem(PANEL_MODE_KEY, panelMode ? 'panel' : 'desktop')
+  } catch (e) {
+    // 隐私模式 / 存储被禁用：本次界面仍可正常使用，只是偏好无法持久化
+  }
+}
+
+// 决定初始界面模式：优先用户明确偏好 → 否则按设备类型推断（手机默认标准面板）
+function initialPanelMode() {
+  const pref = readPanelModePref()
+  if (pref) return pref === 'panel'
+  const inferred = prefersServerPanel()
+  writePanelModePref(inferred)   // 把推断结果作为本机默认偏好存下来
+  return inferred
+}
+
 // 启动时读取本地偏好；没有缓存 / 内容损坏时回退默认值
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { ...defaults }              // 从未保存过偏好：直接用默认值
-    return { ...defaults, ...JSON.parse(raw) }    // 与默认值合并：新增偏好项时旧缓存也能正常读出
+    if (!raw) {
+      // 从未保存过偏好：按设备类型决定默认界面（手机默认面板模式，桌面默认桌面模式）
+      const initial = { ...defaults, panelMode: initialPanelMode() }
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(initial)) } catch (e) { /* 隐私模式写入失败可忽略 */ }
+      return initial
+    }
+    const parsed = JSON.parse(raw)
+    const merged = { ...defaults, ...parsed }    // 与默认值合并：新增偏好项时旧缓存也能正常读出
+    // 界面模式以独立偏好键为准：旧快照里的 panelMode 不再代表用户选择
+    merged.panelMode = initialPanelMode()
+    return merged
   } catch {
-    return { ...defaults }                        // 存储损坏/被禁用：宁可丢偏好也不能让应用启动失败
+    return { ...defaults, panelMode: initialPanelMode() }   // 存储损坏/被禁用：宁可丢偏好也不能让应用启动失败
   }
 }
 
@@ -94,3 +154,7 @@ watch(
   },
   { deep: true }
 )
+
+// 界面模式偏好单独落盘：用户在设置里切换「面板 / 桌面」后立即生效，
+// 后续启动不再受当前屏幕宽度影响（手机/平板横竖屏切换也保持用户选择）。
+watch(() => settings.panelMode, (val) => writePanelModePref(!!val))

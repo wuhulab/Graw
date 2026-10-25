@@ -289,6 +289,96 @@
         </template>
       </div>
 
+      <!-- OAuth2.0 登录（仅完整管理员）：可自定义提供方，内置 GitHub 模板一键填充 -->
+      <div class="block" v-if="isFullAdmin()">
+        <div class="block-title">{{ $t('settings.oauthTitle') }}</div>
+        <div class="hint" style="margin-bottom:8px;">{{ $t('settings.oauthHint') }}</div>
+
+        <div class="row" style="justify-content:space-between; padding:2px 0;">
+          <label class="switch-label">
+            <input type="checkbox" v-model="oauthForm.enabled" :disabled="oauthSaving" />
+            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('settings.oauthEnabled') }}</span>
+          </label>
+          <span :class="['tag', oauthForm.enabled ? 'tag-current' : 'tag-local']">
+            {{ oauthForm.enabled ? $t('common.enabled') : $t('common.disabled') }}
+          </span>
+        </div>
+
+        <div class="row" style="gap:8px; flex-wrap:wrap;">
+          <span style="color:#6b7280;">{{ $t('settings.oauthTemplate') }}</span>
+          <select v-model="oauthTemplate" class="oauth-select" :disabled="oauthSaving" @change="applyOAuthTemplate($event.target.value)">
+            <option value="custom">{{ $t('settings.oauthTemplateCustom') }}</option>
+            <option value="github">{{ $t('settings.oauthTemplateGithub') }}</option>
+          </select>
+          <span class="hint" style="margin:0;">{{ $t('settings.oauthTemplateHint') }}</span>
+        </div>
+
+        <div class="oauth-grid">
+          <label>{{ $t('settings.oauthProviderName') }}</label>
+          <input v-model.trim="oauthForm.provider_name" placeholder="GitHub" :disabled="oauthSaving" />
+
+          <label>{{ $t('settings.oauthClientId') }}</label>
+          <input v-model.trim="oauthForm.client_id" spellcheck="false" :disabled="oauthSaving" />
+
+          <label>{{ $t('settings.oauthClientSecret') }}</label>
+          <input v-model="oauthForm.client_secret" type="password" spellcheck="false"
+            :placeholder="oauthForm.has_secret ? $t('settings.oauthSecretKeep') : ''" :disabled="oauthSaving" />
+
+          <label>{{ $t('settings.oauthAuthUrl') }}</label>
+          <input v-model.trim="oauthForm.auth_url" spellcheck="false" :disabled="oauthSaving" />
+
+          <label>{{ $t('settings.oauthTokenUrl') }}</label>
+          <input v-model.trim="oauthForm.token_url" spellcheck="false" :disabled="oauthSaving" />
+
+          <label>{{ $t('settings.oauthUserinfoUrl') }}</label>
+          <input v-model.trim="oauthForm.userinfo_url" spellcheck="false" :disabled="oauthSaving" />
+
+          <label>{{ $t('settings.oauthScopes') }}</label>
+          <input v-model.trim="oauthForm.scopes" spellcheck="false" :disabled="oauthSaving" />
+
+          <label>{{ $t('settings.oauthUsernameField') }}</label>
+          <select v-model="oauthForm.username_field" class="oauth-select" :disabled="oauthSaving">
+            <option value="login">login</option>
+            <option value="email">email</option>
+            <option value="preferred_username">preferred_username</option>
+            <option value="username">username</option>
+          </select>
+        </div>
+        <div class="hint">{{ $t('settings.oauthUsernameFieldHint') }}</div>
+
+        <div class="row" style="justify-content:space-between; padding:4px 0;">
+          <label class="switch-label">
+            <input type="checkbox" v-model="oauthForm.auto_create" :disabled="oauthSaving" />
+            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('settings.oauthAutoCreate') }}</span>
+          </label>
+        </div>
+        <div class="hint">{{ $t('settings.oauthAutoCreateHint') }}</div>
+
+        <div class="oauth-grid" style="margin-top:6px;">
+          <label>{{ $t('settings.oauthBindUsername') }}</label>
+          <input v-model.trim="oauthForm.bind_username" :placeholder="$t('settings.oauthBindPlaceholder')" spellcheck="false" :disabled="oauthSaving" />
+          <label>{{ $t('settings.oauthBindIdentity') }}</label>
+          <input v-model.trim="oauthForm.bind_identity" :placeholder="$t('settings.oauthBindIdentityPlaceholder')" spellcheck="false" :disabled="oauthSaving" />
+        </div>
+        <div class="hint">{{ $t('settings.oauthBindHint') }}</div>
+
+        <div class="oauth-grid" style="margin-top:6px;">
+          <label>{{ $t('settings.oauthCallback') }}</label>
+          <div style="display:flex; gap:6px;">
+            <input :value="oauthCallback" readonly spellcheck="false" />
+            <button class="btn btn-mini" type="button" @click="copyOAuthCallback">{{ $t('common.copy') }}</button>
+          </div>
+        </div>
+        <div class="hint">{{ $t('settings.oauthCallbackHint') }}</div>
+
+        <div class="row" style="gap:8px; margin-top:8px;">
+          <button class="btn" :disabled="oauthSaving" @click="saveOAuth">
+            {{ oauthSaving ? $t('settings.saveSaving') : $t('settings.save') }}
+          </button>
+          <span v-if="oauthMsg" :class="['msg', oauthMsgType]" style="flex:1;">{{ oauthMsg }}</span>
+        </div>
+      </div>
+
       <!-- 界面设置入口（仅管理员）：引导打开独立的「界面设置」窗口（网站名/欢迎语/Logo/动态壁纸/环形配色） -->
       <div class="block" v-if="isAdmin()">
         <div class="block-title">{{ $t('settings.uiSettingsTitle') }}</div>
@@ -296,8 +386,8 @@
         <button class="btn" @click="emit('openUiSettings')">{{ $t('settings.openUiSettings') }}</button>
       </div>
 
-      <!-- 标准面板模式（仅管理员）：1Panel 式侧边栏布局替代桌面/窗口系统（即改即存） -->
-      <div class="block" v-if="isAdmin()">
+      <!-- 标准面板模式（所有用户）：本机偏好，手机端默认启用；取消勾选即使用桌面模式 -->
+      <div class="block">
         <div class="block-title">{{ $t('settings.panelModeTitle') }}</div>
         <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:6px;">{{ $t('settings.panelModeHint') }}</div>
         <div class="row" style="justify-content:space-between; padding:2px 0;">
@@ -458,7 +548,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'         // 响应式、计算属性、挂载
 import { useI18n } from 'vue-i18n'                               // 国际化：取 t() 生成动态文案
 import { settings } from '../../store/settings'                 // 全局界面设置（任务栏/语言等）
-import { isAdmin } from '../../store/auth'                      // 管理员门控：限定敏感区块
+import { isAdmin, isFullAdmin } from '../../store/auth'          // 管理员门控：限定敏感区块（OAuth 配置要求完整管理员）
 import { nodesApi, shunxApi, panelApi, updateApi, webmodeApi, authApi, agentApi, recycleApi, pluginApi } from '../../api'   // 各设置区块后端接口
 import { nodes as nodesStore, refreshNodes, setCurrentNode } from '../../store/nodes'   // 多节点状态与当前节点切换
 import { LANGUAGES, setLocale } from '../../locales'            // 语言清单与切换函数
@@ -821,6 +911,125 @@ async function otpDisable() {
   }
 }
 
+// ---- OAuth2.0 登录（仅管理员） ----
+// GitHub 模板：一键填充授权 / 令牌 / 用户信息地址与常用 scope、用户名映射字段。
+// client_secret 不回传：留空保存表示保持原密钥。
+const OAUTH_GITHUB_TEMPLATE = {
+  provider_name: 'GitHub',
+  auth_url: 'https://github.com/login/oauth/authorize',
+  token_url: 'https://github.com/login/oauth/access_token',
+  userinfo_url: 'https://api.github.com/user',
+  scopes: 'read:user user:email',
+  username_field: 'login',
+}
+const oauthForm = reactive({
+  enabled: false,
+  provider_name: '',
+  client_id: '',
+  client_secret: '',
+  has_secret: false,
+  auth_url: '',
+  token_url: '',
+  userinfo_url: '',
+  scopes: '',
+  username_field: 'login',
+  auto_create: false,
+  bind_username: '',
+  bind_identity: '',
+})
+const oauthTemplate = ref('custom')
+const oauthSaving = ref(false)
+const oauthMsg = ref('')
+const oauthMsgType = ref('')
+// 回调地址以后端推导值为准（反向代理 / 开发代理下 location.origin 可能不是后端对外地址）
+const oauthCallback = ref(`${location.origin}/api/auth/oauth/callback`)
+
+async function loadOAuth() {
+  try {
+    const c = await authApi.oauthConfig()
+    Object.assign(oauthForm, {
+      enabled: !!c.enabled,
+      provider_name: c.provider_name || '',
+      client_id: c.client_id || '',
+      client_secret: '',                       // 密钥只存后端，前端永远从空开始
+      has_secret: !!c.has_secret,
+      auth_url: c.auth_url || '',
+      token_url: c.token_url || '',
+      userinfo_url: c.userinfo_url || '',
+      scopes: c.scopes || '',
+      username_field: c.username_field || 'login',
+      auto_create: !!c.auto_create,
+      bind_username: c.bind_username || '',
+      bind_identity: c.bind_identity || '',
+    })
+    if (c.callback_url) oauthCallback.value = c.callback_url
+  } catch (e) {
+    // 读取失败时静默：不影响设置窗口其它区块
+  }
+}
+
+function applyOAuthTemplate(value) {
+  if ((value || oauthTemplate.value) === 'github') {
+    Object.assign(oauthForm, OAUTH_GITHUB_TEMPLATE)
+  }
+}
+
+async function saveOAuth() {
+  if (oauthSaving.value) return
+  oauthSaving.value = true
+  oauthMsg.value = ''
+  try {
+    const res = await authApi.saveOAuthConfig({
+      enabled: !!oauthForm.enabled,
+      provider_name: oauthForm.provider_name,
+      client_id: oauthForm.client_id,
+      client_secret: oauthForm.client_secret,
+      auth_url: oauthForm.auth_url,
+      token_url: oauthForm.token_url,
+      userinfo_url: oauthForm.userinfo_url,
+      scopes: oauthForm.scopes,
+      username_field: oauthForm.username_field,
+      auto_create: !!oauthForm.auto_create,
+      bind_username: oauthForm.bind_username,
+      bind_identity: oauthForm.bind_identity,
+    })
+    const c = res?.config || {}
+    oauthForm.client_secret = ''
+    oauthForm.has_secret = !!c.has_secret
+    oauthForm.enabled = !!c.enabled
+    oauthMsg.value = t('settings.oauthSaved')
+    oauthMsgType.value = 'ok'
+  } catch (e) {
+    const d = e?.response?.data?.detail
+    oauthMsg.value = (typeof d === 'string' && d) ? d : t('settings.oauthSaveFailed', { error: e?.message || '' })
+    oauthMsgType.value = 'err'
+  } finally {
+    oauthSaving.value = false
+  }
+}
+
+async function copyOAuthCallback() {
+  const text = oauthCallback.value
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.cssText = 'position:fixed; left:-9999px; top:0; opacity:0;'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    oauthMsg.value = t('settings.oauthCallbackCopied')
+    oauthMsgType.value = 'ok'
+  } catch (e) {
+    oauthMsg.value = t('settings.oauthCopyFailed')
+    oauthMsgType.value = 'err'
+  }
+}
+
 // ---- 回收站设置（仅管理员） ----
 const rcForm = reactive({ enabled: true, autoDelete: true, days: 30 })
 const rcSaving = ref(false)
@@ -923,6 +1132,7 @@ async function loadVersion() {
   try {
     const res = await panelApi.health()
     panelVersion.value = res.version || ''
+    window.__GRAW_VERSION__ = panelVersion.value   // 供全局错误日志附带版本号
   } catch (e) {
     // 版本号获取失败不影响设置窗口其它功能，仅隐藏版本行
     panelVersion.value = ''
@@ -1152,6 +1362,7 @@ onMounted(() => {
     })
   if (isAdmin()) loadNodes()
   if (isAdmin()) loadWebMode()
+  if (isFullAdmin()) loadOAuth()
   if (isAdmin()) loadAgentCfg()
   if (isAdmin()) loadRecycle()
   if (isAdmin()) loadPluginSettings()
@@ -1313,6 +1524,35 @@ input {
 input:focus {
   border-color: #0a84ff;
   box-shadow: 0 0 0 3px rgba(10,132,255,0.15);
+}
+/* OAuth2 配置表单：两列（标签 + 输入控件），窄屏自动单列 */
+.oauth-grid {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 8px 10px;
+  align-items: center;
+  margin-top: 8px;
+}
+.oauth-grid > label {
+  font-size: 11px;
+  color: #6b7280;
+}
+.oauth-select {
+  padding: 7px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  color: #1d1d1f;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,0.12);
+  border-radius: 8px;
+  outline: none;
+}
+.oauth-select:focus {
+  border-color: #0a84ff;
+  box-shadow: 0 0 0 3px rgba(10,132,255,0.15);
+}
+@media (max-width: 600px) {
+  .oauth-grid { grid-template-columns: 1fr; }
 }
 .msg {
   font-size: 12px;

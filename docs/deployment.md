@@ -135,6 +135,7 @@ graw.bat log
 | `GRAW_ADDR` | HTTP 监听地址 | `:8000` | `backend-go/main.go` |
 | `GRAW_DATA_DIR` | 面板数据目录（users.json / nodes.json / secret.key 等） | 自动探测 `../backend/data`，否则 `data` | `backend-go/internal/graw/cfg.go` |
 | `GRAW_FRONTEND_DIST` | 前端构建产物目录；存在时由后端同源托管 | 自动探测 `../frontend/dist` 或 `frontend/dist` | `backend-go/internal/graw/cfg.go` |
+| `GRAW_PUBLIC_URL` | 面板对外访问的固定地址（如 `https://panel.example.com`）；用于 OAuth2 回调等必须与第三方登记值一致的场景，为空时按请求 `Host` / `X-Forwarded-*` 推导（可被伪造，公网建议显式配置） | 空 | `backend-go/internal/graw/cfg.go` |
 | `HOST_ROOT` | 宿主机根目录在容器内的挂载点；为空表示面板直接在本机运行（非容器），路径与命令原样执行 | 空；容器部署设为 `/host` | `backend-go/internal/graw/cfg.go` |
 | `GRAW_HOST_DATA` | 面板 `data` 目录在**宿主机**上的实际路径，供宿主 docker 读取 compose / 备份文件 | 空 | `backend-go/internal/graw/cfg.go` |
 | `GRAW_DOCKER_BIN` | 指定 docker / podman CLI 路径 | 自动探测 | `backend-go/internal/graw/handlers_docker.go` |
@@ -251,6 +252,7 @@ Graw 是**同源部署**设计：开发期由 Vite 代理 `/api`，生产期由�
 4. **真实客户端 IP**：直连时后端取 socket 对端地址，**完全忽略** `X-Forwarded-For`（防伪造）。经过反代后若要正确识别客户端 IP（审计 / 登录日志 / 异地提醒），需设置 `TRUSTED_PROXY_DEPTH=<代理层数>`，并由代理侧正确覆写 / 追加 XFF。
 5. **安全响应头由后端附加**：所有响应带 CSP、`X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy: same-origin`。其中 CSP 的 `connect-src 'self' ws: wss:` 已放行同源 WebSocket；`X-Frame-Options: DENY` 意味着**面板不能被 iframe 嵌入**。若你在反代层再叠一层安全头，注意不要与之冲突。
 6. **只暴露面板端口**：子节点 Agent 端口（默认 8000，实际由隧道走 `127.0.0.1`）不应对外开放，详见 [docs/node-agent.md](./node-agent.md)。
+7. **OAuth2 回跳地址**：`redirect_uri` 必须与第三方后台登记值完全一致。用反代 / HTTPS 时建议显式设置 `GRAW_PUBLIC_URL=https://你的域名`（不要带尾部 `/`），否则后端只能按请求的 `Host` / `X-Forwarded-Proto` / `X-Forwarded-Host` 推导，代理未透传这些头时会换码失败。
 
 ## 6. 常见故障排查
 

@@ -1,5 +1,31 @@
 package graw
 
+// agent.go — 多节点 / 子节点 Agent 的核心实现：节点表、SSH 连接池、成对密钥鉴权、Agent 隧道代理。
+//
+// 职责：
+//   - 节点表：data/nodes.json（当前节点 + 各 SSH 节点的连接凭据、Agent 端口与成对密钥），带 2 秒读缓存。
+//   - 机器间鉴权：子节点暴露 /api/agent/issue，用 HMAC-SHA256(key|ts|nonce) + 时间窗 + nonce 去重
+//     换取管理员 JWT；/api/agent/cfg 由登录管理员管理「收取模式」。
+//   - 隧道：主面板经 SSH direct-tcpip 连到子节点 127.0.0.1:agent_port，
+//     HTTP 走自实现的 httpOverSSH，WebSocket 走 bridgeAgentWS。
+//
+// 请求流向（httpx.go: ServeHTTP → dispatch）：
+//   - HTTP：maybeAgentProxy 先在主面板做与业务路由等价的鉴权，再经隧道转发；返回 true 表示请求已处理完。
+//   - WebSocket：升级请求不经 maybeAgentProxy（无法 Hijack），由 system/terminal/tamper/docker
+//     的 WS 处理器显式调用 bridgeAgentWS 桥接。
+//
+// 安全边界：
+//   - agentProxyExclude 内的前缀（auth/nodes/terminal/agent/ui/shunx/health/batch/gitdeploy/
+//     portforward/vpn）永不经隧道代理，避免把面板自身能力或必须主面板执行的任务下放到子节点。
+//   - 裸 SSH 节点（未配 Agent）不代理：host 类操作由 hostops.go 远程原语执行，
+//     local-only 前缀由 RejectIfLocalRemote 拒绝。
+//   - 回前端的节点信息必须走 publicNode 脱敏：password / agent_secret 绝不外泄。
+//
+// 易踩坑：
+//   - 节点凭据变更后必须 dropSSHPool 并清 agentTokens，否则旧连接 / 旧 token 仍然有效。
+//   - SSH 主机密钥采用 TOFU（data/ssh_known_hosts.json）；节点重装或换钥需 forgetSSHHostKey。
+//   - agentTokens 只在剩余有效期 > 5 分钟时复用，避免临界过期导致子节点 401。
+
 import (
 	"bufio"
 	"bytes"
@@ -23,27 +49,34 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// 多节点 / 子节点 Agent：节点存储、SSH 连接池、成对密钥鉴权、Agent 隧道代理。
-
+// 节点 / Agent 协议常量：localNodeID 是本机伪节点 ID；defaultAgentPort 是子节点 Agent
+// 默认监听端口；agentTSWindow 是 /api/agent/issue 的签名时间窗（秒），同时用于 nonce 清理。
 const (
 	localNodeID      = "local"
 	defaultAgentPort = 8000
 	agentTSWindow    = 300
 )
 
+// nodeStoreMu 串行化 nodes.json 的写入；sshHostRe / sshUserRe 在建立连接与保存节点前做白名单校验
+// （并拒绝 '-' 开头的主机名，防止被当作 ssh 命令行参数注入）。
 var (
 	nodeStoreMu sync.Mutex
 	sshHostRe   = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.:\-]*[A-Za-z0-9])?$`)
 	sshUserRe   = regexp.MustCompile(`^[A-Za-z0-9_]([A-Za-z0-9_.\-]*[A-Za-z0-9_\-])?$`)
 )
 
+// nodeStore 是 data/nodes.json 的内存模型：Version 为格式版本，Current 为全局当前节点，
+// Nodes 用 map 保存原始字段，以兼容 Python 旧版多出的自定义键。
 type nodeStore struct {
 	Version int                       `json:"version"`
 	Current string                    `json:"current"`
 	Nodes   map[string]map[string]any `json:"nodes"`
 }
 
+// defaultNodeStore 返回只含本机节点的初始节点表，用于文件缺失/损坏时的兜底，
+// 保证读取方永远拿到可用结构。
 func defaultNodeStore() nodeStore {
+	// 本机节点始终存在，保证 Current 永远有落点。
 	return nodeStore{
 		Version: 1, Current: localNodeID,
 		Nodes: map[string]map[string]any{
@@ -52,6 +85,8 @@ func defaultNodeStore() nodeStore {
 	}
 }
 
+// 节点表读缓存：2 秒 TTL，避免指标循环与每个请求都解析一次 JSON；
+// 写入路径 saveNodeStore 会同步刷新缓存，避免读到旧数据。
 var (
 	nodeCacheMu    sync.RWMutex
 	nodeCache      nodeStore
@@ -59,6 +94,9 @@ var (
 	nodeCacheValid bool
 )
 
+// loadNodeStoreFresh 直接从磁盘读取节点表，并补齐本机节点与空的 Current 字段。
+// 读取失败时回落到默认节点表（不返回错误，节点功能不应因此整体不可用）。
+// 调用方若准备「读-改-写」，必须用它而不是带缓存的 loadNodeStore。
 func loadNodeStoreFresh() nodeStore {
 	var store nodeStore
 	if err := ReadJSON(DataPath("nodes.json"), &store); err != nil || store.Nodes == nil {
@@ -76,6 +114,7 @@ func loadNodeStoreFresh() nodeStore {
 // loadNodeStore 读取节点表（2 秒缓存，避免文件/指标循环里反复解析 JSON）。
 func loadNodeStore() nodeStore {
 	nodeCacheMu.RLock()
+	// 2 秒内直接返回缓存，覆盖指标循环的高频读取。
 	if nodeCacheValid && time.Since(nodeCacheAt) < 2*time.Second {
 		store := nodeCache
 		nodeCacheMu.RUnlock()
@@ -91,9 +130,12 @@ func loadNodeStore() nodeStore {
 	return store
 }
 
+// saveNodeStore 原子写入 nodes.json（WriteJSONFile 内部临时文件 + rename），
+// 成功后同步刷新读缓存；失败返回错误且不改缓存。
 func saveNodeStore(store nodeStore) error {
 	nodeStoreMu.Lock()
 	defer nodeStoreMu.Unlock()
+	// 写盘期间持锁，防止并发 upsert 互相覆盖。
 	if err := WriteJSONFile(DataPath("nodes.json"), store); err != nil {
 		return err
 	}
@@ -105,12 +147,16 @@ func saveNodeStore(store nodeStore) error {
 	return nil
 }
 
+// publicNode 把内部节点结构脱敏成前端可见字段：绝不返回 password / agent_secret，
+// 只暴露 has_password、agent_enabled 之类的布尔状态；端口缺失时补默认值。
 func publicNode(id string, node map[string]any) map[string]any {
+	// 基础字段对所有节点类型都返回。
 	pub := map[string]any{
 		"id": id, "name": defaultString(str(node["name"]), id), "type": str(node["type"]),
 		"group": str(node["group"]), "tags": toStringSlice(node["tags"]),
 	}
 	if str(node["type"]) == "ssh" {
+		// SSH 节点额外暴露连接信息；敏感字段只给「是否已配置」。
 		pub["host"] = str(node["host"])
 		pub["port"] = func() int {
 			if p := int(int64Of(node["port"])); p > 0 {
@@ -122,6 +168,7 @@ func publicNode(id string, node map[string]any) map[string]any {
 		pub["auth"] = defaultString(str(node["auth"]), "password")
 		pub["has_password"] = str(node["password"]) != ""
 		pub["key_path"] = str(node["key_path"])
+		// 只有成对 key/secret 都存在才算 Agent 可用。
 		pub["agent_enabled"] = str(node["agent_key"]) != "" && str(node["agent_secret"]) != ""
 		pub["agent_port"] = func() int {
 			if p := int(int64Of(node["agent_port"])); p > 0 {
@@ -133,12 +180,13 @@ func publicNode(id string, node map[string]any) map[string]any {
 	return pub
 }
 
-// CurrentNodeID 返回全局当前节点 ID（节点选择持久化值）。
+// CurrentNodeID 返回全局当前节点 ID（节点选择持久化值，不含请求级覆盖）。
 func CurrentNodeID() string {
 	return loadNodeStore().Current
 }
 
-// RequestNodeID 返回请求级节点（X-Graw-Node 优先，否则宿主操作解析后的当前节点）。
+// RequestNodeID 返回请求级节点：X-Graw-Node 头优先（统一面板按窗口聚焦节点下发），
+// 否则回落到宿主操作解析后的当前节点（可能已被 withNodeScope 覆盖）。
 func RequestNodeID(r *http.Request) string {
 	if v := strings.TrimSpace(r.Header.Get("X-Graw-Node")); v != "" {
 		return v
@@ -146,16 +194,20 @@ func RequestNodeID(r *http.Request) string {
 	return resolvedNodeID()
 }
 
-// IsRemoteCurrent 当前（或请求级）节点是否为远程 SSH 节点。
+// IsRemoteCurrent 当前（或请求级覆盖后）节点是否为远程 SSH 节点。
+// 宿主操作层用它决定走本地 os 还是远程 SSH 原语。
 func IsRemoteCurrent() bool {
 	n := opsNode()
 	return n != nil && str(n["type"]) == "ssh"
 }
 
+// currentNode 返回当前生效的节点结构（含请求级覆盖），供 hostops.go 的远程原语使用。
 func currentNode() map[string]any {
 	return opsNode()
 }
 
+// agentReady 判断节点是否已配置 Agent 隧道（SSH 节点且成对 key/secret 齐全）。
+// 为 false 的 SSH 节点按「裸 SSH」处理：不代理 HTTP，只能通过远程原语操作宿主机。
 func agentReady(node map[string]any) bool {
 	return node != nil && str(node["type"]) == "ssh" &&
 		str(node["agent_key"]) != "" && str(node["agent_secret"]) != ""
@@ -163,6 +215,8 @@ func agentReady(node map[string]any) bool {
 
 // --- 子节点 Agent 收取模式配置 ---
 
+// agentConfig 对应 data/agent.json：子节点「收取模式」开关、成对 key/secret、角色，
+// 以及 SecretRevealed 标记（secret 已在管理界面展示过就不再自动回显）。
 type agentConfig struct {
 	Enabled        bool   `json:"enabled"`
 	Key            string `json:"key"`
@@ -171,10 +225,14 @@ type agentConfig struct {
 	SecretRevealed bool   `json:"secret_revealed"`
 }
 
+// loadAgentConfig 读取本地 Agent 配置；文件缺失或 key/secret 不完整时回落到环境变量
+// GRAW_AGENT_KEY / GRAW_AGENT_SECRET（两者齐全才视为启用），否则返回未启用的空配置。
+// 读取失败有意忽略：未配置 Agent 是正常状态。
 func loadAgentConfig() agentConfig {
 	cfg := agentConfig{Role: "admin", SecretRevealed: true}
 	_ = ReadJSON(DataPath("agent.json"), &cfg)
 	if cfg.Key == "" || cfg.Secret == "" {
+		// 配置文件里没有成对密钥时，才考虑环境变量（兼容容器化一次性注入）。
 		envKey := strings.TrimSpace(os.Getenv("GRAW_AGENT_KEY"))
 		envSecret := strings.TrimSpace(os.Getenv("GRAW_AGENT_SECRET"))
 		if envKey != "" && envSecret != "" {
@@ -185,39 +243,55 @@ func loadAgentConfig() agentConfig {
 	return cfg
 }
 
+// agentEnabled 判断本机是否以子节点身份接收主面板请求（开关打开且 key/secret 齐全）。
 func agentEnabled() bool {
 	cfg := loadAgentConfig()
 	return cfg.Enabled && cfg.Key != "" && cfg.Secret != ""
 }
 
+// agentPublicStatus 返回可回前端的 Agent 状态：只给 has_secret 布尔值，绝不回显 secret 明文。
 func agentPublicStatus() map[string]any {
 	cfg := loadAgentConfig()
 	enabled := cfg.Enabled && cfg.Key != "" && cfg.Secret != ""
 	return map[string]any{
-		"enabled": enabled, "role": "admin", "key": cfg.Key,
+		"enabled": enabled, "role": defaultString(cfg.Role, "admin"), "key": cfg.Key,
 		"has_secret": cfg.Secret != "",
+		// 只有启用且尚未回显过时才允许前端请求 reveal-secret。
 		"can_reveal": enabled && cfg.Secret != "" && !cfg.SecretRevealed,
 		"ts_window":  agentTSWindow,
 	}
 }
 
+// agentUsedNonces 记录已用 nonce（key|nonce → 首次时间），窗口内重放直接拒绝；
+// 超过 1 万条时顺带清理过期项，防止 map 无界增长。
 var agentNonceMu sync.Mutex
 var agentUsedNonces = map[string]int64{}
 
+// agentSignature 计算请求签名 HMAC-SHA256(secret, "key|ts|nonce")；
+// 主面板（agentToken）与子节点（/api/agent/issue）共用同一算法，改一处必须同步另一处。
 func agentSignature(secret, key string, ts int64, nonce string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(fmt.Sprintf("%s|%d|%s", key, ts, nonce)))
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+// registerAgentRoutes 注册 Agent 相关端点：
+//   - GET  /api/agent/issue：子节点用成对密钥换管理员 JWT（机器间调用，customAuth 自行验签）；
+//   - GET  /api/agent/cfg：读取脱敏后的收取模式；
+//   - PUT  /api/agent/cfg：管理员修改开关与密钥；
+//   - POST /api/agent/reveal-secret：管理员显式查看 secret（仅首次）。
+//
+// 注意 /issue 不挂登录依赖：子节点身份靠 HMAC 签名证明，而非面板用户。
 func registerAgentRoutes(a *App) {
 	a.Get("/api/agent/issue", customAuth(), func(w http.ResponseWriter, r *http.Request) error {
+		// 未开启收取模式时返回 404：不向未授权方暴露端点存在。
 		if !agentEnabled() {
 			return NewHTTPError(404, "Agent API 未启用")
 		}
 		q := r.URL.Query()
 		tsStr, nonce, sig := q.Get("ts"), q.Get("nonce"), q.Get("sig")
 		providedKey := r.Header.Get("X-Graw-Agent-Key")
+		// 签名三要素缺一不可，先做廉价校验再进入密码学计算。
 		if tsStr == "" || nonce == "" || sig == "" {
 			return NewHTTPError(400, "缺少 ts/nonce/sig")
 		}
@@ -226,14 +300,17 @@ func registerAgentRoutes(a *App) {
 			return NewHTTPError(400, "ts 非法")
 		}
 		cfg := loadAgentConfig()
+		// 用常量时间比较 key，避免按字节比较泄露匹配长度。
 		if !hmac.Equal([]byte(providedKey), []byte(cfg.Key)) {
 			return NewHTTPError(401, "Agent 凭证校验失败")
 		}
 		now := time.Now().Unix()
+		// 时间窗限制签名可重放的时间；nonce 长度限制防止超长 key 撑爆内存。
 		if abs64(now-ts) > agentTSWindow || len(nonce) > 128 {
 			return NewHTTPError(401, "Agent 凭证校验失败")
 		}
 		expect := agentSignature(cfg.Secret, providedKey, ts, nonce)
+		// 验签失败与 key 错误统一文案，不给探测者区分线索。
 		if !hmac.Equal([]byte(expect), []byte(sig)) {
 			return NewHTTPError(401, "Agent 凭证校验失败")
 		}
@@ -243,8 +320,10 @@ func registerAgentRoutes(a *App) {
 			agentNonceMu.Unlock()
 			return NewHTTPError(401, "Agent 凭证校验失败")
 		}
+		// 先登记 nonce 再签发，保证同一 nonce 只能用一次（防重放）。
 		agentUsedNonces[key] = now
 		if len(agentUsedNonces) > 10000 {
+			// 顺带清理超出时间窗的历史 nonce，避免 map 无界增长。
 			for k, t := range agentUsedNonces {
 				if now-t > agentTSWindow {
 					delete(agentUsedNonces, k)
@@ -252,6 +331,7 @@ func registerAgentRoutes(a *App) {
 			}
 		}
 		agentNonceMu.Unlock()
+		// 确保存在 agent 机器账号；它的 token_version 决定已签发 JWT 是否失效。
 		if err := ensureAgentUser(); err != nil {
 			return err
 		}
@@ -260,15 +340,18 @@ func registerAgentRoutes(a *App) {
 		if user != nil {
 			tv = user.Int("token_version")
 		}
+		// 以 agent 账号签发管理员 JWT；管理员改密/踢下线后该 token 会自然失效。
 		token, err := CreateToken("agent", tv, "")
 		if err != nil {
 			return err
 		}
+		// expires_in 供主面板安排 token 刷新。
 		return WriteJSON(w, 200, map[string]any{
 			"token": token, "role": "admin", "expires_in": int(TokenTTL.Seconds()), "username": "agent",
 		})
 	})
 	a.Get("/api/agent/cfg", adminOnly(), func(w http.ResponseWriter, r *http.Request) error {
+		// 只返回脱敏状态（has_secret），不回显 secret。
 		return WriteJSON(w, 200, agentPublicStatus())
 	})
 	a.Put("/api/agent/cfg", adminOnly(), func(w http.ResponseWriter, r *http.Request) error {
@@ -282,23 +365,29 @@ func registerAgentRoutes(a *App) {
 		}
 		cur := loadAgentConfig()
 		key := strings.TrimSpace(req.Key)
+		// key 留空表示沿用旧值，便于前端只切换开关。
 		if key == "" {
 			key = cur.Key
 		}
 		secret := strings.TrimSpace(req.Secret)
 		secretChanged := false
 		if secret != "" {
+			// 显式填写 secret 视为轮换密钥。
 			secretChanged = true
 		} else if req.Enabled {
+			// 未填写且仍启用：复用旧 secret。
 			secret = cur.Secret
 		}
+		// 启用前必须两端都有值，避免落盘一份半配置。
 		if req.Enabled && (key == "" || secret == "") {
 			return NewHTTPError(400, "未配置访问 key/校验 secret，无法启用")
 		}
 		cfg := agentConfig{Enabled: req.Enabled, Key: key, Secret: secret, Role: "admin"}
 		if req.Enabled {
+			// 沿用「是否已回显」状态：轮换 secret 后重新允许查看一次。
 			cfg.SecretRevealed = !secretChanged && cur.SecretRevealed
 		} else {
+			// 关闭时清空 secret 并重置回显标记，减少静态凭据留存。
 			cfg.Secret = ""
 			cfg.SecretRevealed = true
 		}
@@ -309,17 +398,22 @@ func registerAgentRoutes(a *App) {
 	})
 	a.Post("/api/agent/reveal-secret", adminOnly(), func(w http.ResponseWriter, r *http.Request) error {
 		cfg := loadAgentConfig()
+		// 未启用或已回显过时返回空串（幂等），避免 secret 被反复取出。
 		if !(cfg.Enabled && cfg.Secret != "" && !cfg.SecretRevealed) {
 			return WriteJSON(w, 200, map[string]any{"secret": "", "revealed": true})
 		}
+		// 首次回显后立刻落盘标记，后续 GET /cfg 只给 has_secret。
 		cfg.SecretRevealed = true
 		_ = WriteJSONFile(DataPath("agent.json"), cfg)
 		return WriteJSON(w, 200, map[string]any{"secret": cfg.Secret, "revealed": false, "role": adminRole})
 	})
 }
 
+// adminRole 是 Agent 机器账号固定使用的角色名（隧道请求需要完整管理员能力）。
 const adminRole = "admin"
 
+// ensureAgentUser 确保 users.json 中存在 agent 机器账号（admin 角色、随机密码、
+// 不需要改密），供 /api/agent/issue 签发 JWT 使用。已存在且是管理员时不做任何改动。
 func ensureAgentUser() error {
 	users, err := LoadUsers()
 	if err != nil {
@@ -328,9 +422,11 @@ func ensureAgentUser() error {
 	if users == nil {
 		users = Users{}
 	}
+	// 已存在管理员 agent 账号直接复用（可能已有 token_version 等状态）。
 	if u, ok := users["agent"]; ok && u.Role() == "admin" {
 		return nil
 	}
+	// 随机密码无人知晓，只作占位，禁止用于交互登录。
 	pw := randomHex(64)
 	hash, err := HashPassword(pw)
 	if err != nil {
@@ -343,6 +439,7 @@ func ensureAgentUser() error {
 	return SaveUsers(users)
 }
 
+// strconvParseInt 解析十进制时间戳（宽松 Sscanf，容忍前后空白）。
 func strconvParseInt(s string) (int64, error) {
 	var n int64
 	if _, err := fmt.Sscanf(strings.TrimSpace(s), "%d", &n); err != nil {
@@ -351,6 +448,7 @@ func strconvParseInt(s string) (int64, error) {
 	return n, nil
 }
 
+// abs64 返回 int64 绝对值，用于时间窗偏差比较。
 func abs64(n int64) int64 {
 	if n < 0 {
 		return -n
@@ -360,21 +458,29 @@ func abs64(n int64) int64 {
 
 // --- SSH 客户端与连接池 ---
 
+// sshPool 以 host:port:user 为键缓存 SSH 客户端，复用握手（慢链路上每次握手都很贵）；
+// 复用前必须做 keepalive 探活，死连接直接丢弃重连。连接归池所有，调用方不要 Close。
 var (
 	sshPoolMu sync.Mutex
 	sshPool   = map[string]*ssh.Client{}
 )
 
+// nodeKey 生成连接池键（host:port:user）；不含密码，避免凭据进入缓存键。
 func nodeKey(node map[string]any) string {
 	return fmt.Sprintf("%s:%d:%s", str(node["host"]), int(int64Of(node["port"])), str(node["user"]))
 }
 
+// sshConnect 建立一条新的 SSH 连接（不走连接池），用于节点连通性测试与池内重连。
+// host/user 先做白名单校验（并拒绝 '-' 开头，防止被当成 ssh 参数），
+// 再按 auth=key/password 选择认证方式；主机密钥走 TOFU。
+// 失败返回错误，调用方决定如何提示（测试接口会把错误原样回给前端）。
 func sshConnect(node map[string]any, timeout time.Duration) (*ssh.Client, error) {
 	host := str(node["host"])
 	port := int(int64Of(node["port"]))
 	if port == 0 {
 		port = 22
 	}
+	// 主机名白名单：拦掉非法字符与 '-' 开头（避免命令参数注入）。
 	if !sshHostRe.MatchString(host) || strings.HasPrefix(host, "-") {
 		return nil, fmt.Errorf("节点主机地址非法")
 	}
@@ -385,6 +491,7 @@ func sshConnect(node map[string]any, timeout time.Duration) (*ssh.Client, error)
 	auths := []ssh.AuthMethod{}
 	if str(node["auth"]) == "key" && str(node["key_path"]) != "" {
 		keyPath := str(node["key_path"])
+		// 私钥路径依次尝试：原样 / HOST_ROOT 映射 / data 目录，兼容「本机直跑、容器部署、密钥随面板存放」三种情况。
 		candidates := []string{keyPath, HostPath(keyPath), DataPath(keyPath)}
 		var keyData []byte
 		var readErr error
@@ -396,6 +503,7 @@ func sshConnect(node map[string]any, timeout time.Duration) (*ssh.Client, error)
 			if absErr != nil {
 				continue
 			}
+			// cleanHostView 把宿主机视角路径映射到容器内可访问路径。
 			if keyData, readErr = os.ReadFile(cleanHostView(abs)); readErr == nil {
 				break
 			}
@@ -409,9 +517,11 @@ func sshConnect(node map[string]any, timeout time.Duration) (*ssh.Client, error)
 		}
 		auths = append(auths, ssh.PublicKeys(signer))
 	} else {
+		// 默认走密码认证（auth=key 但缺 key_path 时也回落到密码）。
 		auths = append(auths, ssh.Password(str(node["password"])))
 	}
 	addr := net.JoinHostPort(host, itoa(port))
+	// TCP 握手先受 timeout 约束；协商完成前保留 deadline，避免半开连接卡住。
 	raw, err := net.DialTimeout("tcp", addr, timeout)
 	if err != nil {
 		return nil, err
@@ -419,6 +529,7 @@ func sshConnect(node map[string]any, timeout time.Duration) (*ssh.Client, error)
 	_ = raw.SetDeadline(time.Now().Add(timeout))
 	cfg := &ssh.ClientConfig{
 		User: user, Auth: auths, Timeout: timeout,
+		// TOFU：首次连接记录指纹，后续不一致即拒绝（防中间人）。
 		HostKeyCallback: sshHostKeyCallback(addr),
 	}
 	conn, chans, reqs, err := ssh.NewClientConn(raw, addr, cfg)
@@ -429,9 +540,10 @@ func sshConnect(node map[string]any, timeout time.Duration) (*ssh.Client, error)
 	return ssh.NewClient(conn, chans, reqs), nil
 }
 
+// knownHostsMu 串行化 data/ssh_known_hosts.json 的读写（TOFU 指纹表）。
 var knownHostsMu sync.Mutex
 
-// sshHostKeyCallback 实现 TOFU：首次记录指纹，后续必须一致。
+// sshHostKeyCallback 实现 TOFU：首次记录指纹，后续必须一致；不一致报中间人风险并提示人工清理记录。
 func sshHostKeyCallback(addr string) ssh.HostKeyCallback {
 	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 		fp := ssh.FingerprintSHA256(key)
@@ -446,21 +558,27 @@ func sshHostKeyCallback(addr string) ssh.HostKeyCallback {
 			}
 			return nil
 		}
+		// 首次见到该 host:port：记录指纹后才放行。
 		known[addr] = fp
 		_ = WriteJSONFile(path, known)
 		return nil
 	}
 }
 
+// pooledSSH 返回可用的 SSH 客户端：优先复用池内连接，用 keepalive 探活，失效则关闭重连；
+// 新建成功后替换池内旧连接。并发由 sshPoolMu 串行化。
+// 返回的连接归连接池所有，调用方不要主动 Close（节点删除/凭据变更时由 dropSSHPool 关闭）。
 func pooledSSH(node map[string]any, timeout time.Duration) (*ssh.Client, error) {
 	key := nodeKey(node)
 	sshPoolMu.Lock()
 	if c, ok := sshPool[key]; ok {
+		// keepalive 请求成功说明链路仍可用，直接复用。
 		_, _, err := c.SendRequest("keepalive@graw", true, nil)
 		if err == nil {
 			sshPoolMu.Unlock()
 			return c, nil
 		}
+		// 探活失败：关闭并移除，随后重连。
 		_ = c.Close()
 		delete(sshPool, key)
 	}
@@ -470,6 +588,7 @@ func pooledSSH(node map[string]any, timeout time.Duration) (*ssh.Client, error) 
 		return nil, err
 	}
 	sshPoolMu.Lock()
+	// 并发下可能有别的协程刚放入新连接，替换前先关掉旧的，避免泄漏。
 	if old, ok := sshPool[key]; ok {
 		_ = old.Close()
 	}
@@ -478,6 +597,8 @@ func pooledSSH(node map[string]any, timeout time.Duration) (*ssh.Client, error) 
 	return c, nil
 }
 
+// dropSSHPool 关闭并移除节点连接池条目；凭据变更或删除节点时必须调用，
+// 否则旧凭据建立的连接会继续可用。
 func dropSSHPool(node map[string]any) {
 	key := nodeKey(node)
 	sshPoolMu.Lock()
@@ -499,12 +620,15 @@ func forgetSSHHostKey(node map[string]any) {
 	defer knownHostsMu.Unlock()
 	known := map[string]string{}
 	_ = ReadJSON(DataPath("ssh_known_hosts.json"), &known)
+	// 按 host:port 删除；下次连接会重新走 TOFU 记录。
 	delete(known, addr)
 	_ = WriteJSONFile(DataPath("ssh_known_hosts.json"), known)
 }
 
 // --- Agent 隧道 HTTP ---
 
+// agentTokens 缓存子节点签发的 JWT（按节点键），只在剩余有效期 > 5 分钟时复用；
+// 节点凭据变更时由 upsertNode 清空。
 var (
 	agentTokenMu sync.Mutex
 	agentTokens  = map[string]struct {
@@ -513,9 +637,13 @@ var (
 	}{}
 )
 
+// agentToken 取得（必要时刷新）节点 Agent 的 JWT：用节点保存的成对密钥签名，
+// 经 SSH 隧道请求子节点 /api/agent/issue。返回错误表示子节点未启用、签名被拒或隧道不可用。
+// 主面板与子节点时钟偏差需落在 agentTSWindow（300s）内，否则会验签失败。
 func agentToken(node map[string]any, client *ssh.Client) (string, error) {
 	key := nodeKey(node)
 	agentTokenMu.Lock()
+	// 剩余有效期不足 5 分钟不复用，避免请求进行到一半 token 过期。
 	if cached, ok := agentTokens[key]; ok && time.Until(cached.Exp) > 5*time.Minute {
 		agentTokenMu.Unlock()
 		return cached.Token, nil
@@ -527,8 +655,10 @@ func agentToken(node map[string]any, client *ssh.Client) (string, error) {
 	}
 	now := time.Now().Unix()
 	nonce := randomHex(8)
+	// 签名算法与子节点 /api/agent/issue 的校验逻辑必须完全一致。
 	sig := agentSignature(str(node["agent_secret"]), str(node["agent_key"]), now, nonce)
 	path := fmt.Sprintf("/api/agent/issue?ts=%d&nonce=%s&sig=%s", now, nonce, sig)
+	// 请求经 SSH 隧道打到子节点 127.0.0.1，不经过公网；Agent 只监听回环地址。
 	status, _, body, err := httpOverSSH(client, port, http.MethodGet, path,
 		map[string]string{"X-Graw-Agent-Key": str(node["agent_key"])}, nil)
 	if err != nil {
@@ -538,11 +668,14 @@ func agentToken(node map[string]any, client *ssh.Client) (string, error) {
 		Token     string `json:"token"`
 		ExpiresIn int64  `json:"expires_in"`
 	}
+	// 非 200、JSON 解析失败或空 token 一律视为鉴权失败，不继续代理。
 	if status != 200 || json.Unmarshal(body, &payload) != nil || payload.Token == "" {
 		return "", fmt.Errorf("Agent 换取 token 失败: %d %s", status, string(body))
 	}
 	if payload.ExpiresIn <= 0 {
-		payload.ExpiresIn = 7 * 24 * 3600
+		// 子节点没给过期时间，无法判断安全的缓存窗口：直接返回但不缓存。
+		// 按固定 7 天缓存一个实际可能更短效的 token，会在其过期后持续 401。
+		return payload.Token, nil
 	}
 	agentTokenMu.Lock()
 	agentTokens[key] = struct {
@@ -553,13 +686,25 @@ func agentToken(node map[string]any, client *ssh.Client) (string, error) {
 	return payload.Token, nil
 }
 
+// httpOverSSH 在已有 SSH 连接上开一条 direct-tcpip 通道，手写最小 HTTP/1.0 请求到子节点
+// 127.0.0.1:port，返回状态码/响应头/响应体。
+// 用 HTTP/1.0 + Connection: close 简化 framing；写请求与读响应分阶段设 deadline，
+// 避免半开连接把请求永久挂住，也不会用固定 60 秒截断大请求体。body 一次性读完（调用方需要整块 JSON）。
 func httpOverSSH(client *ssh.Client, port int, method, path string, headers map[string]string, body []byte) (int, http.Header, []byte, error) {
+	// SSH 通道内再连子节点回环地址，Agent 只监听本机，不暴露到外网。
 	conn, err := client.Dial("tcp", net.JoinHostPort("127.0.0.1", itoa(port)))
 	if err != nil {
 		return 0, nil, nil, err
 	}
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(60 * time.Second))
+	// 写阶段按请求体大小放宽：基础 60 秒 + 每 MB 1 秒，封顶 10 分钟。
+	// 固定 60 秒会让经隧道转发的大上传在中途被 deadline 截断。
+	writeTimeout := 60*time.Second + time.Duration(len(body)/(1024*1024))*time.Second
+	if writeTimeout > 10*time.Minute {
+		writeTimeout = 10 * time.Minute
+	}
+	_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+	// 手工拼请求行：net/http 的 Transport 无法复用这条自定义连接。
 	req := fmt.Sprintf("%s %s HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n", method, path)
 	if body != nil {
 		req += fmt.Sprintf("Content-Length: %d\r\n", len(body))
@@ -571,7 +716,10 @@ func httpOverSSH(client *ssh.Client, port int, method, path string, headers map[
 	if _, err := conn.Write(append([]byte(req), body...)); err != nil {
 		return 0, nil, nil, err
 	}
+	// 请求写完后再设读 deadline：子节点处理慢一点也不会被写阶段的超时影响。
+	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	httpReq := &http.Request{Method: method}
+	// 用标准库解析响应，兼容 chunked / Content-Length 等 framing。
 	resp, err := http.ReadResponse(bufio.NewReader(conn), httpReq)
 	if err != nil {
 		return 0, nil, nil, err
@@ -581,11 +729,17 @@ func httpOverSSH(client *ssh.Client, port int, method, path string, headers map[
 	return resp.StatusCode, resp.Header, respBody, nil
 }
 
+// agentProxyRequest 把一个 HTTP 请求经 SSH 隧道转发到子节点并返回其响应。
+// rawBody 已由调用方按上传上限读取；只透传 Content-Type / Accept 与 Authorization（agent JWT），
+// 不转发浏览器原始 token，避免把用户凭据留在子节点。
+// 返回的 *http.Response 的 Body 是已缓冲的读闭包，调用方负责 Close。
 func agentProxyRequest(node map[string]any, r *http.Request, rawBody []byte) (*http.Response, error) {
+	// 复用池内 SSH，避免每个业务请求都重新握手。
 	client, err := pooledSSH(node, 15*time.Second)
 	if err != nil {
 		return nil, err
 	}
+	// 换取（或复用缓存中的）子节点 agent JWT。
 	token, err := agentToken(node, client)
 	if err != nil {
 		return nil, err
@@ -594,6 +748,7 @@ func agentProxyRequest(node map[string]any, r *http.Request, rawBody []byte) (*h
 	if port == 0 {
 		port = defaultAgentPort
 	}
+	// 用 RequestURI 保留 query，子节点路由才能命中。
 	path := r.URL.RequestURI()
 	headers := map[string]string{"Authorization": "Bearer " + token}
 	if ct := r.Header.Get("Content-Type"); ct != "" && len(rawBody) > 0 {
@@ -602,10 +757,12 @@ func agentProxyRequest(node map[string]any, r *http.Request, rawBody []byte) (*h
 	if accept := r.Header.Get("Accept"); accept != "" {
 		headers["Accept"] = accept
 	}
+	// 通过隧道发请求并读完整响应。
 	status, hdr, respBody, err := httpOverSSH(client, port, r.Method, path, headers, rawBody)
 	if err != nil {
 		return nil, err
 	}
+	// 包装成标准 Response，交给上游统一写回浏览器。
 	return &http.Response{
 		StatusCode: status, Header: hdr,
 		Body: io.NopCloser(bytes.NewReader(respBody)),
@@ -614,17 +771,28 @@ func agentProxyRequest(node map[string]any, r *http.Request, rawBody []byte) (*h
 
 // --- 代理前置鉴权 ---
 
+// proxyUserSafe 是「受限管理员也可经隧道访问」的公共只读端点白名单（按方法匹配），
+// 作为无模块权限时的兜底；与 Python 版一致，新增公共只读接口才考虑加入。
 var proxyUserSafe = map[string][]string{
 	"/api/system": {"GET"},
 	"/api/notes":  {"GET"},
 	"/api/tamper": {"GET"},
 }
 
+// agentProxyExclude 列出永不经 Agent 隧道代理的前缀：
+//   - 面板自身：auth / nodes / ui / shunx / agent / health；
+//   - 必须主面板执行：batch / gitdeploy / portforward / vpn；
+//   - WebSocket 终端：terminal（需要单独的 WS 桥接）。
+//
+// 改动此表会直接改变远端能力边界，务必同步 AGENTS.md 与文档。
 var agentProxyExclude = []string{
 	"/api/auth", "/api/nodes", "/api/terminal", "/api/agent", "/api/ui",
 	"/api/shunx", "/api/health", "/api/batch", "/api/gitdeploy", "/api/portforward", "/api/vpn",
 }
 
+// localOnlyPrefixes 是远端（裸 SSH 节点）不可用的「本机专属」接口：
+// 站点/数据库/证书/备份等管理的是主面板所在宿主机的环境，转发到子节点没有意义且会造成越权。
+// 新增面板自身管理类接口时必须在此登记，否则裸 SSH 节点会放行到无意义的本机数据上。
 var localOnlyPrefixes = []string{
 	"/api/sites", "/api/databases", "/api/cron", "/api/ssl", "/api/protection",
 	"/api/runtime", "/api/tasks", "/api/appstore", "/api/backup", "/api/netstorage",
@@ -634,6 +802,8 @@ var localOnlyPrefixes = []string{
 	"/api/netmap", "/api/plugins", "/api/op",
 }
 
+// shouldAgentProxy 判断路径是否允许走 Agent 隧道：必须是 /api/ 前缀且不在排除表内。
+// 先去掉尾部斜杠做归一，避免 /api/nodes/ 之类绕过排除判断。
 func shouldAgentProxy(path string) bool {
 	p := strings.TrimRight(path, "/")
 	if !strings.HasPrefix(p, "/api/") {
@@ -647,6 +817,7 @@ func shouldAgentProxy(path string) bool {
 	return true
 }
 
+// isLocalOnlyPath 判断路径是否属于本机专属接口（前缀匹配）。
 func isLocalOnlyPath(path string) bool {
 	for _, p := range localOnlyPrefixes {
 		if path == p || strings.HasPrefix(path, p+"/") {
@@ -656,11 +827,14 @@ func isLocalOnlyPath(path string) bool {
 	return false
 }
 
-// RejectIfLocalRemote 当当前节点为远端且路径为 local 类时返回 true。
+// RejectIfLocalRemote 当当前节点为远端且路径为 local 类时返回 true，
+// 调用方（httpx.dispatch）应据此返回 403。仅对裸 SSH 节点生效：
+// 配了 Agent 的远端请求已在 maybeAgentProxy 被转发，不会走到这里。
 func RejectIfLocalRemote(path string) bool {
 	return IsRemoteCurrent() && isLocalOnlyPath(path)
 }
 
+// proxyReadonlyAllow 判断受限管理员是否可按该方法访问公共只读端点（proxyUserSafe）。
 func proxyReadonlyAllow(path, method string) bool {
 	for prefix, methods := range proxyUserSafe {
 		if path == prefix || strings.HasPrefix(path, prefix+"/") {
@@ -675,6 +849,9 @@ func proxyReadonlyAllow(path, method string) bool {
 	return false
 }
 
+// proxyPermForPath 从已注册路由表按 /api/<模块> 前缀反查模块权限，
+// 用于代理前做与业务路由等价的权限判定（对应 Python 版 _proxy_perm_map 的自动汇总）。
+// 返回空表示该前缀没有声明模块权限（调用方按更严格的白名单处理）。
 func (a *App) proxyPermForPath(path string) []string {
 	parts := strings.Split(path, "/")
 	if len(parts) < 3 {
@@ -692,18 +869,25 @@ func (a *App) proxyPermForPath(path string) []string {
 	return nil
 }
 
+// proxyAuthGuard 在转发前于主面板做与业务路由等价的鉴权。
+// Why：子节点 Agent 以管理员权限执行请求，若不在本机先校验，受限用户可借隧道越权。
+// 规则：未登录/默认密码拒绝；完整管理员放行；受限管理员要求命中模块权限，
+// 否则只允许 proxyUserSafe 中的公共只读方法。
 func (a *App) proxyAuthGuard(r *http.Request, path string) *HTTPError {
+	// failClosedOnDefault=true：默认密码账号不允许经隧道操作子节点。
 	u, err := Authenticate(r, true)
 	if err != nil {
 		return err
 	}
 	if u.Role() != "admin" {
+		// 非管理员只放行公共只读端点，其余一律 403。
 		if !proxyReadonlyAllow(path, r.Method) {
 			return NewHTTPError(403, "需要管理员权限")
 		}
 		return nil
 	}
 	if set, full := UserPerms(u); !full {
+		// 受限管理员：按该前缀声明的模块权限判定。
 		if mods := a.proxyPermForPath(path); len(mods) > 0 {
 			allowed := false
 			for _, m := range mods {
@@ -717,6 +901,7 @@ func (a *App) proxyAuthGuard(r *http.Request, path string) *HTTPError {
 			}
 			return nil
 		}
+		// 路由未声明模块权限：退回公共只读白名单，宁严勿松。
 		if !proxyReadonlyAllow(path, r.Method) {
 			return NewHTTPError(403, "需要管理员权限")
 		}
@@ -724,12 +909,19 @@ func (a *App) proxyAuthGuard(r *http.Request, path string) *HTTPError {
 	return nil
 }
 
-// maybeAgentProxy 在「当前节点为已配置 Agent 的远端」时转发请求。
+// maybeAgentProxy 在「当前（或请求级）节点是已配置 Agent 的远程 SSH 节点」时，
+// 把业务请求经隧道转发到子节点。返回 true 表示请求已被处理（成功或已写错误），
+// 调用方不应继续分发；返回 false 表示按本机 / 裸 SSH 路径继续处理。
+//
+// 顺序很重要：必须先于 remote_cap（RejectIfLocalRemote）执行，否则 local 类接口
+// 会在主面板就被 403，无法代理到子节点执行。
 func (a *App) maybeAgentProxy(w http.ResponseWriter, r *http.Request) bool {
+	// WebSocket 升级不代理：需要 Hijack，交由各 WS 处理器显式 bridgeAgentWS。
 	if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		return false
 	}
 	path := r.URL.Path
+	// 排除表内的前缀永不经隧道（面板自身 / 必须主面板执行）。
 	if !shouldAgentProxy(path) {
 		return false
 	}
@@ -737,6 +929,7 @@ func (a *App) maybeAgentProxy(w http.ResponseWriter, r *http.Request) bool {
 	nodeID := RequestNodeID(r)
 	node, ok := store.Nodes[nodeID]
 	if !ok {
+		// 未知节点回落到本机，避免拼错的 X-Graw-Node 把请求发到意外主机。
 		node = store.Nodes[localNodeID]
 	}
 	if str(node["type"]) != "ssh" {
@@ -747,13 +940,16 @@ func (a *App) maybeAgentProxy(w http.ResponseWriter, r *http.Request) bool {
 		// 已通过 hostops 的远程原语在本机透明执行；local 类接口由 remote_cap 中间件拒绝。
 		return false
 	}
+	// 先在本机完成等价鉴权再代理，防止受限用户借隧道越权到子节点的管理员接口。
 	if err := a.proxyAuthGuard(r, path); err != nil {
 		writeErr(w, err)
 		return true
 	}
+	// 按上传上限读取请求体（+1 字节用于让子节点识别超限），读到多少转多少。
 	rawBody, _ := io.ReadAll(io.LimitReader(r.Body, GetConfig().MaxUploadByte+1))
 	resp, err := agentProxyRequest(node, r, rawBody)
 	if err != nil {
+		// 统一 502，避免把子节点内部错误细节（含地址/凭据线索）暴露给前端。
 		WriteJSON(w, 502, map[string]any{"detail": "Agent 代理失败，请检查子节点 Agent 状态"})
 		return true
 	}
@@ -762,6 +958,7 @@ func (a *App) maybeAgentProxy(w http.ResponseWriter, r *http.Request) bool {
 	if ct == "" {
 		ct = "application/json; charset=utf-8"
 	}
+	// 原样回写子节点状态码与 Content-Type，业务侧无需感知请求被代理。
 	w.Header().Set("Content-Type", ct)
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
@@ -771,7 +968,10 @@ func (a *App) maybeAgentProxy(w http.ResponseWriter, r *http.Request) bool {
 // bridgeAgentWS 把浏览器 WebSocket 桥接到子节点 Agent 的同名 WS 端点。
 // 隧道（SSH direct-tcpip）承载一次 WebSocket 握手与帧级双向转发，
 // 子节点侧使用 agent JWT（管理员权限）鉴权。
+// 调用方（system/terminal/tamper/docker 的 WS 处理器）已完成本机用户鉴权；
+// 桥接失败时用文本帧告知浏览器并关闭，不返回 HTTP 错误（此时连接已升级）。
 func bridgeAgentWS(w http.ResponseWriter, r *http.Request, node map[string]any, targetPath string) {
+	// 先把浏览器侧升级为 WebSocket；失败直接结束（upgradeWS 已写响应）。
 	browser, err := upgradeWS(w, r)
 	if err != nil {
 		return
@@ -782,6 +982,7 @@ func bridgeAgentWS(w http.ResponseWriter, r *http.Request, node map[string]any, 
 		_ = browser.WriteText([]byte("\r\n[Agent 连接失败] " + err.Error() + "\r\n"))
 		return
 	}
+	// 拿子节点 agent JWT，子节点 WS 用 ?token= 鉴权（浏览器 token 无法透传）。
 	token, err := agentToken(node, client)
 	if err != nil {
 		_ = browser.WriteText([]byte("\r\n[Agent 鉴权失败] " + err.Error() + "\r\n"))
@@ -798,6 +999,7 @@ func bridgeAgentWS(w http.ResponseWriter, r *http.Request, node map[string]any, 
 	}
 	defer tunnel.Close()
 
+	// 交给 gorilla 的 URL 只是握手目标；实际连接走 SSH 通道（tunnel）。
 	u, err := url.Parse("ws://127.0.0.1:" + itoa(port) + targetPath)
 	if err != nil {
 		return
@@ -809,6 +1011,7 @@ func bridgeAgentWS(w http.ResponseWriter, r *http.Request, node map[string]any, 
 	if err != nil {
 		msg := err.Error()
 		if resp != nil {
+			// 握手失败时尽量给出 HTTP 状态码，方便前端提示。
 			msg = fmt.Sprintf("HTTP %d", resp.StatusCode)
 			_ = resp.Body.Close()
 		}
@@ -817,6 +1020,7 @@ func bridgeAgentWS(w http.ResponseWriter, r *http.Request, node map[string]any, 
 	}
 	defer child.Close()
 
+	// 子节点 → 浏览器 单向转发；任一方向出错即关闭两端，让主循环也退出。
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -837,6 +1041,7 @@ func bridgeAgentWS(w http.ResponseWriter, r *http.Request, node map[string]any, 
 			}
 		}
 	}()
+	// 浏览器 → 子节点 转发；浏览器断开即退出。
 	for {
 		mt, data, err := browser.ReadMessage()
 		if err != nil {
@@ -848,11 +1053,15 @@ func bridgeAgentWS(w http.ResponseWriter, r *http.Request, node map[string]any, 
 	}
 	_ = child.Close()
 	_ = browser.Close()
+	// 等上行 goroutine 退出，避免泄漏。
 	<-done
 }
 
 // --- 节点路由 ---
 
+// registerNodesAndAgentRoutes 注册 /api/nodes 下的 HTTP 端点（全部管理员）：
+// 节点 CRUD、当前节点切换/查询、元数据（分组/标签）、连通性测试与批量概览。
+// 真正的代理与隧道在 maybeAgentProxy / bridgeAgentWS，这里只管理与观测节点。
 func registerNodesAndAgentRoutes(a *App) {
 	a.Get("/api/nodes", adminOnly(), func(w http.ResponseWriter, r *http.Request) error {
 		store := loadNodeStore()
@@ -861,8 +1070,10 @@ func registerNodesAndAgentRoutes(a *App) {
 		for id := range store.Nodes {
 			ids = append(ids, id)
 		}
+		// 按 ID 排序输出，便于前端稳定展示（map 遍历顺序随机）。
 		sortStrings(ids)
 		for _, id := range ids {
+			// publicNode 负责脱敏，绝不回传 password/agent_secret。
 			nodes = append(nodes, publicNode(id, store.Nodes[id]))
 		}
 		return WriteJSON(w, 200, map[string]any{"nodes": nodes, "current": store.Current})
@@ -872,6 +1083,7 @@ func registerNodesAndAgentRoutes(a *App) {
 		node := store.Nodes[store.Current]
 		var info map[string]any
 		if str(node["type"]) == "ssh" {
+			// 展示用串只拼 user@host:port，不含任何凭据。
 			info = map[string]any{
 				"id": str(node["id"]), "name": str(node["name"]), "type": "ssh",
 				"host":         str(node["host"]),
@@ -887,6 +1099,7 @@ func registerNodesAndAgentRoutes(a *App) {
 		if err := DecodeJSON(r, &req); err != nil {
 			return err
 		}
+		// upsertNode 统一做输入校验、凭据继承与缓存失效。
 		node, err := upsertNode("", req)
 		if err != nil {
 			return err
@@ -914,10 +1127,12 @@ func registerNodesAndAgentRoutes(a *App) {
 		if !ok {
 			return NewHTTPError(404, "节点不存在")
 		}
+		// 先断开连接池并清 TOFU 记录，避免删除后旧连接/旧信任残留。
 		dropSSHPool(node)
 		forgetSSHHostKey(node)
 		delete(store.Nodes, id)
 		if store.Current == id {
+			// 删的是当前节点：回落到本机，避免全局 Current 指向不存在的节点。
 			store.Current = localNodeID
 		}
 		if err := saveNodeStore(store); err != nil {
@@ -932,11 +1147,14 @@ func registerNodesAndAgentRoutes(a *App) {
 			return NewHTTPError(404, "节点不存在")
 		}
 		if str(node["type"]) != "ssh" {
+			// 本机节点无需连接测试，直接 ok。
 			return WriteJSON(w, 200, map[string]any{"node_id": id, "ok": true, "latency_ms": 0})
 		}
 		start := time.Now()
+		// 测试用短连接且不入池，避免把不通的节点塞进连接池。
 		client, err := sshConnect(node, 10*time.Second)
 		if err != nil {
+			// 连接失败也返回 200 + ok:false，让前端展示具体错误。
 			return WriteJSON(w, 200, map[string]any{
 				"node_id": id, "ok": false, "error": err.Error(),
 				"latency_ms": time.Since(start).Milliseconds(),
@@ -959,6 +1177,7 @@ func registerNodesAndAgentRoutes(a *App) {
 		if !ok {
 			return NewHTTPError(404, "节点不存在")
 		}
+		// 切换的是持久化的全局当前节点；请求级 X-Graw-Node 覆盖不会落盘。
 		store.Current = req.NodeID
 		if err := saveNodeStore(store); err != nil {
 			return err
@@ -983,6 +1202,7 @@ func registerNodesAndAgentRoutes(a *App) {
 		if !ok {
 			return NewHTTPError(404, "节点不存在")
 		}
+		// 分组/标签只做展示分类，顺手限制数量与空串，避免元数据无限膨胀。
 		node["group"] = strings.TrimSpace(req.Group)
 		tags := []string{}
 		for _, t := range req.Tags {
@@ -1007,6 +1227,7 @@ func registerNodesAndAgentRoutes(a *App) {
 				"online": true, "latency_ms": 0, "error": "",
 			}
 			if str(node["type"]) != "ssh" {
+				// 本机节点直接用指标中心快照，不额外采集。
 				o := metricsHub.overview()
 				base["cpu"] = o["cpu"]
 				base["memory"] = o["memory"]
@@ -1018,6 +1239,7 @@ func registerNodesAndAgentRoutes(a *App) {
 				results = append(results, base)
 				continue
 			}
+			// 远程节点逐台采集；单台失败只标记该节点 offline，不影响其它节点。
 			start := time.Now()
 			client, err := pooledSSH(node, 10*time.Second)
 			if err != nil {
@@ -1033,6 +1255,7 @@ func registerNodesAndAgentRoutes(a *App) {
 				results = append(results, base)
 				continue
 			}
+			// 一次 SSH 执行采集脚本，拿到 CPU/内存/磁盘/负载/运行时长。
 			out, err := session.CombinedOutput(remoteOverviewScript)
 			session.Close()
 			if err != nil {
@@ -1041,6 +1264,7 @@ func registerNodesAndAgentRoutes(a *App) {
 				results = append(results, base)
 				continue
 			}
+			// 延迟含 SSH 往返，作为节点健康度参考。
 			base["latency_ms"] = time.Since(start).Milliseconds()
 			for k, v := range parseRemoteOverview(string(out)) {
 				base[k] = v
@@ -1053,6 +1277,8 @@ func registerNodesAndAgentRoutes(a *App) {
 	})
 }
 
+// nodeInput 是节点新增/修改请求体；AgentEnabled 用指针区分「未提交」与「显式关闭」。
+// 敏感字段（password / agent_secret）留空表示沿用旧值，前端从不回显明文。
 type nodeInput struct {
 	ID           string   `json:"id"`
 	Name         string   `json:"name"`
@@ -1070,7 +1296,12 @@ type nodeInput struct {
 	Tags         []string `json:"tags"`
 }
 
+// upsertNode 新增或更新 SSH 节点：校验主机/用户名/认证方式；未填的 password 与
+// agent_secret 沿用旧值（前端不回显敏感字段），显式关闭 Agent 时清空成对密钥。
+// 成功后清空该节点的 SSH 连接池与 token 缓存，使新凭据立即生效。
+// id 为空表示新建（自动生成 node_<random>）。
 func upsertNode(id string, req nodeInput) (map[string]any, error) {
+	// 与 sshConnect 同一套白名单，避免保存时通过、连接时才报错的割裂体验。
 	if !sshHostRe.MatchString(req.Host) || strings.HasPrefix(req.Host, "-") {
 		return nil, NewHTTPError(400, "主机地址非法")
 	}
@@ -1083,6 +1314,7 @@ func upsertNode(id string, req nodeInput) (map[string]any, error) {
 	if req.Auth == "" {
 		req.Auth = "password"
 	}
+	// 只允许两种认证方式，避免落盘无法解释的配置。
 	if req.Auth != "password" && req.Auth != "key" {
 		return nil, NewHTTPError(400, "认证方式非法")
 	}
@@ -1104,8 +1336,14 @@ func upsertNode(id string, req nodeInput) (map[string]any, error) {
 		"agent_key": req.AgentKey, "agent_secret": req.AgentSecret,
 	}
 	if old != nil {
+		// 更新时敏感字段留空 = 沿用旧值；group/tags 也先继承，稍后按需覆盖。
 		if req.Password == "" {
 			node["password"] = old["password"]
+		}
+		// agent_key 与 agent_secret 是成对凭据，留空时必须各自沿用旧值；
+		// 只继承 secret 会让前端留空提交时把原本启用的 Agent 静默降级为未启用。
+		if req.AgentKey == "" {
+			node["agent_key"] = old["agent_key"]
 		}
 		if req.AgentSecret == "" {
 			node["agent_secret"] = old["agent_secret"]
@@ -1114,6 +1352,7 @@ func upsertNode(id string, req nodeInput) (map[string]any, error) {
 		node["tags"] = old["tags"]
 	}
 	if req.AgentEnabled != nil && !*req.AgentEnabled {
+		// 显式关闭 Agent：成对密钥一并清空，避免残留可用凭据。
 		node["agent_key"] = ""
 		node["agent_secret"] = ""
 	}
@@ -1133,14 +1372,22 @@ func upsertNode(id string, req nodeInput) (map[string]any, error) {
 	if err := saveNodeStore(store); err != nil {
 		return nil, err
 	}
-	// 节点凭据变化：清空连接池与 token 缓存。
+	// 节点凭据变化：清空连接池与 token 缓存，确保新凭据立即生效。
+	// 旧键也要清理：host/user/port 变化后 nodeKey 会变，只删新键会让旧连接长期滞留在池里。
+	if old != nil {
+		dropSSHPool(old)
+	}
 	dropSSHPool(node)
 	agentTokenMu.Lock()
 	delete(agentTokens, nodeKey(node))
+	if old != nil {
+		delete(agentTokens, nodeKey(old))
+	}
 	agentTokenMu.Unlock()
 	return node, nil
 }
 
+// sortStrings 对字符串切片做插入排序（节点数量很小，避免为此引入额外依赖）。
 func sortStrings(v []string) {
 	for i := 1; i < len(v); i++ {
 		for j := i; j > 0 && v[j] < v[j-1]; j-- {
@@ -1149,6 +1396,8 @@ func sortStrings(v []string) {
 	}
 }
 
+// remoteOverviewScript 是远程概览采集脚本：用 ===BLOCKxxx=== 标记分隔各段，
+// 便于 parseRemoteOverview 解析；两次 /proc/stat 间隔 0.12s 估算 CPU 使用率。
 const remoteOverviewScript = `
 echo "===BLOCKSTAT0==="; head -1 /proc/stat 2>/dev/null
 sleep 0.12
@@ -1161,7 +1410,11 @@ echo "===BLOCKBTIME==="; grep '^btime' /proc/stat 2>/dev/null
 echo "===BLOCKHOST==="; hostname 2>/dev/null
 `
 
+// parseRemoteOverview 解析 remoteOverviewScript 的带标记输出，换算成与本地指标中心
+// 一致的字段（cpu 百分比、内存/磁盘字节数、load 百分比、运行时长、hostname）。
+// 解析失败时对应字段取 0，不返回错误——概览页允许部分指标缺失。
 func parseRemoteOverview(raw string) map[string]any {
+	// 先按 ===BLOCKxxx=== 分段收集文本。
 	blocks := map[string]string{}
 	cur := ""
 	buf := []string{}
@@ -1179,6 +1432,7 @@ func parseRemoteOverview(raw string) map[string]any {
 	if cur != "" {
 		blocks[cur] = strings.TrimSpace(strings.Join(buf, "\n"))
 	}
+	// parseStat 汇总 /proc/stat 首行的 total 与 idle 计数。
 	parseStat := func(s string) (int64, int64) {
 		f := strings.Fields(s)
 		if len(f) < 5 {
@@ -1195,12 +1449,14 @@ func parseRemoteOverview(raw string) map[string]any {
 		}
 		return total, idle
 	}
+	// CPU：用两次采样的 total/idle 差值估算使用率。
 	t0, i0 := parseStat(blocks["STAT0"])
 	t1, i1 := parseStat(blocks["STAT1"])
 	cpu := 0.0
 	if t1 > t0 {
 		cpu = 100 * (1 - float64(i1-i0)/float64(max64(t1-t0, 1)))
 	}
+	// 内存：MemAvailable 比 MemFree 更接近真实可用量；/proc/meminfo 单位为 KB。
 	memTotal, memAvail := int64(0), int64(0)
 	for _, line := range strings.Split(blocks["MEM"], "\n") {
 		if strings.Contains(line, "MemTotal:") {
@@ -1217,6 +1473,7 @@ func parseRemoteOverview(raw string) map[string]any {
 	if memTotal > 0 {
 		memPct = float64(memUsed) / float64(memTotal) * 100
 	}
+	// 磁盘：df -kP 输出单位为 KB，统一乘 1024 转字节。
 	storage := map[string]any{"percent": 0.0, "total": int64(0), "used": int64(0), "free": int64(0)}
 	df := strings.Fields(blocks["DF"])
 	if len(df) >= 5 {
@@ -1232,6 +1489,7 @@ func parseRemoteOverview(raw string) map[string]any {
 			"percent": round1(pct), "total": total * 1024, "used": used * 1024, "free": avail * 1024,
 		}
 	}
+	// 负载：load1 相对核数换算成百分比，与本地指标中心字段保持一致。
 	load1, load5, load15 := 0.0, 0.0, 0.0
 	ld := strings.Fields(blocks["LOAD"])
 	if len(ld) >= 3 {
@@ -1251,6 +1509,7 @@ func parseRemoteOverview(raw string) map[string]any {
 			fmt.Sscanf(f[1], "%d", &btime)
 		}
 	}
+	// 运行时长：由 /proc/stat 的 btime（启动时刻）推算。
 	uptime := int64(0)
 	if btime > 0 {
 		uptime = time.Now().Unix() - btime
@@ -1269,13 +1528,18 @@ func parseRemoteOverview(raw string) map[string]any {
 	}
 }
 
+// max64 返回两个 int64 中较大者。
 func max64(a, b int64) int64 {
 	if a > b {
 		return a
 	}
 	return b
 }
+
+// mathMax64 返回两个 int64 中较大者的 float64 形式（用于负载百分比计算）。
 func mathMax64(a, b int64) float64 { return float64(max64(a, b)) }
+
+// minFloat 返回两个 float64 中较小者（负载百分比封顶 100）。
 func minFloat(a, b float64) float64 {
 	if a < b {
 		return a
