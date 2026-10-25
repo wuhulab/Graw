@@ -28,12 +28,14 @@ const (
 type failureRec struct {
 	Count       int
 	LockedUntil float64
+	Last        float64 // 最近一次失败时间，用于淘汰长期无活动的记录
 }
 
 type globalRec struct {
 	Count       int
 	IPs         map[string]bool
 	LockedUntil float64
+	Last        float64
 }
 
 var (
@@ -84,6 +86,7 @@ func recordFailure(r *http.Request, username string) {
 		rec = &failureRec{}
 		failures[key] = rec
 	}
+	rec.Last = now
 	if rec.LockedUntil <= now {
 		rec.Count++
 		if rec.Count >= maxAttempts {
@@ -96,6 +99,7 @@ func recordFailure(r *http.Request, username string) {
 		g = &globalRec{IPs: map[string]bool{}}
 		globalFailures[username] = g
 	}
+	g.Last = now
 	if g.LockedUntil <= now {
 		g.Count++
 		if len(g.IPs) < globalMaxAttempts*4 {
@@ -106,11 +110,31 @@ func recordFailure(r *http.Request, username string) {
 			g.LockedUntil = now + globalLockSeconds
 		}
 	}
-	if len(failures) > 100000 {
-		for k, v := range failures {
-			if v.LockedUntil <= now && v.Count == 0 {
-				delete(failures, k)
-			}
+	// 限流表按「IP+用户名 / 任意用户名 / 任意 IP」增长，必须定期淘汰：
+	// 否则攻击者用海量随机用户名即可让进程内存持续上涨。
+	if len(failures)+len(globalFailures)+len(entryFailures) > 2048 {
+		pruneThrottleLocked(now)
+	}
+}
+
+// pruneThrottleLocked 清掉长时间无活动且未处于锁定期的限流记录。
+// 调用方必须已持有 throttleMu。
+func pruneThrottleLocked(now float64) {
+	cut := now - 2*entryWindow
+	for k, v := range failures {
+		if v.LockedUntil <= now && v.Last < cut {
+			delete(failures, k)
+		}
+	}
+	for k, v := range globalFailures {
+		if v.LockedUntil <= now && v.Last < cut {
+			delete(globalFailures, k)
+		}
+	}
+	for k, hits := range entryFailures {
+		// checkEntryThrottle 会把过期记录裁成空切片；空切片与长期无活动的 IP 都可删除。
+		if len(hits) == 0 || hits[len(hits)-1] < cut {
+			delete(entryFailures, k)
 		}
 	}
 }
@@ -332,7 +356,10 @@ func loginHandler(w http.ResponseWriter, r *http.Request) error {
 		public["must_change_password"] = true
 		public["default_password"] = true
 	}
-	sid := CreateSession(user.Username(), ip, ParseDevice(ua))
+	sid, err := CreateSession(user.Username(), ip, ParseDevice(ua))
+	if err != nil {
+		return NewHTTPError(500, "创建登录会话失败")
+	}
 	token, err := CreateToken(user.Username(), user.Int("token_version"), sid)
 	if err != nil {
 		return err
@@ -348,8 +375,16 @@ func loginHandler(w http.ResponseWriter, r *http.Request) error {
 
 func logoutHandler(w http.ResponseWriter, r *http.Request) error {
 	u := CurrentUser(r)
-	if err := BumpTokenVersion(u.Username()); err != nil {
-		return err
+	// 只吊销当前设备的会话；其它设备的登录态不应因为一次退出而全部失效。
+	revoked := false
+	if claims := DecodeToken(BearerToken(r)); claims != nil && claims.Sid != "" {
+		revoked = RevokeSession(claims.Sid)
+	}
+	if !revoked {
+		// 找不到当前会话（记录已过期/被清理）时退回全局吊销，保证登出后令牌立即失效。
+		if err := BumpTokenVersion(u.Username()); err != nil {
+			return err
+		}
 	}
 	clearFailures(r, u.Username())
 	AuditRecord("退出登录", u.Username(), ClientIP(r), "")
@@ -459,47 +494,57 @@ func changePasswordHandler(w http.ResponseWriter, r *http.Request) error {
 	if err := checkThrottle(r, u.Username()); err != nil {
 		return err
 	}
-	full, _ := GetUser(u.Username())
-	if full == nil || !VerifyPassword(req.OldPassword, full.PasswordHash()) {
-		recordFailure(r, u.Username())
-		return NewHTTPError(400, "原密码错误")
-	}
-	if VerifyPassword(req.NewPassword, full.PasswordHash()) {
-		return NewHTTPError(400, "新密码不能与原密码相同")
-	}
 	if err := validatePasswordStrength(req.NewPassword, u.Username(), true); err != nil {
 		return err
 	}
 	if req.NewPassword == DefaultPassword {
 		return NewHTTPError(400, "新密码不能使用默认密码，请更换")
 	}
-	users, err := LoadUsers()
-	if err != nil {
-		return err
-	}
-	target, ok := users[u.Username()]
-	if !ok {
-		return NewHTTPError(404, "用户不存在")
+	// 先用缓存校验一次原密码：错误时直接返回，不必为新密码计算 bcrypt。
+	if full, _ := GetUser(u.Username()); full != nil && !VerifyPassword(req.OldPassword, full.PasswordHash()) {
+		recordFailure(r, u.Username())
+		return NewHTTPError(400, "原密码错误")
 	}
 	hash, err := HashPassword(req.NewPassword)
 	if err != nil {
 		return err
 	}
-	target["password"] = hash
-	target["must_change_password"] = false
-	if err := SaveUsers(users); err != nil {
+	// 密码与 token_version 在同一事务内更新：改密后旧令牌立即失效，
+	// 也避免与管理员改权限等写操作基于旧快照互相覆盖。
+	newVersion := 0
+	err = UpdateUsers(func(users Users) error {
+		target, ok := users[u.Username()]
+		if !ok {
+			return NewHTTPError(404, "用户不存在")
+		}
+		// 锁内复核原密码，防止检查与写入之间被并发改密。
+		if !VerifyPassword(req.OldPassword, target.PasswordHash()) {
+			return NewHTTPError(400, "原密码错误")
+		}
+		if VerifyPassword(req.NewPassword, target.PasswordHash()) {
+			return NewHTTPError(400, "新密码不能与原密码相同")
+		}
+		newVersion = target.Int("token_version") + 1
+		target["password"] = hash
+		target["must_change_password"] = false
+		target["token_version"] = newVersion
+		return nil
+	})
+	if err != nil {
+		// 只有「原密码错误」计入暴力破解；新密码与原密码相同属于表单问题。
+		if he, ok := err.(*HTTPError); ok && he.Status == 400 && he.Detail == "原密码错误" {
+			recordFailure(r, u.Username())
+		}
 		return err
 	}
-	if err := BumpTokenVersion(u.Username()); err != nil {
-		return err
-	}
+	// 终止其它设备上的会话；当前设备用新 sid 重新签发令牌，避免把自己踢下线。
+	RevokeUserSessions(u.Username())
 	clearFailures(r, u.Username())
-	users, _ = LoadUsers()
-	newTV := 0
-	if t, ok := users[u.Username()]; ok {
-		newTV = t.Int("token_version")
+	sid, err := CreateSession(u.Username(), ClientIP(r), ParseDevice(r.Header.Get("User-Agent")))
+	if err != nil {
+		return NewHTTPError(500, "创建会话失败")
 	}
-	token, err := CreateToken(u.Username(), newTV, "")
+	token, err := CreateToken(u.Username(), newVersion, sid)
 	if err != nil {
 		return err
 	}
@@ -557,30 +602,26 @@ func createUserHandler(w http.ResponseWriter, r *http.Request) error {
 		}
 		perms = p
 	}
-	users, err := LoadUsers()
-	if err != nil {
-		return err
-	}
-	if users == nil {
-		users = Users{}
-	}
-	if _, exists := users[req.Username]; exists {
-		return NewHTTPError(400, "用户已存在")
-	}
 	hash, err := HashPassword(req.Password)
 	if err != nil {
 		return err
 	}
-	users[req.Username] = User{
-		"username":             req.Username,
-		"password":             hash,
-		"role":                 req.Role,
-		"perms":                perms,
-		"must_change_password": false,
-		"token_version":        0,
-		"created_at":           float64(time.Now().Unix()),
-	}
-	if err := SaveUsers(users); err != nil {
+	// 查重与写入放在同一事务里，避免两个并发创建同名账号时后者覆盖前者。
+	if err := UpdateUsers(func(users Users) error {
+		if _, exists := users[req.Username]; exists {
+			return NewHTTPError(400, "用户已存在")
+		}
+		users[req.Username] = User{
+			"username":             req.Username,
+			"password":             hash,
+			"role":                 req.Role,
+			"perms":                perms,
+			"must_change_password": false,
+			"token_version":        0,
+			"created_at":           float64(time.Now().Unix()),
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 	AuditRecord("创建用户", admin.Username(), ClientIP(r), "目标:"+req.Username+" 角色:"+req.Role)
@@ -594,16 +635,9 @@ func updateUserHandler(w http.ResponseWriter, r *http.Request) error {
 	if err := DecodeJSON(r, &raw); err != nil {
 		return err
 	}
-	users, err := LoadUsers()
-	if err != nil {
-		return err
-	}
-	target, ok := users[username]
-	if !ok {
-		return NewHTTPError(404, "用户不存在")
-	}
-	superBefore := superAdminCount(users)
-	changedPassword := false
+	// 锁外完成密码校验与 bcrypt 计算，避免占用用户表事务锁。
+	var newHash string
+	passwordPresent := false
 	if v, present := raw["password"]; present && string(v) != "null" {
 		var pw string
 		if err := json.Unmarshal(v, &pw); err != nil {
@@ -619,57 +653,72 @@ func updateUserHandler(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		target["password"] = hash
-		changedPassword = true
-		if v2, ok2 := raw["must_change_password"]; ok2 && string(v2) != "null" {
-			var b bool
-			_ = json.Unmarshal(v2, &b)
-			target["must_change_password"] = b
-		} else {
-			target["must_change_password"] = true
-		}
+		newHash, passwordPresent = hash, true
 	}
-	if v, present := raw["role"]; present && string(v) != "null" {
-		var role string
-		_ = json.Unmarshal(v, &role)
-		if role != "admin" && role != "user" {
-			return NewHTTPError(400, "角色无效")
+	changedPassword := false
+	// 全部字段修改在同一事务内完成：并发改权限/改密码时不会互相覆盖。
+	err := UpdateUsers(func(users Users) error {
+		target, ok := users[username]
+		if !ok {
+			return NewHTTPError(404, "用户不存在")
 		}
-		target["role"] = role
-		if role != "admin" {
-			target["perms"] = nil
-		}
-	}
-	if v, present := raw["must_change_password"]; present && string(v) != "null" {
-		var b bool
-		_ = json.Unmarshal(v, &b)
-		target["must_change_password"] = b
-	}
-	if v, present := raw["perms"]; present {
-		var rawPerms any
-		if string(v) != "null" {
-			if err := json.Unmarshal(v, &rawPerms); err != nil {
-				return NewHTTPError(400, "perms 必须是模块数组")
+		superBefore := superAdminCount(users)
+		if passwordPresent {
+			target["password"] = newHash
+			changedPassword = true
+			// 改密必须同时递增 token_version：否则旧令牌在会话被清理前仍然有效。
+			target["token_version"] = target.Int("token_version") + 1
+			if v2, ok2 := raw["must_change_password"]; ok2 && string(v2) != "null" {
+				var b bool
+				_ = json.Unmarshal(v2, &b)
+				target["must_change_password"] = b
+			} else {
+				target["must_change_password"] = true
 			}
 		}
-		p, err := normalizePerms(rawPerms)
-		if err != nil {
-			return err
+		if v, present := raw["role"]; present && string(v) != "null" {
+			var role string
+			_ = json.Unmarshal(v, &role)
+			if role != "admin" && role != "user" {
+				return NewHTTPError(400, "角色无效")
+			}
+			target["role"] = role
+			if role != "admin" {
+				target["perms"] = nil
+			}
 		}
-		if target.Role() == "admin" {
-			target["perms"] = p
-		} else {
-			target["perms"] = nil
+		if v, present := raw["must_change_password"]; present && string(v) != "null" {
+			var b bool
+			_ = json.Unmarshal(v, &b)
+			target["must_change_password"] = b
 		}
-	}
-	if superBefore >= 1 && superAdminCount(users) < 1 {
-		return NewHTTPError(400, "必须保留至少一个完整权限的超级管理员")
-	}
-	if err := SaveUsers(users); err != nil {
+		if v, present := raw["perms"]; present {
+			var rawPerms any
+			if string(v) != "null" {
+				if err := json.Unmarshal(v, &rawPerms); err != nil {
+					return NewHTTPError(400, "perms 必须是模块数组")
+				}
+			}
+			p, err := normalizePerms(rawPerms)
+			if err != nil {
+				return err
+			}
+			if target.Role() == "admin" {
+				target["perms"] = p
+			} else {
+				target["perms"] = nil
+			}
+		}
+		if superBefore >= 1 && superAdminCount(users) < 1 {
+			return NewHTTPError(400, "必须保留至少一个完整权限的超级管理员")
+		}
+		return nil
+	})
+	if err != nil {
 		return err
 	}
 	if changedPassword {
-		_ = BumpTokenVersion(username)
+		RevokeUserSessions(username)
 	}
 	AuditRecord("更新用户", admin.Username(), ClientIP(r), "目标:"+username)
 	return WriteJSON(w, 200, map[string]any{"ok": true})
@@ -681,19 +730,17 @@ func deleteUserHandler(w http.ResponseWriter, r *http.Request) error {
 	if username == admin.Username() {
 		return NewHTTPError(400, "不能删除当前登录账号")
 	}
-	users, err := LoadUsers()
-	if err != nil {
-		return err
-	}
-	target, ok := users[username]
-	if !ok {
-		return NewHTTPError(404, "用户不存在")
-	}
-	if _, full := UserPerms(target); full && superAdminCount(users) <= 1 {
-		return NewHTTPError(400, "必须保留至少一个完整权限的超级管理员")
-	}
-	delete(users, username)
-	if err := SaveUsers(users); err != nil {
+	if err := UpdateUsers(func(users Users) error {
+		target, ok := users[username]
+		if !ok {
+			return NewHTTPError(404, "用户不存在")
+		}
+		if _, full := UserPerms(target); full && superAdminCount(users) <= 1 {
+			return NewHTTPError(400, "必须保留至少一个完整权限的超级管理员")
+		}
+		delete(users, username)
+		return nil
+	}); err != nil {
 		return err
 	}
 	AuditRecord("删除用户", admin.Username(), ClientIP(r), "目标:"+username)
@@ -709,28 +756,46 @@ func otpStatusHandler(w http.ResponseWriter, r *http.Request) error {
 	})
 }
 
+// otpSetupHandler 生成/重置两步验证密钥。
+// 必须再次输入当前密码：否则会话被劫持后，攻击者可自行绑定新密钥把账号锁死。
 func otpSetupHandler(w http.ResponseWriter, r *http.Request) error {
 	u := CurrentUser(r)
-	users, err := LoadUsers()
-	if err != nil {
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	full, ok := users[u.Username()]
-	if !ok {
-		return NewHTTPError(404, "用户不存在")
+	if req.Password == "" {
+		return NewHTTPError(422, "请输入当前密码")
 	}
-	if full.Bool("otp_enabled") {
-		return NewHTTPError(400, "两步验证已启用，如需重置请先关闭")
+	// 这里会校验密码，必须套用登录同款限流，避免成为绕过登录限流的爆破入口。
+	if err := checkThrottle(r, u.Username()); err != nil {
+		return err
 	}
 	secret, err := GenerateOTPSecret()
 	if err != nil {
 		return err
 	}
-	full["otp_secret"] = secret
-	full["otp_enabled"] = false
-	if err := SaveUsers(users); err != nil {
+	if err := UpdateUsers(func(users Users) error {
+		full, ok := users[u.Username()]
+		if !ok {
+			return NewHTTPError(404, "用户不存在")
+		}
+		if !VerifyPassword(req.Password, full.PasswordHash()) {
+			recordFailure(r, u.Username())
+			return NewHTTPError(400, "密码错误")
+		}
+		if full.Bool("otp_enabled") {
+			return NewHTTPError(400, "两步验证已启用，如需重置请先关闭")
+		}
+		full["otp_secret"] = secret
+		full["otp_enabled"] = false
+		return nil
+	}); err != nil {
 		return err
 	}
+	clearFailures(r, u.Username())
 	return WriteJSON(w, 200, map[string]any{
 		"secret": secret, "otpauth_uri": OTPAuthURI(secret, u.Username(), "Graw"),
 	})
@@ -744,24 +809,28 @@ func otpEnableHandler(w http.ResponseWriter, r *http.Request) error {
 	if err := DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	users, err := LoadUsers()
-	if err != nil {
+	// 动态码校验必须限流：6 位数字在无限重试下可被暴力枚举。
+	if err := checkThrottle(r, u.Username()); err != nil {
 		return err
 	}
-	full, ok := users[u.Username()]
-	if !ok || full.Str("otp_secret") == "" {
-		return NewHTTPError(400, "请先生成两步验证密钥")
-	}
-	if full.Bool("otp_enabled") {
-		return NewHTTPError(400, "两步验证已启用")
-	}
-	if !VerifyTOTP(full.Str("otp_secret"), req.Code) {
-		return NewHTTPError(400, "验证码错误")
-	}
-	full["otp_enabled"] = true
-	if err := SaveUsers(users); err != nil {
+	if err := UpdateUsers(func(users Users) error {
+		full, ok := users[u.Username()]
+		if !ok || full.Str("otp_secret") == "" {
+			return NewHTTPError(400, "请先生成两步验证密钥")
+		}
+		if full.Bool("otp_enabled") {
+			return NewHTTPError(400, "两步验证已启用")
+		}
+		if !VerifyTOTP(full.Str("otp_secret"), req.Code) {
+			recordFailure(r, u.Username())
+			return NewHTTPError(400, "验证码错误")
+		}
+		full["otp_enabled"] = true
+		return nil
+	}); err != nil {
 		return err
 	}
+	clearFailures(r, u.Username())
 	AuditRecord("启用两步验证", u.Username(), ClientIP(r), "")
 	return WriteJSON(w, 200, map[string]any{"ok": true})
 }
@@ -774,22 +843,26 @@ func otpDisableHandler(w http.ResponseWriter, r *http.Request) error {
 	if err := DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	users, err := LoadUsers()
-	if err != nil {
+	// 关闭 2FA 同样要限流，避免动态码被暴力枚举后降级账号安全。
+	if err := checkThrottle(r, u.Username()); err != nil {
 		return err
 	}
-	full, ok := users[u.Username()]
-	if !ok || !full.Bool("otp_enabled") {
-		return NewHTTPError(400, "两步验证未启用")
-	}
-	if !VerifyTOTP(full.Str("otp_secret"), req.Code) {
-		return NewHTTPError(400, "验证码错误")
-	}
-	full["otp_enabled"] = false
-	full["otp_secret"] = ""
-	if err := SaveUsers(users); err != nil {
+	if err := UpdateUsers(func(users Users) error {
+		full, ok := users[u.Username()]
+		if !ok || !full.Bool("otp_enabled") {
+			return NewHTTPError(400, "两步验证未启用")
+		}
+		if !VerifyTOTP(full.Str("otp_secret"), req.Code) {
+			recordFailure(r, u.Username())
+			return NewHTTPError(400, "验证码错误")
+		}
+		full["otp_enabled"] = false
+		full["otp_secret"] = ""
+		return nil
+	}); err != nil {
 		return err
 	}
+	clearFailures(r, u.Username())
 	AuditRecord("关闭两步验证", u.Username(), ClientIP(r), "")
 	return WriteJSON(w, 200, map[string]any{"ok": true})
 }

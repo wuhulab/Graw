@@ -138,7 +138,7 @@ export const authApi = {
   deleteUser: (username) => api.delete(`/auth/users/${username}`).then(r => r.data),
   // 两步验证（2FA / TOTP）：验证码错误在设置区块内提示，不弹全局错误窗
   me2faStatus: () => api.get('/auth/2fa/status').then(r => r.data),
-  twoFaSetup: () => api.post('/auth/2fa/setup').then(r => r.data),
+  twoFaSetup: (password) => api.post('/auth/2fa/setup', { password }).then(r => r.data),
   twoFaEnable: (code) => api.post('/auth/2fa/enable', { code }, { silentError: true }).then(r => r.data),
   twoFaDisable: (code) => api.post('/auth/2fa/disable', { code }, { silentError: true }).then(r => r.data),
   // 高风险操作二次确认：校验当前登录用户的面板密码

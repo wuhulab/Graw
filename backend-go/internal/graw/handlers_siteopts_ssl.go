@@ -389,7 +389,9 @@ func registerRewriteRoutes(a *App) {
 			if err := applySiteConfig(site, true); err != nil {
 				return err
 			}
-			reloadIfNginx()
+			if err := reloadIfNginxStrict(); err != nil {
+				return NewHTTPError(500, "Web 服务器配置校验失败："+err.Error())
+			}
 		}
 		if err := saveSites(sites); err != nil {
 			return err
@@ -408,8 +410,12 @@ func registerRewriteRoutes(a *App) {
 			if str(s["id"]) == req.SiteID {
 				delete(s, "rewrite")
 				if siteBool(s, "enabled") {
-					_ = applySiteConfig(s, true)
-					reloadIfNginx()
+					if err := applySiteConfig(s, true); err != nil {
+						return err
+					}
+					if err := reloadIfNginxStrict(); err != nil {
+						return NewHTTPError(500, "Web 服务器配置校验失败："+err.Error())
+					}
 				}
 			}
 		}
@@ -466,8 +472,7 @@ func writeExternalSiteConfig(site map[string]any) error {
 	if err := writeHostFile(confPath, nginxSiteConfig(site, root)); err != nil {
 		return err
 	}
-	reloadIfNginx()
-	return nil
+	return reloadIfNginxStrict()
 }
 
 func registerSiteOptsRoutes(a *App) {
@@ -586,7 +591,9 @@ func registerSiteOptsRoutes(a *App) {
 			if err := applySiteConfig(site, true); err != nil {
 				return err
 			}
-			reloadIfNginx()
+			if err := reloadIfNginxStrict(); err != nil {
+				return NewHTTPError(500, "Web 服务器配置校验失败："+err.Error())
+			}
 		}
 		return WriteJSON(w, 200, map[string]any{"ok": true, "site_id": req.SiteID, "engine": ws})
 	})
@@ -636,7 +643,9 @@ func registerSiteOptsRoutes(a *App) {
 			if err := applySiteConfig(site, true); err != nil {
 				return err
 			}
-			reloadIfNginx()
+			if err := reloadIfNginxStrict(); err != nil {
+				return NewHTTPError(500, "Web 服务器配置校验失败："+err.Error())
+			}
 		}
 		return WriteJSON(w, 200, map[string]any{"ok": true, "site_id": req.SiteID})
 	})
@@ -738,8 +747,12 @@ func registerPHPVersionRoutes(a *App) {
 			if str(s["id"]) == id {
 				s["php_version"] = strings.TrimSpace(req.Version)
 				if siteBool(s, "enabled") {
-					_ = applySiteConfig(s, true)
-					reloadIfNginx()
+					if err := applySiteConfig(s, true); err != nil {
+						return err
+					}
+					if err := reloadIfNginxStrict(); err != nil {
+						return NewHTTPError(500, "Web 服务器配置校验失败："+err.Error())
+					}
 				}
 			}
 		}

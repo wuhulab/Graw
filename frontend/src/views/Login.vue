@@ -323,13 +323,17 @@ async function handleChangePassword() {
   error.value = ''
   loading.value = true
   try {
-    await authApi.changePassword(oldPassword.value, newPassword.value, pendingToken.value || undefined)
+    const res = await authApi.changePassword(oldPassword.value, newPassword.value, pendingToken.value || undefined)
+    // 改密会让旧令牌立即失效，后端会换发带新 token_version 的令牌；
+    // 必须使用新令牌，否则进入面板后的第一个请求就会 401。
+    const nextToken = res?.token || pendingToken.value
     // 改密成功：写入登录态并进入面板
     const user = pendingUser.value
     if (user) {
       user.must_change_password = false   // 本地同步清除「待改密」标记，避免下次又强制改密
       user.default_password = false
-      setAuth(pendingToken.value, user)   // 此时才真正登录：刷新页面也会保持在线
+      pendingToken.value = nextToken
+      setAuth(nextToken, user)            // 此时才真正登录：刷新页面也会保持在线
     }
     forceChange.value = false
     forceChangeReason.value = ''

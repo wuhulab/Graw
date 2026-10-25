@@ -253,7 +253,8 @@
         <template v-if="!otpState.enabled">
           <div class="row" style="align-items:center;">
             <span style="font-size:12.5px;">{{ otpState.has_secret ? '已生成密钥，扫描或手动输入后启用' : '尚未开启两步验证' }}</span>
-            <button class="btn" :disabled="otpBusy" @click="otpSetup">{{ otpState.has_secret ? '重新生成密钥' : '开启两步验证' }}</button>
+            <input v-model="otpPassword" type="password" autocomplete="current-password" placeholder="输入当前密码" style="width:160px;" />
+            <button class="btn" :disabled="otpBusy || !otpPassword" @click="otpSetup">{{ otpState.has_secret ? '重新生成密钥' : '开启两步验证' }}</button>
           </div>
 
           <!-- 密钥 / 二维码展示（setup 后） -->
@@ -834,6 +835,7 @@ const otpSecret = ref('')
 const otpUri = ref('')
 const otpUriQrFail = ref(false)
 const otpCode = ref('')
+const otpPassword = ref('')
 const otpBusy = ref(false)
 const otpMsg = ref('')
 const otpMsgType = ref('')
@@ -859,11 +861,12 @@ async function otpSetup() {
   otpMsg.value = ''
   otpUriQrFail.value = false
   try {
-    const r = await authApi.twoFaSetup()
+    const r = await authApi.twoFaSetup(otpPassword.value)
     otpSecret.value = r.secret
     otpUri.value = r.otpauth_uri
     otpState.has_secret = true
     otpCode.value = ''
+    otpPassword.value = ''
   } catch (e) {
     otpMsg.value = e?.response?.data?.detail || '生成失败'
     otpMsgType.value = 'err'

@@ -61,11 +61,14 @@ async function submit() {
   if (newPassword.value !== confirmPassword.value) { error.value = t('changepassword.pwdMismatch'); return }   // 两次输入不一致直接中止
   saving.value = true
   try {
-    await authApi.changePassword(oldPassword.value, newPassword.value)
+    const res = await authApi.changePassword(oldPassword.value, newPassword.value)
+    // 改密会让旧令牌立即失效，后端会换发带新 token_version 的令牌；
+    // 必须写回新令牌，否则关闭窗口后的第一个请求就会 401。
+    const nextToken = res?.token || auth.token
     // 改密成功：清除首次登录强制改密标记并回写登录态
     if (auth.user) {
       auth.user.must_change_password = false
-      setAuth(auth.token, auth.user)
+      setAuth(nextToken, auth.user)
     }
     ok.value = true
     oldPassword.value = ''

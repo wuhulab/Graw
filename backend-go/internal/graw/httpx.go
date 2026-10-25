@@ -33,6 +33,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // handlerFn 是统一业务处理器签名：返回 *HTTPError 时转换为对应状态码响应。
@@ -54,11 +55,15 @@ type App struct {
 // RouteInfo 记录已注册路由的鉴权级别（供 Agent 代理前置鉴权映射）。
 // 请求经 Agent 转发到子节点前，主面板会用 Modules/Admin 在本机做一次等价鉴权，
 // 防止受限管理员借代理绕过模块权限；因此新路由只要挂对 perm(...) 就自动生效。
+// Public/Custom 用于放行「子节点自行鉴权」的端点（公开资源、插件令牌、Agent 密钥），
+// 否则这些不带 Bearer 的请求会在主面板被 401，永远到不了子节点。
 type RouteInfo struct {
 	Method  string
 	Pattern string
 	Modules []string
 	Admin   bool
+	Public  bool
+	Custom  bool
 }
 
 // NewApp 构建应用并注册全部路由。
@@ -150,6 +155,7 @@ func (a *App) route(method, pattern string, lv routeLevel, fn handlerFn) {
 	// 先登记路由元信息：Agent 代理的前置鉴权依赖它做模块权限映射。
 	a.routes = append(a.routes, RouteInfo{
 		Method: method, Pattern: pattern, Modules: lv.perm, Admin: lv.admin,
+		Public: lv.public, Custom: lv.custom,
 	})
 	a.mux.HandleFunc(method+" "+pattern, func(w http.ResponseWriter, r *http.Request) {
 		// 只有声明了鉴权级别的路由才在这里校验；custom 路由完全不进此分支。
@@ -250,7 +256,13 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 包一层 statusWriter：记录状态码，同时保留 Flush/Hijack 以便 WS 升级。
+	start := time.Now()
 	logging := &statusWriter{ResponseWriter: w, status: 200}
+	// 访问日志：只记路径不记查询串（WS 令牌在 ?token= 里，不能落日志）。
+	defer func() {
+		log.Printf("graw: %s %s %d %s %s", r.Method, r.URL.Path, logging.status,
+			time.Since(start).Round(time.Millisecond), ClientIP(r))
+	}()
 	// 安全响应头（对应 Python 的 security_headers 中间件）。
 	// CSP 已放行 inline/eval（前端构建产物内联脚本与 xterm 需要），
 	// 改动前端注入新 CDN 时必须同步放行，否则会被浏览器直接拦截。
@@ -270,6 +282,14 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// X-Graw-Node 允许单个请求临时切换管理节点（统一面板按窗口聚焦节点下发）。
 	headerNode := strings.TrimSpace(r.Header.Get("X-Graw-Node"))
 	wsUpgrade := strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
+	// 请求体读取超时：只对带 body 的普通请求生效（WS 无 body，不设截止时间）。
+	// 处理结束后清空，避免 keep-alive 复用的下一请求继承旧 deadline。
+	if !wsUpgrade && r.ContentLength > 0 {
+		rc := http.NewResponseController(logging)
+		if err := rc.SetReadDeadline(time.Now().Add(bodyReadTimeout(r))); err == nil {
+			defer func() { _ = rc.SetReadDeadline(time.Time{}) }()
+		}
+	}
 	if !wsUpgrade && headerNode != "" && headerNode != CurrentNodeID() {
 		store := loadNodeStore()
 		n := store.Nodes[headerNode]
@@ -311,11 +331,14 @@ func (a *App) dispatch(w http.ResponseWriter, r *http.Request) {
 
 // statusWriter 记录响应状态码，并把 Flush/Hijack 显式透传给底层 ResponseWriter。
 // 嵌入接口不会自动继承可选接口，因此 WebSocket 升级所需的 Hijacker 必须手写。
-// 注意：status 目前没有消费方（尚未实现访问日志），保留它是为后续统计/日志接管留口。
+// status 供 ServeHTTP 末尾的访问日志使用。
 type statusWriter struct {
 	http.ResponseWriter
 	status int
 }
+
+// Unwrap 暴露底层 ResponseWriter：http.ResponseController 依赖它设置读写超时。
+func (s *statusWriter) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
 // WriteHeader 记录首次状态码后转交底层实现。
 func (s *statusWriter) WriteHeader(code int) {
@@ -337,6 +360,20 @@ func (s *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 		return nil, nil, fmt.Errorf("response writer does not support hijacking")
 	}
 	return h.Hijack()
+}
+
+// bodyReadTimeout 按请求体大小计算读取截止时间：基础 5 分钟 + 每 MB 1 秒，封顶 60 分钟。
+// 让慢速 body 攻击在有限时间内被断开，同时给慢速网络下的大文件上传留出足够余量。
+func bodyReadTimeout(r *http.Request) time.Duration {
+	size := r.ContentLength
+	if size < 0 {
+		size = 0
+	}
+	d := 5*time.Minute + time.Duration(size/(1<<20))*time.Second
+	if d > time.Hour {
+		d = time.Hour
+	}
+	return d
 }
 
 // checkBodyLimit 全局请求体限额：Transfer-Encoding 411、超限 413、

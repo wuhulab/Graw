@@ -116,6 +116,18 @@ func TestPasswordResetThenHTTPLogin(t *testing.T) {
 		t.Fatalf("/api/auth/me 响应异常: %s", string(meRaw))
 	}
 
+	// 破坏性操作：删除根目录必须被 403 拒绝，而不是真的执行
+	code, body = postJSON(t, server.URL+"/api/files/delete", map[string]string{"path": "/"}, token)
+	if code != http.StatusForbidden {
+		t.Fatalf("删除根目录状态码 = %d，期望 403，响应 = %v", code, body)
+	}
+
+	// 2FA 生成密钥必须二次确认密码，防止会话被劫持后直接改绑
+	code, _ = postJSON(t, server.URL+"/api/auth/2fa/setup", map[string]string{}, token)
+	if code != http.StatusUnprocessableEntity {
+		t.Fatalf("无密码调用 2FA setup 状态码 = %d，期望 422", code)
+	}
+
 	// 数据文件不得出现明文新密码
 	raw, err := os.ReadFile(graw.UsersFilePath(dataDir))
 	if err != nil {

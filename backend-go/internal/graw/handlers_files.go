@@ -295,6 +295,10 @@ func filesDeleteHandler(w http.ResponseWriter, r *http.Request) error {
 	if !HostExists(sp) {
 		return NewHTTPError(404, "Not found")
 	}
+	// 移入回收站同样要拦截整机级路径（搬移失败也不能把根目录当普通文件处理）。
+	if err := refuseCriticalDelete(sp); err != nil {
+		return err
+	}
 	if LoadRecycleConfig().Enabled && !PathInTrash(sp) {
 		item, err := MoveToTrash(sp, u.Username())
 		if err != nil {
@@ -855,7 +859,10 @@ func remoteCreateArchive(archive string, paths []string, format string) error {
 		return err
 	}
 	var script strings.Builder
-	_ = HostRemove(archive)
+	// 覆盖写目标前先清掉旧压缩包；失败（含关键路径守卫拒绝）必须中止，不能继续写。
+	if err := HostRemove(archive); err != nil {
+		return err
+	}
 	switch format {
 	case "zip":
 		if HostWhich("zip") == "" {

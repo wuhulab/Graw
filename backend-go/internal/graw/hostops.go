@@ -295,8 +295,92 @@ func HostMkdirAll(p string, perm os.FileMode) error {
 	return os.MkdirAll(HostPath(p), perm)
 }
 
+// criticalDeletePaths 是绝不允许「整体删除」的 POSIX 系统目录（精确匹配，不含子目录）。
+// 删除其中的子目录仍然允许；这里拦的是会让整机或系统组件直接消失的目标。
+var criticalDeletePaths = []string{
+	"/bin", "/boot", "/dev", "/etc", "/home", "/lib", "/lib32", "/lib64",
+	"/libx32", "/media", "/mnt", "/opt", "/proc", "/root", "/run", "/sbin",
+	"/srv", "/sys", "/usr", "/var",
+}
+
+// windowsCriticalDirs 是被拦截的 Windows 系统目录名（任意盘符下的一级目录）。
+var windowsCriticalDirs = []string{
+	"windows", "program files", "program files (x86)", "programdata",
+	"users", "system volume information",
+}
+
+// hostPathEqual 按当前节点路径风格比较两个路径是否相同（Windows 本地忽略大小写）。
+func hostPathEqual(a, b string) bool {
+	a, b = pathOrFileClean(a), pathOrFileClean(b)
+	if isWindows() && !remoteActive() {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
+
+// hostPathContains 判断 parent 是否为 child 的祖先目录（含相等）。
+// 远程节点按 POSIX 分段比较；本地用 filepath.Rel，避免 "/var" 误匹配 "/varx"。
+func hostPathContains(parent, child string) bool {
+	parent, child = pathOrFileClean(parent), pathOrFileClean(child)
+	if remoteActive() {
+		return child == parent || strings.HasPrefix(child, strings.TrimRight(parent, "/")+"/")
+	}
+	if isWindows() {
+		parent, child = strings.ToLower(parent), strings.ToLower(child)
+	}
+	rel, err := filepath.Rel(parent, child)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)))
+}
+
+// refuseCriticalDelete 拦截会导致宿主机不可用的删除目标：根目录、系统目录、
+// 回收站根目录，以及包含面板 data 目录的祖先路径。
+// 文件管理允许管理员操作任意路径，但整机级误删必须无条件拒绝。
+func refuseCriticalDelete(view string) error {
+	clean := pathOrFileClean(view)
+	// hostPathEqual 兼容 Windows 上 "/" 被规范化为 "\" 的情况。
+	if clean == "." || clean == "" || hostPathEqual(clean, "/") {
+		return NewHTTPError(403, "禁止删除根目录")
+	}
+	// Windows 盘符根（C:\、D:\）：pathOrFileClean 已按本地规则规范化。
+	if vol := filepath.VolumeName(clean); vol != "" &&
+		strings.EqualFold(filepath.Clean(clean), filepath.Clean(vol+`\`)) {
+		return NewHTTPError(403, "禁止删除磁盘根目录")
+	}
+	for _, p := range criticalDeletePaths {
+		if hostPathEqual(clean, p) {
+			return NewHTTPError(403, "禁止删除系统目录："+p)
+		}
+	}
+	if isWindows() && !remoteActive() {
+		parent := filepath.Dir(clean)
+		if strings.EqualFold(parent, filepath.VolumeName(clean)+`\`) {
+			base := strings.ToLower(filepath.Base(clean))
+			for _, name := range windowsCriticalDirs {
+				if base == name {
+					return NewHTTPError(403, "禁止删除系统目录："+clean)
+				}
+			}
+		}
+	}
+	if hostPathEqual(clean, TrashRoot()) {
+		return NewHTTPError(403, "回收站目录请使用「清空回收站」")
+	}
+	// 包含面板 data 目录的祖先路径一律拒绝（例如删除 /opt 会连带删掉面板数据）。
+	if hostPathContains(clean, GetConfig().DataDir) {
+		return NewHTTPError(403, "不能删除包含面板数据目录的路径")
+	}
+	return nil
+}
+
 // HostRemove 删除当前节点文件/目录（远程 rm -rf，本地 removeHostPath）。
+// 关键路径保护在这里统一兜底，任何调用方都无法删除整机级目录。
 func HostRemove(p string) error {
+	if err := refuseCriticalDelete(p); err != nil {
+		return err
+	}
 	if remoteActive() {
 		res := remoteExec(currentNode(), 60*time.Second, "rm -rf "+shellQuote(p), nil)
 		if res.Code != 0 {

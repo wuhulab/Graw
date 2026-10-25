@@ -456,7 +456,10 @@ func oauthCallbackHandler(w http.ResponseWriter, r *http.Request) error {
 	// 第八步：签发会话与 JWT（与密码登录一致，便于统一踢线/设备管理）
 	ip := ClientIP(r)
 	ua := r.Header.Get("User-Agent")
-	sid := CreateSession(username, ip, ParseDevice(ua))
+	sid, err := CreateSession(username, ip, ParseDevice(ua))
+	if err != nil {
+		return oauthRedirectError(w, r, redirect, "创建登录会话失败")
+	}
 	token, err := CreateToken(username, user.Int("token_version"), sid)
 	if err != nil {
 		return oauthRedirectError(w, r, redirect, "签发登录令牌失败")
@@ -740,74 +743,80 @@ func resolveOAuthUser(c oauthSettings, info map[string]any) (string, *HTTPError)
 	}
 	oauthUserMu.Lock()
 	defer oauthUserMu.Unlock()
-	// 每次都在锁内重新加载用户表，保证基于最新数据判断绑定与重名
-	users, err := LoadUsers()
-	if err != nil {
-		return "", NewHTTPError(500, "读取用户表失败")
-	}
-	if users == nil {
-		users = Users{}
-	}
+	// 绑定判定与写入放在同一用户表事务里：避免并发管理员操作互相覆盖，
+	// 也避免同一第三方账号被同时创建出两个本地账号。
+	username := ""
+	created := false
+	err := UpdateUsers(func(users Users) error {
+		// 策略 1：固定绑定面板账号（必须同时配置允许的第三方账号标识，
+		// 否则任何能访问该 OAuth 应用的账号都能登录到该面板账号）。
+		if c.BindUsername != "" {
+			if !oauthIdentityMatches(info, subject, c.BindIdentity) {
+				return NewHTTPError(403, "当前第三方账号不在允许绑定的列表中")
+			}
+			if _, ok := users[c.BindUsername]; !ok {
+				return NewHTTPError(403, "OAuth2 绑定的面板用户不存在："+c.BindUsername)
+			}
+			username = c.BindUsername
+			return errSkipUsersWrite
+		}
 
-	// 策略 1：固定绑定面板账号（必须同时配置允许的第三方账号标识，
-	// 否则任何能访问该 OAuth 应用的账号都能登录到该面板账号）。
-	if c.BindUsername != "" {
-		if !oauthIdentityMatches(info, subject, c.BindIdentity) {
-			return "", NewHTTPError(403, "当前第三方账号不在允许绑定的列表中")
+		// 策略 2：只认已经保存过 oauth_provider + oauth_subject 的用户
+		for name, u := range users {
+			if u.Str("oauth_provider") == provider && u.Str("oauth_subject") == subject {
+				username = name
+				return errSkipUsersWrite
+			}
 		}
-		if _, ok := users[c.BindUsername]; !ok {
-			return "", NewHTTPError(403, "OAuth2 绑定的面板用户不存在："+c.BindUsername)
-		}
-		return c.BindUsername, nil
-	}
 
-	// 策略 2：只认已经保存过 oauth_provider + oauth_subject 的用户
-	for name, u := range users {
-		if u.Str("oauth_provider") == provider && u.Str("oauth_subject") == subject {
-			return name, nil
+		// 策略 3：自动创建普通用户（无模块权限），绝不按用户名匹配已有账号
+		if !c.AutoCreate {
+			return NewHTTPError(403, "该 OAuth2 账号尚未绑定面板用户，请先创建账号或启用自动创建")
 		}
-	}
-
-	// 策略 3：自动创建普通用户（无模块权限），绝不按用户名匹配已有账号
-	if !c.AutoCreate {
-		return "", NewHTTPError(403, "该 OAuth2 账号尚未绑定面板用户，请先创建账号或启用自动创建")
-	}
-	// 用户名先按第三方字段生成并收敛字符集，再对已有账号做去重（base-2、base-3…）
-	raw := oauthFieldValue(info, c.UsernameField)
-	username := sanitizeOAuthUsername(raw, subject)
-	base := username
-	for i := 2; ; i++ {
-		if _, exists := users[username]; !exists {
-			break
+		// 用户名先按第三方字段生成并收敛字符集，再对已有账号做去重（base-2、base-3…）
+		raw := oauthFieldValue(info, c.UsernameField)
+		username = sanitizeOAuthUsername(raw, subject)
+		base := username
+		for i := 2; ; i++ {
+			if _, exists := users[username]; !exists {
+				break
+			}
+			username = base + "-" + strconv.Itoa(i)
+			if i > 999 {
+				return NewHTTPError(500, "自动创建 OAuth2 用户失败：重名过多")
+			}
 		}
-		username = base + "-" + strconv.Itoa(i)
-		if i > 999 {
-			return "", NewHTTPError(500, "自动创建 OAuth2 用户失败：重名过多")
+		// 随机密码只为占位：用户不知道明文，只能继续通过 OAuth 登录
+		pw, err := oauthRandomToken(24)
+		if err != nil {
+			return NewHTTPError(500, "自动创建 OAuth2 用户失败：随机密码生成失败")
 		}
-	}
-	// 随机密码只为占位：用户不知道明文，只能继续通过 OAuth 登录
-	pw, err := oauthRandomToken(24)
+		hash, err := HashPassword(pw)
+		if err != nil {
+			return NewHTTPError(500, "自动创建 OAuth2 用户失败")
+		}
+		users[username] = User{
+			"username":             username,
+			"password":             hash,
+			"role":                 "user",
+			"must_change_password": false,
+			"token_version":        0,
+			"created_at":           float64(time.Now().Unix()),
+			"oauth_provider":       provider,
+			"oauth_subject":        subject,
+		}
+		created = true
+		return nil
+	})
 	if err != nil {
-		return "", NewHTTPError(500, "自动创建 OAuth2 用户失败：随机密码生成失败")
-	}
-	hash, err := HashPassword(pw)
-	if err != nil {
-		return "", NewHTTPError(500, "自动创建 OAuth2 用户失败")
-	}
-	users[username] = User{
-		"username":             username,
-		"password":             hash,
-		"role":                 "user",
-		"must_change_password": false,
-		"token_version":        0,
-		"created_at":           float64(time.Now().Unix()),
-		"oauth_provider":       provider,
-		"oauth_subject":        subject,
-	}
-	if err := SaveUsers(users); err != nil {
+		if he, ok := err.(*HTTPError); ok {
+			return "", he
+		}
 		return "", NewHTTPError(500, "保存 OAuth2 用户失败")
 	}
-	AuditRecord("自动创建 OAuth2 用户", username, "", "提供方:"+c.ProviderName)
+	if created {
+		AuditRecord("自动创建 OAuth2 用户", username, "", "提供方:"+c.ProviderName)
+	}
 	return username, nil
 }
 

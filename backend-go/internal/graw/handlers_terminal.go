@@ -442,7 +442,12 @@ func terminalWS(w http.ResponseWriter, r *http.Request) {
 	key := node + "|shell"
 	// 非持久终端使用独立 key，断开即销毁，避免与持久会话串线。
 	if !persist {
-		key = node + "|shell|oneshot|" + newSID()
+		oneShot, err := newSID()
+		if err != nil {
+			WriteJSON(w, 500, map[string]any{"detail": "创建终端会话失败"})
+			return
+		}
+		key = node + "|shell|oneshot|" + oneShot
 	}
 	title := "本机终端"
 	if node != "local" {
@@ -496,11 +501,17 @@ func containerTerminalWS(w http.ResponseWriter, r *http.Request) {
 		}
 		nodeID = str(n["id"])
 	}
+	// 先拿会话 ID 再升级连接：升级之后已无法再返回 HTTP 错误。
+	oneShot, err := newSID()
+	if err != nil {
+		WriteJSON(w, 500, map[string]any{"detail": "创建容器终端会话失败"})
+		return
+	}
 	conn, err := upgradeWS(w, r)
 	if err != nil {
 		return
 	}
-	key := "container|" + container + "|" + newSID()
+	key := "container|" + container + "|" + oneShot
 	session, _, createErr := getOrCreateTermSession(key, "容器终端", nodeID, false, container)
 	if createErr != nil {
 		_ = conn.WriteText([]byte("\r\n[container terminal] " + createErr.Error() + "\r\n"))

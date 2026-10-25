@@ -7,10 +7,12 @@ package graw
 //   - 机器间鉴权：子节点暴露 /api/agent/issue，用 HMAC-SHA256(key|ts|nonce) + 时间窗 + nonce 去重
 //     换取管理员 JWT；/api/agent/cfg 由登录管理员管理「收取模式」。
 //   - 隧道：主面板经 SSH direct-tcpip 连到子节点 127.0.0.1:agent_port，
-//     HTTP 走自实现的 httpOverSSH，WebSocket 走 bridgeAgentWS。
+//     HTTP 走自实现的流式 openAgentConn（proxyToAgent），WebSocket 走 bridgeAgentWS；
+//     httpOverSSH 只保留给响应体很小的内部调用（/api/agent/issue）。
 //
 // 请求流向（httpx.go: ServeHTTP → dispatch）：
-//   - HTTP：maybeAgentProxy 先在主面板做与业务路由等价的鉴权，再经隧道转发；返回 true 表示请求已处理完。
+//   - HTTP：maybeAgentProxy 先在主面板做与业务路由等价的鉴权，再经隧道流式转发；
+//     返回 true 表示请求已处理完。
 //   - WebSocket：升级请求不经 maybeAgentProxy（无法 Hijack），由 system/terminal/tamper/docker
 //     的 WS 处理器显式调用 bridgeAgentWS 桥接。
 //
@@ -20,6 +22,8 @@ package graw
 //   - 裸 SSH 节点（未配 Agent）不代理：host 类操作由 hostops.go 远程原语执行，
 //     local-only 前缀由 RejectIfLocalRemote 拒绝。
 //   - 回前端的节点信息必须走 publicNode 脱敏：password / agent_secret 绝不外泄。
+//   - 代理前置鉴权按 RouteInfo 区分 public/custom 路由：这两类不带 Bearer，
+//     强制 Authenticate 会让子节点图标、插件令牌接口在当前节点为 Agent 时全部 401。
 //
 // 易踩坑：
 //   - 节点凭据变更后必须 dropSSHPool 并清 agentTokens，否则旧连接 / 旧 token 仍然有效。
@@ -35,6 +39,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -341,7 +346,12 @@ func registerAgentRoutes(a *App) {
 			tv = user.Int("token_version")
 		}
 		// 以 agent 账号签发管理员 JWT；管理员改密/踢下线后该 token 会自然失效。
-		token, err := CreateToken("agent", tv, "")
+		// 必须带 sid：空 sid 的令牌会被 SessionActive 拒绝，隧道代理将全部 401。
+		sid, err := CreateSession("agent", ClientIP(r), "agent tunnel")
+		if err != nil {
+			return NewHTTPError(500, "创建 Agent 会话失败")
+		}
+		token, err := CreateToken("agent", tv, sid)
 		if err != nil {
 			return err
 		}
@@ -415,28 +425,22 @@ const adminRole = "admin"
 // ensureAgentUser 确保 users.json 中存在 agent 机器账号（admin 角色、随机密码、
 // 不需要改密），供 /api/agent/issue 签发 JWT 使用。已存在且是管理员时不做任何改动。
 func ensureAgentUser() error {
-	users, err := LoadUsers()
-	if err != nil {
-		return err
-	}
-	if users == nil {
-		users = Users{}
-	}
-	// 已存在管理员 agent 账号直接复用（可能已有 token_version 等状态）。
-	if u, ok := users["agent"]; ok && u.Role() == "admin" {
+	return UpdateUsers(func(users Users) error {
+		// 已存在管理员 agent 账号直接复用（可能已有 token_version 等状态）。
+		if u, ok := users["agent"]; ok && u.Role() == "admin" {
+			return errSkipUsersWrite
+		}
+		// 随机密码无人知晓，只作占位，禁止用于交互登录。
+		hash, err := HashPassword(randomHex(64))
+		if err != nil {
+			return err
+		}
+		users["agent"] = User{
+			"username": "agent", "password": hash, "role": "admin",
+			"must_change_password": false, "created_at": float64(time.Now().Unix()),
+		}
 		return nil
-	}
-	// 随机密码无人知晓，只作占位，禁止用于交互登录。
-	pw := randomHex(64)
-	hash, err := HashPassword(pw)
-	if err != nil {
-		return err
-	}
-	users["agent"] = User{
-		"username": "agent", "password": hash, "role": "admin",
-		"must_change_password": false, "created_at": float64(time.Now().Unix()),
-	}
-	return SaveUsers(users)
+	})
 }
 
 // strconvParseInt 解析十进制时间戳（宽松 Sscanf，容忍前后空白）。
@@ -688,85 +692,148 @@ func agentToken(node map[string]any, client *ssh.Client) (string, error) {
 
 // httpOverSSH 在已有 SSH 连接上开一条 direct-tcpip 通道，手写最小 HTTP/1.0 请求到子节点
 // 127.0.0.1:port，返回状态码/响应头/响应体。
-// 用 HTTP/1.0 + Connection: close 简化 framing；写请求与读响应分阶段设 deadline，
-// 避免半开连接把请求永久挂住，也不会用固定 60 秒截断大请求体。body 一次性读完（调用方需要整块 JSON）。
+// 仅用于响应体较小的内部调用（如 /api/agent/issue）；业务代理请走 proxyToAgent 的流式实现，
+// 不能把大文件整包读进内存。
 func httpOverSSH(client *ssh.Client, port int, method, path string, headers map[string]string, body []byte) (int, http.Header, []byte, error) {
-	// SSH 通道内再连子节点回环地址，Agent 只监听本机，不暴露到外网。
-	conn, err := client.Dial("tcp", net.JoinHostPort("127.0.0.1", itoa(port)))
+	conn, reader, err := openAgentConn(client, port, method, path, headers, bytes.NewReader(body), int64(len(body)))
 	if err != nil {
 		return 0, nil, nil, err
 	}
 	defer conn.Close()
-	// 写阶段按请求体大小放宽：基础 60 秒 + 每 MB 1 秒，封顶 10 分钟。
-	// 固定 60 秒会让经隧道转发的大上传在中途被 deadline 截断。
-	writeTimeout := 60*time.Second + time.Duration(len(body)/(1024*1024))*time.Second
-	if writeTimeout > 10*time.Minute {
-		writeTimeout = 10 * time.Minute
-	}
-	_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
-	// 手工拼请求行：net/http 的 Transport 无法复用这条自定义连接。
-	req := fmt.Sprintf("%s %s HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n", method, path)
-	if body != nil {
-		req += fmt.Sprintf("Content-Length: %d\r\n", len(body))
-	}
-	for k, v := range headers {
-		req += k + ": " + v + "\r\n"
-	}
-	req += "\r\n"
-	if _, err := conn.Write(append([]byte(req), body...)); err != nil {
-		return 0, nil, nil, err
-	}
-	// 请求写完后再设读 deadline：子节点处理慢一点也不会被写阶段的超时影响。
-	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	httpReq := &http.Request{Method: method}
 	// 用标准库解析响应，兼容 chunked / Content-Length 等 framing。
-	resp, err := http.ReadResponse(bufio.NewReader(conn), httpReq)
+	resp, err := http.ReadResponse(reader, &http.Request{Method: method})
 	if err != nil {
 		return 0, nil, nil, err
 	}
 	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
+	// 必须把读错误传出去：截断的 JSON 不能被当成成功响应。
+	respBody, err := io.ReadAll(&agentIdleReader{conn: conn, body: resp.Body, idle: 60 * time.Second})
+	if err != nil {
+		return 0, nil, nil, err
+	}
 	return resp.StatusCode, resp.Header, respBody, nil
 }
 
-// agentProxyRequest 把一个 HTTP 请求经 SSH 隧道转发到子节点并返回其响应。
-// rawBody 已由调用方按上传上限读取；只透传 Content-Type / Accept 与 Authorization（agent JWT），
+// openAgentConn 建立隧道并写完请求头/请求体；返回的连接由调用方 Close。
+// body 为 nil 或 bodyLen<=0 时不发送 Content-Length（对应无请求体的 GET）。
+func openAgentConn(client *ssh.Client, port int, method, path string, headers map[string]string, body io.Reader, bodyLen int64) (net.Conn, *bufio.Reader, error) {
+	// SSH 通道内再连子节点回环地址，Agent 只监听本机，不暴露到外网。
+	conn, err := client.Dial("tcp", net.JoinHostPort("127.0.0.1", itoa(port)))
+	if err != nil {
+		return nil, nil, err
+	}
+	// 写阶段按请求体大小放宽：基础 60 秒 + 每 MB 1 秒，封顶 30 分钟。
+	// 固定 60 秒会让经隧道转发的大上传在中途被 deadline 截断。
+	writeTimeout := 60*time.Second + time.Duration(bodyLen/(1<<20))*time.Second
+	if writeTimeout > 30*time.Minute {
+		writeTimeout = 30 * time.Minute
+	}
+	_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+	// 手工拼请求行：net/http 的 Transport 无法复用这条自定义连接。
+	var req strings.Builder
+	req.WriteString(method + " " + path + " HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n")
+	if bodyLen > 0 {
+		req.WriteString("Content-Length: " + itoa(int(bodyLen)) + "\r\n")
+	}
+	for k, v := range headers {
+		req.WriteString(k + ": " + v + "\r\n")
+	}
+	req.WriteString("\r\n")
+	if _, err := io.WriteString(conn, req.String()); err != nil {
+		_ = conn.Close()
+		return nil, nil, err
+	}
+	if body != nil && bodyLen > 0 {
+		// 流式转发请求体：内存占用恒定，不受上传大小影响。
+		if _, err := io.Copy(conn, body); err != nil {
+			_ = conn.Close()
+			return nil, nil, err
+		}
+	}
+	// 写阶段结束：清掉写超时，改设响应头读取超时。
+	_ = conn.SetWriteDeadline(time.Time{})
+	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	return conn, bufio.NewReader(conn), nil
+}
+
+// agentIdleReader 在每次读之前刷新连接读截止时间：大响应可以超过单次 60 秒，
+// 但连接空闲超过 idle 仍会被断开，避免半开连接长期占用。
+type agentIdleReader struct {
+	conn net.Conn
+	body io.Reader
+	idle time.Duration
+}
+
+// Read 先续期再读，截止时间按「空闲」而非「总时长」计算。
+func (r *agentIdleReader) Read(p []byte) (int, error) {
+	_ = r.conn.SetReadDeadline(time.Now().Add(r.idle))
+	return r.body.Read(p)
+}
+
+// proxyToAgent 把请求经 SSH 隧道转发到子节点，并把响应流式写回浏览器。
+// 上传直接流式读取 r.Body，下载边读边写，内存占用与文件大小无关。
+// 只透传 Content-Type / Accept 与 Authorization（agent JWT），
 // 不转发浏览器原始 token，避免把用户凭据留在子节点。
-// 返回的 *http.Response 的 Body 是已缓冲的读闭包，调用方负责 Close。
-func agentProxyRequest(node map[string]any, r *http.Request, rawBody []byte) (*http.Response, error) {
+func proxyToAgent(w http.ResponseWriter, r *http.Request, node map[string]any) {
 	// 复用池内 SSH，避免每个业务请求都重新握手。
 	client, err := pooledSSH(node, 15*time.Second)
 	if err != nil {
-		return nil, err
+		WriteJSON(w, 502, map[string]any{"detail": "Agent 代理失败，请检查子节点 Agent 状态"})
+		return
 	}
 	// 换取（或复用缓存中的）子节点 agent JWT。
 	token, err := agentToken(node, client)
 	if err != nil {
-		return nil, err
+		WriteJSON(w, 502, map[string]any{"detail": "Agent 代理失败，请检查子节点 Agent 状态"})
+		return
 	}
 	port := int(int64Of(node["agent_port"]))
 	if port == 0 {
 		port = defaultAgentPort
 	}
-	// 用 RequestURI 保留 query，子节点路由才能命中。
-	path := r.URL.RequestURI()
 	headers := map[string]string{"Authorization": "Bearer " + token}
-	if ct := r.Header.Get("Content-Type"); ct != "" && len(rawBody) > 0 {
+	if ct := r.Header.Get("Content-Type"); ct != "" && r.ContentLength > 0 {
 		headers["Content-Type"] = ct
 	}
 	if accept := r.Header.Get("Accept"); accept != "" {
 		headers["Accept"] = accept
 	}
-	// 通过隧道发请求并读完整响应。
-	status, hdr, respBody, err := httpOverSSH(client, port, r.Method, path, headers, rawBody)
-	if err != nil {
-		return nil, err
+	// 请求体直接流式转发；Content-Length 已由全局中间件校验过，不会出现 chunked。
+	var body io.Reader
+	bodyLen := r.ContentLength
+	if bodyLen > 0 {
+		body = r.Body
 	}
-	// 包装成标准 Response，交给上游统一写回浏览器。
-	return &http.Response{
-		StatusCode: status, Header: hdr,
-		Body: io.NopCloser(bytes.NewReader(respBody)),
-	}, nil
+	// 用 RequestURI 保留 query，子节点路由才能命中。
+	conn, reader, err := openAgentConn(client, port, r.Method, r.URL.RequestURI(), headers, body, bodyLen)
+	if err != nil {
+		WriteJSON(w, 502, map[string]any{"detail": "Agent 代理失败，请检查子节点 Agent 状态"})
+		return
+	}
+	defer conn.Close()
+	resp, err := http.ReadResponse(reader, &http.Request{Method: r.Method})
+	if err != nil {
+		WriteJSON(w, 502, map[string]any{"detail": "Agent 代理失败，请检查子节点 Agent 状态"})
+		return
+	}
+	defer resp.Body.Close()
+	// 只回写与内容展示/下载进度相关的头，避免把子节点的安全头/Set-Cookie 混进主面板响应。
+	for _, name := range []string{"Content-Type", "Content-Disposition", "Content-Length", "Content-Encoding", "Cache-Control", "ETag", "Last-Modified"} {
+		if v := resp.Header.Get(name); v != "" {
+			w.Header().Set(name, v)
+		}
+	}
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	}
+	w.WriteHeader(resp.StatusCode)
+	// 流式复制：子节点空闲超过 60 秒或连接中断都会让 io.Copy 返回错误。
+	// 响应头已发出，无法再改状态码，只能中止连接（ErrAbortHandler），
+	// 绝不能把截断内容当完整响应静默返回。
+	if _, err := io.Copy(w, &agentIdleReader{conn: conn, body: resp.Body, idle: 60 * time.Second}); err != nil {
+		log.Printf("graw: Agent 代理响应中断: %v", err)
+		panic(http.ErrAbortHandler)
+	}
 }
 
 // --- 代理前置鉴权 ---
@@ -849,31 +916,65 @@ func proxyReadonlyAllow(path, method string) bool {
 	return false
 }
 
-// proxyPermForPath 从已注册路由表按 /api/<模块> 前缀反查模块权限，
-// 用于代理前做与业务路由等价的权限判定（对应 Python 版 _proxy_perm_map 的自动汇总）。
-// 返回空表示该前缀没有声明模块权限（调用方按更严格的白名单处理）。
-func (a *App) proxyPermForPath(path string) []string {
-	parts := strings.Split(path, "/")
-	if len(parts) < 3 {
-		return nil
+// routeInfoFor 按方法与路径查找已注册路由的鉴权元信息。
+// 返回 nil 表示主面板没有该路由（可能是子节点独有接口）。
+func (a *App) routeInfoFor(method, path string) *RouteInfo {
+	clean := strings.TrimRight(path, "/")
+	if clean == "" {
+		clean = "/"
 	}
-	prefix := "/" + parts[1] + "/" + parts[2]
-	for _, rt := range a.routes {
-		if !strings.HasPrefix(rt.Pattern, prefix) {
+	for i := range a.routes {
+		rt := &a.routes[i]
+		if rt.Method != method {
 			continue
 		}
-		if len(rt.Modules) > 0 {
-			return rt.Modules
+		if matchRoutePattern(rt.Pattern, clean) {
+			return rt
 		}
 	}
 	return nil
 }
 
+// matchRoutePattern 比较注册模式与请求路径：{name} 匹配单段，{name...} 匹配剩余所有段。
+// 只用于鉴权元信息查找，不参与实际路由分发（分发由 ServeMux 负责）。
+func matchRoutePattern(pattern, path string) bool {
+	if pattern == path {
+		return true
+	}
+	ps := strings.Split(strings.Trim(pattern, "/"), "/")
+	xs := strings.Split(strings.Trim(path, "/"), "/")
+	for i, p := range ps {
+		if strings.HasPrefix(p, "{") && strings.HasSuffix(p, "...}") {
+			// 通配剩余段（可为空），必须位于模式末尾。
+			return i == len(ps)-1 && len(xs) >= i
+		}
+		if i >= len(xs) {
+			return false
+		}
+		if strings.HasPrefix(p, "{") && strings.HasSuffix(p, "}") {
+			if xs[i] == "" {
+				return false
+			}
+			continue
+		}
+		if p != xs[i] {
+			return false
+		}
+	}
+	return len(ps) == len(xs)
+}
+
 // proxyAuthGuard 在转发前于主面板做与业务路由等价的鉴权。
 // Why：子节点 Agent 以管理员权限执行请求，若不在本机先校验，受限用户可借隧道越权。
-// 规则：未登录/默认密码拒绝；完整管理员放行；受限管理员要求命中模块权限，
-// 否则只允许 proxyUserSafe 中的公共只读方法。
+// 规则：public/custom 端点交由子节点自行鉴权；其余未登录/默认密码拒绝；
+// 完整管理员放行；受限管理员要求命中该路由声明的模块权限，否则只允许公共只读白名单。
 func (a *App) proxyAuthGuard(r *http.Request, path string) *HTTPError {
+	info := a.routeInfoFor(r.Method, path)
+	// 公开端点（应用图标等）与自定义鉴权端点（插件令牌 / Agent 密钥）不依赖 Bearer，
+	// 不能在这里用 Authenticate 拦掉，否则它们在当前节点为 Agent 节点时会全部 401。
+	if info != nil && (info.Public || info.Custom) {
+		return nil
+	}
 	// failClosedOnDefault=true：默认密码账号不允许经隧道操作子节点。
 	u, err := Authenticate(r, true)
 	if err != nil {
@@ -887,19 +988,17 @@ func (a *App) proxyAuthGuard(r *http.Request, path string) *HTTPError {
 		return nil
 	}
 	if set, full := UserPerms(u); !full {
-		// 受限管理员：按该前缀声明的模块权限判定。
-		if mods := a.proxyPermForPath(path); len(mods) > 0 {
-			allowed := false
-			for _, m := range mods {
+		// 受限管理员：按该路由声明的模块权限判定；仅管理员路由直接拒绝。
+		if info != nil && info.Admin {
+			return NewHTTPError(403, "需要管理员权限")
+		}
+		if info != nil && len(info.Modules) > 0 {
+			for _, m := range info.Modules {
 				if set[m] {
-					allowed = true
-					break
+					return nil
 				}
 			}
-			if !allowed {
-				return NewHTTPError(403, "需要 "+strings.Join(mods, "/")+" 模块权限")
-			}
-			return nil
+			return NewHTTPError(403, "需要 "+strings.Join(info.Modules, "/")+" 模块权限")
 		}
 		// 路由未声明模块权限：退回公共只读白名单，宁严勿松。
 		if !proxyReadonlyAllow(path, r.Method) {
@@ -945,23 +1044,9 @@ func (a *App) maybeAgentProxy(w http.ResponseWriter, r *http.Request) bool {
 		writeErr(w, err)
 		return true
 	}
-	// 按上传上限读取请求体（+1 字节用于让子节点识别超限），读到多少转多少。
-	rawBody, _ := io.ReadAll(io.LimitReader(r.Body, GetConfig().MaxUploadByte+1))
-	resp, err := agentProxyRequest(node, r, rawBody)
-	if err != nil {
-		// 统一 502，避免把子节点内部错误细节（含地址/凭据线索）暴露给前端。
-		WriteJSON(w, 502, map[string]any{"detail": "Agent 代理失败，请检查子节点 Agent 状态"})
-		return true
-	}
-	defer resp.Body.Close()
-	ct := resp.Header.Get("Content-Type")
-	if ct == "" {
-		ct = "application/json; charset=utf-8"
-	}
-	// 原样回写子节点状态码与 Content-Type，业务侧无需感知请求被代理。
-	w.Header().Set("Content-Type", ct)
-	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	// 流式转发：大上传/下载不再整包驻留内存，失败统一 502，
+	// 避免把子节点内部错误细节（含地址/凭据线索）暴露给前端。
+	proxyToAgent(w, r, node)
 	return true
 }
 

@@ -58,8 +58,9 @@ func main() {
 		Addr:              addr,
 		Handler:           graw.NewApp(),
 		ReadHeaderTimeout: 15 * time.Second, // 防慢速 header 攻击
-		// 不设 ReadTimeout/WriteTimeout：文件上传下载与 WebSocket 都是长连接，
-		// 设了会误杀正常请求；IdleTimeout 负责回收空闲 keep-alive。
+		// 不设全局 ReadTimeout/WriteTimeout：文件上传下载与 WebSocket 都是长连接，
+		// 设了会误杀正常请求。请求体读取由 httpx.bodyReadTimeout 按大小单独限定，
+		// IdleTimeout 负责回收空闲 keep-alive。
 		IdleTimeout: 120 * time.Second,
 	}
 

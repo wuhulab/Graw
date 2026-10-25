@@ -753,6 +753,8 @@ func backupCronCommand(source, target, safe string, keepDays int) (string, error
 				return "", NewHTTPError(400, "计划备份命令构造中止：路径含非法字符")
 			}
 		}
+		// target/safe 会嵌入 PowerShell 双引号字符串：$(...) 与反引号都会被解释，
+		// 只检查双引号不够，必须在拼接处按 PowerShell 双引号规则转义。
 		cleanup := ""
 		if keepDays > 0 {
 			cleanup = `; Get-ChildItem ` + protectionPowerShellQuote(target) + ` -Filter ` +
@@ -762,7 +764,7 @@ func backupCronCommand(source, target, safe string, keepDays int) (string, error
 		return "powershell -NoProfile -Command " +
 			`"New-Item -ItemType Directory -Force -Path ` + protectionPowerShellQuote(target) + ` | Out-Null; ` +
 			`$d=Get-Date -Format yyyyMMdd_HHmmss; ` +
-			`tar -czf \"` + target + `\` + safe + `_$d.tar.gz\" -C ` +
+			`tar -czf \"` + powershellEscapeDouble(target) + `\` + powershellEscapeDouble(safe) + `_$d.tar.gz\" -C ` +
 			protectionPowerShellQuote(parent) + ` ` + protectionPowerShellQuote(base) + cleanup + `"`, nil
 	}
 	quotedTarget := shellQuote(target)
@@ -774,6 +776,14 @@ func backupCronCommand(source, target, safe string, keepDays int) (string, error
 			" -mtime +" + itoa(keepDays) + " -delete"
 	}
 	return cmd, nil
+}
+
+// powershellEscapeDouble 转义 PowerShell 双引号字符串里的特殊字符（反引号、$、"）。
+// Windows 计划备份命令是单条 PowerShell 字符串，路径中的 $(...) 会被当成子表达式执行。
+func powershellEscapeDouble(s string) string {
+	s = strings.ReplaceAll(s, "`", "``")
+	s = strings.ReplaceAll(s, "$", "`$")
+	return strings.ReplaceAll(s, `"`, "`\"")
 }
 
 func backupSyncCron(task map[string]any) error {

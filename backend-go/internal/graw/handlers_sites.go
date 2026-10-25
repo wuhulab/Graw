@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -103,9 +104,35 @@ func webServerType() string {
 	return "none"
 }
 
-func reloadWebServer() bool {
+// truncateText 截断命令输出，避免把一整屏 nginx 错误原样塞进 HTTP 详情。
+func truncateText(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if len(s) > max {
+		return s[:max] + "…"
+	}
+	return s
+}
+
+// webServerTest 执行 nginx -t 做配置语法检查。
+// 必须在 reload 之前跑：非法配置一旦重载会让新站点静默失效。
+func webServerTest() error {
+	res := HostCmd(20*time.Second, webServerBinary(), "-t")
+	if res.Code != 0 {
+		return fmt.Errorf("%s", truncateText(res.Stderr+res.Stdout, 400))
+	}
+	return nil
+}
+
+// reloadWebServer 先做配置检查再重载；语法错误时不会触发 reload。
+func reloadWebServer() error {
+	if err := webServerTest(); err != nil {
+		return err
+	}
 	res := HostCmd(10*time.Second, webServerBinary(), "-s", "reload")
-	return res.Code == 0
+	if res.Code != 0 {
+		return fmt.Errorf("%s", truncateText(res.Stderr+res.Stdout, 400))
+	}
+	return nil
 }
 
 func webServerStatus() map[string]any {
@@ -557,11 +584,22 @@ func applySiteConfig(site map[string]any, enabled bool) error {
 	return nil
 }
 
+// reloadIfNginx 尽力而为地校验并重载 Web 服务器；失败只记日志。
+// 用于「主操作已完成、重载失败不影响返回」的调用点；需要回滚/报错的场景用 strict 版本。
 func reloadIfNginx() {
-	ws := webServerType()
-	if ws == "nginx" || ws == "openresty" {
-		reloadWebServer()
+	if err := reloadIfNginxStrict(); err != nil {
+		log.Printf("graw: Web 服务器配置检查/重载失败: %v", err)
 	}
+}
+
+// reloadIfNginxStrict 校验并重载 Web 服务器，把失败原因交给调用方。
+// 未部署 nginx/openresty 时直接返回 nil（纯静态部署不受影响）。
+func reloadIfNginxStrict() error {
+	ws := webServerType()
+	if ws != "nginx" && ws != "openresty" {
+		return nil
+	}
+	return reloadWebServer()
 }
 
 // maintenanceRoot 准备维护页目录并返回宿主机视角路径。
@@ -935,15 +973,25 @@ func siteActionHandler(w http.ResponseWriter, r *http.Request) error {
 		if err := applySiteConfig(site, true); err != nil {
 			return err
 		}
-		reloadIfNginx()
+		// 配置非法时回滚：否则接口报成功、站点却因为 nginx -t 失败而不生效。
+		if err := reloadIfNginxStrict(); err != nil {
+			site["enabled"] = false
+			_ = applySiteConfig(site, false)
+			_ = saveSites(sites)
+			return NewHTTPError(500, "Web 服务器配置校验失败，已回滚："+err.Error())
+		}
 	case "disable", "stop":
 		site["enabled"] = false
 		if err := applySiteConfig(site, false); err != nil {
 			return err
 		}
-		reloadIfNginx()
+		if err := reloadIfNginxStrict(); err != nil {
+			return NewHTTPError(500, "Web 服务器配置校验失败："+err.Error())
+		}
 	case "restart":
-		reloadIfNginx()
+		if err := reloadIfNginxStrict(); err != nil {
+			return NewHTTPError(500, "Web 服务器配置校验失败："+err.Error())
+		}
 	default:
 		return NewHTTPError(400, "未知操作: "+req.Action)
 	}
@@ -1083,7 +1131,9 @@ func siteUpdateHandler(w http.ResponseWriter, r *http.Request) error {
 			if err := writeHostFile(siteStr(site, "conf_path"), nginxSiteConfig(site, "")); err != nil {
 				return err
 			}
-			reloadIfNginx()
+			if err := reloadIfNginxStrict(); err != nil {
+				return NewHTTPError(500, "Web 服务器配置校验失败："+err.Error())
+			}
 		}
 		return WriteJSON(w, 200, site)
 	}
@@ -1091,7 +1141,9 @@ func siteUpdateHandler(w http.ResponseWriter, r *http.Request) error {
 		if err := applySiteConfig(site, true); err != nil {
 			return err
 		}
-		reloadIfNginx()
+		if err := reloadIfNginxStrict(); err != nil {
+			return NewHTTPError(500, "Web 服务器配置校验失败："+err.Error())
+		}
 	}
 	if err := saveSites(sites); err != nil {
 		return err
@@ -1160,7 +1212,9 @@ func siteMaintenanceHandler(w http.ResponseWriter, r *http.Request) error {
 			}())); err != nil {
 				return err
 			}
-			reloadIfNginx()
+			if err := reloadIfNginxStrict(); err != nil {
+				return NewHTTPError(500, "Web 服务器配置校验失败："+err.Error())
+			}
 		}
 		return WriteJSON(w, 200, map[string]any{"ok": true, "external": true, "maintenance": req.Enabled})
 	}
@@ -1168,7 +1222,9 @@ func siteMaintenanceHandler(w http.ResponseWriter, r *http.Request) error {
 		if err := applySiteConfig(site, true); err != nil {
 			return err
 		}
-		reloadIfNginx()
+		if err := reloadIfNginxStrict(); err != nil {
+			return NewHTTPError(500, "Web 服务器配置校验失败："+err.Error())
+		}
 	}
 	sites = loadSites()
 	if err := saveSites(sites); err != nil {

@@ -464,6 +464,11 @@ func execToolboxTool(tool string, args map[string]any) (any, error) {
 		if host == "" {
 			return nil, NewHTTPError(400, "主机地址不能为空")
 		}
+		// 这份 host 会拼进远程 shell 脚本，必须与 ping/traceroute 一样做白名单校验，
+		// 否则 host 里的引号/分号可以直接注入命令。
+		if !toolboxHostRe.MatchString(host) && net.ParseIP(host) == nil {
+			return nil, NewHTTPError(400, "主机地址非法")
+		}
 		ports := []int{}
 		switch v := args["ports"].(type) {
 		case []any:
@@ -487,6 +492,10 @@ func execToolboxTool(tool string, args map[string]any) (any, error) {
 		}
 		results := []map[string]any{}
 		if remoteActive() {
+			// bash 的 /dev/tcp 不支持 IPv6 字面量；与其拼出必然失败的脚本，不如直接说明。
+			if strings.Contains(host, ":") {
+				return nil, NewHTTPError(400, "远程节点端口扫描暂不支持 IPv6")
+			}
 			// 在远程节点上探测（与 Python 的 host 类语义一致）。
 			var script strings.Builder
 			script.WriteString("for p in")

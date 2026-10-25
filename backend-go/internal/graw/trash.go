@@ -184,10 +184,14 @@ func saveTrashItems(items []TrashItem) {
 	}
 	if remoteActive() {
 		b, _ := json.Marshal(trashMeta{Version: 1, Items: items})
-		_ = HostWriteBytes(trashMetaPath(), b, 0o600)
+		if err := HostWriteBytes(trashMetaPath(), b, 0o600); err != nil {
+			log.Printf("graw: 写入回收站清单失败（远程）: %v", err)
+		}
 		return
 	}
-	_ = WriteJSONFile(trashMetaPath(), trashMeta{Version: 1, Items: items})
+	if err := WriteJSONFile(trashMetaPath(), trashMeta{Version: 1, Items: items}); err != nil {
+		log.Printf("graw: 写入回收站清单失败: %v", err)
+	}
 }
 
 // ensureTrashDir 确保回收站根目录存在（0700，只有面板进程可访问），返回该根目录。

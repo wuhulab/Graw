@@ -19,6 +19,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -150,6 +151,13 @@ var (
 	secretKey  string     // 进程内缓存的 HS256 密钥
 	secretErr  error      // 密钥生成/落盘失败原因（失败时 getSecret 已写日志）
 	defaultPw  sync.Map   // bcrypt hash -> 是否为默认密码，避免每请求做 bcrypt 比对
+
+	// 鉴权热路径的只读缓存：按文件 mtime+size 判断是否仍有效。
+	// 只服务 GetUser（返回深拷贝），写路径仍走 LoadUsers，避免缓存快照被就地修改。
+	usersCacheMu   sync.Mutex
+	usersCache     Users
+	usersCacheMod  time.Time
+	usersCacheSize int64
 )
 
 // LoadUsers 读取用户表；文件不存在返回 (nil, nil)。
@@ -169,18 +177,89 @@ func LoadUsers() (Users, error) {
 	return users, nil
 }
 
-// SaveUsers 原子保存用户表。
+// SaveUsers 原子保存用户表，并让鉴权缓存失效。
 // 内部持 usersMu，调用方不要在同一临界区里再调用（sync.Mutex 不可重入）。
 func SaveUsers(users Users) error {
 	usersMu.Lock()
 	defer usersMu.Unlock()
-	return WriteJSONFile(DataPath("users.json"), users)
+	if err := WriteJSONFile(DataPath("users.json"), users); err != nil {
+		return err
+	}
+	invalidateUsersCache()
+	return nil
+}
+
+// errSkipUsersWrite 由 UpdateUsers 的回调返回：表示本次只读、无需写盘。
+var errSkipUsersWrite = errors.New("users unchanged")
+
+// UpdateUsers 在用户表事务锁内完成「读-改-写」。
+// fn 返回错误时放弃写入（*HTTPError 会原样上抛给 handler）；
+// 需要跨多个字段保持一致的操作必须走这里，不能各自 LoadUsers + SaveUsers。
+func UpdateUsers(fn func(Users) error) error {
+	usersMu.Lock()
+	defer usersMu.Unlock()
+	users, err := LoadUsers()
+	if err != nil {
+		return err
+	}
+	if users == nil {
+		users = Users{}
+	}
+	if err := fn(users); err != nil {
+		if errors.Is(err, errSkipUsersWrite) {
+			return nil
+		}
+		return err
+	}
+	if err := WriteJSONFile(DataPath("users.json"), users); err != nil {
+		return err
+	}
+	invalidateUsersCache()
+	return nil
+}
+
+// invalidateUsersCache 清空用户表只读缓存；任何写盘之后都必须调用。
+func invalidateUsersCache() {
+	usersCacheMu.Lock()
+	usersCache = nil
+	usersCacheMod = time.Time{}
+	usersCacheSize = 0
+	usersCacheMu.Unlock()
+}
+
+// loadUsersCached 返回供鉴权读取的用户表快照（调用方不得修改其中的 User）。
+// 用 mtime+size 判断缓存是否仍对应当前文件；文件被外部（旧版后端/手工编辑）改写时自动失效。
+func loadUsersCached() (Users, error) {
+	path := DataPath("users.json")
+	st, statErr := os.Stat(path)
+	if statErr == nil {
+		usersCacheMu.Lock()
+		if usersCache != nil && st.ModTime().Equal(usersCacheMod) && st.Size() == usersCacheSize {
+			cached := usersCache
+			usersCacheMu.Unlock()
+			return cached, nil
+		}
+		usersCacheMu.Unlock()
+	}
+	users, err := LoadUsers()
+	if err != nil {
+		return nil, err
+	}
+	// 文件不存在时不缓存：下次 stat 失败会重新走 LoadUsers，语义与原来一致。
+	if statErr == nil {
+		usersCacheMu.Lock()
+		usersCache = users
+		usersCacheMod = st.ModTime()
+		usersCacheSize = st.Size()
+		usersCacheMu.Unlock()
+	}
+	return users, nil
 }
 
 // GetUser 读取单个用户（返回拷贝）。
 // 用户不存在返回 (nil, nil)；返回的 User 可安全修改。
 func GetUser(username string) (User, error) {
-	users, err := LoadUsers()
+	users, err := loadUsersCached()
 	if err != nil {
 		return nil, err
 	}
@@ -486,6 +565,7 @@ func BumpTokenVersion(username string) error {
 	if err != nil {
 		return err
 	}
+	invalidateUsersCache()
 	// 同时清掉在线会话记录，避免「在线列表」残留已失效设备。
 	RevokeUserSessions(username)
 	return nil
@@ -519,7 +599,8 @@ func Authenticate(r *http.Request, failClosedOnDefault bool) (User, *HTTPError) 
 		return nil, NewHTTPError(401, "用户不存在")
 	}
 	// 版本号校验：改密、登出、管理员强制下线后旧令牌全部失效。
-	if !VerifyTokenVersion(claims) {
+	// 这里直接复用刚读到的用户，避免每请求重复解析一遍 users.json。
+	if claims.TV != u.Int("token_version") {
 		return nil, NewHTTPError(401, "登录状态已失效，请重新登录")
 	}
 	// 会话校验：被踢出的单台设备即使令牌未过期也要拒绝。
@@ -527,7 +608,7 @@ func Authenticate(r *http.Request, failClosedOnDefault bool) (User, *HTTPError) 
 		return nil, NewHTTPError(401, "该设备已被强制下线")
 	}
 	// 刷新在线时间（内部 60 秒节流，不会每个请求都写盘）。
-	EnsureOnlineSession(u.Username(), claims.Sid)
+	touchSession(claims.Sid, u.Username())
 	// 默认密码只允许走 loginOnly 路由（改密/2FA/会话自救），其余一律 403。
 	if failClosedOnDefault && IsDefaultPassword(u.PasswordHash()) {
 		return nil, NewHTTPError(403, "必须修改默认密码后才能使用面板")
@@ -552,10 +633,11 @@ func AuthenticateWS(r *http.Request) User {
 	if err != nil || u == nil {
 		return nil
 	}
-	if !VerifyTokenVersion(claims) || !SessionActive(claims.Sid) {
+	// 与 Authenticate 一致：复用刚读到的用户，避免重复解析用户表。
+	if claims.TV != u.Int("token_version") || !SessionActive(claims.Sid) {
 		return nil
 	}
-	EnsureOnlineSession(u.Username(), claims.Sid)
+	touchSession(claims.Sid, u.Username())
 	return u
 }
 
