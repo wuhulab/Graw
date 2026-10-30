@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1336,6 +1337,81 @@ func dockerPanelConfig() map[string]any {
 	return cfg
 }
 
+// parseRegistriesTOML 解析 Podman registries.conf（TOML）中的 search/mirrors/private。
+// 只做正则提取，不引入完整 TOML 解析器：该文件由面板或发行版生成，结构稳定。
+func parseRegistriesTOML(content string) (search, mirrors, private []string) {
+	search, mirrors, private = []string{}, []string{}, []string{}
+	collect := func(raw string) []string {
+		out := []string{}
+		for _, item := range strings.Split(raw, ",") {
+			item = strings.TrimSpace(strings.Trim(strings.TrimSpace(item), `"'`))
+			if item != "" {
+				out = append(out, item)
+			}
+		}
+		return out
+	}
+	if m := regexp.MustCompile(`unqualified-search-registries\s*=\s*\[([^\]]*)\]`).FindStringSubmatch(content); len(m) == 2 {
+		search = collect(m[1])
+	}
+	if m := regexp.MustCompile(`\[registries\.search\]\s*registries\s*=\s*\[([^\]]*)\]`).FindStringSubmatch(content); len(m) == 2 {
+		search = collect(m[1])
+	}
+	// [[registry]] / [[registry.mirror]] 块：解析 location / insecure。
+	for _, block := range regexp.MustCompile(`\[\[registry(?:\.([a-z]+))?\]\]`).FindAllStringSubmatchIndex(content, -1) {
+		end := len(content)
+		if next := regexp.MustCompile(`\[\[registry(?:\.([a-z]+))?\]\]`).FindStringIndex(content[block[1]:]); next != nil {
+			end = block[1] + next[0]
+		}
+		body := content[block[1]:end]
+		kind := ""
+		if block[2] >= 0 && block[3] >= 0 {
+			kind = content[block[2]:block[3]]
+		}
+		loc := ""
+		if m := regexp.MustCompile(`location\s*=\s*"([^"]+)"`).FindStringSubmatch(body); len(m) == 2 {
+			loc = m[1]
+		}
+		if loc == "" {
+			continue
+		}
+		if kind == "mirror" {
+			mirrors = append(mirrors, loc)
+		} else if kind == "" && strings.Contains(body, "insecure") {
+			private = append(private, loc)
+		}
+	}
+	return search, mirrors, private
+}
+
+// buildRegistriesTOML 生成 Podman registries.conf，把镜像加速作为 docker.io 的 mirror。
+func buildRegistriesTOML(search, mirrors, private []string) string {
+	if len(search) == 0 {
+		search = []string{"docker.io"}
+	}
+	lines := []string{"# 由 Graw 面板生成，请勿手动编辑本文件头", ""}
+	lines = append(lines, "unqualified-search-registries = "+jsonQuoteList(search))
+	lines = append(lines, "[registries.search]")
+	lines = append(lines, "registries = "+jsonQuoteList(search))
+	lines = append(lines, "", "[[registry]]", `location = "docker.io"`)
+	for _, m := range mirrors {
+		lines = append(lines, "", "[[registry.mirror]]", "location = "+strconv.Quote(m))
+	}
+	for _, p := range private {
+		lines = append(lines, "", "[[registry]]", "location = "+strconv.Quote(p), "insecure = true")
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+// jsonQuoteList 把字符串列表输出为 TOML 兼容的 JSON 风格数组。
+func jsonQuoteList(items []string) string {
+	quoted := make([]string, 0, len(items))
+	for _, item := range items {
+		quoted = append(quoted, strconv.Quote(item))
+	}
+	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
 func dockerConfigGetHandler(w http.ResponseWriter, r *http.Request) error {
 	if v, _ := dockerAvailable(); v == "" {
 		return NewHTTPError(503, "Docker/Podman 不可用")
@@ -1345,7 +1421,11 @@ func dockerConfigGetHandler(w http.ResponseWriter, r *http.Request) error {
 	mirrors := []string{}
 	private := []string{}
 	iptables := any(nil)
-	if engine == "docker" {
+	configType := "json"
+	if engine == "podman" {
+		configType = "toml"
+		_, mirrors, private = parseRegistriesTOML(content)
+	} else {
 		var data map[string]any
 		if strings.TrimSpace(content) != "" && json.Unmarshal([]byte(content), &data) == nil {
 			mirrors = toStringSlice(data["registry-mirrors"])
@@ -1364,7 +1444,7 @@ func dockerConfigGetHandler(w http.ResponseWriter, r *http.Request) error {
 		mirrors = panelMirrors
 	}
 	return WriteJSON(w, 200, map[string]any{
-		"engine": engine, "config_path": path, "config_type": "json",
+		"engine": engine, "config_path": path, "config_type": configType,
 		"mirror_enabled": len(mirrors) > 0, "mirrors": mirrors,
 		"private_registries": private, "iptables": iptables,
 		"iptables_supported": engine == "docker", "content": content,
@@ -1407,27 +1487,34 @@ func dockerConfigPutHandler(w http.ResponseWriter, r *http.Request) error {
 		private = append(private, p)
 	}
 	engine, path := dockerConfigPath()
-	if engine != "docker" {
-		return NewHTTPError(400, "当前引擎暂不支持可视化配置")
-	}
-	data := map[string]any{}
-	content := readHostText(path)
-	if strings.TrimSpace(content) != "" {
-		_ = json.Unmarshal([]byte(content), &data)
-		if data == nil {
-			data = map[string]any{}
+	configType := "json"
+	if engine == "podman" {
+		// Podman 的 registries.conf 是 TOML：保留已有 search 列表，重建 registry/mirror 段。
+		configType = "toml"
+		search, _, _ := parseRegistriesTOML(readHostText(path))
+		if err := writeHostText(path, buildRegistriesTOML(search, mirrors, private)); err != nil {
+			return NewHTTPError(500, "写入引擎配置文件失败: "+err.Error())
 		}
-	}
-	data["registry-mirrors"] = mirrors
-	if len(private) > 0 {
-		data["insecure-registries"] = private
 	} else {
-		delete(data, "insecure-registries")
-	}
-	data["iptables"] = req.Iptables
-	b, _ := json.MarshalIndent(data, "", "  ")
-	if err := writeHostText(path, string(b)); err != nil {
-		return NewHTTPError(500, "写入引擎配置文件失败: "+err.Error())
+		data := map[string]any{}
+		content := readHostText(path)
+		if strings.TrimSpace(content) != "" {
+			_ = json.Unmarshal([]byte(content), &data)
+			if data == nil {
+				data = map[string]any{}
+			}
+		}
+		data["registry-mirrors"] = mirrors
+		if len(private) > 0 {
+			data["insecure-registries"] = private
+		} else {
+			delete(data, "insecure-registries")
+		}
+		data["iptables"] = req.Iptables
+		b, _ := json.MarshalIndent(data, "", "  ")
+		if err := writeHostText(path, string(b)); err != nil {
+			return NewHTTPError(500, "写入引擎配置文件失败: "+err.Error())
+		}
 	}
 	panel := dockerPanelConfig()
 	panel["iptables"] = req.Iptables
@@ -1436,7 +1523,8 @@ func dockerConfigPutHandler(w http.ResponseWriter, r *http.Request) error {
 	panel["mirrors"] = mirrors
 	_ = WriteJSONFile(DataPath("docker_config.json"), panel)
 	return WriteJSON(w, 200, map[string]any{
-		"ok": true, "config_path": path, "config_type": "json", "iptables_supported": true,
+		"ok": true, "config_path": path, "config_type": configType,
+		"iptables_supported": engine == "docker",
 	})
 }
 

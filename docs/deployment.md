@@ -149,11 +149,16 @@ graw.bat log
 | `GRAW_MAX_BODY_MB` | 普通请求体大小上限（MB） | `16` | `backend-go/internal/graw/cfg.go` |
 | `GRAW_MAX_UPLOAD_MB` | multipart 上传大小上限（MB） | `2048` | `backend-go/internal/graw/cfg.go` |
 | `GRAW_APPSTORE_ALLOW_PRIVATE_NET` | 设为 `1` 时允许应用商店索引 / compose 指向内网私有地址（否则拒绝非公网目标，SSRF 防护） | 空（仅公网） | `backend-go/internal/graw/handlers_appstore.go` |
+| `GRAW_NOTIFY_ALLOW_PRIVATE_NET` | 设为 `1` 时允许通知渠道 Webhook 指向内网私有地址（回环 / 云元数据等受保护地址始终拒绝） | 空（仅公网） | `backend-go/internal/graw/ssrf.go` |
+| `GRAW_UPTIME_ALLOW_PRIVATE_NET` | 设为 `1` 时允许站点可用性监控探测内网地址（回环 / 云元数据等受保护地址始终拒绝） | 空（仅公网） | `backend-go/internal/graw/ssrf.go` |
+| `GRAW_SVCMON_ALLOW_PRIVATE_NET` | 设为 `0` 时服务/端口监控收紧为仅公网（默认允许本机与内网服务） | `1`（允许内网） | `backend-go/internal/graw/ssrf.go` |
+| `GRAW_AGENT_TS_WINDOW` | Agent 签名时间窗（秒），同时用于 nonce 清理；允许 30-3600 | `300` | `backend-go/internal/graw/agent.go` |
+| `GRAW_CONTAINER_NAME` | 面板自身容器名（host 网络部署下 hostname 是宿主机名，自动探测 compose 目录时需显式指定） | 空（使用容器 hostname） | `backend-go/internal/graw/handlers_protection_tamper_update.go` |
 | `GRAW_RUNTIME_MOUNT_DENY` | 追加禁止作为运行时容器挂载源的宿主路径（逗号分隔） | 空；默认已拒绝 `/etc`、`/usr`、`/var`、`/root` 等系统根 | `backend-go/internal/graw/handlers_runtime.go` |
 | `TRUSTED_PROXY_DEPTH` | 反向代理层数，用于从 `X-Forwarded-For` 还原真实客户端 IP | `0`（直接部署，完全忽略 XFF） | `backend-go/internal/graw/cfg.go` |
 | `TZ` | 容器时区 | 镜像内 `Asia/Shanghai` | `Dockerfile` |
 
-> Go 版未读取的 Python 旧版变量：`GRAW_ENABLE_DOCS`（Go 版未提供 `/docs`）、`GRAW_NOTIFY_ALLOW_PRIVATE_NET`、`GRAW_UPTIME_ALLOW_PRIVATE_NET`、`GRAW_SVCMON_ALLOW_PRIVATE_NET`、`GRAW_CONTAINER_NAME`、`GRAW_AGENT_TS_WINDOW`（Go 版固定 300 秒）。需要这些开关时请使用 `backend/` 的 Python 旧版。
+> Go 版未读取的 Python 旧版变量仅剩 `GRAW_ENABLE_DOCS`（Go 版不提供 `/docs`、`/redoc`、`/openapi.json`）。
 >
 > `GRAW_STORE_REPO` 仅用于应用商店索引生成脚本（`app-store/scripts/generate_index.py`）的构建期调用，**不是**面板运行时变量。
 

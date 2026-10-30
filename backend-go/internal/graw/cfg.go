@@ -165,6 +165,47 @@ func envMB(name string, def int64) int64 {
 	return n * 1024 * 1024
 }
 
+// dataPathVariants 返回面板数据目录在不同路径视角下的写法：
+//   - 容器内路径（GetConfig().DataDir）；
+//   - GRAW_HOST_DATA 声明的宿主机实际路径；
+//   - HOST_ROOT + 容器内路径（容器内映射到宿主机根后的位置）。
+//
+// 文件管理/备份等接口接收的是「宿主机视角」路径，只比对容器内路径会漏掉
+// 容器部署下的 data 目录（例如 /opt/graw/data），从而允许读取 secret.key。
+func dataPathVariants() []string {
+	cfg := GetConfig()
+	out := []string{cfg.DataDir}
+	if cfg.HostDataDir != "" {
+		out = append(out, cfg.HostDataDir)
+	}
+	if cfg.HostRoot != "" {
+		out = append(out, filepath.Join(cfg.HostRoot, strings.TrimPrefix(cleanHostView(cfg.DataDir), "/")))
+	}
+	return out
+}
+
+// pathInDataDir 判断给定路径（任意视角）是否位于面板数据目录内。
+func pathInDataDir(p string) bool {
+	if strings.TrimSpace(p) == "" {
+		return false
+	}
+	norm := func(s string) string {
+		s = filepath.ToSlash(filepath.Clean(s))
+		if isWindows() || remoteActive() {
+			s = strings.ToLower(s)
+		}
+		return s
+	}
+	np := norm(p)
+	for _, base := range dataPathVariants() {
+		nb := norm(base)
+		if np == nb || strings.HasPrefix(np, nb+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // DataPath 返回 data 目录下的文件路径。
 //
 // 注意：本函数只做拼接，不做路径净化；parts 若来自用户输入，调用方需先校验。
