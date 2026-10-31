@@ -1689,7 +1689,10 @@ func registerReportRoutes(a *App) {
 		})
 	})
 	a.Get("/api/report/list", perm("report"), func(w http.ResponseWriter, r *http.Request) error {
-		files := []map[string]any{}
+		// 返回文件名数组（与 Python 旧版 / 前端 ReportWindow 的契约一致）：
+		// 前端把列表项当作字符串渲染并拼进 /api/report/{fname}，返回对象会导致
+		// 列表显示 JSON、点击后请求成 "[object Object]"。
+		files := []string{}
 		entries, _ := os.ReadDir(reportDir())
 		for _, e := range entries {
 			name := e.Name()
@@ -1697,16 +1700,9 @@ func registerReportRoutes(a *App) {
 			if e.IsDir() || (!strings.HasSuffix(name, ".txt") && !strings.HasSuffix(name, ".md")) {
 				continue
 			}
-			info, _ := e.Info()
-			size := int64(0)
-			mod := time.Time{}
-			if info != nil {
-				size = info.Size()
-				mod = info.ModTime()
-			}
-			files = append(files, map[string]any{"name": name, "size": size, "created_at": mod.Format("2006-01-02 15:04:05")})
+			files = append(files, name)
 		}
-		sort.Slice(files, func(i, j int) bool { return str(files[i]["name"]) > str(files[j]["name"]) })
+		sort.Slice(files, func(i, j int) bool { return files[i] > files[j] })
 		limit := QueryInt(r, "limit", 30)
 		if limit <= 0 {
 			limit = 30

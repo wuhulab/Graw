@@ -68,7 +68,7 @@ import { appStoreApi } from '../../api'   // 应用商店 API：发起流式安�
 import { localizedName } from '../../appStoreL10n'   // 应用索引内嵌翻译（多语言应用名）
 import { Terminal, AlertTriangle, ListChecks } from 'lucide-vue-next'   // 工具栏/结果框图标
 
-const { t, locale } = useI18n()
+const { t, te, locale } = useI18n()
 
 const props = defineProps({
   app: Object,   // 要安装的应用信息（名称用于标题展示）
@@ -77,10 +77,12 @@ const props = defineProps({
 const emit = defineEmits(['close', 'openTaskCenter'])   // close 关窗；openTaskCenter 跳转任务中心
 
 // 应用显示名称：优先索引内嵌翻译（i18n.<locale>.yml），
-// 其次前端语言包内 appNames 覆盖，最后回退索引默认名称
-const appDisplayName = computed(() =>
-  localizedName(props.app, locale.value) || t('appstore.appNames.' + props.app.id, props.app?.name || '')
-)
+// 其次前端语言包内 appNames 覆盖，最后回退索引默认名称。
+// 用 te() 先判断 key 是否存在：t(key, 默认值) 在缺 key 时仍会触发 intlify 警告。
+const appDisplayName = computed(() => {
+  const key = 'appstore.appNames.' + props.app.id
+  return localizedName(props.app, locale.value) || (te(key) ? t(key) : (props.app?.name || ''))
+})
 
 const phase = ref('running') // running | done | error
 const lines = ref([])   // 已接收的日志行（每行 {type, text}）

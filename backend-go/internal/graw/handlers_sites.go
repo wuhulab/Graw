@@ -648,6 +648,13 @@ func siteOnline(port int) bool {
 // --- 真实站点发现 ---
 
 func discoverExternalSites() []map[string]any {
+	// Windows 本机不探测 Linux 的 nginx/openresty 站点目录：
+	// 这些路径在 Windows 上不存在，且 os.Stat 对它们做「否定查找」非常慢
+	//（实测首次可达 6-9 秒，60 秒左右才走缓存），会让网站列表/防盗链页长时间「加载中」。
+	// 仅当目标为本机 Windows 时跳过；远程 SSH 节点仍需正常发现真实站点。
+	if windowsTarget() {
+		return []map[string]any{}
+	}
 	dirs := []string{webServerBaseDir() + "/sites-available", webServerBaseDir() + "/sites-enabled", "/opt/1panel/www/conf.d"}
 	seen := map[string]bool{}
 	out := []map[string]any{}

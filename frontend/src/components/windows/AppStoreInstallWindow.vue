@@ -170,16 +170,18 @@ import { appStoreComposeState } from '../../store/appStoreCompose'   // 跨窗�
 import { localizedName, localizedPortLabel } from '../../appStoreL10n'   // 应用名/端口的多语言文案
 import { Download, Pencil, CheckCircle2, AlertTriangle } from 'lucide-vue-next'   // 工具栏/弹窗图标
 
-const { t, locale } = useI18n()
+const { t, te, locale } = useI18n()
 
 const props = defineProps({ app: Object })   // 选中的应用信息（含版本/端口/分类/warn 等元数据）
 const emit = defineEmits(['close', 'openComposeEditor', 'openInstallLog'])   // close 关窗；openComposeEditor 打开编辑器；openInstallLog 打开安装日志窗口
 
 // 应用显示名称：优先索引内嵌翻译（i18n.<locale>.yml），
-// 其次前端语言包内 appNames 覆盖，最后回退索引默认名称
-const appDisplayName = computed(() =>
-  localizedName(props.app, locale.value) || t('appstore.appNames.' + props.app.id, props.app?.name || '')
-)
+// 其次前端语言包内 appNames 覆盖，最后回退索引默认名称。
+// 用 te() 先判断 key 是否存在：t(key, 默认值) 在缺 key 时仍会触发 intlify 警告。
+const appDisplayName = computed(() => {
+  const key = 'appstore.appNames.' + props.app.id
+  return localizedName(props.app, locale.value) || (te(key) ? t(key) : (props.app?.name || ''))
+})
 
 // 常用时区候选：时区输入框的 datalist 补全列表
 const commonTimezones = [

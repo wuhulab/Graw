@@ -16,18 +16,18 @@ import (
 // 站点扩展：SSL 证书、伪静态、站点增强（防盗链/gzip/缓存）、PHP 版本、访问统计、WAF。
 
 var rewriteTemplates = map[string]map[string]any{
-	"wordpress":   {"name": "WordPress", "content": "location / {\n    try_files $uri $uri/ /index.php?$args;\n}"},
-	"laravel":     {"name": "Laravel", "content": "location / {\n    try_files $uri $uri/ /index.php?$query_string;\n}"},
-	"thinkphp":    {"name": "ThinkPHP", "content": "location / {\n    if (!-e $request_filename) {\n        rewrite ^(.*)$ /index.php?s=$1 last;\n    }\n}"},
-	"typecho":     {"name": "Typecho", "content": "location / {\n    if (!-e $request_filename) {\n        rewrite ^(.*)$ /index.php$1 last;\n    }\n}"},
-	"discuz":      {"name": "Discuz", "content": "location / {\n    rewrite ^([^\\.]*)/topic-(.+)\\.html$ /portal.php?mod=topic&topic=$2 last;\n    rewrite ^([^\\.]*)/([0-9]+)-(.*)\\.html$ /index.php?$1=$2 last;\n}"},
-	"dedecms":     {"name": "DedeCMS", "content": "location / {\n    rewrite ^/list-([0-9]+)-([0-9]+)\\.html$ /plus/list.php?tid=$1&PageNo=$2 last;\n    rewrite ^/view-([0-9]+)-([0-9]+)\\.html$ /plus/view.php?aid=$1&pageno=$2 last;\n}"},
-	"codeigniter": {"name": "CodeIgniter", "content": "location / {\n    try_files $uri $uri/ /index.php?$query_string;\n}"},
-	"yii":         {"name": "Yii2", "content": "location / {\n    try_files $uri $uri/ /index.php?$args;\n}"},
-	"symfony":     {"name": "Symfony", "content": "location / {\n    try_files $uri /index.php$is_args$args;\n}"},
-	"drupal":      {"name": "Drupal", "content": "location / {\n    try_files $uri @rewrite;\n}\nlocation @rewrite {\n    rewrite ^/(.*)$ /index.php?q=$1 last;\n}"},
-	"joomla":      {"name": "Joomla", "content": "location / {\n    try_files $uri $uri/ /index.php?$args;\n}"},
-	"zblog":       {"name": "Z-Blog", "content": "location / {\n    try_files $uri $uri/ /index.php?$args;\n}"},
+	"wordpress":   {"name": "WordPress", "desc": "WordPress 博客/企业站常用伪静态", "content": "location / {\n    try_files $uri $uri/ /index.php?$args;\n}"},
+	"laravel":     {"name": "Laravel", "desc": "Laravel 框架路由伪静态（public 入口）", "content": "location / {\n    try_files $uri $uri/ /index.php?$query_string;\n}"},
+	"thinkphp":    {"name": "ThinkPHP", "desc": "ThinkPHP 5/6/8 框架路由伪静态", "content": "location / {\n    if (!-e $request_filename) {\n        rewrite ^(.*)$ /index.php?s=$1 last;\n    }\n}"},
+	"typecho":     {"name": "Typecho", "desc": "Typecho 轻量博客伪静态", "content": "location / {\n    if (!-e $request_filename) {\n        rewrite ^(.*)$ /index.php$1 last;\n    }\n}"},
+	"discuz":      {"name": "Discuz", "desc": "Discuz 论坛伪静态（X3 系列）", "content": "location / {\n    rewrite ^([^\\.]*)/topic-(.+)\\.html$ /portal.php?mod=topic&topic=$2 last;\n    rewrite ^([^\\.]*)/([0-9]+)-(.*)\\.html$ /index.php?$1=$2 last;\n}"},
+	"dedecms":     {"name": "DedeCMS", "desc": "织梦 CMS 栏目/文章伪静态", "content": "location / {\n    rewrite ^/list-([0-9]+)-([0-9]+)\\.html$ /plus/list.php?tid=$1&PageNo=$2 last;\n    rewrite ^/view-([0-9]+)-([0-9]+)\\.html$ /plus/view.php?aid=$1&pageno=$2 last;\n}"},
+	"codeigniter": {"name": "CodeIgniter", "desc": "CodeIgniter 框架路由伪静态", "content": "location / {\n    try_files $uri $uri/ /index.php?$query_string;\n}"},
+	"yii":         {"name": "Yii2", "desc": "Yii2 框架路由伪静态", "content": "location / {\n    try_files $uri $uri/ /index.php?$args;\n}"},
+	"symfony":     {"name": "Symfony", "desc": "Symfony 框架路由伪静态", "content": "location / {\n    try_files $uri /index.php$is_args$args;\n}"},
+	"drupal":      {"name": "Drupal", "desc": "Drupal 站点伪静态", "content": "location / {\n    try_files $uri @rewrite;\n}\nlocation @rewrite {\n    rewrite ^/(.*)$ /index.php?q=$1 last;\n}"},
+	"joomla":      {"name": "Joomla", "desc": "Joomla 站点伪静态", "content": "location / {\n    try_files $uri $uri/ /index.php?$args;\n}"},
+	"zblog":       {"name": "Z-Blog", "desc": "Z-Blog 博客伪静态", "content": "location / {\n    try_files $uri $uri/ /index.php?$args;\n}"},
 }
 
 func rewriteFragment(id string) string {
@@ -347,7 +347,7 @@ func registerRewriteRoutes(a *App) {
 		items := []map[string]any{}
 		for id, t := range rewriteTemplates {
 			items = append(items, map[string]any{
-				"id": id, "name": t["name"], "content": t["content"],
+				"id": id, "name": t["name"], "desc": t["desc"], "content": t["content"],
 			})
 		}
 		sort.Slice(items, func(i, j int) bool { return str(items[i]["name"]) < str(items[j]["name"]) })

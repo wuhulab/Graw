@@ -136,13 +136,15 @@ import { localizedName, localizedDescription } from '../../appStoreL10n'   // �
 import { formBus } from '../../store/formBus'   // 表单保存信号：索引配置窗口保存成功后强制刷新
 import { Store, Settings2, Globe, Github, Container, AlertTriangle, Loader2, BookOpen, Search, ShieldAlert } from 'lucide-vue-next'   // 工具栏/卡片/弹窗图标
 
-const { t, locale } = useI18n()
+const { t, te, locale } = useI18n()
 const emit = defineEmits(['openAppInstall', 'openReadme', 'openAppStoreConfig', 'close'])   // openAppInstall 打开安装表单；openReadme 打开 README；openAppStoreConfig 打开索引配置窗口；close 关窗
 
 // 应用显示名称：优先索引内嵌翻译（i18n.<locale>.yml），
-// 其次前端语言包内 appNames 覆盖，最后回退索引默认名称
+// 其次前端语言包内 appNames 覆盖，最后回退索引默认名称。
+// 用 te() 先判断 key 是否存在：t(key, 默认值) 在缺 key 时仍会触发 intlify 警告。
 function appName(app) {
-  return localizedName(app, locale.value) || t('appstore.appNames.' + app.id, app.name)
+  const key = 'appstore.appNames.' + app.id
+  return localizedName(app, locale.value) || (te(key) ? t(key) : (app.name || ''))
 }
 
 // 应用显示描述：优先索引内嵌翻译，否则回退索引默认描述
