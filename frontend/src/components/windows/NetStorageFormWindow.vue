@@ -19,7 +19,7 @@
         <label class="field span-2">
           <span class="field-label">{{ $t('netstorage.name') }} <b class="req">*</b></span>
           <input v-model.trim="form.name" class="inp" maxlength="64" :placeholder="$t('netstorage.namePlaceholder')"
-                 :class="{ err: err && !form.name }" />
+                 :class="{ err: errorMsg && !form.name }" />
         </label>
 
         <label class="field">
@@ -42,7 +42,7 @@
         <label class="field span-2">
           <span class="field-label">{{ $t('netstorage.hostLabel') }} <b class="req">*</b></span>
           <input v-model.trim="form.host" class="inp mono" maxlength="255" :placeholder="$t('netstorage.hostPlaceholder')"
-                 :class="{ err: err && !form.host }" />
+                 :class="{ err: errorMsg && !form.host }" />
         </label>
 
         <label class="field">

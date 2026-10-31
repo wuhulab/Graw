@@ -5,6 +5,9 @@ echo ====================================
 echo  Graw Server Panel - Windows Start
 echo ====================================
 
+echo [1/3] Freeing dev ports 8000 (backend) and 5173 (frontend)...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-NetTCPConnection -LocalPort 8000,5173 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { if ($_ -ne 0) { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue; Write-Host ('  killed PID ' + $_ + ' (port in use)') } }; Start-Sleep -Milliseconds 300"
+
 where go >nul 2>nul
 if errorlevel 1 (
     echo [ERROR] Go not found. Please install Go 1.23+ first.
@@ -12,13 +15,13 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [1/2] Downloading Go modules...
+echo [2/3] Downloading Go modules...
 pushd backend-go
 call go mod download
 popd
 
 if not exist frontend\node_modules (
-    echo [2/2] Installing frontend dependencies...
+    echo [3/3] Installing frontend dependencies...
     pushd frontend
     call npm install
     popd

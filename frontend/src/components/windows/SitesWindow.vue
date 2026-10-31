@@ -306,7 +306,10 @@ async function doDeleteSite() {
 async function load() {
   const data = await sitesApi.list()
   sites.value = data.sites || []             // 后端没装 Web 服务时可能没有 sites 字段，兜空数组以免表格渲染报错
-  webServer.value = data.web_server || ''    // 空字符串会在界面上显示成「未安装」提示
+  // 后端未安装 Web 服务时返回哨兵值 "none"（见 handlers_sites.go 的 webServerType），
+  // 它不是可本地化文案，直接展示会渲染成原始英文 "none"；这里统一归一为空串，
+  // 由模板走「未安装」的本地化提示分支。
+  webServer.value = data.web_server === 'none' ? '' : (data.web_server || '')
 }
 
 // --- 展示 server_name / 域名：拼「域名」列要显示的文本 ---
