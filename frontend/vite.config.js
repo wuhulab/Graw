@@ -14,8 +14,8 @@ export default defineConfig({
     port: 5173,                                        // 前端开发服务器端口（npm run dev 访问地址）
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',               // 后端 FastAPI 地址（开发期）
-        changeOrigin: true,                            // 改写 Host 头，使后端视为同源请求
+        target: 'http://localhost:8000',               // 后端 Go 地址（开发期）
+        changeOrigin: false,                           // 保留浏览器原始 Host：后端 WS 的 CheckOrigin 用 Origin.Host 与 r.Host 比对，改写 Host 会导致全部 WS 握手 403
         ws: true                                       // 同时代理 WebSocket（监控流 / 终端）
       }
     }
