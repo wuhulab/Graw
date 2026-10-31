@@ -33,6 +33,7 @@
   - 修复深链失效（真实浏览器回归发现的两处）：`immediate` watch 在 setup 同步阶段执行 `openWindow` 踩 TDZ（部分 ref 尚未初始化）被静默吞掉——深链推迟到挂载后的宏任务执行；代理端点弹性鉴权 Query 参数名与前端 `__graw_token` 不一致导致 401——改为 `Query(alias="__graw_token")`；深链直达同时绕过 Star 引导弹窗（`openWindow(key, props, { skipStarGate })`，手动点击入口的引导不变）
 - **非 Docker 守护进程一键命令**：仓库根目录新增 `graw.sh`（Linux/macOS）与 `graw.bat`（Windows）——`deps` / `build` / `start` / `stop` / `restart` / `status` / `log` 七个子命令：自动下载 Go 模块、构建前端并编译 Go 后端，再以脱离控制台的方式启动守护进程（PID 写 `logs/graw.pid`、日志写 `logs/graw.log`、轮询 `/api/health` 就绪）；支持 `GRAW_PORT` / `GRAW_HOST`，详见 `docs/deployment.md` 方式四
 - **启动页语录彩蛋**：加载动画（boot-splash）的 Graw 字样前随机展示一句诗（露从今夜白 / 见人初解语呕哑 / 欲渡黄河冰塞川），纯内联实现，失败静默跳过不影响启动
+- **Release 变更摘要 CLI（graw-relnote）**：`backend-go/cmd/relnote` 根据两个 tag 之间的提交自动生成版本变更摘要，按提交前缀（feat / add / fix / 修复 等）归类并逐条列出每次提交，统计作者与 `Co-authored-by` 共同作者，附 GitHub compare 与单条提交链接；`--create` 直接创建 GitHub Release（同名已存在时改为更新，可安全重跑），新增 `.github/workflows/release.yml` 在每次推送 `v*` tag 后自动执行；本地预览 `cd backend-go && go run ./cmd/relnote --tag v1.9.2`
 
 ### Changed
 - **默认后端切换为 Go**：根 `Dockerfile`（docker-publish 多架构构建与 docker-compose 共用）改为「前端 Node 构建 → Go 交叉编译 → Alpine 运行时」；CI 新增 Go 编译/vet/测试 job，CodeQL 增加 Go 扫描；`start.sh` / `start.bat` 开发启动与 `graw.sh` / `graw.bat` 守护进程部署均改用 `backend-go`。Python/FastAPI 保留在 `backend/` 作为旧版实现与回归测试。

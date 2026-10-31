@@ -1,0 +1,59 @@
+# ============================================================
+# Graw Release —— 每次推送版本 tag 自动生成 GitHub Release
+#
+# 变更摘要由 backend-go/cmd/relnote 生成：
+#   - 读取「上一个 tag .. 当前 tag」之间的提交（首次发布则读全部历史）；
+#   - 按提交前缀（feat / add / fix / 修复 ...）归类，逐条列出每次提交；
+#   - 统计作者与 Co-authored-by 共同作者，输出贡献者清单；
+#   - 附 GitHub compare 链接，方便对照完整差异。
+#
+# 说明：
+#   - 同一 tag 重跑时命令会更新已有 Release（幂等），不会因「已存在」失败；
+#   - 无需额外 Secrets，使用 Actions 内置 GITHUB_TOKEN（下方 contents: write）；
+#   - Docker 镜像构建发布见 docker-publish.yml，与本工作流互不影响。
+# ============================================================
+
+name: Release Notes
+
+on:
+  push:
+    tags:
+      - 'v*'            # 版本 tag，如 v1.9.2
+
+# 创建 / 更新 Release 需要写仓库内容
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Generate Release Notes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend-go
+    steps:
+      # 1. 检出完整历史与全部 tag（浅克隆拿不到上一个 tag 和提交区间）
+      - name: Checkout (full history + tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 2. 安装 Go（版本以 backend-go/go.mod 为准）
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend-go/go.mod
+          cache-dependency-path: backend-go/go.sum
+
+      # 3. 生成摘要并创建 / 更新 Release
+      #    GITHUB_REPOSITORY / GITHUB_API_URL / GITHUB_SERVER_URL 由 Actions 自动注入，
+      #    命令据此定位仓库并调用 API，无需再传 --repo。
+      - name: Generate release notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: go run ./cmd/relnote --tag "$GITHUB_REF_NAME" --output ../release-notes.md --create
+
+      # 4. 把摘要写进 Actions 运行摘要，打开页面就能看到本版本变更
+      - name: Write job summary
+        run: cat ../release-notes.md >> "$GITHUB_STEP_SUMMARY"
