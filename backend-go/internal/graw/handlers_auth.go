@@ -335,7 +335,6 @@ func loginHandler(w http.ResponseWriter, r *http.Request) error {
 		RecordLogin(req.Username, ip, ua, "failed", "密码错误")
 		return NewHTTPError(401, "用户名或密码错误")
 	}
-	clearFailures(r, req.Username)
 	public := PublicUser(user)
 	if user.Bool("otp_enabled") {
 		code := strings.TrimSpace(req.OTPCode)
@@ -352,6 +351,9 @@ func loginHandler(w http.ResponseWriter, r *http.Request) error {
 			return NewHTTPError(401, "两步验证码错误")
 		}
 	}
+	// 只有密码与 2FA 全部通过后才清零失败记录：否则知道密码的攻击者可在每次
+	// 尝试间用「正确密码」重置计数，无限暴力枚举 6 位 TOTP 验证码。
+	clearFailures(r, req.Username)
 	if IsDefaultPassword(user.PasswordHash()) {
 		public["must_change_password"] = true
 		public["default_password"] = true
@@ -475,7 +477,9 @@ func verifyPasswordHandler(w http.ResponseWriter, r *http.Request) error {
 }
 
 func meHandler(w http.ResponseWriter, r *http.Request) error {
-	return WriteJSON(w, 200, CurrentUser(r))
+	// 只返回脱敏字段：CurrentUser 是完整用户记录（含 password 哈希与 otp_secret），
+	// 直接回传等于把密码哈希/TOTP 密钥交给前端（与 Python _public_user 对齐）。
+	return WriteJSON(w, 200, PublicUser(CurrentUser(r)))
 }
 
 func changePasswordHandler(w http.ResponseWriter, r *http.Request) error {

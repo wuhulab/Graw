@@ -8,6 +8,13 @@
 ## [Unreleased]
 
 ### Added
+- **Go 后端补齐 Python 旧版缺失能力**：
+  - 统一出站 SSRF 防护（`backend-go/internal/graw/ssrf.go`）：通知 Webhook、站点可用性、备份 WebDAV、网络储存、服务/端口监控在拨号阶段校验并固定已解析 IP（防 DNS rebinding），拒绝回环 / 链路本地（含云元数据）/ 组播 / 保留地址；支持 `GRAW_NOTIFY_ALLOW_PRIVATE_NET` / `GRAW_UPTIME_ALLOW_PRIVATE_NET` / `GRAW_SVCMON_ALLOW_PRIVATE_NET`
+  - 通知中心对齐 Python 语义：顶层 `enabled/interval_seconds/cooldown_seconds`、渠道 `has_password/has_bot_token/has_key` 脱敏、Server酱 `key` 字段、SMTP `ssl/starttls/subject`、资源阈值后台告警与冷却去重、告警记录字段与前端对齐
+  - 站点可用性 / 服务与端口监控补齐后台调度、`last_status/last_detail/last_checked_at/down_since/history` 状态机、预期状态码校验、systemd `enable/disable` 与 `is_enabled` 回验；证书到期检查对齐 `remind_days` 多档位、`ok/warn/expired` 状态与「每档位只提醒一次」去重
+  - 巡检报告补齐五段内容（资源 24h / 证书 / 服务 / 可用性 / 告警），报告改存 `.txt` 并保留 30 份轮转
+  - 内网映射代理对齐 Python：剥离 `__graw_token`、改写 `Location`、放宽 iframe 头、目标不可达返回友好 HTML 页
+  - Docker 引擎配置支持 Podman `registries.conf`（TOML）读取与写入；`GRAW_AGENT_TS_WINDOW`、`GRAW_CONTAINER_NAME` 与 compose 目录自动探测
 - **Go 重构版后端（backend-go）**：用 Go 完整重写 Python/FastAPI 后端，接口路径、请求/响应结构与 `data/` 文件格式保持兼容，前端无需改动即可切换
   - 单包实现 `backend-go/internal/graw/`：Go 1.22 `ServeMux` 路由、JWT(HS256)+bcrypt+TOTP 鉴权、会话/权限模型、安全响应头与请求体限额、SPA 静态托管
   - 覆盖原后端全部业务路由（鉴权/系统监控 + WebSocket、Docker/文件/进程/磁盘/终端、网站与 WAF/SSL/伪静态/访问统计、数据库、计划任务/防火墙/日志、应用商店/运行时/任务、备份/面板备份/回滚/巡检报告、通知/可用性/证书/服务监控、多节点与 Agent 隧道、SSH 密钥/端口转发/批量操作、Frp/内网映射/网络储存/VPN/Git 部署/插件协议）
@@ -31,6 +38,15 @@
 - **默认后端切换为 Go**：根 `Dockerfile`（docker-publish 多架构构建与 docker-compose 共用）改为「前端 Node 构建 → Go 交叉编译 → Alpine 运行时」；CI 新增 Go 编译/vet/测试 job，CodeQL 增加 Go 扫描；`start.sh` / `start.bat` 开发启动与 `graw.sh` / `graw.bat` 守护进程部署均改用 `backend-go`。Python/FastAPI 保留在 `backend/` 作为旧版实现与回归测试。
 
 ### Fixed
+- **Go 后端安全加固**：
+  - `/api/auth/me` 不再返回完整用户记录（此前会回传 bcrypt 密码哈希与 TOTP 密钥），改为脱敏后的 `PublicUser`
+  - 面板自身安全边界（用户管理 / 节点 / SSH 密钥 / 插件 / 更新 / 面板备份 / 安全入口等 `adminOnly` 路由）改为要求「完整管理员」，受限管理员无法再通过改自己的 `perms` 提权
+  - 登录限流：失败计数只在密码与 2FA 全部通过后清零，避免知道密码的攻击者反复重置计数、无限爆破 TOTP
+  - FRP `configPath` 限制在 `/etc/frp` 内并阻断 `..`/符号链接逃逸；`serverBin/clientBin` 只允许 frps/frpc 类可执行文件；VPN 核心 `binPath` 只允许 mihomo/clash 类程序
+  - 网络储存：连接创建/更新补齐类型、主机、端口、基础路径与凭据校验；FTP/FTPS 支持显式 TLS 与基础目录；WebDAV 支持完整根 URL、禁止跟随重定向；SMB 命令串拒绝 `"` `;` `!` 等可逃逸字符；PASV 数据连接固定回原主机
+  - 文件管理 / 备份 / 日志 / 删除守卫的面板 `data/` 目录判定改为覆盖「容器内路径 + `GRAW_HOST_DATA` + `HOST_ROOT` 映射」三种视角；容器部署下不再可经宿主机视角读取 `secret.key` / `users.json`
+  - 文件管理路径校验在目标尚不存在时解析最近已存在的父目录，阻断经符号链接父目录写入面板 `data/` 目录
+  - 服务监控远端端口探测先做 SSRF 与字符校验，避免把用户输入直接拼进远程 shell 脚本；访问日志去除路径中的 CR/LF 防日志伪造
 - 备份恢复（`backup.py`）与面板备份导入（`panelbackup.py`）的 `tarfile.extractall` 增加 `filter="data"` 参数（旧版本 Python 自动降级），消除 Python 3.14 起的 DeprecationWarning，同时作为既有逐成员校验之外的第二道防线
 
 ## [1.8.0] - 2026-10-06

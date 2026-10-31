@@ -149,6 +149,11 @@ func (a *App) Patch(pattern string, lv routeLevel, fn handlerFn) { a.route("PATC
 // Delete 注册 DELETE 路由。
 func (a *App) Delete(pattern string, lv routeLevel, fn handlerFn) { a.route("DELETE", pattern, lv, fn) }
 
+// routeMethod 按方法名注册路由（用于同一处理器挂多个 HTTP 方法，如内网映射代理）。
+func (a *App) routeMethod(method, pattern string, lv routeLevel, fn handlerFn) {
+	a.route(strings.ToUpper(method), pattern, lv, fn)
+}
+
 // route 是统一的注册实现：把身份校验前移到分发之前，业务 handler 只负责业务错误。
 // 鉴权通过后把 User 写入请求 context，处理器用 CurrentUser(r) 取用。
 func (a *App) route(method, pattern string, lv routeLevel, fn handlerFn) {
@@ -166,9 +171,11 @@ func (a *App) route(method, pattern string, lv routeLevel, fn handlerFn) {
 				writeErr(w, err)
 				return
 			}
-			// 完整管理员判定：admin 路由不看 perms 白名单。
-			if lv.admin && u.Role() != "admin" {
-				writeErr(w, NewHTTPError(403, "需要管理员权限"))
+			// admin 路由是「面板自身安全边界」（用户管理 / 节点 / SSH 密钥 / 插件 /
+			// 更新 / 面板备份等），必须要求完整管理员：受限管理员（perms 白名单）
+			// 若能访问这些接口，可直接改自己的 perms 提权为完整管理员。
+			if lv.admin && !IsFullAdmin(u) {
+				writeErr(w, NewHTTPError(403, "需要完整管理员权限"))
 				return
 			}
 			// 模块权限判定：完整管理员（perms 为空）在 HasPerm 中恒通过。
@@ -260,7 +267,9 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logging := &statusWriter{ResponseWriter: w, status: 200}
 	// 访问日志：只记路径不记查询串（WS 令牌在 ?token= 里，不能落日志）。
 	defer func() {
-		log.Printf("graw: %s %s %d %s %s", r.Method, r.URL.Path, logging.status,
+		// URL.Path 是解码后的值，%0a 可变成真实换行；落日志前去掉 CR/LF 防日志伪造（CWE-117）。
+		safePath := strings.NewReplacer("\r", "", "\n", "").Replace(r.URL.Path)
+		log.Printf("graw: %s %s %d %s %s", r.Method, safePath, logging.status,
 			time.Since(start).Round(time.Millisecond), ClientIP(r))
 	}()
 	// 安全响应头（对应 Python 的 security_headers 中间件）。

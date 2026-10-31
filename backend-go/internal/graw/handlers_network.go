@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -140,16 +141,86 @@ func registerNetmapRoutes(a *App) {
 		}
 		return WriteJSON(w, 200, map[string]any{"ok": true})
 	})
-	a.Get("/api/netmap/proxy/{item_id}", customAuth(), netmapProxyHandler)
-	a.Get("/api/netmap/proxy/{item_id}/{sub_path...}", customAuth(), netmapProxyHandler)
-	a.Post("/api/netmap/proxy/{item_id}", customAuth(), netmapProxyHandler)
-	a.Post("/api/netmap/proxy/{item_id}/{sub_path...}", customAuth(), netmapProxyHandler)
-	a.Put("/api/netmap/proxy/{item_id}", customAuth(), netmapProxyHandler)
-	a.Put("/api/netmap/proxy/{item_id}/{sub_path...}", customAuth(), netmapProxyHandler)
-	a.Delete("/api/netmap/proxy/{item_id}", customAuth(), netmapProxyHandler)
-	a.Delete("/api/netmap/proxy/{item_id}/{sub_path...}", customAuth(), netmapProxyHandler)
-	a.Patch("/api/netmap/proxy/{item_id}", customAuth(), netmapProxyHandler)
-	a.Patch("/api/netmap/proxy/{item_id}/{sub_path...}", customAuth(), netmapProxyHandler)
+	for _, method := range []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"} {
+		a.routeMethod(method, "/api/netmap/proxy/{item_id}", customAuth(), netmapProxyHandler)
+		a.routeMethod(method, "/api/netmap/proxy/{item_id}/{sub_path...}", customAuth(), netmapProxyHandler)
+	}
+}
+
+// netmapHopByHop 是代理两侧不应透传的逐跳头（RFC 7230）。
+var netmapHopByHop = map[string]bool{
+	"connection": true, "keep-alive": true, "proxy-authenticate": true,
+	"proxy-authorization": true, "te": true, "trailers": true,
+	"transfer-encoding": true, "upgrade": true, "host": true, "content-length": true,
+}
+
+// netmapStripAuthQuery 从查询串中剥离 __graw_token，避免把面板 JWT 透传给目标服务。
+func netmapStripAuthQuery(rawQuery string) string {
+	if rawQuery == "" {
+		return ""
+	}
+	values, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		// 解析失败时逐段过滤，至少保证鉴权参数不会原样下发。
+		kept := []string{}
+		for _, kv := range strings.Split(rawQuery, "&") {
+			if !strings.HasPrefix(kv, "__graw_token=") {
+				kept = append(kept, kv)
+			}
+		}
+		return strings.Join(kept, "&")
+	}
+	values.Del("__graw_token")
+	return values.Encode()
+}
+
+// netmapRewriteLocation 把目标 origin 的绝对地址改写为本地代理相对路径。
+// 相对 Location 本就按代理路径解析，原样放行。
+func netmapRewriteLocation(location, baseURL, proxyPrefix string) string {
+	if location == "" {
+		return location
+	}
+	loc, err := url.Parse(location)
+	if err != nil {
+		return location
+	}
+	tgt, err := url.Parse(baseURL)
+	if err != nil {
+		return location
+	}
+	if (loc.Scheme == "http" || loc.Scheme == "https") && loc.Host == tgt.Host {
+		path := loc.Path
+		if path == "" {
+			path = "/"
+		}
+		basePath := strings.TrimRight(tgt.Path, "/")
+		if basePath != "" && strings.HasPrefix(path, basePath) {
+			path = strings.TrimPrefix(path, basePath)
+			if path == "" {
+				path = "/"
+			}
+		}
+		rewritten := proxyPrefix + path
+		if loc.RawQuery != "" {
+			rewritten += "?" + loc.RawQuery
+		}
+		return rewritten
+	}
+	return location
+}
+
+// netmapUnreachablePage 目标服务不可达时的友好提示页（替代裸 JSON）。
+// iframe 场景下 JSON 只会显示成一段代码；返回 HTML 并放宽 frame 限制，
+// 保证提示页能在窗口内正常渲染。
+func netmapUnreachablePage(w http.ResponseWriter, status int) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+	w.Header().Set("Content-Security-Policy", "frame-ancestors 'self'")
+	w.WriteHeader(status)
+	const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>无映射端口</title>
+<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f5f7fa;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}.card{text-align:center;padding:40px 48px;border-radius:12px;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.08);max-width:420px}h1{font-size:18px;color:#334;margin:0 0 10px}p{font-size:13px;color:#889;margin:0;line-height:1.7}</style></head>
+<body><div class="card"><h1>无映射端口</h1><p>该节点上的目标服务没有响应（端口未开放或服务未启动）。<br>请确认服务已运行、端口正确，然后刷新重试。</p></div></body></html>`
+	_, _ = w.Write([]byte(html))
 }
 
 func netmapProxyHandler(w http.ResponseWriter, r *http.Request) error {
@@ -179,12 +250,12 @@ func netmapProxyHandler(w http.ResponseWriter, r *http.Request) error {
 		return WriteJSON(w, 404, map[string]any{"detail": "映射条目不存在"})
 	}
 	base, err := url.Parse(str(item["url"]))
-	if err != nil {
+	if err != nil || base.Host == "" {
 		return WriteJSON(w, 502, map[string]any{"detail": "目标地址非法"})
 	}
 	sub := PathParam(r, "sub_path")
 	base.Path = strings.TrimRight(base.Path, "/") + "/" + strings.TrimLeft(sub, "/")
-	base.RawQuery = r.URL.RawQuery
+	base.RawQuery = netmapStripAuthQuery(r.URL.RawQuery)
 	var body io.Reader
 	if r.Body != nil && r.Method != http.MethodGet && r.Method != http.MethodHead {
 		data, _ := io.ReadAll(io.LimitReader(r.Body, 16<<20))
@@ -194,28 +265,53 @@ func netmapProxyHandler(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return WriteJSON(w, 502, map[string]any{"detail": "构造代理请求失败"})
 	}
-	for _, k := range []string{"Content-Type", "Accept", "Accept-Language", "User-Agent"} {
-		if v := r.Header.Get(k); v != "" {
-			req.Header.Set(k, v)
+	// 转发端到端头，剥离逐跳头与 Authorization（避免把面板凭据透传给目标服务）。
+	for k, vals := range r.Header {
+		low := strings.ToLower(k)
+		if netmapHopByHop[low] || low == "authorization" {
+			continue
+		}
+		for _, v := range vals {
+			req.Header.Add(k, v)
 		}
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	// 目标必须直连：不能被系统代理环境变量劫持到代理服务器（内网地址会全部失败）。
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			Proxy: nil,
+		},
+		// 重定向交给浏览器按代理路径重新发起；自动跟随会绕过 Location 改写。
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return WriteJSON(w, 502, map[string]any{"detail": "目标服务不可达"})
+		netmapUnreachablePage(w, http.StatusBadGateway)
+		return nil
 	}
 	defer resp.Body.Close()
 	for k, vals := range resp.Header {
 		low := strings.ToLower(k)
-		if low == "content-length" || low == "transfer-encoding" || low == "connection" {
+		// 剥离逐跳头与目标自身的嵌入限制（面板同源 iframe 需要嵌套）。
+		if netmapHopByHop[low] || low == "content-security-policy" || low == "x-frame-options" {
 			continue
 		}
 		for _, v := range vals {
 			w.Header().Add(k, v)
 		}
 	}
+	// 面板窗口需要 iframe 嵌套：覆盖全局 CSP/X-Frame-Options（仅对本代理响应放宽）。
+	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+	w.Header().Set("Content-Security-Policy", "frame-ancestors 'self'")
+	if loc := resp.Header.Get("Location"); loc != "" {
+		w.Header().Set("Location", netmapRewriteLocation(loc, str(item["url"]), "/api/netmap/proxy/"+str(item["id"])))
+	}
 	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	if r.Method != http.MethodHead {
+		_, _ = io.Copy(w, resp.Body)
+	}
 	return nil
 }
 
@@ -260,6 +356,60 @@ func frpConfigPath(data map[string]any) string {
 		return p
 	}
 	return "/etc/frp/frps.toml"
+}
+
+// frpConfigBaseDir 是 frp 配置文件允许写入的基目录（与 Python FRP_CONFIG_DIR 一致）。
+const frpConfigBaseDir = "/etc/frp"
+
+// validateFRPConfigPath 约束自定义 configPath 必须落在 /etc/frp 内且不存在 .. 穿越。
+// 该值会直接用于宿主机任意文件写入，若不限制，受限管理员可借 frp 模块覆盖系统文件。
+func validateFRPConfigPath(p string) (string, *HTTPError) {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return "", nil
+	}
+	if nsCtrlRe.MatchString(p) || strings.HasPrefix(p, `\\?\`) || strings.HasPrefix(p, `\\.\`) {
+		return "", NewHTTPError(400, "配置文件路径包含非法字符")
+	}
+	if !strings.HasPrefix(p, "/") {
+		return "", NewHTTPError(400, "配置文件必须为绝对路径")
+	}
+	clean := path.Clean(p)
+	if clean != frpConfigBaseDir && !strings.HasPrefix(clean, frpConfigBaseDir+"/") {
+		return "", NewHTTPError(400, "配置文件必须位于 /etc/frp 目录内")
+	}
+	// 本地已存在的路径再做一次真实路径校验，阻断经符号链接逃逸。
+	if !remoteActive() {
+		real := cleanHostView(clean)
+		if resolved, err := filepath.EvalSymlinks(HostPath(real)); err == nil {
+			hostReal := cleanHostView(resolved)
+			if hostReal != frpConfigBaseDir && !strings.HasPrefix(hostReal, frpConfigBaseDir+"/") {
+				return "", NewHTTPError(400, "配置文件不能经符号链接指向 /etc/frp 之外的路径")
+			}
+		}
+	}
+	return clean, nil
+}
+
+// validateFRPBin 校验 frp 可执行文件路径：自定义绝对路径的文件名必须包含 frp，
+// 防止把 serverBin 指向 /bin/sh 等任意程序（限制的是 frp 模块的文件执行面）。
+func validateFRPBin(p string) (string, *HTTPError) {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return "", nil
+	}
+	if nsCtrlRe.MatchString(p) {
+		return "", NewHTTPError(400, "frp 可执行文件路径包含非法字符")
+	}
+	base := strings.ToLower(filepath.Base(strings.ReplaceAll(p, "\\", "/")))
+	if strings.Contains(p, "/") || strings.Contains(p, "\\") {
+		if base != "frps" && base != "frpc" && !strings.HasPrefix(base, "frps.") && !strings.HasPrefix(base, "frpc.") {
+			return "", NewHTTPError(400, "frp 可执行文件名非法（必须为 frps / frpc）")
+		}
+	} else if base != "frps" && base != "frpc" {
+		return "", NewHTTPError(400, "frp 可执行文件仅支持 frps / frpc")
+	}
+	return p, nil
 }
 
 func frpRender(data map[string]any) string {
@@ -381,7 +531,10 @@ func frpStart(data map[string]any) error {
 	if !execNameRe.MatchString(bin) {
 		return NewHTTPError(400, "frp 可执行文件路径非法")
 	}
-	cfgView := frpConfigPath(data)
+	cfgView, err := validateFRPConfigPath(frpConfigPath(data))
+	if err != nil {
+		return err
+	}
 	cfg := HostPath(cfgView)
 	_ = os.MkdirAll(filepath.Dir(cfg), 0o755)
 	if err := os.WriteFile(cfg, []byte(frpRender(data)), 0o600); err != nil {
@@ -443,7 +596,11 @@ func registerFRPRoutes(a *App) {
 		}
 		for _, key := range []string{"serverBin", "clientBin"} {
 			if v, ok := req[key].(string); ok && v != "" {
-				data[key] = v
+				validated, err := validateFRPBin(v)
+				if err != nil {
+					return err
+				}
+				data[key] = validated
 			}
 		}
 		for _, key := range []string{"server", "client"} {
@@ -451,10 +608,12 @@ func registerFRPRoutes(a *App) {
 				cur := mapOf(data[key])
 				for k, v := range m {
 					if k == "configPath" {
-						p := str(v)
-						if p != "" && !strings.HasPrefix(p, "/etc/frp") {
-							return NewHTTPError(400, "配置文件必须位于 /etc/frp 目录内")
+						p, err := validateFRPConfigPath(str(v))
+						if err != nil {
+							return err
 						}
+						cur[k] = p
+						continue
 					}
 					cur[k] = v
 				}
@@ -615,6 +774,23 @@ func vpnItems(data map[string]any, key string) []map[string]any {
 	return out
 }
 
+// validateVPNBin 校验自定义核心路径：实际执行的必须是 mihomo/clash 类程序，
+// 防止把 binPath 设为 /bin/sh 后借 `-f 配置文件` 执行任意脚本。
+func validateVPNBin(p string) (string, *HTTPError) {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return "", nil
+	}
+	if nsCtrlRe.MatchString(p) {
+		return "", NewHTTPError(400, "VPN 核心路径包含非法字符")
+	}
+	base := strings.ToLower(filepath.Base(strings.ReplaceAll(p, "\\", "/")))
+	if !strings.Contains(base, "mihomo") && !strings.Contains(base, "clash") {
+		return "", NewHTTPError(400, "VPN 核心可执行文件名必须为 mihomo / clash 系列")
+	}
+	return p, nil
+}
+
 func vpnDetectBinary(data map[string]any) string {
 	if p := strings.TrimSpace(str(data["binPath"])); p != "" {
 		return p
@@ -714,6 +890,13 @@ func vpnStart(data map[string]any) error {
 	if !execNameRe.MatchString(bin) {
 		vpnMu.Unlock()
 		return NewHTTPError(400, "VPN 核心路径非法")
+	}
+	if validated, err := validateVPNBin(bin); err != nil {
+		vpnMu.Unlock()
+		return err
+	} else if validated == "" {
+		vpnMu.Unlock()
+		return NewHTTPError(400, "未检测到 mihomo/clash 核心，请在配置中指定 binPath")
 	}
 	cfgPath := DataPath("vpn", "config.yaml")
 	_ = os.MkdirAll(filepath.Dir(cfgPath), 0o700)
@@ -863,7 +1046,14 @@ func registerVPNRoutes(a *App) {
 		for _, key := range []string{"enabled", "portForward", "globalProxy", "lowPower", "idleMinutes",
 			"mixedPort", "controllerPort", "controllerSecret", "binPath", "nodes", "forwards"} {
 			if v, ok := req[key]; ok {
-				data[key] = v
+				if key == "binPath" {
+					validated, err := validateVPNBin(str(v))
+					if err != nil {
+						return err
+					}
+					req[key] = validated
+				}
+				data[key] = req[key]
 			}
 		}
 		if err := WriteJSONFile(DataPath("vpn.json"), data); err != nil {

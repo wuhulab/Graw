@@ -3,6 +3,7 @@ package graw
 import (
 	"bufio"
 	"bytes"
+	"crypto/tls"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -51,20 +52,137 @@ func findNSConn(id string) (map[string]any, error) {
 	return nil, NewHTTPError(404, "连接不存在")
 }
 
+var (
+	nsTypes     = map[string]bool{"ftp": true, "ftps": true, "smb": true, "webdav": true, "s3": true}
+	nsNameRe    = regexp.MustCompile(`^[A-Za-z0-9_\-一-龥㐀-䶿 ]{1,64}$`)
+	nsHostRe    = regexp.MustCompile(`^[A-Za-z0-9.\-]{1,255}$`)
+	nsBucketRe  = regexp.MustCompile(`^[A-Za-z0-9._\-]{1,255}$`)
+	nsShareRe   = regexp.MustCompile(`^[^/\\\r\n:]{1,255}$`)
+	nsCtrlRe    = regexp.MustCompile("[\x00-\x1f\x7f]")
+	nsDefaultPt = map[string]int{"ftp": 21, "ftps": 990, "smb": 445, "webdav": 443, "s3": 9000}
+)
+
+// nsBase 返回连接的基础路径；同时兼容前端/Python 的 base 与早期 Go 版本的 base_path。
+func nsBase(conn map[string]any) string {
+	return strings.TrimSpace(defaultString(str(conn["base"]), str(conn["base_path"])))
+}
+
+// nsParams 返回协议扩展参数（含 passive/secure/region）。
+func nsParams(conn map[string]any) map[string]any { return mapOf(conn["params"]) }
+
 func maskNSConn(c map[string]any) map[string]any {
 	out := map[string]any{}
 	for k, v := range c {
-		if k == "password" || k == "secret_key" || k == "secret" {
-			if str(v) != "" {
-				out[k] = "******"
-			} else {
-				out[k] = ""
-			}
-		} else {
+		switch k {
+		case "password", "secret_key", "secret":
+			// 凭据不回显，只给前端「已设置密码」标记（编辑时留空表示保持原值）。
+			out["has_password"] = str(c["password"]) != ""
+		default:
 			out[k] = v
 		}
 	}
+	if _, ok := out["has_password"]; !ok {
+		out["has_password"] = str(c["password"]) != ""
+	}
 	return out
+}
+
+// nsValidateConn 校验连接配置（类型 / 主机 / 端口 / 凭据 / 基础路径 + SSRF 防护）。
+// 与 Python netstorage.ConnectionIn.validate_rules 对齐；返回的 HTTPError 可直接上抛。
+func nsValidateConn(conn map[string]any, isCreate bool) *HTTPError {
+	typ := strings.TrimSpace(str(conn["type"]))
+	if !nsTypes[typ] {
+		return NewHTTPError(400, "不支持的存储类型")
+	}
+	conn["type"] = typ
+	name := strings.TrimSpace(str(conn["name"]))
+	if name == "" || !nsNameRe.MatchString(name) {
+		return NewHTTPError(400, "名称包含非法字符或超过 64 字符")
+	}
+	conn["name"] = name
+	if isCreate {
+		conn["id"] = "ns_" + randomHex(10)
+		conn["created_at"] = time.Now().Format("2006-01-02 15:04:05")
+	}
+	host := strings.TrimSpace(str(conn["host"]))
+	base := strings.TrimSpace(nsBase(conn))
+	// WebDAV 允许用完整 URL 作为 base（Python 兼容），此时 host 可为空；
+	// 其余协议必须提供裸主机（字符白名单，防注入）。
+	baseIsURL := strings.HasPrefix(base, "http://") || strings.HasPrefix(base, "https://")
+	if !(typ == "webdav" && baseIsURL) {
+		if host == "" || !nsHostRe.MatchString(host) {
+			return NewHTTPError(400, "主机地址包含非法字符")
+		}
+	}
+	conn["host"] = host
+	port := int(int64Of(conn["port"]))
+	if port == 0 {
+		port = nsDefaultPt[typ]
+	}
+	if port < 1 || port > 65535 {
+		return NewHTTPError(400, "端口必须在 1-65535")
+	}
+	conn["port"] = port
+	username := str(conn["username"])
+	password := str(conn["password"])
+	if nsCtrlRe.MatchString(username) || len([]rune(username)) > 128 {
+		return NewHTTPError(400, "用户名包含非法字符或超过 128 字符")
+	}
+	if nsCtrlRe.MatchString(password) || len([]rune(password)) > 256 {
+		return NewHTTPError(400, "密码包含非法字符或超过 256 字符")
+	}
+	conn["username"], conn["password"] = username, password
+	if len([]rune(base)) > 1024 || nsCtrlRe.MatchString(base) {
+		return NewHTTPError(400, "基础路径包含非法字符或超过 1024 字符")
+	}
+	if _, ok := conn["params"]; !ok || conn["params"] == nil {
+		conn["params"] = map[string]any{}
+	}
+	switch typ {
+	case "smb":
+		share := strings.Trim(base, "/")
+		if share == "" || !nsShareRe.MatchString(share) || share == "." || share == ".." {
+			return NewHTTPError(400, "SMB 共享名非法（base 必填且不能包含 / 或 :）")
+		}
+	case "s3":
+		bucket := strings.Trim(base, "/")
+		if bucket == "" || !nsBucketRe.MatchString(bucket) {
+			return NewHTTPError(400, "S3 桶名非法（base 必填）")
+		}
+	case "webdav":
+		if baseIsURL {
+			if err := AssertSafeHTTPURL(base, true); err != nil {
+				return NewHTTPError(400, "WebDAV 根地址校验失败："+err.Error())
+			}
+		} else if host != "" {
+			if err := AssertSafeHost(host, true, false); err != nil {
+				return NewHTTPError(400, err.Error())
+			}
+		}
+	case "ftp", "ftps":
+		if host == "" {
+			return NewHTTPError(400, "主机不能为空")
+		}
+		if err := AssertSafeHost(host, true, false); err != nil {
+			return NewHTTPError(400, err.Error())
+		}
+	}
+	// 统一写入 base（并保留 base_path 兼容字段），避免内部读取时两套字段漂移。
+	if base != "" {
+		conn["base"] = base
+	} else {
+		delete(conn, "base")
+	}
+	conn["base_path"] = base
+	return nil
+}
+
+// nsValidatePath 拒绝控制字符/换行（FTP 命令与 smbclient 命令串的注入源）。
+func nsValidatePath(p string) error {
+	if nsCtrlRe.MatchString(p) {
+		return NewHTTPError(400, "路径包含非法字符")
+	}
+	return nil
 }
 
 func registerNetStorageRoutes(a *App) {
@@ -80,13 +198,11 @@ func registerNetStorageRoutes(a *App) {
 		if err := DecodeJSON(r, &req); err != nil {
 			return err
 		}
-		if strings.TrimSpace(str(req["name"])) == "" || str(req["type"]) == "" {
-			return NewHTTPError(400, "名称与类型不能为空")
-		}
-		req["id"] = "ns_" + randomHex(8)
-		req["created_at"] = time.Now().Format("2006-01-02 15:04:05")
 		if p, ok := req["port"]; ok {
 			req["port"] = int(num(p))
+		}
+		if err := nsValidateConn(req, true); err != nil {
+			return err
 		}
 		data := loadNetStorage()
 		data["connections"] = append(nsConnections(data), req)
@@ -101,6 +217,9 @@ func registerNetStorageRoutes(a *App) {
 		if err := DecodeJSON(r, &req); err != nil {
 			return err
 		}
+		if p, ok := req["port"]; ok {
+			req["port"] = int(num(p))
+		}
 		data := loadNetStorage()
 		conns := nsConnections(data)
 		var conn map[string]any
@@ -109,7 +228,8 @@ func registerNetStorageRoutes(a *App) {
 				conn = c
 				for k, v := range req {
 					if k == "password" || k == "secret_key" || k == "secret" {
-						if str(v) == "******" {
+						// 编辑时留空或占位符表示保持原凭据。
+						if str(v) == "******" || strings.TrimSpace(str(v)) == "" {
 							continue
 						}
 					}
@@ -119,6 +239,9 @@ func registerNetStorageRoutes(a *App) {
 		}
 		if conn == nil {
 			return NewHTTPError(404, "连接不存在")
+		}
+		if err := nsValidateConn(conn, false); err != nil {
+			return err
 		}
 		data["connections"] = conns
 		if err := WriteJSONFile(DataPath("netstorage.json"), data); err != nil {
@@ -341,6 +464,9 @@ func nsTest(conn map[string]any) error {
 }
 
 func nsList(conn map[string]any, p string) ([]map[string]any, error) {
+	if err := nsValidatePath(p); err != nil {
+		return nil, err
+	}
 	switch str(conn["type"]) {
 	case "ftp", "ftps":
 		client, err := ftpDial(conn)
@@ -360,6 +486,9 @@ func nsList(conn map[string]any, p string) ([]map[string]any, error) {
 }
 
 func nsRead(conn map[string]any, p string) ([]byte, error) {
+	if err := nsValidatePath(p); err != nil {
+		return nil, err
+	}
 	switch str(conn["type"]) {
 	case "ftp", "ftps":
 		client, err := ftpDial(conn)
@@ -379,8 +508,11 @@ func nsRead(conn map[string]any, p string) ([]byte, error) {
 		}
 		return io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	case "smb":
-		out, err := smbclient(conn, "get \""+p+"\" -")
-		return out, err
+		quoted, err := smbQuote(p)
+		if err != nil {
+			return nil, err
+		}
+		return smbclient(conn, "get "+quoted+" -")
 	case "s3":
 		return mcRun(conn, "cat", s3Path(conn, p))
 	}
@@ -388,6 +520,9 @@ func nsRead(conn map[string]any, p string) ([]byte, error) {
 }
 
 func nsWrite(conn map[string]any, p string, data []byte) error {
+	if err := nsValidatePath(p); err != nil {
+		return err
+	}
 	switch str(conn["type"]) {
 	case "ftp", "ftps":
 		client, err := ftpDial(conn)
@@ -414,7 +549,11 @@ func nsWrite(conn map[string]any, p string, data []byte) error {
 		defer os.Remove(tmp.Name())
 		_, _ = tmp.Write(data)
 		tmp.Close()
-		_, err = smbclient(conn, "put \""+tmp.Name()+"\" \""+p+"\"")
+		quoted, err := smbQuote(p)
+		if err != nil {
+			return err
+		}
+		_, err = smbclient(conn, "put "+strconv.Quote(tmp.Name())+" "+quoted)
 		return err
 	case "s3":
 		tmp, err := os.CreateTemp("", "graw-s3-*")
@@ -431,6 +570,9 @@ func nsWrite(conn map[string]any, p string, data []byte) error {
 }
 
 func nsMkdir(conn map[string]any, p string) error {
+	if err := nsValidatePath(p); err != nil {
+		return err
+	}
 	switch str(conn["type"]) {
 	case "ftp", "ftps":
 		client, err := ftpDial(conn)
@@ -438,7 +580,7 @@ func nsMkdir(conn map[string]any, p string) error {
 			return err
 		}
 		defer client.close()
-		_, err = client.cmd("MKD " + p)
+		_, err = client.cmd("MKD " + client.fullPath(p))
 		return err
 	case "webdav":
 		resp, err := webdavRequest(conn, "MKCOL", p, nil, nil)
@@ -451,7 +593,11 @@ func nsMkdir(conn map[string]any, p string) error {
 		}
 		return nil
 	case "smb":
-		_, err := smbclient(conn, "mkdir \""+p+"\"")
+		quoted, err := smbQuote(p)
+		if err != nil {
+			return err
+		}
+		_, err = smbclient(conn, "mkdir "+quoted)
 		return err
 	case "s3":
 		_, err := mcRun(conn, "mb", s3Path(conn, p))
@@ -461,6 +607,9 @@ func nsMkdir(conn map[string]any, p string) error {
 }
 
 func nsDelete(conn map[string]any, p string) error {
+	if err := nsValidatePath(p); err != nil {
+		return err
+	}
 	switch str(conn["type"]) {
 	case "ftp", "ftps":
 		client, err := ftpDial(conn)
@@ -468,8 +617,8 @@ func nsDelete(conn map[string]any, p string) error {
 			return err
 		}
 		defer client.close()
-		if _, err := client.cmd("DELE " + p); err != nil {
-			_, err2 := client.cmd("RMD " + p)
+		if _, err := client.cmd("DELE " + client.fullPath(p)); err != nil {
+			_, err2 := client.cmd("RMD " + client.fullPath(p))
 			return err2
 		}
 		return nil
@@ -484,9 +633,13 @@ func nsDelete(conn map[string]any, p string) error {
 		}
 		return nil
 	case "smb":
-		_, err := smbclient(conn, "del \""+p+"\"")
+		quoted, err := smbQuote(p)
 		if err != nil {
-			_, err = smbclient(conn, "rmdir \""+p+"\"")
+			return err
+		}
+		_, err = smbclient(conn, "del "+quoted)
+		if err != nil {
+			_, err = smbclient(conn, "rmdir "+quoted)
 		}
 		return err
 	case "s3":
@@ -497,6 +650,12 @@ func nsDelete(conn map[string]any, p string) error {
 }
 
 func nsRename(conn map[string]any, src, dst string) error {
+	if err := nsValidatePath(src); err != nil {
+		return err
+	}
+	if err := nsValidatePath(dst); err != nil {
+		return err
+	}
 	switch str(conn["type"]) {
 	case "ftp", "ftps":
 		client, err := ftpDial(conn)
@@ -504,10 +663,10 @@ func nsRename(conn map[string]any, src, dst string) error {
 			return err
 		}
 		defer client.close()
-		if _, err := client.cmd("RNFR " + src); err != nil {
+		if _, err := client.cmd("RNFR " + client.fullPath(src)); err != nil {
 			return err
 		}
-		_, err = client.cmd("RNTO " + dst)
+		_, err = client.cmd("RNTO " + client.fullPath(dst))
 		return err
 	case "webdav":
 		resp, err := webdavRequest(conn, "MOVE", src, nil, map[string]string{"Destination": webdavURL(conn, dst)})
@@ -520,7 +679,15 @@ func nsRename(conn map[string]any, src, dst string) error {
 		}
 		return nil
 	case "smb":
-		_, err := smbclient(conn, "rename \""+src+"\" \""+dst+"\"")
+		qs, err := smbQuote(src)
+		if err != nil {
+			return err
+		}
+		qd, err := smbQuote(dst)
+		if err != nil {
+			return err
+		}
+		_, err = smbclient(conn, "rename "+qs+" "+qd)
 		return err
 	case "s3":
 		_, err := mcRun(conn, "mv", s3Path(conn, src), s3Path(conn, dst))
@@ -532,35 +699,85 @@ func nsRename(conn map[string]any, src, dst string) error {
 // --- FTP 客户端 ---
 
 type ftpClient struct {
-	c   net.Conn
-	r   *bufio.Reader
-	sep string
+	c    net.Conn
+	r    *bufio.Reader
+	sep  string
+	host string
+	base string
 }
 
+// ftpFullPath 把逻辑路径拼到连接的基础目录上（与 Python FTPAdapter._full 一致）。
+func (f *ftpClient) fullPath(p string) string {
+	p = strings.Trim(p, "/")
+	b := strings.Trim(f.base, "/")
+	if b == "" {
+		return "/" + p
+	}
+	if p == "" {
+		return "/" + b
+	}
+	return "/" + b + "/" + p
+}
+
+// ftpDial 建立 FTP/FTPS 连接。FTPS 采用显式 AUTH TLS（与 Python ftplib.FTP_TLS 一致）；
+// 连接前重新校验主机（拒绝云元数据等受保护地址），并在发送命令前拒绝 CRLF 注入。
 func ftpDial(conn map[string]any) (*ftpClient, error) {
+	host := str(conn["host"])
+	if err := AssertSafeHost(host, true, false); err != nil {
+		return nil, err
+	}
+	user, pass := str(conn["username"]), str(conn["password"])
+	if nsCtrlRe.MatchString(user) || nsCtrlRe.MatchString(pass) {
+		return nil, NewHTTPError(400, "FTP 用户名/密码包含控制字符")
+	}
 	port := int(int64Of(conn["port"]))
 	if port == 0 {
-		port = 21
+		if str(conn["type"]) == "ftps" {
+			port = 990
+		} else {
+			port = 21
+		}
 	}
-	addr := net.JoinHostPort(str(conn["host"]), itoa(port))
+	addr := net.JoinHostPort(host, itoa(port))
 	nc, err := net.DialTimeout("tcp", addr, 8*time.Second)
 	if err != nil {
 		return nil, err
 	}
-	fc := &ftpClient{c: nc, r: bufio.NewReader(nc), sep: "/"}
+	fc := &ftpClient{c: nc, r: bufio.NewReader(nc), sep: "/", host: host, base: nsBase(conn)}
 	if _, err := fc.readReply(); err != nil {
 		nc.Close()
 		return nil, err
 	}
-	if _, err := fc.cmd("USER " + str(conn["username"])); err != nil {
-		// 部分服务器在 USER 成功时返回 230，无需 PASS；331 才继续
-		if !strings.HasPrefix(err.Error(), "331") {
-			// 继续尝试 PASS
+	if str(conn["type"]) == "ftps" {
+		// 显式 TLS：AUTH TLS 成功后整条控制通道加密，再走 USER/PASS。
+		if _, err := fc.cmd("AUTH TLS"); err != nil {
+			nc.Close()
+			return nil, err
+		}
+		tlsConn := tls.Client(nc, &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12})
+		if err := tlsConn.Handshake(); err != nil {
+			nc.Close()
+			return nil, err
+		}
+		fc.c = tlsConn
+		fc.r = bufio.NewReader(tlsConn)
+	}
+	if user != "" {
+		if _, err := fc.cmd("USER " + user); err != nil {
+			// 部分服务器在 USER 成功时返回 230，无需 PASS；331 才继续
+			if !strings.HasPrefix(err.Error(), "331") {
+				nc.Close()
+				return nil, err
+			}
+		}
+		if _, err := fc.cmd("PASS " + pass); err != nil {
+			nc.Close()
+			return nil, err
 		}
 	}
-	if _, err := fc.cmd("PASS " + str(conn["password"])); err != nil {
-		nc.Close()
-		return nil, err
+	if str(conn["type"]) == "ftps" {
+		_, _ = fc.cmd("PBSZ 0")
+		_, _ = fc.cmd("PROT P")
 	}
 	_, _ = fc.cmd("TYPE I")
 	return fc, nil
@@ -622,6 +839,11 @@ func (f *ftpClient) dataConn() (net.Conn, error) {
 	p2, _ := strconv.Atoi(m[6])
 	host := fmt.Sprintf("%d.%d.%d.%d", h1, h2, h3, h4)
 	port := p1*256 + p2
+	// 忽略服务器在 PASV 响应里给出的地址，始终连回原主机：恶意 FTP 服务
+	// 可借此把数据连接指向 169.254.169.254 等受保护地址（FTP bounce / SSRF）。
+	if f.host != "" {
+		host = strings.Trim(f.host, "[]")
+	}
 	return net.DialTimeout("tcp", net.JoinHostPort(host, itoa(port)), 8*time.Second)
 }
 
@@ -631,7 +853,7 @@ func (f *ftpClient) list(p string) ([]map[string]any, error) {
 		return nil, err
 	}
 	defer dc.Close()
-	if _, err := f.cmd("LIST " + p); err != nil {
+	if _, err := f.cmd("LIST " + f.fullPath(p)); err != nil {
 		return nil, err
 	}
 	data, _ := io.ReadAll(io.LimitReader(dc, 8<<20))
@@ -664,7 +886,7 @@ func (f *ftpClient) read(p string) ([]byte, error) {
 		return nil, err
 	}
 	defer dc.Close()
-	if _, err := f.cmd("RETR " + p); err != nil {
+	if _, err := f.cmd("RETR " + f.fullPath(p)); err != nil {
 		return nil, err
 	}
 	data, err := io.ReadAll(io.LimitReader(dc, 64<<20))
@@ -679,7 +901,7 @@ func (f *ftpClient) write(p string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	if _, err := f.cmd("STOR " + p); err != nil {
+	if _, err := f.cmd("STOR " + f.fullPath(p)); err != nil {
 		dc.Close()
 		return err
 	}
@@ -695,6 +917,11 @@ func (f *ftpClient) write(p string, data []byte) error {
 // --- WebDAV ---
 
 func webdavBase(conn map[string]any) string {
+	base := nsBase(conn)
+	if strings.HasPrefix(base, "http://") || strings.HasPrefix(base, "https://") {
+		// 前端允许直接填写完整的 WebDAV 根地址（如 https://host/dav/user/）。
+		return strings.TrimRight(base, "/")
+	}
 	scheme := "http"
 	if boolOf(conn["secure"]) || boolOf(conn["tls"]) {
 		scheme = "https"
@@ -704,8 +931,7 @@ func webdavBase(conn map[string]any) string {
 	if port > 0 && !((scheme == "http" && port == 80) || (scheme == "https" && port == 443)) {
 		host = net.JoinHostPort(host, itoa(port))
 	}
-	base := strings.TrimRight(str(conn["base_path"]), "/")
-	return scheme + "://" + host + "/" + strings.TrimLeft(base, "/")
+	return scheme + "://" + host + "/" + strings.TrimLeft(strings.Trim(base, "/"), "/")
 }
 
 func webdavURL(conn map[string]any, p string) string {
@@ -714,8 +940,15 @@ func webdavURL(conn map[string]any, p string) string {
 	return u.String()
 }
 
+// webdavRequest 执行 WebDAV 请求。
+// SSRF 防护：每次请求前校验目标（内网 WebDAV 允许私网，但拒绝回环/链路本地/元数据）；
+// 禁止跟随 3xx（重定向可绕过初始 URL 校验，直达受保护地址）。
 func webdavRequest(conn map[string]any, method, p string, body io.Reader, headers map[string]string) (*http.Response, error) {
-	req, err := http.NewRequest(method, webdavURL(conn, p), body)
+	target := webdavURL(conn, p)
+	if err := AssertSafeHTTPURL(target, true); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(method, target, body)
 	if err != nil {
 		return nil, err
 	}
@@ -725,8 +958,15 @@ func webdavRequest(conn map[string]any, method, p string, body io.Reader, header
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
-	return client.Do(req)
+	resp, err := NewSafeHTTPClient(30*time.Second, true, false, false).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		resp.Body.Close()
+		return nil, NewHTTPError(400, "检测到重定向跳转，已拒绝（SSRF 防护）")
+	}
+	return resp, nil
 }
 
 type davMultistatus struct {
@@ -798,16 +1038,33 @@ func webdavList(conn map[string]any, p string) ([]map[string]any, error) {
 
 // --- SMB / S3 CLI ---
 
+// smbQuote 为 smbclient -c 命令串里的路径加双引号，并拒绝可逃逸命令语法的字符。
+// smbclient 的命令串支持 ; 分隔命令与 ! 执行本地 shell，路径可控时必须在入口净化。
+func smbQuote(p string) (string, error) {
+	if nsCtrlRe.MatchString(p) || strings.ContainsAny(p, "\";!\\") {
+		return "", NewHTTPError(400, "SMB 路径包含非法字符")
+	}
+	return "\"" + p + "\"", nil
+}
+
 func smbclient(conn map[string]any, command string) ([]byte, error) {
+	host := str(conn["host"])
+	if err := AssertSafeHost(host, true, false); err != nil {
+		return nil, err
+	}
 	bin := HostWhich("smbclient")
 	if bin == "" {
 		return nil, fmt.Errorf("宿主机未安装 smbclient")
 	}
-	share := strings.Trim(str(conn["base_path"]), "/")
+	share := strings.Trim(nsBase(conn), "/")
 	if share == "" {
-		return nil, fmt.Errorf("SMB 连接需填写共享名（base_path）")
+		return nil, fmt.Errorf("SMB 连接需填写共享名（base）")
 	}
-	args := []string{"//" + str(conn["host"]) + "/" + share, "-U", str(conn["username"]) + "%" + str(conn["password"]), "-c", command}
+	user, pass := str(conn["username"]), str(conn["password"])
+	if nsCtrlRe.MatchString(user) || nsCtrlRe.MatchString(pass) {
+		return nil, NewHTTPError(400, "SMB 用户名/密码包含控制字符")
+	}
+	args := []string{"//" + host + "/" + share, "-U", user + "%" + pass, "-c", command}
 	res := runCommand(60*time.Second, bin, args...)
 	if res.Code != 0 {
 		return nil, fmt.Errorf("%s", strings.TrimSpace(res.Stderr+res.Stdout))
@@ -846,24 +1103,34 @@ func s3Alias(conn map[string]any) string {
 }
 
 func s3Path(conn map[string]any, p string) string {
-	bucket := strings.Trim(str(conn["base_path"]), "/")
+	bucket := strings.Trim(nsBase(conn), "/")
 	return s3Alias(conn) + "/" + bucket + "/" + strings.TrimLeft(p, "/")
 }
 
 func mcRun(conn map[string]any, args ...string) ([]byte, error) {
+	host := str(conn["host"])
+	if err := AssertSafeHost(host, true, false); err != nil {
+		return nil, err
+	}
 	bin := HostWhich("mc")
 	if bin == "" {
 		return nil, fmt.Errorf("宿主机未安装 mc（MinIO Client）")
 	}
-	scheme := "https"
-	if boolOf(conn["insecure"]) || !boolOf(conn["secure"]) {
-		scheme = "http"
+	port := int(int64Of(conn["port"]))
+	// secure 优先取 params.secure（前端表单字段）；缺省按端口 443 判定（与 Python 一致）。
+	secure := port == 443
+	if v, ok := nsParams(conn)["secure"].(bool); ok {
+		secure = v
 	}
-	host := str(conn["host"])
-	if port := int(int64Of(conn["port"])); port > 0 {
+	scheme := "http"
+	if secure {
+		scheme = "https"
+	}
+	if port > 0 {
 		host = net.JoinHostPort(host, itoa(port))
 	}
-	aliasURL := scheme + "://" + url.QueryEscape(str(conn["access_key"])) + ":" + url.QueryEscape(str(conn["secret_key"])) + "@" + host
+	// 前端用 username/password 填写 S3 AccessKey/SecretKey。
+	aliasURL := scheme + "://" + url.QueryEscape(str(conn["username"])) + ":" + url.QueryEscape(str(conn["password"])) + "@" + host
 	cmd := exec.Command(bin, args...)
 	cmd.Env = append(os.Environ(), "MC_HOST_"+s3Alias(conn)+"="+aliasURL)
 	var stdout, stderr bytes.Buffer

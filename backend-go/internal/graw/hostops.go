@@ -369,8 +369,11 @@ func refuseCriticalDelete(view string) error {
 		return NewHTTPError(403, "回收站目录请使用「清空回收站」")
 	}
 	// 包含面板 data 目录的祖先路径一律拒绝（例如删除 /opt 会连带删掉面板数据）。
-	if hostPathContains(clean, GetConfig().DataDir) {
-		return NewHTTPError(403, "不能删除包含面板数据目录的路径")
+	// 容器部署下用户输入的是宿主机视角路径，必须遍历全部视角变体。
+	for _, dataPath := range dataPathVariants() {
+		if hostPathContains(clean, dataPath) {
+			return NewHTTPError(403, "不能删除包含面板数据目录的路径")
+		}
 	}
 	return nil
 }

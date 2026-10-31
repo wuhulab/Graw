@@ -18,19 +18,11 @@ import (
 )
 
 // forbiddenDataPath 判断宿主机视角路径是否落在面板 data 目录内。
+// 必须同时覆盖容器内路径、GRAW_HOST_DATA 与 HOST_ROOT 映射路径：
+// 容器部署下文件管理操作的是宿主机视角（如 /opt/graw/data），只比对容器内
+// 路径会让 secret.key / users.json 可经文件模块读取。
 func forbiddenDataPath(view string) bool {
-	data := GetConfig().DataDir
-	p := filepath.Clean(view)
-	d := filepath.Clean(data)
-	if isWindows() {
-		p = strings.ToLower(p)
-		d = strings.ToLower(d)
-	}
-	rel, err := filepath.Rel(d, p)
-	if err != nil {
-		return false
-	}
-	return rel == "." || (!strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && rel != "..")
+	return pathInDataDir(view)
 }
 
 // safeUserPath 规范化用户提交的宿主机视角路径并拦截面板数据目录。
@@ -55,13 +47,30 @@ func safeUserPath(input string) (string, error) {
 	if err != nil {
 		return "", NewHTTPError(400, "非法路径")
 	}
-	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		abs = resolved
-	}
+	abs = resolveExistingSymlinks(abs)
 	if forbiddenDataPath(abs) {
 		return "", NewHTTPError(403, "无权访问面板数据目录")
 	}
 	return abs, nil
+}
+
+// resolveExistingSymlinks 对路径做 realpath；目标尚不存在（写文件/建目录）时，
+// 回溯到最近的已存在祖先做 realpath 再拼回剩余段，防止经符号链接父目录
+// 绕过 data 目录拦截（例如 /tmp/link -> data 目录，写 /tmp/link/secret.key）。
+func resolveExistingSymlinks(abs string) string {
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved
+	}
+	parent := filepath.Dir(abs)
+	remainder := filepath.Base(abs)
+	for parent != filepath.Dir(parent) {
+		if resolved, err := filepath.EvalSymlinks(parent); err == nil {
+			return filepath.Join(resolved, remainder)
+		}
+		remainder = filepath.Join(filepath.Base(parent), remainder)
+		parent = filepath.Dir(parent)
+	}
+	return abs
 }
 
 func registerFileRoutes(a *App) {

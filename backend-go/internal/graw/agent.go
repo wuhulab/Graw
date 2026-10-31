@@ -46,6 +46,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -59,8 +60,21 @@ import (
 const (
 	localNodeID      = "local"
 	defaultAgentPort = 8000
-	agentTSWindow    = 300
 )
+
+// agentTSWindowSeconds 返回 Agent 签名时间窗（秒），支持 GRAW_AGENT_TS_WINDOW 覆盖。
+// 允许 30-3600 秒：过小会让时钟偏差正常的节点验签失败，过大则放大重放窗口。
+func agentTSWindowSeconds() int64 {
+	raw := strings.TrimSpace(os.Getenv("GRAW_AGENT_TS_WINDOW"))
+	if raw == "" {
+		return 300
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n < 30 || n > 3600 {
+		return 300
+	}
+	return n
+}
 
 // nodeStoreMu 串行化 nodes.json 的写入；sshHostRe / sshUserRe 在建立连接与保存节点前做白名单校验
 // （并拒绝 '-' 开头的主机名，防止被当作 ssh 命令行参数注入）。
@@ -263,7 +277,7 @@ func agentPublicStatus() map[string]any {
 		"has_secret": cfg.Secret != "",
 		// 只有启用且尚未回显过时才允许前端请求 reveal-secret。
 		"can_reveal": enabled && cfg.Secret != "" && !cfg.SecretRevealed,
-		"ts_window":  agentTSWindow,
+		"ts_window":  agentTSWindowSeconds(),
 	}
 }
 
@@ -311,7 +325,7 @@ func registerAgentRoutes(a *App) {
 		}
 		now := time.Now().Unix()
 		// 时间窗限制签名可重放的时间；nonce 长度限制防止超长 key 撑爆内存。
-		if abs64(now-ts) > agentTSWindow || len(nonce) > 128 {
+		if abs64(now-ts) > agentTSWindowSeconds() || len(nonce) > 128 {
 			return NewHTTPError(401, "Agent 凭证校验失败")
 		}
 		expect := agentSignature(cfg.Secret, providedKey, ts, nonce)
@@ -330,7 +344,7 @@ func registerAgentRoutes(a *App) {
 		if len(agentUsedNonces) > 10000 {
 			// 顺带清理超出时间窗的历史 nonce，避免 map 无界增长。
 			for k, t := range agentUsedNonces {
-				if now-t > agentTSWindow {
+				if now-t > agentTSWindowSeconds() {
 					delete(agentUsedNonces, k)
 				}
 			}

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"net/url"
@@ -391,6 +392,9 @@ func registerBackupRoutes(a *App) {
 		if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
 			return NewHTTPError(400, "WebDAV 地址必须为 http/https URL")
 		}
+		if err := AssertSafeHTTPURL(base, true); err != nil {
+			return NewHTTPError(400, err.Error())
+		}
 		remote := map[string]any{
 			"id": "rmt_" + randomHex(10), "name": name,
 			"type": defaultString(req.Type, "webdav"), "base": base,
@@ -430,6 +434,9 @@ func registerBackupRoutes(a *App) {
 		base := strings.TrimRight(strings.TrimSpace(req.Base), "/")
 		if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
 			return NewHTTPError(400, "WebDAV 地址必须为 http/https URL")
+		}
+		if err := AssertSafeHTTPURL(base, true); err != nil {
+			return NewHTTPError(400, err.Error())
 		}
 		if backupURLAuthenticity(base) != backupURLAuthenticity(str(remote["base"])) && req.Password == "" {
 			return NewHTTPError(400, "服务器地址已变更，请显式提供新密码（密码留空不再沿用旧密码，避免凭据泄露到新服务器）")
@@ -480,9 +487,12 @@ func registerBackupRoutes(a *App) {
 		if remote == nil {
 			return NewHTTPError(404, "远程备份目标不存在")
 		}
-		base := str(remote["base"])
+		base := strings.TrimRight(str(remote["base"]), "/")
 		if base == "" {
 			return NewHTTPError(400, "远端 URL 为空")
+		}
+		if err := AssertSafeHTTPURL(base, true); err != nil {
+			return NewHTTPError(400, err.Error())
 		}
 		req, _ := http.NewRequest("PROPFIND", base, strings.NewReader(
 			`<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>`))
@@ -491,8 +501,9 @@ func registerBackupRoutes(a *App) {
 		if user := str(remote["username"]); user != "" {
 			req.SetBasicAuth(user, str(remote["password"]))
 		}
-		client := &http.Client{Timeout: 30 * time.Second}
-		resp, err := client.Do(req)
+		// 内网 WebDAV 允许私网地址，但拒绝回环/链路本地（含云元数据）等受保护地址；
+		// 不跟随 3xx，避免重定向绕过初始 URL 校验。
+		resp, err := NewSafeHTTPClient(30*time.Second, true, false, false).Do(req)
 		if err != nil {
 			return NewHTTPError(502, "WebDAV 连接失败："+err.Error())
 		}
@@ -528,9 +539,9 @@ func taskTarget(data, task map[string]any) string {
 }
 
 func backupPathIsData(p string) bool {
-	npLower := strings.ToLower(filepath.ToSlash(filepath.Clean(p)))
-	ndLower := strings.ToLower(filepath.ToSlash(filepath.Clean(GetConfig().DataDir)))
-	return npLower == ndLower || strings.HasPrefix(npLower, ndLower+"/")
+	// 与文件管理共用多视角判定：容器部署下备份路径是宿主机视角，
+	// 只比对容器内 data 路径会允许把 secret.key / users.json 打进备份。
+	return pathInDataDir(p)
 }
 
 func validateBackupSource(p string) (string, error) {
@@ -958,6 +969,11 @@ func uploadBackupRemotes(backupDir, filename string, remoteIDs []string, data ma
 				err = fmt.Errorf("WebDAV URL 为空")
 				break
 			}
+			targetURL := base + "/" + filename
+			if verr := AssertSafeHTTPURL(targetURL, true); verr != nil {
+				err = verr
+				break
+			}
 			body, rerr := os.Open(localPath)
 			if rerr != nil {
 				err = rerr
@@ -972,8 +988,7 @@ func uploadBackupRemotes(backupDir, filename string, remoteIDs []string, data ma
 			if user := str(remote["username"]); user != "" {
 				req.SetBasicAuth(user, str(remote["password"]))
 			}
-			client := &http.Client{Timeout: 10 * time.Minute}
-			resp, derr := client.Do(req)
+			resp, derr := NewSafeHTTPClient(10*time.Minute, true, false, false).Do(req)
 			if derr != nil {
 				err = derr
 				break
@@ -1453,55 +1468,215 @@ func registerRollbackRoutes(a *App) {
 
 func reportDir() string { return DataPath("reports") }
 
+// reportSectionResources 24h 资源概览：从指标历史按小时桶聚合平均/峰值。
+func reportSectionResources(lines []string) []string {
+	lines = append(lines, "【系统资源（过去 24 小时）】")
+	end := float64(time.Now().Unix())
+	hist := MetricsHistory(end-24*3600, end, 3600)
+	points := []map[string]any{}
+	if arr, ok := hist["points"].([]map[string]any); ok {
+		points = arr
+	} else if arr, ok := hist["points"].([]any); ok {
+		for _, item := range arr {
+			if m, ok := item.(map[string]any); ok {
+				points = append(points, m)
+			}
+		}
+	}
+	if len(points) == 0 {
+		return append(lines, "  无可用指标历史（面板未运行满 24h 或指标已过保留期）", "")
+	}
+	fields := []struct{ key, label string }{
+		{"cpu", "CPU%"}, {"mem", "内存%"}, {"disk", "磁盘%"}, {"load1", "负载"},
+	}
+	peakAlert := ""
+	for _, f := range fields {
+		avg, maxV, count := 0.0, 0.0, 0
+		for _, p := range points {
+			if raw, ok := p[f.key]; ok && raw != nil {
+				v := num(raw)
+				avg += v
+				count++
+				if v > maxV {
+					maxV = v
+				}
+			}
+		}
+		if count == 0 {
+			continue
+		}
+		avg /= float64(count)
+		if f.key == "load1" {
+			lines = append(lines, fmt.Sprintf("  %s  平均 %.2f / 峰值 %.2f", f.label, avg, maxV))
+		} else {
+			lines = append(lines, fmt.Sprintf("  %s  平均 %.1f%% / 峰值 %.1f%%", f.label, avg, maxV))
+		}
+		if f.key == "cpu" && maxV >= 90 && peakAlert == "" {
+			for _, p := range points {
+				if raw, ok := p["cpu"]; ok && num(raw) >= 90 {
+					ts := int64(num(p["ts"]))
+					peakAlert = "  ⚠ CPU 曾 ≥90%（约 " + time.Unix(ts, 0).Format("15:04") + " 附近）"
+					break
+				}
+			}
+		}
+	}
+	if peakAlert != "" {
+		lines = append(lines, peakAlert)
+	}
+	return append(lines, "")
+}
+
+// reportSectionCerts 证书段：即将到期 / 已过期列表。
+func reportSectionCerts(lines []string) []string {
+	lines = append(lines, "【证书（30 天内到期 / 已过期）】")
+	bad := []map[string]any{}
+	for _, c := range certCheckList() {
+		if str(c["status"]) == "expiring" || str(c["status"]) == "expired" || str(c["status"]) == "warn" {
+			bad = append(bad, c)
+		}
+	}
+	if len(bad) == 0 {
+		return append(lines, "  无即将到期证书 ✓", "")
+	}
+	for _, c := range bad {
+		name := str(c["name"])
+		if name == "" {
+			name = str(c["id"])
+		}
+		lines = append(lines, fmt.Sprintf("  - %s 剩余 %d 天（%s）", name, int64Of(c["days_left"]), str(c["status"])))
+	}
+	return append(lines, "")
+}
+
+// reportSectionServices 服务监控异常项。
+func reportSectionServices(lines []string) []string {
+	items := svcItems(loadSvcMonitor())
+	lines = append(lines, "【服务监控异常】")
+	bad := []map[string]any{}
+	for _, it := range items {
+		status := str(it["last_status"])
+		if status == "" {
+			status = str(it["status"])
+		}
+		if status != "ok" && status != "healthy" && status != "" {
+			bad = append(bad, it)
+		}
+	}
+	if len(bad) == 0 {
+		return append(lines, fmt.Sprintf("  共监控 %d 项，均正常 ✓", len(items)), "")
+	}
+	for _, it := range bad {
+		status := defaultString(str(it["last_status"]), str(it["status"]))
+		lines = append(lines, "  - "+str(it["name"])+"（"+status+"）")
+	}
+	return append(lines, "")
+}
+
+// reportSectionUptime 站点可用性：当前 DOWN 的站点。
+func reportSectionUptime(lines []string) []string {
+	items := uptimeItems(loadUptime())
+	lines = append(lines, "【站点可用性】")
+	down := []map[string]any{}
+	for _, it := range items {
+		if str(it["last_status"]) == "down" {
+			down = append(down, it)
+		}
+	}
+	if len(down) == 0 {
+		return append(lines, fmt.Sprintf("  共监控 %d 个站点，均可达 ✓", len(items)), "")
+	}
+	for _, it := range down {
+		since := defaultString(str(it["down_since"]), "持续")
+		lines = append(lines, "  - "+str(it["name"])+"（"+str(it["url"])+"）已 "+since+" 不可达")
+	}
+	return append(lines, "")
+}
+
+// reportSectionAlerts 近 24h 资源告警统计（来自通知中心记录）。
+func reportSectionAlerts(lines []string) []string {
+	var logs []map[string]any
+	_ = ReadJSON(DataPath("notify_logs.json"), &logs)
+	cutoff := time.Now().Add(-24 * time.Hour)
+	recent := []map[string]any{}
+	for _, entry := range logs {
+		ts := str(entry["time"])
+		t, err := time.Parse(time.RFC3339, ts)
+		if err != nil {
+			t, err = time.ParseInLocation("2006-01-02 15:04:05", ts, time.Local)
+		}
+		if err == nil && t.After(cutoff) {
+			recent = append(recent, entry)
+		}
+	}
+	lines = append(lines, "【资源告警（过去 24 小时）】")
+	if len(recent) == 0 {
+		return append(lines, "  无阈值告警触发 ✓", "")
+	}
+	byMetric := map[string]int{}
+	for _, entry := range recent {
+		metric := defaultString(str(entry["metric"]), "?")
+		byMetric[metric]++
+	}
+	parts := []string{}
+	for metric, count := range byMetric {
+		parts = append(parts, metric+"×"+itoa(count))
+	}
+	sort.Strings(parts)
+	lines = append(lines, fmt.Sprintf("  共触发 %d 次：%s", len(recent), strings.Join(parts, "，")))
+	if last := str(recent[0]["message"]); last != "" {
+		lines = append(lines, "  （末次："+truncateText(last, 120)+"）")
+	}
+	return append(lines, "")
+}
+
+// reportRetention 报告轮转：只保留最近 30 份 .txt。
+func reportRetention() {
+	entries, err := os.ReadDir(reportDir())
+	if err != nil {
+		return
+	}
+	names := []string{}
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".txt") {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	for i := 0; i < len(names)-30; i++ {
+		_ = os.Remove(filepath.Join(reportDir(), names[i]))
+	}
+}
+
 func generateDailyReport() map[string]any {
 	_ = os.MkdirAll(reportDir(), 0o700)
-	now := time.Now()
-	overview := metricsHub.overview()
-	mem := mapOf(overview["memory"])
-	storage := mapOf(overview["storage"])
-	load := mapOf(overview["load"])
-	sites := mergedSites()
-	users, _ := LoadUsers()
 	lines := []string{
-		"# Graw 每日巡检报告",
+		"====== Graw 巡检报告 ======",
+		"生成时间：" + time.Now().Format("2006-01-02 15:04:05"),
 		"",
-		"生成时间：" + now.Format("2006-01-02 15:04:05"),
-		"",
-		"## 系统概览",
-		"",
-		fmt.Sprintf("- CPU 使用率：%.1f%%", num(overview["cpu"])),
-		fmt.Sprintf("- 内存使用率：%.1f%%（已用 %.1f GB / 总共 %.1f GB）",
-			num(mem["percent"]), num(mem["used"])/1024/1024/1024, num(mem["total"])/1024/1024/1024),
-		fmt.Sprintf("- 磁盘使用率：%.1f%%（可用 %.1f GB）",
-			num(storage["percent"]), num(storage["free"])/1024/1024/1024),
-		fmt.Sprintf("- 负载：%.2f / %.2f / %.2f", num(load["load1"]), num(load["load5"]), num(load["load15"])),
-		"",
-		"## 站点",
-		"",
-		fmt.Sprintf("- 站点总数：%d", len(sites)),
 	}
-	enabled := 0
-	for _, s := range sites {
-		if boolOf(s["enabled"]) {
-			enabled++
-		}
+	lines = reportSectionResources(lines)
+	lines = reportSectionCerts(lines)
+	lines = reportSectionServices(lines)
+	lines = reportSectionUptime(lines)
+	lines = reportSectionAlerts(lines)
+	lines = append(lines, "（完整报告以文本存储于 data/reports/，可在面板查看）")
+	text := strings.Join(lines, "\n")
+	fname := time.Now().Format("20060102_150405") + ".txt"
+	if err := os.WriteFile(filepath.Join(reportDir(), fname), []byte(text), 0o600); err != nil {
+		log.Printf("graw: 写巡检报告失败: %v", err)
+		return map[string]any{"file": "", "text": text, "pushed": 0}
 	}
-	lines = append(lines, fmt.Sprintf("- 已启用站点：%d", enabled))
-	lines = append(lines, "", "## 账号", "")
-	lines = append(lines, fmt.Sprintf("- 账号总数：%d", len(users)))
-	admins := 0
-	for _, u := range users {
-		if u.Role() == "admin" {
-			admins++
-		}
-	}
-	lines = append(lines, fmt.Sprintf("- 管理员账号：%d", admins))
-	text := strings.Join(lines, "\n") + "\n"
-	fname := "report_" + now.Format("20060102_150405") + ".md"
-	_ = os.WriteFile(filepath.Join(reportDir(), fname), []byte(text), 0o600)
+	reportRetention()
+	// 只推送摘要，避免整篇长文刷屏（与 Python reporting 一致）。
 	pushed := 0
 	if PushAllFunc != nil {
-		pushed, _ = PushAllFunc(text)
+		end := 6
+		if len(lines) < end {
+			end = len(lines)
+		}
+		summary := strings.Join(lines[:end], "\n") + "\n（全文见面板「巡检报告」）"
+		pushed, _ = PushAllFunc("【Graw 每日巡检】\n" + summary)
 	}
 	return map[string]any{"file": fname, "pushed": pushed, "text": text}
 }
@@ -1517,7 +1692,9 @@ func registerReportRoutes(a *App) {
 		files := []map[string]any{}
 		entries, _ := os.ReadDir(reportDir())
 		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			name := e.Name()
+			// 新版报告为 .txt；保留 .md 以兼容早期 Go 版本生成的文件。
+			if e.IsDir() || (!strings.HasSuffix(name, ".txt") && !strings.HasSuffix(name, ".md")) {
 				continue
 			}
 			info, _ := e.Info()
@@ -1527,14 +1704,25 @@ func registerReportRoutes(a *App) {
 				size = info.Size()
 				mod = info.ModTime()
 			}
-			files = append(files, map[string]any{"name": e.Name(), "size": size, "created_at": mod.Format("2006-01-02 15:04:05")})
+			files = append(files, map[string]any{"name": name, "size": size, "created_at": mod.Format("2006-01-02 15:04:05")})
 		}
-		sort.Slice(files, func(i, j int) bool { return str(files[i]["created_at"]) > str(files[j]["created_at"]) })
+		sort.Slice(files, func(i, j int) bool { return str(files[i]["name"]) > str(files[j]["name"]) })
+		limit := QueryInt(r, "limit", 30)
+		if limit <= 0 {
+			limit = 30
+		}
+		if limit > 100 {
+			limit = 100
+		}
+		if len(files) > limit {
+			files = files[:limit]
+		}
 		return WriteJSON(w, 200, map[string]any{"files": files})
 	})
 	a.Get("/api/report/{fname}", perm("report"), func(w http.ResponseWriter, r *http.Request) error {
 		name := PathParam(r, "fname")
-		if strings.Contains(name, "..") || strings.Contains(name, "/") || !strings.HasSuffix(name, ".md") {
+		if strings.Contains(name, "..") || strings.Contains(name, "/") ||
+			(!strings.HasSuffix(name, ".txt") && !strings.HasSuffix(name, ".md")) {
 			return NewHTTPError(400, "非法文件名")
 		}
 		data, err := os.ReadFile(filepath.Join(reportDir(), name))

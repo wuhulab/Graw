@@ -843,10 +843,12 @@ func tamperScan(site map[string]any) []map[string]any {
 
 func tamperWS(w http.ResponseWriter, r *http.Request) {
 	u := AuthenticateWS(r)
-	if u == nil || !HasPerm(u, "tamper") {
+	// 与 HTTP 路由一致：默认密码账号必须先改密；否则可绕过强制改密订阅告警。
+	if u == nil || IsDefaultPassword(u.PasswordHash()) || !HasPerm(u, "tamper") {
 		WriteJSON(w, 403, map[string]any{"detail": "无权限"})
 		return
 	}
+	token := r.URL.Query().Get("token")
 	if n := currentNode(); str(n["type"]) == "ssh" && agentReady(n) {
 		bridgeAgentWS(w, r, n, "/api/tamper/ws")
 		return
@@ -858,9 +860,17 @@ func tamperWS(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
+	lastCheck := time.Now()
 	for {
 		select {
 		case <-ticker.C:
+			// 周期性复检会话：改密 / 踢出后主动断开长连接。
+			if time.Since(lastCheck) > 30*time.Second {
+				lastCheck = time.Now()
+				if !WSStillValid(token) {
+					return
+				}
+			}
 			data := loadTamper()
 			_ = conn.WriteText(mustJSON(map[string]any{
 				"type": "tamper", "data": map[string]any{
@@ -888,6 +898,38 @@ var updateState struct {
 	running bool
 }
 
+// selfContainerName 返回面板自身容器名：优先 GRAW_CONTAINER_NAME，否则用容器 hostname。
+// host 网络部署下容器 hostname 是宿主机名，无法定位自身；此时必须显式配置。
+func selfContainerName() string {
+	if name := strings.TrimSpace(os.Getenv("GRAW_CONTAINER_NAME")); name != "" {
+		return name
+	}
+	name, _ := os.Hostname()
+	return strings.TrimSpace(name)
+}
+
+// detectComposeDir 通过当前容器 label 自动探测 docker compose 项目目录。
+// 显式配置 GRAW_COMPOSE_DIR 优先；探测失败返回空串（docker-run 部署需手动升级）。
+func detectComposeDir() string {
+	if dir := strings.TrimSpace(os.Getenv("GRAW_COMPOSE_DIR")); dir != "" {
+		return dir
+	}
+	name := selfContainerName()
+	if name == "" {
+		return ""
+	}
+	res := dockerRun(10*time.Second, "inspect", name, "--format",
+		`{{index .Config.Labels "com.docker.compose.project.working_dir"}}`)
+	if res.Code != 0 {
+		return ""
+	}
+	dir := strings.TrimSpace(res.Stdout)
+	if dir == strings.TrimSpace("<no value>") || !strings.HasPrefix(dir, "/") {
+		return ""
+	}
+	return dir
+}
+
 func registerUpdateRoutes(a *App) {
 	a.Get("/api/update/status", adminOnly(), func(w http.ResponseWriter, r *http.Request) error {
 		current := SelfAppVersion()
@@ -908,7 +950,7 @@ func registerUpdateRoutes(a *App) {
 		if isRunningInContainer() {
 			deployMode = "docker"
 			deployDetail = "compose"
-			if strings.TrimSpace(os.Getenv("GRAW_COMPOSE_DIR")) == "" {
+			if detectComposeDir() == "" {
 				deployDetail = "docker-run"
 			}
 		}
@@ -946,7 +988,7 @@ func registerUpdateRoutes(a *App) {
 		}
 		updateState.running = true
 		updateState.Unlock()
-		dir := strings.TrimSpace(os.Getenv("GRAW_COMPOSE_DIR"))
+		dir := detectComposeDir()
 		if dir == "" {
 			updateState.Lock()
 			updateState.running = false

@@ -469,6 +469,17 @@ func UserPerms(u User) (map[string]bool, bool) {
 	return set, false
 }
 
+// IsFullAdmin 判断是否为「完整管理员」：角色 admin 且 perms 缺失/null。
+// 面板自身安全边界（用户管理/节点/SSH 密钥/插件/更新等）必须用它判定，
+// 不能只看 role——受限管理员改自己的 perms 即可提权。
+func IsFullAdmin(u User) bool {
+	if u == nil || u.Role() != "admin" {
+		return false
+	}
+	_, full := UserPerms(u)
+	return full
+}
+
 // HasPerm 判断用户是否拥有任一模块权限（全量权限恒真）。
 // 多模块参数是「或」关系；需要「与」时必须由调用方逐个判断。
 func HasPerm(u User, modules ...string) bool {
