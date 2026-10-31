@@ -1501,6 +1501,7 @@ Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队
       system: 'النظام',
       arch: 'البنية',
       cpuCount: 'أنوية CPU',
+      runtime: 'بيئة التشغيل',
       cpuCountValue: '{physical} نوى / {logical} خيط',
       bootTime: 'وقت الإقلاع',
       uptime: 'مدة التشغيل',

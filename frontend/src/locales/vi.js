@@ -1546,6 +1546,7 @@ Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队
       system: 'Hệ thống',
       arch: 'Kiến trúc',
       cpuCount: 'Lõi CPU',
+      runtime: 'Môi trường chạy',
       cpuCountValue: '{physical} lõi / {logical} luồng',
       bootTime: 'Thời gian khởi động',
       uptime: 'Thời gian chạy',

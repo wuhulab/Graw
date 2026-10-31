@@ -1211,6 +1211,7 @@ Graw 커뮤니티 앱 스토어(이하 "본 스토어")는 ShunX 공익 마더�
     info: {
       hostname: '호스트명', system: '시스템', arch: '아키텍처',
       cpuCount: 'CPU 코어',
+      runtime: '런타임',
       cpuCountValue: '물리 {physical} / 논리 {logical}',
       bootTime: '시작 시간', uptime: '가동 시간',
     },

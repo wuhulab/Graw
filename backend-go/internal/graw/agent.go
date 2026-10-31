@@ -784,6 +784,22 @@ func (r *agentIdleReader) Read(p []byte) (int, error) {
 	return r.body.Read(p)
 }
 
+// agentProxyRequestURI 返回真正发给子节点的请求 URI。
+//
+// 兼容旧版子节点（≤1.5.3 的 FastAPI 实现）：备忘录路由被注册成 /api/notes/，
+// 不带尾斜杠会直接 404（其余接口反过来只认无尾斜杠，不能统一追斜杠）。
+// 新版 Go 子节点会在 ServeHTTP 里把 /api/notes/ 归一为 /api/notes，
+// 所以这里补斜杠对新旧两代节点都能命中。
+func agentProxyRequestURI(r *http.Request) string {
+	if r.URL.Path == "/api/notes" {
+		if r.URL.RawQuery != "" {
+			return "/api/notes/?" + r.URL.RawQuery
+		}
+		return "/api/notes/"
+	}
+	return r.URL.RequestURI()
+}
+
 // proxyToAgent 把请求经 SSH 隧道转发到子节点，并把响应流式写回浏览器。
 // 上传直接流式读取 r.Body，下载边读边写，内存占用与文件大小无关。
 // 只透传 Content-Type / Accept 与 Authorization（agent JWT），
@@ -819,7 +835,7 @@ func proxyToAgent(w http.ResponseWriter, r *http.Request, node map[string]any) {
 		body = r.Body
 	}
 	// 用 RequestURI 保留 query，子节点路由才能命中。
-	conn, reader, err := openAgentConn(client, port, r.Method, r.URL.RequestURI(), headers, body, bodyLen)
+	conn, reader, err := openAgentConn(client, port, r.Method, agentProxyRequestURI(r), headers, body, bodyLen)
 	if err != nil {
 		WriteJSON(w, 502, map[string]any{"detail": "Agent 代理失败，请检查子节点 Agent 状态"})
 		return
@@ -1335,6 +1351,7 @@ func registerNodesAndAgentRoutes(a *App) {
 				info := metricsHub.info()
 				base["uptime_seconds"] = info["uptime_seconds"]
 				base["hostname"] = info["hostname"]
+				base["version"] = SelfAppVersion()
 				results = append(results, base)
 				continue
 			}
@@ -1368,6 +1385,9 @@ func registerNodesAndAgentRoutes(a *App) {
 			for k, v := range parseRemoteOverview(string(out)) {
 				base[k] = v
 			}
+			// 版本号经 Agent 隧道读取；裸 SSH 节点或旧版无该接口时为空，
+			// 由前端提示「早期版本，请及时更新」。
+			base["version"] = remotePanelVersion(client, node)
 			results = append(results, base)
 		}
 		return WriteJSON(w, 200, map[string]any{
@@ -1493,6 +1513,35 @@ func sortStrings(v []string) {
 			v[j], v[j-1] = v[j-1], v[j]
 		}
 	}
+}
+
+// nodeAgentPort 返回节点 Agent 监听端口；未配置时回落到默认端口。
+func nodeAgentPort(node map[string]any) int {
+	if p := int(int64Of(node["agent_port"])); p > 0 {
+		return p
+	}
+	return defaultAgentPort
+}
+
+// remotePanelVersion 经 Agent 隧道读取子节点 /api/health 中的面板版本。
+//
+// 仅在节点启用 Agent 时可用：裸 SSH 节点、旧版没有该接口或请求失败都返回空串，
+// 前端据此显示「早期版本，请及时更新」，不把未知版本误判为正常。
+func remotePanelVersion(client *ssh.Client, node map[string]any) string {
+	if !agentReady(node) {
+		return ""
+	}
+	status, _, body, err := httpOverSSH(client, nodeAgentPort(node), http.MethodGet, "/api/health", nil, nil)
+	if err != nil || status != http.StatusOK {
+		return ""
+	}
+	var payload struct {
+		Version string `json:"version"`
+	}
+	if json.Unmarshal(body, &payload) != nil {
+		return ""
+	}
+	return strings.TrimSpace(payload.Version)
 }
 
 // remoteOverviewScript 是远程概览采集脚本：用 ===BLOCKxxx=== 标记分隔各段，

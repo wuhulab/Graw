@@ -1212,6 +1212,7 @@ Version du document : 1.1.0 | Mise à jour : 16 août 2026`,
     info: {
       hostname: "Nom d'hôte", system: 'Système', arch: 'Architecture',
       cpuCount: 'Cœurs CPU',
+      runtime: 'Environnement d’exécution',
       cpuCountValue: '{physical} phys. / {logical} log.',
       bootTime: 'Heure de démarrage', uptime: 'Durée de fonctionnement',
     },

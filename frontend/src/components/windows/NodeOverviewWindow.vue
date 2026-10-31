@@ -125,6 +125,10 @@
                 <span class="bar-val">{{ n.storage?.percent }}%<small v-if="n.storage?.total"> · {{ formatBytes(n.storage.total) }}</small></span>
               </div>
               <div class="meta-line">
+                <!-- 面板版本：拿不到版本接口的节点（裸 SSH / 旧版）提示需要更新 -->
+                <span class="ver-line" :class="{ warn: !n.version }">
+                  {{ t('nodeoverview.version') }}: {{ n.version || t('nodeoverview.oldVersion') }}
+                </span>
                 <span>{{ t('nodeoverview.load') }}: {{ n.load?.load1 }}</span>
                 <span v-if="n.uptime_seconds">{{ t('nodeoverview.uptime') }}: {{ fmtUptime(n.uptime_seconds) }}</span>
                 <span v-if="n.latency_ms">{{ t('nodeoverview.latency') }}: {{ n.latency_ms }}ms</span>
@@ -414,6 +418,7 @@ onUnmounted(() => {
 .bar-val small { color: var(--ui-text-secondary); }
 
 .meta-line { display: flex; gap: 12px; margin-top: 8px; font-size: 11px; color: var(--ui-text-secondary); flex-wrap: wrap; }
+.ver-line.warn { color: #d97706; }
 .tags-line { display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap; }
 .node-tag { cursor: pointer; color: #1d4ed8; }
 

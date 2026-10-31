@@ -90,6 +90,8 @@ function pushApiError(err) {
 
 // 统一响应错误处理：先做原有登录态处置，再记录日志，最后继续把错误抛给调用方。
 function onApiError(err) {
+  // 有响应（且非 5xx）说明网络链路正常，刷新连通性基准；5xx 视为后端异常，不计入「可达」。
+  if (err?.response && err.response.status < 500) markBackendOk()
   if (err?.response?.status === 401 && auth.token) forceLogout()
   if (
     err?.response?.status === 403 &&
@@ -102,8 +104,53 @@ function onApiError(err) {
   return Promise.reject(err)
 }
 
-api.interceptors.response.use(r => r, onApiError)
-dockerHttp.interceptors.response.use(r => r, onApiError)
+api.interceptors.response.use((res) => { markBackendOk(); return res }, onApiError)
+dockerHttp.interceptors.response.use((res) => { markBackendOk(); return res }, onApiError)
+
+// --- 后端连通性看门狗 ---
+//
+// 背景：后端挂掉 / 本地断网时，面板界面只是「不刷新」，用户很难判断是卡顿还是服务异常。
+// 做法：每 15 秒请求一次公开的 /api/health；只有「完全拿不到响应或 5xx」持续超过 2 分钟
+// 才在错误日志中弹一次提醒（forceShow 保证「仅程序错误弹窗」模式下也能看到）。
+// 4xx 说明后端可达（只是接口/鉴权问题），不计入离线；恢复任意正常响应后自动复位，
+// 便于下一次长时间断连再次提醒。
+const CONNECTIVITY_PING_MS = 15000
+const OFFLINE_ALERT_MS = 120000
+let lastBackendOkAt = Date.now()
+let offlineAlerted = false
+let connectivityTimer = null
+
+function markBackendOk() {
+  lastBackendOkAt = Date.now()
+  offlineAlerted = false
+}
+
+/**
+ * 启动后端连通性看门狗（幂等，重复调用不会叠加定时器）。
+ * @returns {void}
+ */
+export function startConnectivityWatch() {
+  if (connectivityTimer) return
+  const probe = async () => {
+    try {
+      // silentError：探测失败不逐条写日志，避免断网时刷屏；
+      // timeout 覆盖默认 60 秒，避免探测请求悬挂导致预警被无限推迟。
+      await api.get('/health', { timeout: 8000, silentError: true })
+    } catch (err) {
+      const status = err?.response?.status || 0
+      if (status > 0 && status < 500) return          // 后端可达，仅是接口/鉴权问题
+      if (offlineAlerted) return                      // 同一次断连只提醒一次
+      if (Date.now() - lastBackendOkAt < OFFLINE_ALERT_MS) return
+      offlineAlerted = true
+      pushError('network', '网络错误：服务器问题或者本地网络出现卡顿', {
+        detail: `已超过 ${Math.floor(OFFLINE_ALERT_MS / 1000)} 秒无法连接到后端`,
+        forceShow: true,
+      })
+    }
+  }
+  probe()
+  connectivityTimer = setInterval(probe, CONNECTIVITY_PING_MS)
+}
 
 export default api                                     // 默认导出通用实例（含 token / 节点拦截），供各模块复用
 
@@ -256,9 +303,11 @@ export const recycleApi = {
   empty: () => api.post('/recycle/empty').then(r => r.data)
 }
 
+// 备忘录后端注册的是精确路由 /api/notes（无尾斜杠）；带尾斜杠会被 Go 1.22+
+// ServeMux 判为不匹配而 404，与该文件其余模块一样使用无尾斜杠路径。
 export const notesApi = {
-  get: () => api.get('/notes/').then(r => r.data),
-  save: (content) => api.post('/notes/', { content }).then(r => r.data)
+  get: () => api.get('/notes').then(r => r.data),
+  save: (content) => api.post('/notes', { content }).then(r => r.data)
 }
 
 export const sitesApi = {

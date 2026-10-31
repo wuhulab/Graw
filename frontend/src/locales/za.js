@@ -1550,6 +1550,7 @@ Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队
       system: 'Heh dung',
       arch: 'Wengs ef',
       cpuCount: 'CPU swzsim',
+      runtime: 'Yunhngj gunghvunj (运行环境)',
       cpuCountValue: '{physical}qit / {logical}sien',
       bootTime: 'Hai cojgei seizgan',
       uptime: 'Okyawh cang',

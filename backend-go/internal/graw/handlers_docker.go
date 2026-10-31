@@ -3,6 +3,7 @@ package graw
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -26,24 +27,77 @@ var (
 )
 
 func dockerCLI() string {
+	bin := ""
 	if v := strings.TrimSpace(os.Getenv("GRAW_DOCKER_BIN")); v != "" {
-		return v
-	}
-	dockerBinOnce.Do(func() {
-		// 容器部署时 docker CLI 在面板容器内、通过挂载的 docker.sock 访问引擎，
-		// 因此优先在本容器 PATH 查找，而不是 chroot 到宿主机（宿主未必装 CLI）。
-		for _, name := range []string{"docker", "podman"} {
-			if p, err := exec.LookPath(name); err == nil {
-				dockerBin = p
-				return
+		bin = v
+	} else {
+		dockerBinOnce.Do(func() {
+			// 容器部署时 docker CLI 在面板容器内、通过挂载的 docker.sock 访问引擎，
+			// 因此优先在本容器 PATH 查找，而不是 chroot 到宿主机（宿主未必装 CLI）。
+			for _, name := range []string{"docker", "podman"} {
+				if p, err := exec.LookPath(name); err == nil {
+					dockerBin = p
+					break
+				}
+				if p := HostWhich(name); p != "" {
+					dockerBin = p
+					break
+				}
 			}
-			if p := HostWhich(name); p != "" {
-				dockerBin = p
+		})
+		bin = dockerBin
+	}
+	// 面板镜像自带 docker CLI，`docker -v` 恒可用；真正决定能否管理容器的是
+	// 能否连到 daemon。漏挂 socket 的容器部署在此自动指向宿主机 socket。
+	if strings.TrimSuffix(strings.ToLower(filepath.Base(bin)), ".exe") == "docker" {
+		applyHostDockerSocket()
+	}
+	return bin
+}
+
+// dockerHostSocketOnce 保证 socket 探测只执行一次，避免每条 docker 命令都 stat 一遍。
+var dockerHostSocketOnce sync.Once
+
+// applyHostDockerSocket 在「只挂载了宿主机根目录、漏挂 docker.sock」的容器部署下，
+// 把 DOCKER_HOST 指向宿主机上的 socket，恢复容器/镜像管理能力。
+//
+// 背景：Docker 窗口的可用性判定依赖 daemon，而不是 docker CLI 是否存在。
+// 官方 compose 会把 /var/run/docker.sock 挂进面板容器；但用 `docker run`
+// 只挂 `/:/host`（HOST_ROOT=/host）的用户，容器内 `docker -v` 正常、Docker
+// 窗口却一直显示「不可用」。此时宿主机 socket 可通过 HOST_ROOT 访问。
+//
+// 仅在以下条件同时满足时改写（显式配置永远优先）：
+//   - 本机模式（远程节点的 docker 命令走 SSH，与本机 CLI 环境无关）；
+//   - 用户未显式设置 DOCKER_HOST；
+//   - 默认 /var/run/docker.sock 不存在（已正确挂载时保持默认，不改变既有行为）；
+//   - HOST_ROOT 下确实存在 socket 文件。
+func applyHostDockerSocket() {
+	// 请求级节点可能已切到远端：此时不能用本机探测结果覆盖环境，
+	// 也不能提前消耗掉 Once（本地请求稍后仍需检测）。
+	if remoteActive() {
+		return
+	}
+	dockerHostSocketOnce.Do(func() {
+		if isWindows() || strings.TrimSpace(os.Getenv("DOCKER_HOST")) != "" {
+			return
+		}
+		hostRoot := GetConfig().HostRoot
+		if hostRoot == "" {
+			return
+		}
+		if _, err := os.Stat("/var/run/docker.sock"); err == nil {
+			return
+		}
+		for _, rel := range []string{"var/run/docker.sock", "run/docker.sock"} {
+			p := filepath.Join(hostRoot, rel)
+			st, err := os.Stat(p)
+			if err == nil && st.Mode()&os.ModeSocket != 0 {
+				_ = os.Setenv("DOCKER_HOST", "unix://"+filepath.ToSlash(p))
+				log.Printf("未挂载 /var/run/docker.sock，改用宿主机 socket：%s", p)
 				return
 			}
 		}
 	})
-	return dockerBin
 }
 
 func dockerRun(timeout time.Duration, args ...string) CmdResult {
@@ -135,21 +189,31 @@ func dockerJSONArray(args ...string) ([]map[string]any, CmdResult) {
 	return items, res
 }
 
-func dockerAvailable() (string, string) {
-	bin := dockerCLI()
-	if bin == "" {
-		return "", ""
+// dockerAvailable 探测容器引擎是否真的可用，返回服务端版本、宿主系统与失败原因。
+//
+// 判定必须落到 daemon：`docker -v` 只说明客户端存在（面板镜像自带 docker CLI），
+// 能列出容器才说明能连上 daemon。失败时把 CLI 的 stderr 作为原因返回，
+// 让前端直接展示具体问题（socket 未挂载 / 权限不足 / daemon 未启动），
+// 而不是笼统的「Docker 不可用」。
+func dockerAvailable() (version, osName, reason string) {
+	if dockerCLI() == "" {
+		return "", "", "未检测到 docker/podman 命令，请确认面板环境已安装容器 CLI"
 	}
 	res := dockerRun(10*time.Second, "version", "--format", "{{.Server.Version}}|{{.Server.Os}}")
-	if res.Code != 0 {
-		return "", ""
+	version = strings.TrimSpace(res.Stdout)
+	if res.Code != 0 || version == "" {
+		reason = cleanDockerReason(res.Err, res.Stderr)
+		if reason == "" {
+			reason = "无法连接容器引擎（docker version 执行失败）"
+		}
+		return "", "", reason
 	}
-	parts := strings.SplitN(strings.TrimSpace(res.Stdout), "|", 2)
-	version, osName := parts[0], ""
+	parts := strings.SplitN(version, "|", 2)
+	version = strings.TrimSpace(parts[0])
 	if len(parts) > 1 {
-		osName = parts[1]
+		osName = strings.TrimSpace(parts[1])
 	}
-	return version, osName
+	return version, osName, ""
 }
 
 func cleanDockerReason(err error, stderr string) string {
@@ -178,9 +242,12 @@ func dockerEngineName() string {
 }
 
 func dockerStatus() map[string]any {
-	version, osName := dockerAvailable()
+	version, osName, reason := dockerAvailable()
 	if version == "" {
-		return map[string]any{"available": false, "reason": "Docker/Podman 不可用"}
+		if reason == "" {
+			reason = "Docker/Podman 不可用"
+		}
+		return map[string]any{"available": false, "reason": reason}
 	}
 	containers, _ := dockerJSONLines("ps", "-a", "--format", "{{json .}}")
 	images, _ := dockerJSONLines("images", "--format", "{{json .}}")
@@ -1413,7 +1480,7 @@ func jsonQuoteList(items []string) string {
 }
 
 func dockerConfigGetHandler(w http.ResponseWriter, r *http.Request) error {
-	if v, _ := dockerAvailable(); v == "" {
+	if v, _, _ := dockerAvailable(); v == "" {
 		return NewHTTPError(503, "Docker/Podman 不可用")
 	}
 	engine, path := dockerConfigPath()

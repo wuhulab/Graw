@@ -9,6 +9,7 @@ import { createApp } from 'vue'                         // Vue 核心：createAp
 import App from './App.vue'                             // 桌面环境根组件（登录态 + 窗口 / 任务栏 / 桌面）
 import i18n, { ensureLocale } from './locales'          // vue-i18n 插件 + 语言包按需加载
 import { pushError } from './store/errorLog'            // 全局错误日志：收集未捕获异常并弹窗
+import { startConnectivityWatch } from './api'           // 后端连通性看门狗：长时间断连时提醒用户
 import './assets/style.css'                             // 全局基础样式：深色背景、字体、reset
 
 /**
@@ -100,6 +101,7 @@ async function bootstrap() {
     const app = createApp(App)
     installErrorCapture(app)                 // 先装全局错误捕获，再挂载应用
     app.use(i18n).mount('#app')
+    startConnectivityWatch()                 // 挂载后启动断连探测（后端不可达超过 2 分钟时提醒）
     removeBootSplash()
   } catch (e) {
     // 挂载失败（例如上游 chunk 加载异常）：保留启动动画而不是白屏，

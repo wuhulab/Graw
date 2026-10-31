@@ -1,7 +1,7 @@
 <!--
   InfoNotesCard.vue — 系统信息 / 备忘录卡片（桌面版）
   作用：桌面卡片之一，在「系统信息」与「备忘录」两个标签页间切换。系统信息展示
-        主机名 / 系统 / 架构 / CPU 核数 / Python / 启动时间 / 运行时长；备忘录为
+        主机名 / 系统 / 架构 / CPU 核数 / 运行环境 / 启动时间 / 运行时长；备忘录为
         一块失焦自动保存的文本区。
   数据：系统信息来自共享 systemState.info（store/systemMetrics，单条 WS 驱动）；
         备忘录经 notesApi 读写。节点不可达时由 MetricsFallback 覆盖提示。
@@ -22,7 +22,7 @@
         <div class="row"><span class="k">{{ $t('cards.info.system') }}</span><span class="v">{{ info.system }} {{ info.release }}</span></div>
         <div class="row"><span class="k">{{ $t('cards.info.arch') }}</span><span class="v">{{ info.machine }}</span></div>
         <div class="row"><span class="k">{{ $t('cards.info.cpuCount') }}</span><span class="v">{{ $t('cards.info.cpuCountValue', { physical: info.cpu_count_physical, logical: info.cpu_count }) }}</span></div>
-        <div class="row"><span class="k">Python</span><span class="v">{{ info.python_version }}</span></div>
+        <div class="row"><span class="k">{{ $t('cards.info.runtime') }}</span><span class="v">{{ info.python_version }}</span></div>
         <div class="row"><span class="k">{{ $t('cards.info.bootTime') }}</span><span class="v">{{ formatTime(info.boot_time) }}</span></div>
         <div class="row"><span class="k">{{ $t('cards.info.uptime') }}</span><span class="v">{{ uptimeStr }}</span></div>
       </div>

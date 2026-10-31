@@ -16,11 +16,30 @@ const MAX_ITEMS = 80              // 日志上限：够排查问题，又不会�
 const DEDUPE_WINDOW_MS = 3000     // 同一错误的去重窗口（毫秒）
 const MAX_DETAIL_LEN = 4000       // 单条详情最大长度，避免超长堆栈撑爆界面
 
+// 只有这些来源属于「程序性错误」（Vue 运行时异常 / 脚本异常 / 未处理 Promise）；
+// 接口错误（api）、资源加载失败（resource）不算程序错误。
+const PROGRAM_SOURCES = new Set(['vue', 'window', 'promise'])
+const PROGRAM_ONLY_KEY = 'graw.errorLog.programOnly'   // 偏好项，仅存布尔值，不含敏感日志
+
 // 对外暴露的错误日志状态：visible 控制浮窗显隐，items 为新→旧排列
 export const errorLog = reactive({
   visible: false,
   items: [],
+  // programOnly=true 时只对程序性错误弹窗；接口/网络错误仍会记录，便于事后排查。
+  programOnly: false,
 })
+
+try {
+  errorLog.programOnly = localStorage.getItem(PROGRAM_ONLY_KEY) === '1'
+} catch (e) { /* 隐私模式 / 存储被禁：使用默认值 */ }
+
+// 切换「仅程序性错误弹窗」并持久化偏好。
+export function setProgramOnly(on) {
+  errorLog.programOnly = !!on
+  try {
+    localStorage.setItem(PROGRAM_ONLY_KEY, on ? '1' : '0')
+  } catch (e) { /* 存储失败不影响当前会话 */ }
+}
 
 let seq = 0   // 自增 id，供列表 key 与去重定位
 
@@ -46,24 +65,28 @@ export function pushError(source, message, extra = {}) {
   try {
     const msg = clip(String(message || '').trim(), 1000)
     if (!msg) return
+    const src = String(source || 'unknown')
+    // 仅程序性错误弹窗模式下，接口/网络等错误照常入列表，但不自动打开浮窗。
+    // forceShow 用于「后端长时间不可达」这类必须让用户看到的提醒，不受该开关限制。
+    const shouldPop = !!extra.forceShow || !errorLog.programOnly || PROGRAM_SOURCES.has(src)
     const ts = Date.now()
     // 去重：最近几条里若有同来源同文案，只累计次数，避免刷屏
     const dup = errorLog.items.find(
-      (it) => it.source === source && it.message === msg && ts - it.lastAt < DEDUPE_WINDOW_MS
+      (it) => it.source === src && it.message === msg && ts - it.lastAt < DEDUPE_WINDOW_MS
     )
     if (dup) {
       dup.count += 1
       dup.lastAt = ts
       dup.time = nowText()
       dup.detail = clip(extra.detail || dup.detail)
-      errorLog.visible = true
+      if (shouldPop) errorLog.visible = true
       return
     }
     errorLog.items.unshift({
       id: ++seq,
       time: nowText(),
       lastAt: ts,
-      source: String(source || 'unknown'),
+      source: src,
       message: msg,
       detail: clip(extra.detail || ''),
       url: clip(extra.url || '', 500),
@@ -72,7 +95,7 @@ export function pushError(source, message, extra = {}) {
       count: 1,
     })
     if (errorLog.items.length > MAX_ITEMS) errorLog.items.length = MAX_ITEMS
-    errorLog.visible = true
+    if (shouldPop) errorLog.visible = true
   } catch (e) {
     // 错误收集器自身失败时静默：不能因为记录日志而打断业务
   }

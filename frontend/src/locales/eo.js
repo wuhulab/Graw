@@ -1254,6 +1254,7 @@ Dokumenta versio: 1.1.0 | Ĝisdatigita: 16-a de aŭgusto 2026`,
     info: {
       hostname: 'Gastigantnomo', system: 'Sistemo', arch: 'Arkitekturo',
       cpuCount: 'CPU-kernoj',
+      runtime: 'Rultempa medio',
       cpuCountValue: '{physical} fizikaj / {logical} logikaj',
       bootTime: 'Ŝarĝtempo', uptime: 'Daŭro',
     },

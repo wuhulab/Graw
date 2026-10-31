@@ -1212,6 +1212,7 @@ VII. Прочие условия
     info: {
       hostname: 'Имя хоста', system: 'Система', arch: 'Архитектура',
       cpuCount: 'Ядра ЦП',
+      runtime: 'Среда выполнения',
       cpuCountValue: '{physical} физ. / {logical} лог.',
       bootTime: 'Время загрузки', uptime: 'Время работы',
     },

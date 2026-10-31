@@ -1212,6 +1212,7 @@ Dokumentversion: 1.1.0 | Aktualisiert: 16. August 2026`,
     info: {
       hostname: 'Hostname', system: 'System', arch: 'Architektur',
       cpuCount: 'CPU-Kerne',
+      runtime: 'Laufzeitumgebung',
       cpuCountValue: '{physical} physikalisch / {logical} logisch',
       bootTime: 'Startzeit', uptime: 'Betriebsdauer',
     },

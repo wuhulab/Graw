@@ -1546,6 +1546,7 @@ Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队
       system: 'Córas',
       arch: 'Ailtireacht',
       cpuCount: 'Cornaí CPU',
+      runtime: 'Comhshaol rite (运行环境)',
       cpuCountValue: '{physical} chorn / {logical} shnáithe',
       bootTime: 'Am tosaithe',
       uptime: 'Fad achair rith',

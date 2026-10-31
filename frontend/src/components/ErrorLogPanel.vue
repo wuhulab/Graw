@@ -14,9 +14,14 @@
   <Teleport to="body">
     <div v-if="errorLog.visible" class="err-panel" role="dialog" aria-modal="false">
       <div class="err-head">
-        <span class="err-dot"></span>
         <span class="err-title">{{ $t('errorLog.title') }}</span>
-        <span class="err-count">{{ errorLog.items.length }}</span>
+        <span class="ui-badge danger">{{ errorLog.items.length }}</span>
+        <button
+          class="err-mode"
+          :class="{ on: errorLog.programOnly }"
+          :title="$t('errorLog.programOnlyHint')"
+          @click="toggleProgramOnly"
+        >{{ errorLog.programOnly ? $t('errorLog.programOnlyOn') : $t('errorLog.programOnlyOff') }}</button>
         <button class="err-close" :title="$t('errorLog.close')" @click="dismissErrorLog">×</button>
       </div>
 
@@ -37,9 +42,9 @@
 
       <div class="err-foot">
         <span class="err-hint">{{ $t('errorLog.hint') }}</span>
-        <button class="err-btn" @click="copyAll">{{ copied ? $t('errorLog.copied') : $t('errorLog.copy') }}</button>
-        <button class="err-btn primary" @click="reportIssue">{{ $t('errorLog.report') }}</button>
-        <button class="err-btn" @click="dismissErrorLog">{{ $t('errorLog.close') }}</button>
+        <button class="ui-btn mini" @click="copyAll">{{ copied ? $t('errorLog.copied') : $t('errorLog.copy') }}</button>
+        <button class="ui-btn mini primary" @click="reportIssue">{{ $t('errorLog.report') }}</button>
+        <button class="ui-btn mini ghost" @click="dismissErrorLog">{{ $t('errorLog.close') }}</button>
       </div>
     </div>
   </Teleport>
@@ -47,10 +52,15 @@
 
 <script setup>
 import { ref, onBeforeUnmount } from 'vue'
-import { errorLog, dismissErrorLog, errorLogText, issueURL } from '../store/errorLog'
+import { errorLog, dismissErrorLog, errorLogText, issueURL, setProgramOnly } from '../store/errorLog'
 
 const copied = ref(false)
 let copiedTimer = null
+
+// 切换「仅程序性错误弹窗」：接口/网络错误仍记录，只是不再自动弹出浮窗。
+function toggleProgramOnly() {
+  setProgramOnly(!errorLog.programOnly)
+}
 
 // 剪贴板写入：优先安全上下文 API，失败时降级为临时 textarea + execCommand
 async function writeClipboard(text) {
@@ -102,69 +112,75 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* 沿用面板通用设计 tokens（白色卡片 / 细边框 / 深色主按钮），
+   不再使用高对比暗色玻璃拟态，避免与面板其余界面风格割裂。 */
 .err-panel {
   position: fixed;
   right: 18px;
   bottom: 80px;
-  width: min(560px, calc(100vw - 24px));
-  max-height: min(62vh, 560px);
+  width: min(540px, calc(100vw - 24px));
+  max-height: min(62vh, 540px);
   display: flex;
   flex-direction: column;
-  background: rgba(28, 28, 32, 0.96);
-  color: #e6e6e6;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 12px;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  box-shadow: var(--ui-shadow-md);
   z-index: 99999;
   overflow: hidden;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .err-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
-  background: rgba(255, 59, 48, 0.12);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--ui-border);
 }
-.err-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #ff453a;
-  box-shadow: 0 0 8px rgba(255, 69, 58, 0.8);
-  flex: none;
+.err-title { font-weight: 600; }
+.err-mode {
+  margin-left: auto;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-text-secondary);
+  font-size: 11.5px;
+  line-height: 22px;
+  cursor: pointer;
+  white-space: nowrap;
 }
-.err-title { font-weight: 700; }
-.err-count {
-  font-size: 11px;
-  color: #ffb4ae;
-  background: rgba(255, 69, 58, 0.18);
-  border-radius: 999px;
-  padding: 1px 8px;
+.err-mode:hover { background: var(--ui-bg-muted); color: var(--ui-text); }
+.err-mode.on {
+  color: var(--ui-primary, #2563eb);
+  border-color: var(--ui-primary, #2563eb);
 }
 .err-close {
-  margin-left: auto;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: transparent;
-  color: #d4d4d4;
-  font-size: 20px;
+  border-radius: 6px;
+  color: var(--ui-text-tertiary);
+  font-size: 18px;
   line-height: 1;
   cursor: pointer;
-  padding: 0 4px;
 }
-.err-close:hover { color: #fff; }
+.err-close:hover { background: var(--ui-bg-muted); color: var(--ui-text); }
 .err-list {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 8px 12px;
+  padding: 2px 14px;
 }
 .err-item {
-  padding: 8px 0;
-  border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--ui-border);
 }
 .err-item:last-child { border-bottom: none; }
 .err-meta {
@@ -172,81 +188,61 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   margin-bottom: 4px;
-  color: #9a9a9f;
-  font-size: 11px;
+  color: var(--ui-text-tertiary);
+  font-size: 11.5px;
   flex-wrap: wrap;
 }
-.err-time { font-family: Consolas, monospace; }
-.err-source {
-  color: #8ab4f8;
-  background: rgba(138, 180, 248, 0.12);
-  border-radius: 4px;
-  padding: 0 5px;
-}
+.err-time { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.err-source { color: var(--ui-text-secondary); }
 .err-status {
-  color: #ffb4ae;
-  background: rgba(255, 69, 58, 0.12);
+  color: var(--ui-danger-fg);
+  background: var(--ui-danger-bg);
   border-radius: 4px;
   padding: 0 5px;
 }
-.err-repeat { color: #ffd60a; }
+.err-repeat { color: var(--ui-warn-fg); }
 .err-msg {
-  color: #f2f2f7;
-  line-height: 1.5;
+  color: var(--ui-text);
+  line-height: 1.55;
   word-break: break-word;
 }
 .err-req {
   margin-top: 3px;
-  color: #8e8e93;
-  font-family: Consolas, monospace;
-  font-size: 11px;
+  color: var(--ui-text-tertiary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11.5px;
   word-break: break-all;
 }
 .err-detail {
-  margin: 5px 0 0;
-  padding: 6px 8px;
+  margin: 6px 0 0;
+  padding: 8px 10px;
   max-height: 120px;
   overflow: auto;
-  background: rgba(0, 0, 0, 0.28);
-  border-radius: 6px;
-  color: #b8b8bd;
-  font-family: Consolas, monospace;
-  font-size: 11px;
+  background: var(--ui-bg-muted);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+  color: var(--ui-text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11.5px;
   white-space: pre-wrap;
   word-break: break-word;
 }
-.err-empty { color: #8e8e93; padding: 18px 4px; text-align: center; }
+.err-empty { color: var(--ui-text-tertiary); padding: 24px 4px; text-align: center; }
 .err-foot {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
+  border-top: 1px solid var(--ui-border);
+  background: var(--ui-bg-muted);
 }
 .err-hint {
   flex: 1;
   min-width: 0;
-  color: #8e8e93;
-  font-size: 11px;
+  color: var(--ui-text-tertiary);
+  font-size: 11.5px;
   line-height: 1.4;
 }
-.err-btn {
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.08);
-  color: #f2f2f7;
-  border-radius: 7px;
-  padding: 5px 10px;
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.err-btn:hover { background: rgba(255, 255, 255, 0.16); }
-.err-btn.primary {
-  background: #0a84ff;
-  border-color: #0a84ff;
-}
-.err-btn.primary:hover { background: #006ee6; }
 @media (max-width: 767px) {
   .err-panel { right: 8px; left: 8px; width: auto; bottom: 72px; max-height: 60vh; }
   .err-hint { display: none; }

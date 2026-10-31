@@ -51,7 +51,7 @@ var dbFileCandidates = []string{
 func registerProtectionRoutes(a *App) {
 	a.Get("/api/protection/status", perm("firewall"), func(w http.ResponseWriter, r *http.Request) error {
 		data := loadProtection()
-		version, _ := dockerAvailable()
+		version, _, _ := dockerAvailable()
 		return WriteJSON(w, 200, map[string]any{
 			"docker_available": version != "",
 			"ignored_count":    len(protectionCurrentIgnored()),

@@ -1211,6 +1211,7 @@ Graw コミュニティアプリストア（以下「本ストア」）は、Shu
     info: {
       hostname: 'ホスト名', system: 'システム', arch: 'アーキテクチャ',
       cpuCount: 'CPU コア',
+      runtime: 'ランタイム',
       cpuCountValue: '物理 {physical} / 論理 {logical}',
       bootTime: '起動時間', uptime: '稼働時間',
     },

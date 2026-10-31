@@ -1218,6 +1218,7 @@ Graw 社群應用商店（以下簡稱"本商店"）是由 ShunX 公益母團隊
       system: '系統',
       arch: '架構',
       cpuCount: 'CPU 核心',
+      runtime: '執行環境',
       cpuCountValue: '{physical}核 / {logical}執行緒',
       bootTime: '啟動時間',
       uptime: '運行時長',

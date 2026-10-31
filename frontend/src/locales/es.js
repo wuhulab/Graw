@@ -1499,6 +1499,7 @@ Versión del documento: 1.1.0 | Actualizado: 16 de agosto de 2026`,
     info: {
       hostname: 'Nombre de host', system: 'Sistema', arch: 'Arquitectura',
       cpuCount: 'Núcleos de CPU',
+      runtime: 'Entorno de ejecución',
       cpuCountValue: '{physical} físicos / {logical} lógicos',
       bootTime: 'Hora de inicio', uptime: 'Tiempo activo',
     },
