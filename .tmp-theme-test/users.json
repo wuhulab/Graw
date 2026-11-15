@@ -1,0 +1,9 @@
+{
+  "admin": {
+    "created_at": 1794723224,
+    "must_change_password": true,
+    "password": "$2a$10$Mup5uw3xCrT54hYGgxwB..vXr3zThFbDi9nwyJVj4fgNk6MMwZZlm",
+    "role": "admin",
+    "username": "admin"
+  }
+}

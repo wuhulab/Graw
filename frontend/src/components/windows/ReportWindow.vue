@@ -13,7 +13,7 @@
         {{ generating ? $t('common.loading') : $t('report.generate') }}
       </button>
       <button class="btn" @click="loadList">{{ $t('common.refresh') }}</button>
-      <span style="margin-left:auto; color:#888; font-size:11px;">{{ $t('report.dailyHint') }}</span>
+      <span style="margin-left:auto; color:var(--g-text-muted); font-size:11px;">{{ $t('report.dailyHint') }}</span>
     </div>
 
     <div style="display:flex; flex:1; overflow:hidden;">
@@ -26,14 +26,14 @@
           :class="{ selected: selected === f }"
           @click="openFile(f)"
         >{{ f }}</div>
-        <div v-if="files.length === 0" style="padding:20px; color:#999; text-align:center; font-size:12px;">
+        <div v-if="files.length === 0" style="padding:20px; color:var(--g-text-muted); text-align:center; font-size:12px;">
           {{ $t('report.empty') }}
         </div>
       </div>
       <!-- 右：报告全文 -->
       <div style="flex:1; overflow:auto; padding:12px;">
         <pre v-if="text" class="report-text">{{ text }}</pre>
-        <div v-else style="color:#999; font-size:12px; text-align:center; padding:40px;">{{ $t('report.selectHint') }}</div>
+        <div v-else style="color:var(--g-text-muted); font-size:12px; text-align:center; padding:40px;">{{ $t('report.selectHint') }}</div>
       </div>
     </div>
   </div>
@@ -94,14 +94,14 @@ onMounted(loadList)
   border-bottom: 1px solid #eef0f6;
   word-break: break-all;
 }
-.file-item:hover { background: #f5f7fb; }
-.file-item.selected { background: #eaf1fb; color: #0a3d7a; }
+.file-item:hover { background: var(--g-surface-soft); }
+.file-item.selected { background: var(--g-selected); color: var(--g-text); }
 .report-text {
   font-family: Consolas, monospace;
   font-size: 12px;
   line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-all;
-  color: #2c3e50;
+  color: var(--g-text);
 }
 </style>

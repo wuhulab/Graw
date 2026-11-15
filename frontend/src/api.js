@@ -380,14 +380,6 @@ export const reportApi = {
   get: (fname) => api.get(`/report/${encodeURIComponent(fname)}`).then(r => r.data)
 }
 
-export const portforwardApi = {
-  list: () => api.get('/portforward').then(r => r.data),
-  running: () => api.get('/portforward/running').then(r => r.data),
-  create: (body) => api.post('/portforward', body).then(r => r.data),
-  toggle: (id) => api.post(`/portforward/${id}/toggle`).then(r => r.data),
-  remove: (id) => api.delete(`/portforward/${id}`).then(r => r.data)
-}
-
 // VPN 转发策略：Clash 兼容订阅生成 + mihomo/clash 核心托管（面板所在主机）
 export const vpnApi = {
   get: () => api.get('/vpn').then(r => r.data),

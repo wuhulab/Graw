@@ -67,7 +67,7 @@
 
     <!-- 版本状态主体 -->
     <div v-if="!status" class="empty">
-      <RefreshCw :size="40" style="color:#9ca3af;" />
+      <RefreshCw :size="40" style="color:var(--g-text-muted);" />
       <div>点击「检查更新」查询面板最新版本</div>
     </div>
     <div v-else-if="status.check_error" class="empty">
@@ -171,23 +171,23 @@ async function loadLog() {
 .toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: space-between; }
 .version-block { display: flex; flex-direction: column; gap: 6px; }
 .version-row { display: flex; align-items: center; gap: 8px; }
-.version-row .label { font-size: 12px; color: #6e6e73; min-width: 52px; }
+.version-row .label { font-size: 12px; color: var(--g-text-muted); min-width: 52px; }
 .version-row .value { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
 .badge.available { background: #fee2e2; color: #b91c1c; }
 .badge.latest { background: #d1fae5; color: #065f46; }
 .toolbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
-.btn:hover:not(:disabled) { background: #f9fafb; }
+.btn { padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover:not(:disabled) { background: var(--g-surface-muted); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn.primary { background: #111827; color: #fff; border-color: #111827; }
-.btn.primary:hover:not(:disabled) { background: #1f2937; }
+.btn.primary { background: var(--g-strong); color: #fff; border-color: #111827; }
+.btn.primary:hover:not(:disabled) { background: var(--g-strong); }
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.hint-bar { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6e6e73; background: #f9fafb; border: 1px solid #f0f0f0; border-radius: 8px; padding: 6px 10px; }
+.hint-bar { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--g-text-muted); background: var(--g-surface-muted); border: 1px solid var(--g-border); border-radius: 8px; padding: 6px 10px; }
 .error-bar { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 6px 10px; }
-.empty { text-align: center; color: #9ca3af; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.log-box { flex: 1; min-height: 0; display: flex; flex-direction: column; border: 1px solid #e5e7eb; border-radius: 8px; background: #0f172a; overflow: hidden; }
-.log-title { padding: 6px 10px; font-size: 12px; color: #94a3b8; background: #1e293b; border-bottom: 1px solid #334155; }
+.empty { text-align: center; color: var(--g-text-muted); padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.log-box { flex: 1; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--g-border); border-radius: 8px; background: var(--g-code-bg); overflow: hidden; }
+.log-title { padding: 6px 10px; font-size: 12px; color: var(--g-text-muted); background: #1e293b; border-bottom: 1px solid #334155; }
 .log-box pre { flex: 1; margin: 0; padding: 10px; overflow: auto; font-size: 12px; line-height: 1.5; color: #e2e8f0; font-family: 'Cascadia Code', Consolas, 'Courier New', monospace; white-space: pre-wrap; word-break: break-all; }
 </style>

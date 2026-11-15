@@ -28,7 +28,7 @@
 
     <div v-if="loading" class="empty">加载中…</div>
     <div v-else-if="items.length === 0" class="empty">
-      <Server :size="40" style="color:#9ca3af;" />
+      <Server :size="40" style="color:var(--g-text-muted);" />
       <div>还没有监控项，添加一个端口 / 进程 / systemd 服务开始检测</div>
     </div>
     <div v-else class="table-wrap">
@@ -249,32 +249,32 @@ onMounted(loadAll)
 .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
 .status-badge.ok { background: #d1fae5; color: #065f46; }
 .status-badge.down { background: #fee2e2; color: #b91c1c; }
-.hint { color: #6e6e73; font-size: 12px; }
+.hint { color: var(--g-text-muted); font-size: 12px; }
 .toolbar-actions { display: flex; gap: 8px; }
 .table-toolbar { display: flex; align-items: center; justify-content: flex-end; margin-bottom: 8px; }
 
-.table-wrap { overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; flex: 1; }
+.table-wrap { overflow: auto; border: 1px solid var(--g-border); border-radius: 8px; flex: 1; }
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-th, td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; text-align: left; vertical-align: middle; white-space: nowrap; }
-th { background: #f9fafb; position: sticky; top: 0; }
-tbody tr:hover { background: #f9fafb; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--g-border); text-align: left; vertical-align: middle; white-space: nowrap; }
+th { background: var(--g-surface-muted); position: sticky; top: 0; }
+tbody tr:hover { background: var(--g-surface-muted); }
 .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; white-space: normal; max-width: 220px; }
-.sub { font-size: 10px; color: #888; }
+.sub { font-size: 10px; color: var(--g-text-muted); }
 .actions-cell { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
 
 .badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
 .badge.ok { background: #d1fae5; color: #065f46; }
 .badge.danger { background: #fee2e2; color: #b91c1c; }
-.badge.off { background: #f3f4f6; color: #6b7280; }
+.badge.off { background: var(--g-surface-soft); color: var(--g-text-muted); }
 
-.btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
-.btn:hover:not(:disabled) { background: #f9fafb; }
+.btn { padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover:not(:disabled) { background: var(--g-surface-muted); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn.primary { background: #111827; border-color: #111827; color: #fff; }
-.btn.primary:hover:not(:disabled) { background: #1f2937; }
+.btn.primary { background: var(--g-strong); border-color: #111827; color: #fff; }
+.btn.primary:hover:not(:disabled) { background: var(--g-strong); }
 .btn.mini { padding: 3px 8px; font-size: 12px; }
 .btn.danger-text { color: #b91c1c; }
 .btn.autostart-on { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
 
-.empty { text-align: center; color: #9ca3af; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: 13px; }
+.empty { text-align: center; color: var(--g-text-muted); padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: 13px; }
 </style>

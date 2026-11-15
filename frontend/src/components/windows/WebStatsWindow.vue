@@ -55,7 +55,7 @@
     </div>
 
     <div v-if="err && !stats" class="empty">
-      <BarChart3 :size="40" style="color:#9ca3af;" />
+      <BarChart3 :size="40" style="color:var(--g-text-muted);" />
       <div>未获取到统计数据。请确认日志路径或启动 nginx 访问日志。</div>
     </div>
 
@@ -251,25 +251,25 @@ onUnmounted(() => {
 .webstats-window { padding: 10px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; overflow: auto; }
 .toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; justify-content: space-between; }
 .toolbar-left { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.sel-label { font-size: 11px; color: #6b7280; }
-.sel { padding: 4px 6px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; background: #fff; }
-.domain-input { padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; width: 170px; }
-.status { font-size: 12px; color: #888; }
+.sel-label { font-size: 11px; color: var(--g-text-muted); }
+.sel { padding: 4px 6px; border: 1px solid var(--g-border-strong); border-radius: 6px; font-size: 12px; background: var(--g-surface); }
+.domain-input { padding: 4px 8px; border: 1px solid var(--g-border-strong); border-radius: 6px; font-size: 12px; width: 170px; }
+.status { font-size: 12px; color: var(--g-text-muted); }
 .status.err { color: #b91c1c; }
 
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin-bottom: 12px; }
-.card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 14px; background: #fff; }
-.card .num { font-size: 22px; font-weight: 700; color: #111827; }
-.card .label { font-size: 11px; color: #6b7280; margin-top: 2px; }
+.card { border: 1px solid var(--g-border); border-radius: 10px; padding: 12px 14px; background: var(--g-surface); }
+.card .num { font-size: 22px; font-weight: 700; color: var(--g-text); }
+.card .label { font-size: 11px; color: var(--g-text-muted); margin-top: 2px; }
 .hint-warn { font-size: 12px; color: #b45309; background: #fef3c7; border: 1px solid #fde68a; border-radius: 8px; padding: 6px 10px; margin-bottom: 10px; }
 
 .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.chart-box { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; background: #fff; }
-.chart-title { font-size: 12px; font-weight: 600; color: #1d1d1f; margin-bottom: 6px; }
+.chart-box { border: 1px solid var(--g-border); border-radius: 10px; padding: 10px; background: var(--g-surface); }
+.chart-title { font-size: 12px; font-weight: 600; color: var(--g-text); margin-bottom: 6px; }
 .chart-body { height: 220px; }
 
-.empty { text-align: center; color: #9ca3af; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.btn { padding: 5px 10px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 12px; display: inline-flex; align-items: center; gap: 5px; }
-.btn:hover:not(:disabled) { background: #f9fafb; }
+.empty { text-align: center; color: var(--g-text-muted); padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.btn { padding: 5px 10px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 12px; display: inline-flex; align-items: center; gap: 5px; }
+.btn:hover:not(:disabled) { background: var(--g-surface-muted); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

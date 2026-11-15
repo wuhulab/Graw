@@ -6,20 +6,103 @@
   打开方式：桌面「设置」入口挂载
 -->
 <template>
-  <div style="display:flex; flex-direction:column; height:100%; background:#f5f5f7;">
+  <div class="settings-root">
+    <!-- 左侧分类导航：把原先一长串区块按用途分组，避免设置项过多时反复滚动查找 -->
+    <aside class="settings-nav">
+      <button
+        v-for="tab in visibleTabs"
+        :key="tab.key"
+        class="settings-nav-item"
+        :class="{ active: activeTab === tab.key }"
+        @click="activeTab = tab.key"
+      >
+        <component :is="tab.icon" :size="15" />
+        <span>{{ $t(tab.labelKey) }}</span>
+      </button>
+    </aside>
+    <div class="settings-body">
     <div style="flex:1; overflow:auto; padding:16px; display:flex; flex-direction:column; gap:14px;">
-      <div class="block">
+      <!-- 主题外观：浅色 / 暗色（本机偏好，即改即存） -->
+      <div class="block" v-show="activeTab === 'general'">
+        <div class="block-title">{{ $t('settings.themeTitle') }}</div>
+        <div class="hint" style="margin-bottom:8px;">{{ $t('settings.themeHint') }}</div>
+        <div class="choice-grid">
+          <button class="choice-card" :class="{ active: settings.theme === 'light' }" @click="settings.theme = 'light'">
+            <Sun :size="20" />
+            <span class="choice-name">{{ $t('settings.themeLight') }}</span>
+          </button>
+          <button class="choice-card" :class="{ active: settings.theme === 'dark' }" @click="settings.theme = 'dark'">
+            <Moon :size="20" />
+            <span class="choice-name">{{ $t('settings.themeDark') }}</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 语言：改为下拉选择，避免 28 个语言在页面上铺成一大片 -->
+      <div class="block" v-show="activeTab === 'general'">
+        <div class="block-title">{{ $t('settings.language') }}</div>
+        <div class="hint" style="margin-bottom:8px;">{{ $t('settings.languageHint') }}</div>
+        <select class="settings-select" :value="settings.locale" @change="changeLocale($event.target.value)">
+          <option v-for="lang in LANGUAGES" :key="lang.code" :value="lang.code">{{ lang.name }}</option>
+        </select>
+      </div>
+
+      <!-- 界面形态：传统服务器面板 / 新一代理论桌面 -->
+      <div class="block" v-show="activeTab === 'general'">
+        <div class="block-title">{{ $t('settings.interfaceModeTitle') }}</div>
+        <div class="hint" style="margin-bottom:8px;">{{ $t('settings.interfaceModeHint') }}</div>
+        <div class="choice-grid">
+          <button class="choice-card tall" :class="{ active: !settings.panelMode }" @click="settings.panelMode = false">
+            <Monitor :size="20" />
+            <span class="choice-name">{{ $t('settings.modeDesktop') }}</span>
+            <span class="choice-desc">{{ $t('settings.modeDesktopHint') }}</span>
+          </button>
+          <button class="choice-card tall" :class="{ active: settings.panelMode }" @click="settings.panelMode = true">
+            <PanelLeft :size="20" />
+            <span class="choice-name">{{ $t('settings.modePanel') }}</span>
+            <span class="choice-desc">{{ $t('settings.modePanelHint') }}</span>
+          </button>
+        </div>
+        <div class="row" style="justify-content:space-between; padding:8px 0 0;">
+          <label class="switch-label">
+            <input type="checkbox" v-model="settings.panelTabs" :disabled="!settings.panelMode" />
+            <span style="font-size:12px;font-weight:600;color:var(--g-text);">{{ $t('settings.panelTabs') }}</span>
+          </label>
+        </div>
+        <div class="hint">{{ $t('settings.panelTabsHint') }}</div>
+      </div>
+
+      <!-- 语言括号提示：古代语言（古埃及语、苏美尔语等）的文案约定写成
+           「本语言书写 (中文原文/拉丁转写)」，这里控制该括号注释的显示与内容 -->
+      <div class="block" v-show="activeTab === 'general'">
+        <div class="block-title">{{ $t('settings.bracketTitle') }}</div>
+        <div class="row">
+          <label class="switch-label">
+            <input type="checkbox" v-model="settings.bracketEnabled" />
+            <span>{{ $t('settings.bracketEnabled') }}</span>
+          </label>
+        </div>
+        <div class="row" style="gap:10px;">
+          <span class="row-label">{{ $t('settings.bracketLang') }}</span>
+          <select v-model="settings.bracketLang" class="settings-select" style="width:180px;" :disabled="!settings.bracketEnabled">
+            <option v-for="opt in BRACKET_LANGS" :key="opt.code" :value="opt.code">{{ $t(opt.label) }}</option>
+          </select>
+        </div>
+        <div class="hint">{{ $t('settings.bracketHint') }}</div>
+      </div>
+
+      <div class="block" v-show="activeTab === 'account'">
         <div class="block-title">{{ $t('settings.title') }}</div>
         <button class="btn" @click="emit('openUsers')" :disabled="!isAdmin()">{{ $t('settings.openUsers') }}</button>
-        <span v-if="!isAdmin()" style="font-size:11px;color:#6e6e73;margin-left:8px;">{{ $t('common.adminOnly') }}</span>
+        <span v-if="!isAdmin()" style="font-size:11px;color:var(--g-text-muted);margin-left:8px;">{{ $t('common.adminOnly') }}</span>
       </div>
 
       <!-- ShunX 安全入口管理（仅管理员） -->
-      <div class="block" v-if="isAdmin()">
+      <div class="block" v-show="activeTab === 'account'" v-if="isAdmin()">
         <div class="block-title">{{ $t('settings.shunxTitle') }}</div>
         <div class="row" style="flex-wrap:wrap; gap:6px;">
           <span class="status-dot" :class="currentEntry ? 'on' : 'off'"></span>
-          <span style="font-size:12px;color:#1d1d1f;">
+          <span style="font-size:12px;color:var(--g-text);">
             {{ statusText }}
           </span>
         </div>
@@ -31,29 +114,29 @@
           </div>
           <div v-if="msg" :class="['msg', msgType]">{{ msg }}</div>
         </div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-top:4px;">
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-top:4px;">
           {{ $t('settings.entryHint', { url: origin + '/' + (currentEntry || '...') }) }}
         </div>
       </div>
 
       <!-- 多机（多节点）管理（仅管理员） -->
-      <div class="block" v-if="isAdmin()">
+      <div class="block" v-show="activeTab === 'nodes'" v-if="isAdmin()">
         <div class="block-title">{{ $t('nodes.title') }}</div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('nodes.subtitle') }}</div>
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">{{ $t('nodes.subtitle') }}</div>
 
         <!-- 列表加载 / 重新加载 -->
         <div class="row" style="gap:8px;">
           <button class="btn btn-mini" :disabled="loadingNodes" @click="loadNodes">
             {{ loadingNodes ? $t('nodes.loadingNodes') : $t('nodes.reload') }}
           </button>
-          <span v-if="loadingNodes" style="font-size:11px;color:#8e8e93;">{{ $t('nodes.loadingNodes') }}…</span>
+          <span v-if="loadingNodes" style="font-size:11px;color:var(--g-text-muted);">{{ $t('nodes.loadingNodes') }}…</span>
         </div>
 
         <!-- 当前管理主机 -->
         <div class="row" style="gap:8px;">
           <span class="status-dot" style="background:#0a7d3b;"></span>
-          <span style="font-size:12px;color:#1d1d1f;">{{ $t('nodes.currentLabel') }}</span>
-          <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ current.name || currentId }}</span>
+          <span style="font-size:12px;color:var(--g-text);">{{ $t('nodes.currentLabel') }}</span>
+          <span style="font-size:12px;font-weight:600;color:var(--g-text);">{{ current.name || currentId }}</span>
           <span :class="['tag', current.type === 'ssh' ? 'tag-remote' : 'tag-local']">{{ current.type === 'ssh' ? $t('nodes.remoteBadge') : $t('nodes.localBadge') }}</span>
         </div>
 
@@ -61,12 +144,12 @@
         <div class="row" style="justify-content:space-between; padding:2px 0;">
           <label class="switch-label">
             <input type="checkbox" v-model="settings.unifiedPanel" />
-            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">
+            <span style="font-size:12px;font-weight:600;color:var(--g-text);">
               {{ $t('nodes.unifiedPanel') }}
             </span>
           </label>
         </div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:6px;">
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:6px;">
           {{ $t('nodes.unifiedPanelHint') }}
         </div>
 
@@ -80,7 +163,7 @@
               <input type="radio" name="currentHost" :value="n.id" :checked="n.id === currentId" @change="switchNode(n)" />
               <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
                 {{ n.name }}
-                <span v-if="n.type === 'ssh'" style="color:#8e8e93;font-size:11px;">{{ n.user }}@{{ n.host }}:{{ n.port }}</span>
+                <span v-if="n.type === 'ssh'" style="color:var(--g-text-muted);font-size:11px;">{{ n.user }}@{{ n.host }}:{{ n.port }}</span>
               </span>
             </label>
             <span v-if="n.id === currentId" class="tag tag-current">{{ $t('nodes.current') }}</span>
@@ -90,7 +173,7 @@
             <button class="btn btn-mini btn-danger" v-if="n.type === 'ssh'" @click="removeNode(n)">{{ $t('nodes.delete') }}</button>
           </div>
         </div>
-        <div v-else-if="!loadingNodes" style="font-size:12px;color:#8e8e93;padding:6px 0;">{{ $t('nodes.noNodes') }}</div>
+        <div v-else-if="!loadingNodes" style="font-size:12px;color:var(--g-text-muted);padding:6px 0;">{{ $t('nodes.noNodes') }}</div>
         <div v-if="nodeLoadError" :class="['msg', 'err']" style="margin-top:6px;">{{ nodeLoadError }}</div>
 
         <div v-if="!showEditor" style="margin-top:8px;">
@@ -116,23 +199,23 @@
             </div>
             <input v-if="form.auth === 'password'" v-model="form.password" type="password" :placeholder="$t('nodes.passwordPlaceholder')" spellcheck="false" />
             <input v-else v-model="form.key_path" :placeholder="$t('nodes.keyPathPlaceholder')" spellcheck="false" />
-            <div style="font-size:11px;color:#8e8e93;">{{ form.auth === 'password' ? $t('nodes.passwordHint') : $t('nodes.keyHint') }}</div>
+            <div style="font-size:11px;color:var(--g-text-muted);">{{ form.auth === 'password' ? $t('nodes.passwordHint') : $t('nodes.keyHint') }}</div>
 
             <!-- Agent 配置（子节点 API）：让主面板能经 SSH 隧道回调子节点 Graw -->
-            <div style="border-top:1px dashed rgba(0,0,0,0.12); margin:6px 0 8px; padding-top:10px;">
+            <div style="border-top:1px dashed var(--g-border); margin:6px 0 8px; padding-top:10px;">
               <div class="row" style="justify-content:space-between; padding:0 0 2px;">
-                <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('nodes.agentTitle') }}</span>
+                <span style="font-size:12px;font-weight:600;color:var(--g-text);">{{ $t('nodes.agentTitle') }}</span>
                 <label class="switch-label">
                   <input type="checkbox" v-model="form.agent_enabled" />
-                  <span style="font-size:11px;color:#8e8e93;">{{ $t('nodes.agentEnable') }}</span>
+                  <span style="font-size:11px;color:var(--g-text-muted);">{{ $t('nodes.agentEnable') }}</span>
                 </label>
               </div>
-              <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:6px;">{{ $t('nodes.agentHint') }}</div>
+              <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:6px;">{{ $t('nodes.agentHint') }}</div>
               <template v-if="form.agent_enabled">
                 <input v-model.number="form.agent_port" type="number" :placeholder="$t('nodes.agentPortPlaceholder')" spellcheck="false" />
                 <input v-model="form.agent_key" :placeholder="$t('nodes.agentKeyPlaceholder')" spellcheck="false" style="margin-top:6px;" />
                 <input v-model="form.agent_secret" :placeholder="$t('nodes.agentSecretPlaceholder')" spellcheck="false" style="margin-top:6px;" />
-                <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-top:4px;">{{ $t('nodes.agentSecretHint') }}</div>
+                <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-top:4px;">{{ $t('nodes.agentSecretHint') }}</div>
               </template>
             </div>
 
@@ -146,22 +229,22 @@
       </div>
 
       <!-- 「作为子节点」Agent 收取模式（仅管理员）：让本面板自身可被其它主面板接入 -->
-      <div class="block" v-if="isAdmin()">
+      <div class="block" v-show="activeTab === 'nodes'" v-if="isAdmin()">
         <div class="block-title">{{ $t('agent.title') }}</div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('agent.desc') }}</div>
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">{{ $t('agent.desc') }}</div>
 
         <!-- 当前状态开关 -->
         <div class="row" style="justify-content:space-between; padding:4px 0 6px;">
           <label class="switch-label">
             <input type="checkbox" v-model="agentForm.enabled" />
-            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('agent.enable') }}</span>
+            <span style="font-size:12px;font-weight:600;color:var(--g-text);">{{ $t('agent.enable') }}</span>
           </label>
           <span :class="['tag', agentStatus.enabled ? 'tag-remote' : 'tag-local']">{{ agentStatus.enabled ? $t('agent.enabled') : $t('agent.disabled') }}</span>
         </div>
 
         <template v-if="agentForm.enabled">
           <!-- 成对密钥配置 -->
-          <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">
+          <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">
             {{ $t('agent.endpointHint') }}
           </div>
           <div class="row" style="flex-direction:column;align-items:stretch;gap:6px;">
@@ -189,7 +272,7 @@
                 {{ agentSecretVisible ? $t('common.copy') : $t('agent.copySecret') }}
               </button>
             </div>
-            <div style="font-size:11px;color:#8e8e93;">{{ $t('agent.secretHint') }}</div>
+            <div style="font-size:11px;color:var(--g-text-muted);">{{ $t('agent.secretHint') }}</div>
             <div v-if="agentSecretMsg" :class="['msg', agentSecretMsgType]" style="font-size:11px;">{{ agentSecretMsg }}</div>
           </div>
         </template>
@@ -204,9 +287,9 @@
       </div>
 
       <!-- Web 服务器引擎模式（NGINX / OpenResty）（仅管理员） -->
-      <div class="block" v-if="isAdmin()">
+      <div class="block" v-show="activeTab === 'system'" v-if="isAdmin()">
         <div class="block-title">{{ $t('settings.webmode.title') }}</div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('settings.webmode.desc') }}</div>
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">{{ $t('settings.webmode.desc') }}</div>
         <div class="row" style="flex-wrap:wrap; gap:16px;">
           <label class="switch-label">
             <input type="radio" name="webMode" value="nginx" v-model="wmMode" />
@@ -219,19 +302,19 @@
         </div>
         <!-- 可用性提示：两个引擎 + 当前配置目录 -->
         <div class="row" style="flex-direction:column; align-items:stretch; gap:4px;">
-          <div style="font-size:11px;color:#8e8e93;">
+          <div style="font-size:11px;color:var(--g-text-muted);">
             {{ $t('settings.webmode.bin', { bin: wmStatus.binary }) }}
             <span :class="['status-dot', wmStatus.available ? 'on' : 'off']"></span>
             {{ wmStatus.available ? $t('settings.webmode.installed') : $t('settings.webmode.notInstalled') }}
           </div>
-          <div style="font-size:11px;color:#8e8e93;">
+          <div style="font-size:11px;color:var(--g-text-muted);">
             {{ $t('settings.webmode.nginxBin') }}: <span :class="['status-dot', wmStatus.nginx_available ? 'on' : 'off']"></span>
-            <span style="color:#1d1d1f;">{{ wmStatus.nginx_available ? $t('settings.webmode.installed') : $t('settings.webmode.notInstalled') }}</span>
+            <span style="color:var(--g-text);">{{ wmStatus.nginx_available ? $t('settings.webmode.installed') : $t('settings.webmode.notInstalled') }}</span>
             &nbsp;·&nbsp;
             {{ $t('settings.webmode.openrestyBin') }}: <span :class="['status-dot', wmStatus.openresty_available ? 'on' : 'off']"></span>
-            <span style="color:#1d1d1f;">{{ wmStatus.openresty_available ? $t('settings.webmode.installed') : $t('settings.webmode.notInstalled') }}</span>
+            <span style="color:var(--g-text);">{{ wmStatus.openresty_available ? $t('settings.webmode.installed') : $t('settings.webmode.notInstalled') }}</span>
           </div>
-          <div style="font-size:11px;color:#8e8e93;">
+          <div style="font-size:11px;color:var(--g-text-muted);">
             {{ $t('settings.webmode.confDir', { dir: wmStatus.conf_base }) }}
           </div>
         </div>
@@ -244,9 +327,9 @@
       </div>
 
       <!-- 两步验证（2FA）：为当前账号开启 / 关闭 TOTP 动态口令 -->
-      <div class="block">
+      <div class="block" v-show="activeTab === 'account'">
         <div class="block-title">两步验证（2FA）</div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">
           开启后登录需输入密码 + 手机验证器（Google Authenticator 等）中的 6 位动态验证码
         </div>
 
@@ -258,7 +341,7 @@
           </div>
 
           <!-- 密钥 / 二维码展示（setup 后） -->
-          <div v-if="otpSecret" style="margin-top:10px;border:1px dashed #c7d2e0;border-radius:8px;padding:12px;background:#f6f8fb;">
+          <div v-if="otpSecret" style="margin-top:10px;border:1px dashed #c7d2e0;border-radius:8px;padding:12px;background:var(--g-surface-muted);">
             <img
               v-if="otpUri"
               :src="qrUrl(otpUri)"
@@ -268,7 +351,7 @@
             />
             <div v-if="otpUriQrFail" class="hint" style="color:#92400e;">无法加载二维码（离线），请手动添加：</div>
             <div class="mono" style="font-size:12px;word-break:break-all;">密钥：<code>{{ otpSecret }}</code></div>
-            <div class="mono" style="font-size:11px;color:#6e6e73;word-break:break-all;margin-top:4px;">{{ otpUri }}</div>
+            <div class="mono" style="font-size:11px;color:var(--g-text-muted);word-break:break-all;margin-top:4px;">{{ otpUri }}</div>
             <div class="row" style="margin-top:10px;">
               <input v-model.trim="otpCode" placeholder="输入 6 位验证码" maxlength="6" inputmode="numeric" style="width:160px;" />
               <button class="btn btn-primary" :disabled="otpBusy || otpCode.length !== 6" @click="otpEnable">启用</button>
@@ -280,7 +363,7 @@
         <template v-else>
           <div class="row" style="align-items:center;">
             <span class="badge ok" style="padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;">已启用</span>
-            <span style="font-size:12.5px;color:#6e6e73;">登录时需要动态验证码</span>
+            <span style="font-size:12.5px;color:var(--g-text-muted);">登录时需要动态验证码</span>
           </div>
           <div class="row" style="margin-top:8px;">
             <input v-model.trim="otpCode" placeholder="输入当前验证码以关闭" maxlength="6" inputmode="numeric" style="width:200px;" />
@@ -291,14 +374,14 @@
       </div>
 
       <!-- OAuth2.0 登录（仅完整管理员）：可自定义提供方，内置 GitHub 模板一键填充 -->
-      <div class="block" v-if="isFullAdmin()">
+      <div class="block" v-show="activeTab === 'account'" v-if="isFullAdmin()">
         <div class="block-title">{{ $t('settings.oauthTitle') }}</div>
         <div class="hint" style="margin-bottom:8px;">{{ $t('settings.oauthHint') }}</div>
 
         <div class="row" style="justify-content:space-between; padding:2px 0;">
           <label class="switch-label">
             <input type="checkbox" v-model="oauthForm.enabled" :disabled="oauthSaving" />
-            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('settings.oauthEnabled') }}</span>
+            <span style="font-size:12px;font-weight:600;color:var(--g-text);">{{ $t('settings.oauthEnabled') }}</span>
           </label>
           <span :class="['tag', oauthForm.enabled ? 'tag-current' : 'tag-local']">
             {{ oauthForm.enabled ? $t('common.enabled') : $t('common.disabled') }}
@@ -306,7 +389,7 @@
         </div>
 
         <div class="row" style="gap:8px; flex-wrap:wrap;">
-          <span style="color:#6b7280;">{{ $t('settings.oauthTemplate') }}</span>
+          <span style="color:var(--g-text-muted);">{{ $t('settings.oauthTemplate') }}</span>
           <select v-model="oauthTemplate" class="oauth-select" :disabled="oauthSaving" @change="applyOAuthTemplate($event.target.value)">
             <option value="custom">{{ $t('settings.oauthTemplateCustom') }}</option>
             <option value="github">{{ $t('settings.oauthTemplateGithub') }}</option>
@@ -350,7 +433,7 @@
         <div class="row" style="justify-content:space-between; padding:4px 0;">
           <label class="switch-label">
             <input type="checkbox" v-model="oauthForm.auto_create" :disabled="oauthSaving" />
-            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('settings.oauthAutoCreate') }}</span>
+            <span style="font-size:12px;font-weight:600;color:var(--g-text);">{{ $t('settings.oauthAutoCreate') }}</span>
           </label>
         </div>
         <div class="hint">{{ $t('settings.oauthAutoCreateHint') }}</div>
@@ -381,51 +464,31 @@
       </div>
 
       <!-- 界面设置入口（仅管理员）：引导打开独立的「界面设置」窗口（网站名/欢迎语/Logo/动态壁纸/环形配色） -->
-      <div class="block" v-if="isAdmin()">
+      <div class="block" v-show="activeTab === 'general'" v-if="isAdmin()">
         <div class="block-title">{{ $t('settings.uiSettingsTitle') }}</div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('settings.uiSettingsHint') }}</div>
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">{{ $t('settings.uiSettingsHint') }}</div>
         <button class="btn" @click="emit('openUiSettings')">{{ $t('settings.openUiSettings') }}</button>
       </div>
 
-      <!-- 标准面板模式（所有用户）：本机偏好，手机端默认启用；取消勾选即使用桌面模式 -->
-      <div class="block">
-        <div class="block-title">{{ $t('settings.panelModeTitle') }}</div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:6px;">{{ $t('settings.panelModeHint') }}</div>
-        <div class="row" style="justify-content:space-between; padding:2px 0;">
-          <label class="switch-label">
-            <input type="checkbox" v-model="settings.panelMode" />
-            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('settings.panelMode') }}</span>
-          </label>
-          <span :class="['tag', settings.panelMode ? 'tag-current' : 'tag-local']">{{ settings.panelMode ? $t('settings.panelModeOn') : $t('settings.panelModeOff') }}</span>
-        </div>
-        <div class="row" style="justify-content:space-between; padding:2px 0;">
-          <label class="switch-label">
-            <input type="checkbox" v-model="settings.panelTabs" />
-            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('settings.panelTabs') }}</span>
-          </label>
-        </div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;">{{ $t('settings.panelTabsHint') }}</div>
-      </div>
-
       <!-- 回收站设置（仅管理员）：删除的文件是否进入回收站、到期自动清理天数 -->
-      <div class="block" v-if="isAdmin()">
+      <div class="block" v-show="activeTab === 'system'" v-if="isAdmin()">
         <div class="block-title">{{ $t('recycle.settingsTitle') }}</div>
         <div class="row" style="justify-content:space-between; padding:4px 0;">
           <label class="switch-label">
             <input type="checkbox" v-model="rcForm.enabled" />
-            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('recycle.enabled') }}</span>
+            <span style="font-size:12px;font-weight:600;color:var(--g-text);">{{ $t('recycle.enabled') }}</span>
           </label>
         </div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;">{{ $t('recycle.enabledHint') }}</div>
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;">{{ $t('recycle.enabledHint') }}</div>
         <div class="row" style="justify-content:space-between; padding:4px 0;">
           <label class="switch-label" :style="rcForm.enabled ? {} : { opacity: 0.5 }">
             <input type="checkbox" v-model="rcForm.autoDelete" :disabled="!rcForm.enabled" />
-            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('recycle.autoDelete') }}</span>
+            <span style="font-size:12px;font-weight:600;color:var(--g-text);">{{ $t('recycle.autoDelete') }}</span>
           </label>
         </div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;">{{ $t('recycle.autoDeleteHint') }}</div>
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;">{{ $t('recycle.autoDeleteHint') }}</div>
         <div class="row" style="gap:8px; padding:6px 0 10px;">
-          <span style="font-size:12px;color:#1d1d1f;">{{ $t('recycle.days') }}</span>
+          <span style="font-size:12px;color:var(--g-text);">{{ $t('recycle.days') }}</span>
           <input v-model.number="rcForm.days" type="number" min="1" max="365" style="width:90px;" :disabled="!rcForm.enabled || !rcForm.autoDelete" />
           <button class="btn" :disabled="rcSaving" @click="saveRecycle">
             {{ rcSaving ? $t('settings.saveSaving') : $t('recycle.save') }}
@@ -435,17 +498,17 @@
       </div>
 
       <!-- 应用接口开放协议（GPOP）：插件功能总开关（仅管理员） -->
-      <div class="block" v-if="isAdmin()">
+      <div class="block" v-show="activeTab === 'system'" v-if="isAdmin()">
         <div class="block-title">{{ $t('plugins.title') }}</div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('plugins.titleHint') }}</div>
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">{{ $t('plugins.titleHint') }}</div>
         <div class="row" style="justify-content:space-between; padding:4px 0 6px;">
           <label class="switch-label">
             <input type="checkbox" v-model="pluginForm.enabled" :disabled="pluginSaving" />
-            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('plugins.enable') }}</span>
+            <span style="font-size:12px;font-weight:600;color:var(--g-text);">{{ $t('plugins.enable') }}</span>
           </label>
           <span :class="['tag', pluginForm.enabled ? 'tag-current' : 'tag-local']">{{ pluginForm.enabled ? $t('plugins.enabled') : $t('plugins.disabled') }}</span>
         </div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ pluginForm.enabled ? $t('plugins.enabledHint') : $t('plugins.disabledHint') }}</div>
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">{{ pluginForm.enabled ? $t('plugins.enabledHint') : $t('plugins.disabledHint') }}</div>
         <div class="row" style="gap:8px;">
           <button class="btn" :disabled="pluginSaving" @click="savePluginSettings">
             {{ pluginSaving ? $t('settings.saveSaving') : $t('settings.save') }}
@@ -454,51 +517,8 @@
         </div>
       </div>
 
-      <!-- 界面语言 -->
-      <div class="block">
-        <div class="block-title">{{ $t('settings.language') }}</div>
-        <div class="row" style="flex-wrap:wrap; gap:6px;">
-          <label class="switch-label" v-for="lang in LANGUAGES" :key="lang.code" :style="{ fontWeight: settings.locale === lang.code ? 700 : 400 }">
-            <input type="radio" name="locale" :value="lang.code" :checked="settings.locale === lang.code" @change="changeLocale(lang.code)" />
-            <span>{{ lang.name }}</span>
-          </label>
-        </div>
-      </div>
-
-      <!-- 语言括号提示：古代语言（古埃及语、苏美尔语等）的文案约定写成
-           「本语言书写 (中文原文/拉丁转写)」，这里控制该括号注释的显示与内容 -->
-      <div class="block">
-        <div class="block-title">{{ $t('settings.bracketTitle') }}</div>
-        <div class="row">
-          <label class="switch-label">
-            <input type="checkbox" v-model="settings.bracketEnabled" />
-            <span>{{ $t('settings.bracketEnabled') }}</span>
-          </label>
-        </div>
-        <div class="row" style="flex-wrap:wrap; gap:10px;">
-          <span class="row-label">{{ $t('settings.bracketLang') }}</span>
-          <label
-            class="switch-label"
-            v-for="opt in BRACKET_LANGS"
-            :key="opt.code"
-            :style="{ fontWeight: settings.bracketLang === opt.code ? 700 : 400, opacity: settings.bracketEnabled ? 1 : 0.45 }"
-          >
-            <input
-              type="radio"
-              name="bracketLang"
-              :value="opt.code"
-              :checked="settings.bracketLang === opt.code"
-              :disabled="!settings.bracketEnabled"
-              @change="settings.bracketLang = opt.code"
-            />
-            <span>{{ $t(opt.label) }}</span>
-          </label>
-        </div>
-        <div class="hint">{{ $t('settings.bracketHint') }}</div>
-      </div>
-
       <!-- 关于：项目与社区相关链接（外链新窗口打开，rel=noopener 防钓鱼） -->
-      <div class="block">
+      <div class="block" v-show="activeTab === 'about'">
         <div class="block-title">{{ $t('settings.about.title') }}</div>
         <div class="about-version" v-if="panelVersion">
           {{ $t('settings.about.version') }}: <span class="about-version-val">Graw v{{ panelVersion }}</span>
@@ -528,6 +548,7 @@
         </div>
       </div>
     </div>
+    </div>
   </div>
 
   <!-- 高风险操作二次确认：删除远程节点 / 清除安全入口等需输入面板密码 -->
@@ -554,6 +575,19 @@ import { nodesApi, shunxApi, panelApi, updateApi, webmodeApi, authApi, agentApi,
 import { nodes as nodesStore, refreshNodes, setCurrentNode } from '../../store/nodes'   // 多节点状态与当前节点切换
 import { LANGUAGES, setLocale } from '../../locales'            // 语言清单与切换函数
 import ConfirmDialog from '../ConfirmDialog.vue'                // 高危操作二次确认弹窗（输入面板密码）
+import { Sun, Moon, Monitor, PanelLeft, Palette, ShieldCheck, Server, Wrench, Info } from 'lucide-vue-next'   // 设置分类导航与主题/界面形态选项图标
+
+// 设置分类：把原有区块按「通用外观 / 账户安全 / 节点 / 系统维护 / 关于」重新归组。
+// 受限管理员看不到节点与系统维护两个分类（对应区块本身也带 isAdmin 门控）。
+const SETTINGS_TABS = [
+  { key: 'general', labelKey: 'settings.nav.general', icon: Palette },
+  { key: 'account', labelKey: 'settings.nav.account', icon: ShieldCheck },
+  { key: 'nodes', labelKey: 'settings.nav.nodes', icon: Server, adminOnly: true },
+  { key: 'system', labelKey: 'settings.nav.system', icon: Wrench, adminOnly: true },
+  { key: 'about', labelKey: 'settings.nav.about', icon: Info },
+]
+const activeTab = ref('general')   // 当前设置分类（默认通用与外观）
+const visibleTabs = computed(() => SETTINGS_TABS.filter((tab) => !tab.adminOnly || isAdmin()))
 
 const { t } = useI18n()
 
@@ -1450,16 +1484,116 @@ async function clearEntryNow() {
 </script>
 
 <style scoped>
+/* ---- 设置窗口外壳：左侧分类导航 + 右侧内容 ---- */
+.settings-root {
+  display: flex;
+  height: 100%;
+  background: var(--g-surface-soft);
+}
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 148px;
+  flex-shrink: 0;
+  padding: 14px 8px;
+  background: var(--g-sidebar);
+  border-right: 1px solid var(--g-border-soft);
+  overflow-y: auto;
+}
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--g-text-secondary);
+  font-size: 12.5px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.settings-nav-item:hover { background: var(--g-hover); color: var(--g-text); }
+.settings-nav-item.active { background: #0a84ff; color: #fff; font-weight: 600; }
+.settings-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+/* 主题 / 界面形态选择卡片 */
+.choice-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.choice-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--g-border);
+  border-radius: 10px;
+  background: var(--g-surface);
+  color: var(--g-text-secondary);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.choice-card:hover { border-color: rgba(10, 132, 255, 0.45); }
+.choice-card.active {
+  border-color: #0a84ff;
+  background: rgba(10, 132, 255, 0.08);
+  color: #0a84ff;
+}
+.choice-card .choice-name { font-size: 12.5px; font-weight: 600; color: var(--g-text); }
+.choice-card.active .choice-name { color: #0a84ff; }
+.choice-card .choice-desc { font-size: 11px; line-height: 1.5; color: var(--g-text-muted); }
+
+/* 下拉选择：与原输入框一致的圆角与聚焦效果 */
+.settings-select {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--g-text);
+  background: var(--g-surface);
+  border: 1px solid var(--g-border);
+  border-radius: 8px;
+  outline: none;
+  cursor: pointer;
+}
+.settings-select:focus {
+  border-color: #0a84ff;
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.15);
+}
+
+/* 窄屏（手机窗口全屏）：分类导航改为顶部横向标签，避免挤压内容 */
+@media (max-width: 600px) {
+  .settings-root { flex-direction: column; }
+  .settings-nav {
+    flex-direction: row;
+    width: 100%;
+    padding: 8px;
+    border-right: none;
+    border-bottom: 1px solid var(--g-border-soft);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .settings-nav-item { white-space: nowrap; flex-shrink: 0; }
+  .choice-grid { grid-template-columns: 1fr; }
+}
+
 .block {
-  background: #fff;
+  background: var(--g-surface);
   border-radius: 10px;
   padding: 12px 14px;
-  border: 1px solid rgba(0,0,0,0.06);
+  border: 1px solid var(--g-border-soft);
 }
 .block-title {
   font-size: 12px;
   font-weight: 600;
-  color: #1d1d1f;
+  color: var(--g-text);
   margin-bottom: 10px;
 }
 .row {
@@ -1473,7 +1607,7 @@ async function clearEntryNow() {
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  color: #1d1d1f;
+  color: var(--g-text);
 }
 .switch-label input {
   width: 16px;
@@ -1482,11 +1616,11 @@ async function clearEntryNow() {
 }
 /* 语言括号提示区块：行内小标签与灰色说明文字 */
 .row-label {
-  color: #6b7280;
+  color: var(--g-text-muted);
 }
 .hint {
   font-size: 11px;
-  color: #6b7280;
+  color: var(--g-text-muted);
   line-height: 1.6;
   margin-top: 2px;
 }
@@ -1518,8 +1652,8 @@ input {
   padding: 8px 10px;
   font-size: 12px;
   font-family: inherit;
-  color: #1d1d1f;
-  border: 1px solid rgba(0,0,0,0.12);
+  color: var(--g-text);
+  border: 1px solid var(--g-border);
   border-radius: 8px;
   outline: none;
   box-sizing: border-box;
@@ -1538,15 +1672,15 @@ input:focus {
 }
 .oauth-grid > label {
   font-size: 11px;
-  color: #6b7280;
+  color: var(--g-text-muted);
 }
 .oauth-select {
   padding: 7px 10px;
   font-size: 12px;
   font-family: inherit;
-  color: #1d1d1f;
-  background: #fff;
-  border: 1px solid rgba(0,0,0,0.12);
+  color: var(--g-text);
+  background: var(--g-surface);
+  border: 1px solid var(--g-border);
   border-radius: 8px;
   outline: none;
 }
@@ -1578,9 +1712,9 @@ input:focus {
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  background: #fafafa;
+  background: var(--g-surface-muted);
   border-radius: 8px;
-  border: 1px solid rgba(0,0,0,0.05);
+  border: 1px solid var(--g-border-soft);
 }
 .tag {
   font-size: 10px;
@@ -1611,14 +1745,14 @@ input:focus {
 .editor {
   margin-top: 10px;
   padding: 10px;
-  background: #fafafa;
+  background: var(--g-surface-muted);
   border-radius: 8px;
-  border: 1px solid rgba(0,0,0,0.06);
+  border: 1px solid var(--g-border-soft);
 }
 /* ---- 关于（About）---- */
 .about-version {
   font-size: 12px;
-  color: #1d1d1f;
+  color: var(--g-text);
   margin-bottom: 10px;
 }
 .about-version-val {
@@ -1655,11 +1789,11 @@ input:focus {
   justify-content: space-between;
   gap: 10px;
   padding: 8px 10px;
-  background: #fafafa;
-  border: 1px solid rgba(0,0,0,0.05);
+  background: var(--g-surface-muted);
+  border: 1px solid var(--g-border-soft);
   border-radius: 8px;
   text-decoration: none;
-  color: #1d1d1f;
+  color: var(--g-text);
   transition: background 0.15s;
 }
 .about-link:hover {

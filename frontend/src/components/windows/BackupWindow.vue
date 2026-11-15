@@ -64,7 +64,7 @@
 
       <div v-if="loading" class="ui-empty">加载中…</div>
       <div v-else-if="tasks.length === 0" class="ui-empty">
-        <Archive :size="40" style="color:#9ca3af;" />
+        <Archive :size="40" style="color:var(--g-text-muted);" />
         <div>还没有备份任务，点击「新建备份任务」创建第一个吧</div>
       </div>
       <div class="ui-table-wrap">
@@ -114,7 +114,7 @@
     <div v-if="tab === 'records'" class="tab-body">
       <div v-if="loading" class="ui-empty">加载中…</div>
       <div v-else-if="records.length === 0" class="ui-empty">
-        <Archive :size="40" style="color:#9ca3af;" />
+        <Archive :size="40" style="color:var(--g-text-muted);" />
         <div>暂无备份记录</div>
       </div>
       <div class="ui-table-wrap">
@@ -155,7 +155,7 @@
 
       <div v-if="loading" class="ui-empty">加载中…</div>
       <div v-else-if="remotes.length === 0" class="ui-empty">
-        <CloudUpload :size="40" style="color:#9ca3af;" />
+        <CloudUpload :size="40" style="color:var(--g-text-muted);" />
         <div>还没有远程备份目标</div>
       </div>
       <div class="ui-table-wrap">
@@ -435,7 +435,7 @@ onMounted(loadAll)   // 进入窗口即加载全部数据
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; justify-content: space-between; }
 .global-status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #dbeafe; color: #1e40af; }
-.hint { color: #6e6e73; font-size: 12px; }
+.hint { color: var(--g-text-muted); font-size: 12px; }
 .toolbar-actions { display: flex; gap: 8px; }
 
 .count-badge { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #2563eb; color: #fff; font-size: 10px; display: inline-flex; align-items: center; justify-content: center; }
@@ -444,7 +444,7 @@ onMounted(loadAll)   // 进入窗口即加载全部数据
 .tab-body { flex: 1; overflow: auto; }
 .table-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; white-space: normal; }
-.sub { font-size: 10px; color: #888; }
+.sub { font-size: 10px; color: var(--g-text-muted); }
 .actions-cell { display: flex; gap: 4px; }
 .danger-text { color: #b91c1c; }
 .warn-title { color: #92400e; }

@@ -69,7 +69,7 @@
 
       <div v-if="loading" class="ui-empty">{{ $t('common.loading') }}</div>
       <div v-else-if="protections.length === 0" class="ui-empty">
-        <ShieldAlert :size="40" style="color:#9ca3af;" />
+        <ShieldAlert :size="40" style="color:var(--g-text-muted);" />
         <div>{{ $t('tamper.noProtections') }}</div>
       </div>
       <div v-else class="ui-table-wrap">
@@ -408,9 +408,9 @@ onMounted(() => {
 
 .tab-body { flex: 1; overflow: auto; }
 .table-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.hint { color: #6e6e73; font-size: 12px; }
+.hint { color: var(--g-text-muted); font-size: 12px; }
 .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; white-space: normal; }
-.sub { font-size: 10px; color: #888; }
+.sub { font-size: 10px; color: var(--g-text-muted); }
 .actions-cell { display: flex; gap: 4px; }
 .danger-text { color: #b91c1c; }
 .warn-text { color: #b91c1c; }

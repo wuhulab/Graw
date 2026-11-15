@@ -108,7 +108,7 @@ function logout() {
 .shunx-card {
   width: 440px;
   padding: 30px 32px 28px;
-  background: #ffffff;
+  background: var(--g-surface);
   border-radius: 16px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.32);
 }
@@ -123,25 +123,25 @@ function logout() {
 .shunx-logo {
   font-size: 24px;
   font-weight: 800;
-  color: #0a3d7a;
+  color: var(--g-text);
 }
 
 .shunx-sub {
   font-size: 12px;
-  color: #6e6e73;
+  color: var(--g-text-muted);
 }
 
 .desc {
   font-size: 13px;
   line-height: 1.6;
-  color: #1d1d1f;
+  color: var(--g-text);
   margin: 0 0 12px;
 }
 
 .desc code, .warn code {
   font-family: ui-monospace, Consolas, monospace;
   background: rgba(10, 132, 255, 0.1);
-  color: #0a3d7a;
+  color: var(--g-text);
   border-radius: 4px;
   padding: 1px 5px;
 }
@@ -165,7 +165,7 @@ function logout() {
 .field .label {
   display: block;
   font-size: 11px;
-  color: #1d1d1f;
+  color: var(--g-text);
   font-weight: 600;
   margin-bottom: 6px;
 }
@@ -174,10 +174,10 @@ function logout() {
   display: flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--g-border);
   border-radius: 8px;
   padding: 0 12px;
-  background: #fff;
+  background: var(--g-surface);
 }
 
 .path-input:focus-within {
@@ -187,7 +187,7 @@ function logout() {
 
 .path-input .prefix {
   font-size: 12px;
-  color: #8e8e93;
+  color: var(--g-text-muted);
   white-space: nowrap;
 }
 
@@ -198,7 +198,7 @@ function logout() {
   padding: 9px 0;
   font-size: 13px;
   font-family: inherit;
-  color: #1d1d1f;
+  color: var(--g-text);
 }
 
 .error {

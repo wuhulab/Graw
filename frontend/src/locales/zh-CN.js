@@ -618,6 +618,10 @@ export default {
     emptySub: '在侧边栏菜单中打开一个应用',
     switchHost: '切换主机',       // 顶栏主机切换下拉标题
     noNodes: '暂无 SSH 节点',     // 未配置任何子节点时的占位文案
+    favorites: '收藏',
+    favAdd: '收藏到顶部',
+    favRemove: '取消收藏',
+    favHint: '右键应用可收藏并置顶',
     menu: {
       monitor: '概览监控',
       site: '网站',
@@ -630,6 +634,23 @@ export default {
       store: '商店',
       system: '系统',
     },
+  },
+  // 首次安装引导：完成初始账号设置后选择主题与界面形态
+  onboarding: {
+    title: '欢迎使用 Graw',
+    desc: '初始账号已设置完成，请先选择界面主题与界面形态，之后可随时在「设置」中修改。',
+    themeTitle: '选择界面主题',
+    modeTitle: '选择界面形态',
+    themeLight: '浅色模式',
+    themeLightHint: '明亮清晰，适合白天与强光环境。',
+    themeDark: '暗色模式',
+    themeDarkHint: '低亮度护眼，适合夜间与长时间运维。',
+    modeDesktop: '新一代理论桌面',
+    modeDesktopHint: '类操作系统桌面：窗口、Dock 任务栏与桌面快捷方式。',
+    modePanel: '传统服务器面板',
+    modePanelHint: '1Panel 风格：侧边栏菜单 + 标签页内容区，符合服务器运维习惯。',
+    required: '请先完成上方两项选择',
+    confirm: '进入面板',
   },
   // 桌面快捷方式（隐藏/固定到任务栏）
   desktop: {
@@ -1741,6 +1762,27 @@ Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队
   },
   settings: {
     title: '账号',
+    // 设置分类导航
+    nav: {
+      general: '通用与外观',
+      account: '账户与安全',
+      nodes: '节点与 Agent',
+      system: '系统与维护',
+      about: '关于',
+    },
+    // 主题外观
+    themeTitle: '主题外观',
+    themeHint: '选择面板的明暗外观，即改即存；暗色模式适合长时间运维与夜间使用。',
+    themeLight: '浅色',
+    themeDark: '暗色',
+    // 界面形态
+    interfaceModeTitle: '界面形态',
+    interfaceModeHint: '在「新一代理论桌面」与「传统服务器面板」之间切换，即改即存。',
+    modeDesktop: '新一代理论桌面',
+    modeDesktopHint: '类操作系统桌面：窗口、Dock 任务栏与桌面快捷方式。',
+    modePanel: '传统服务器面板',
+    modePanelHint: '1Panel 风格：侧边栏菜单 + 标签页内容区，符合服务器运维习惯。',
+    languageHint: '选择面板界面语言，即改即存。',
     openUsers: '打开账号管理',
     uiSettingsTitle: '界面设置',
     uiSettingsHint: '自定义登录页、桌面与底栏观感：网站名、欢迎语、Logo、动态壁纸、环形统计图配色、桌面应用文字等。',

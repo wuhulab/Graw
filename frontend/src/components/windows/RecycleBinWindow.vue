@@ -14,7 +14,7 @@
       <button class="btn btn-danger" @click="emptyAll" :disabled="busy || !items.length">
         <Trash2 :size="14" /> {{ $t('recycle.emptyTrash') }}
       </button>
-      <span style="font-size:11px;color:#8e8e93;margin-left:8px;">{{ $t('recycle.count', { total: items.length }) }}</span>
+      <span style="font-size:11px;color:var(--g-text-muted);margin-left:8px;">{{ $t('recycle.count', { total: items.length }) }}</span>
     </div>
     <div style="flex:1; overflow:auto;">
       <table class="dt">
@@ -159,7 +159,7 @@ onMounted(load)
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border-bottom: 1px solid rgba(0,0,0,0.06);
+  border-bottom: 1px solid var(--g-border-soft);
 }
 .btn {
   display: inline-flex;
@@ -167,19 +167,19 @@ onMounted(load)
   gap: 4px;
   padding: 5px 12px;
   font-size: 12px;
-  color: #1d1d1f;
-  background: #f2f2f4;
-  border: 1px solid rgba(0,0,0,0.08);
+  color: var(--g-text);
+  background: var(--g-surface-soft);
+  border: 1px solid var(--g-border-soft);
   border-radius: 8px;
   cursor: pointer;
 }
-.btn:hover:not(:disabled) { background: #e8e8ea; }
+.btn:hover:not(:disabled) { background: var(--g-surface-hover); }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .btn-danger { background: #fdecec; color: #c0392b; border-color: rgba(192,57,43,0.2); }
 .btn-danger:hover:not(:disabled) { background: #fbdcdc; }
 .btn-mini { padding: 2px 9px; font-size: 11px; margin-right: 4px; }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; color: #6e6e73; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.empty { text-align: center; color: #8e8e93; padding: 40px 0; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; color: var(--g-text-muted); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.empty { text-align: center; color: var(--g-text-muted); padding: 40px 0; }
 .msg { font-size: 12px; border-radius: 6px; padding: 6px 10px; }
 .msg.ok { color: #0a7d3b; background: rgba(10,125,59,0.08); }
 .msg.err { color: #c0392b; background: rgba(192,57,43,0.08); }

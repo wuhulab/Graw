@@ -11,6 +11,7 @@ import i18n, { ensureLocale } from './locales'          // vue-i18n 插件 + 语
 import { pushError } from './store/errorLog'            // 全局错误日志：收集未捕获异常并弹窗
 import { startConnectivityWatch } from './api'           // 后端连通性看门狗：长时间断连时提醒用户
 import './assets/style.css'                             // 全局基础样式：深色背景、字体、reset
+import './assets/theme.css'                             // 明暗主题变量与暗色适配（依赖 html[data-theme]）
 
 /**
  * 移除 index.html 中的启动加载动画。

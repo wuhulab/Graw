@@ -201,12 +201,12 @@ async function save() {
 .conn-form { padding: 14px; }
 .conn-form h3 { margin: 0 0 12px; font-size: 16px; }
 .form { display: flex; flex-direction: column; gap: 8px; }
-.form label { font-size: 12px; color: #374151; }
-.form input, .form select { padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; width: 100%; box-sizing: border-box; }
-.hint { color: #6e6e73; font-size: 12px; }
+.form label { font-size: 12px; color: var(--g-text); }
+.form input, .form select { padding: 8px 10px; border: 1px solid var(--g-border-strong); border-radius: 6px; font-size: 13px; width: 100%; box-sizing: border-box; }
+.hint { color: var(--g-text-muted); font-size: 12px; }
 .error { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; padding: 6px 8px; border-radius: 6px; font-size: 12px; }
 .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
-.btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
-.btn.primary { background: #111827; color: #fff; border-color: #111827; }
+.btn { padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 13px; }
+.btn.primary { background: var(--g-strong); color: #fff; border-color: #111827; }
 .btn.primary:disabled { opacity: 0.6; cursor: not-allowed; }
 </style>

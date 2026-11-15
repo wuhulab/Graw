@@ -41,7 +41,7 @@
                 <span class="pnl-drop-check">{{ n.id === nodeCurrentId ? '✓' : '' }}</span>
                 <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ n.name || n.id }}</span>
               </button>
-              <button v-if="!nodeList.length" class="pnl-drop-item" disabled style="color:#8e8e93;">
+              <button v-if="!nodeList.length" class="pnl-drop-item" disabled style="color:var(--g-text-muted);">
                 {{ $t('panel.noNodes') }}
               </button>
             </div>
@@ -111,6 +111,29 @@
             <span v-if="!(collapsed && !isMobile)" class="pnl-item-label">{{ $t('panel.home') }}</span>
           </button>
 
+          <!-- 收藏分组：右键应用收藏后置顶显示在侧边栏最上方 -->
+          <div v-if="favoriteItems.length && !searching" class="pnl-group pnl-fav-group">
+            <div class="pnl-group-head pnl-fav-head">
+              <span class="pnl-group-title">{{ $t('panel.favorites') }}</span>
+              <Star :size="12" class="pnl-fav-icon" />
+            </div>
+            <div class="pnl-group-items">
+              <button
+                v-for="it in favoriteItems"
+                :key="'fav-' + it.key"
+                class="pnl-item"
+                :class="{ active: it.key === currentMenuKey }"
+                :title="itemName(it)"
+                @click="menuAction(it.key)"
+                @contextmenu.prevent.stop="openFavMenu($event, it.key)"
+              >
+                <span class="pnl-item-icon"><component :is="it.icon" :size="16" /></span>
+                <span v-if="!(collapsed && !isMobile)" class="pnl-item-label">{{ itemName(it) }}</span>
+                <Star v-if="!(collapsed && !isMobile)" :size="11" class="pnl-item-star" fill="currentColor" />
+              </button>
+            </div>
+          </div>
+
           <!-- 分组菜单 -->
           <nav class="pnl-menu">
             <div v-for="g in groups" :key="g.key" class="pnl-group" :class="{ active: expandedSet.has(g.key) || searching }">
@@ -126,6 +149,7 @@
                   :class="{ active: it.key === currentMenuKey }"
                   :title="itemName(it)"
                   @click="menuAction(it.key)"
+                  @contextmenu.prevent.stop="openFavMenu($event, it.key)"
                 >
                   <span class="pnl-item-icon">
                     <component :is="it.icon" :size="16" />
@@ -133,6 +157,12 @@
                     <Lock v-if="it.starLocked" :size="9" class="pnl-item-lock" />
                   </span>
                   <span v-if="!(collapsed && !isMobile)" class="pnl-item-label">{{ itemName(it) }}</span>
+                  <Star
+                    v-if="isFavorite(it.key) && !(collapsed && !isMobile)"
+                    :size="11"
+                    class="pnl-item-star"
+                    fill="currentColor"
+                  />
                 </button>
               </div>
             </div>
@@ -191,6 +221,22 @@
         </div>
       </main>
     </div>
+
+    <!-- 侧边栏应用右键菜单：收藏 / 取消收藏（收藏后置顶到侧边栏最上方） -->
+    <Transition name="pnl-drop">
+      <div
+        v-if="favMenu.show"
+        class="pnl-ctxmenu"
+        :style="{ left: favMenu.x + 'px', top: favMenu.y + 'px' }"
+        @click.stop
+      >
+        <div class="pnl-ctxmenu-title">{{ favMenu.name }}</div>
+        <button class="pnl-drop-item" @click="toggleFavoriteFromMenu">
+          <Star :size="14" :fill="favMenu.favorited ? 'currentColor' : 'none'" />
+          {{ favMenu.favorited ? $t('panel.favRemove') : $t('panel.favAdd') }}
+        </button>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -199,10 +245,11 @@ import { ref, reactive, computed, onMounted, onUnmounted, markRaw, watch } from 
 import { useI18n } from 'vue-i18n'
 import {
   Menu, X, Search, LogOut, Settings, UserCircle2, KeyRound, Palette,
-  ChevronDown, LayoutGrid, Home, Server, Github, Heart, Lock,
+  ChevronDown, LayoutGrid, Home, Server, Github, Heart, Lock, Star,
 } from 'lucide-vue-next'
 import WindowContent from './WindowContent.vue'
 import { isAdmin } from '../store/auth'
+import { settings } from '../store/settings'   // 侧边栏收藏偏好（panelFavorites，本机持久化）
 import { nodes, refreshNodes, setCurrentNode } from '../store/nodes'   // 多节点状态与当前主机切换
 
 // 主窗口面板模式：菜单分组定义（组标题 i18n key + 成员 key 清单）。
@@ -213,7 +260,7 @@ const MENU_GROUPS = [
   { key: 'database', titleKey: 'panel.menu.database', items: ['database'] },
   { key: 'container', titleKey: 'panel.menu.container', items: ['docker', 'runtime', 'process', 'imgsafety', 'slowquery'] },
   { key: 'file', titleKey: 'panel.menu.file', items: ['files', 'recycle', 'netstorage', 'ftpusers'] },
-  { key: 'network', titleKey: 'panel.menu.network', items: ['frp', 'portforward', 'vpn', 'netmap'] },
+  { key: 'network', titleKey: 'panel.menu.network', items: ['frp', 'vpn', 'netmap'] },
   { key: 'security', titleKey: 'panel.menu.security', items: ['shunxprotection', 'sessions'] },
   { key: 'task', titleKey: 'panel.menu.task', items: ['tasks', 'batch', 'report'] },
   { key: 'store', titleKey: 'panel.menu.store', items: ['appstore'] },
@@ -405,6 +452,48 @@ function itemName(it) {
   return it.titleKey ? t(it.titleKey) : (it.label || it.key)
 }
 
+// ---- 应用收藏：右键收藏后置顶显示（本机偏好，存 settings.panelFavorites） ----
+const favMenu = reactive({ show: false, x: 0, y: 0, key: '', name: '', favorited: false })
+
+// 收藏列表：按收藏顺序解析成菜单项，过滤已下架 / 当前用户无权的应用
+const favoriteItems = computed(() =>
+  settings.panelFavorites
+    .map((key) => menuItem(key))
+    .filter(Boolean)
+    .filter((it) => !it.adminOnly || isAdmin())
+)
+
+function isFavorite(key) {
+  return settings.panelFavorites.includes(key)
+}
+
+// 打开右键菜单：限制在视口内，避免贴右边 / 底部被截断
+function openFavMenu(e, key) {
+  const it = menuItem(key)
+  if (!it) return
+  const menuW = 180
+  const menuH = 82
+  favMenu.key = key
+  favMenu.name = itemName(it)
+  favMenu.favorited = isFavorite(key)
+  favMenu.x = Math.min(e.clientX, window.innerWidth - menuW - 8)
+  favMenu.y = Math.min(e.clientY, window.innerHeight - menuH - 8)
+  favMenu.show = true
+}
+
+// 收藏 / 取消收藏（收藏即置顶：收藏分组渲染在菜单分组之前）
+function toggleFavoriteFromMenu() {
+  const key = favMenu.key
+  if (!key) return
+  if (isFavorite(key)) {
+    settings.panelFavorites = settings.panelFavorites.filter((k) => k !== key)
+  } else {
+    // 重新收藏时放到最前，符合「最近收藏优先」的使用直觉
+    settings.panelFavorites = [key, ...settings.panelFavorites.filter((k) => k !== key)]
+  }
+  favMenu.show = false
+}
+
 // 组折叠状态：展开/收起由 expandedSet 控制（见上方持久化部分），此处仅提供切换动作
 function toggleGroup(key) {
   if (expandedSet.has(key)) expandedSet.delete(key)
@@ -444,12 +533,14 @@ function onLogout() {
 function onDocClick(e) {
   if (userMenuOpen.value && !e.target.closest('.pnl-usermenu')) userMenuOpen.value = false
   if (hostMenuOpen.value && !e.target.closest('.pnl-hostswitch')) hostMenuOpen.value = false
+  if (favMenu.show && !e.target.closest('.pnl-ctxmenu')) favMenu.show = false
 }
 onMounted(() => document.addEventListener('mousedown', onDocClick))
 onUnmounted(() => document.removeEventListener('mousedown', onDocClick))
 
-// 搜索变化时自动展开全部组（保证命中项可见）
+// 搜索变化时自动展开全部组（保证命中项可见）；搜索时收起收藏分组与右键菜单
 watch(searching, (v) => {
+  favMenu.show = false
   if (v) MENU_GROUPS.forEach((g) => expandedSet.add(g.key))
 })
 </script>
@@ -462,7 +553,7 @@ watch(searching, (v) => {
   flex-direction: column;
   height: 100vh;
   width: 100%;
-  background: #f5f6f8;
+  background: var(--g-bg-page);
   overflow: hidden;
 }
 
@@ -473,8 +564,8 @@ watch(searching, (v) => {
   gap: 8px;
   height: 48px;
   padding: 0 12px;
-  background: #fff;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--g-surface);
+  border-bottom: 1px solid var(--g-border-soft);
   flex-shrink: 0;
   z-index: 20;
 }
@@ -486,17 +577,17 @@ watch(searching, (v) => {
   height: 32px;
   border: none;
   background: transparent;
-  color: #1d1d1f;
+  color: var(--g-text);
   border-radius: 8px;
   cursor: pointer;
 }
-.pnl-iconbtn:hover { background: rgba(0, 0, 0, 0.05); }
+.pnl-iconbtn:hover { background: var(--g-hover); }
 .pnl-topbar-title {
   flex: 1;
   min-width: 0;
   font-size: 14px;
   font-weight: 600;
-  color: #1d1d1f;
+  color: var(--g-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -545,8 +636,8 @@ watch(searching, (v) => {
   right: 0;
   top: 40px;
   min-width: 180px;
-  background: #fff;
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--g-surface);
+  border: 1px solid var(--g-border-soft);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   padding: 6px;
@@ -554,13 +645,13 @@ watch(searching, (v) => {
 }
 .pnl-drop-head {
   padding: 8px 10px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid var(--g-border-soft);
   margin-bottom: 4px;
 }
-.pnl-drop-user { font-size: 13px; font-weight: 600; color: #1d1d1f; }
-.pnl-drop-role { font-size: 11px; color: #8e8e93; }
+.pnl-drop-user { font-size: 13px; font-weight: 600; color: var(--g-text); }
+.pnl-drop-role { font-size: 11px; color: var(--g-text-muted); }
 /* 用户菜单分组分隔线：用于「关于外链」与「退出登录」之间 */
-.pnl-drop-sep { height: 1px; margin: 4px 6px; background: rgba(0, 0, 0, 0.07); }
+.pnl-drop-sep { height: 1px; margin: 4px 6px; background: var(--g-hover); }
 .pnl-drop-item {
   display: flex;
   align-items: center;
@@ -570,7 +661,7 @@ watch(searching, (v) => {
   border: none;
   background: transparent;
   font-size: 12px;
-  color: #1d1d1f;
+  color: var(--g-text);
   border-radius: 7px;
   cursor: pointer;
   text-align: left;
@@ -593,8 +684,8 @@ watch(searching, (v) => {
   display: flex;
   flex-direction: column;
   width: 240px;
-  background: #fafbfc;
-  border-right: 1px solid rgba(0, 0, 0, 0.07);
+  background: var(--g-sidebar);
+  border-right: 1px solid var(--g-border-soft);
   flex-shrink: 0;
   transition: width 0.2s ease, transform 0.25s ease;
   overflow-x: hidden;
@@ -614,11 +705,11 @@ watch(searching, (v) => {
   padding: 7px 26px 7px 30px;
   font-size: 12px;
   font-family: inherit;
-  color: #1d1d1f;
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  color: var(--g-text);
+  border: 1px solid var(--g-border);
   border-radius: 8px;
   outline: none;
-  background: #fff;
+  background: var(--g-surface);
   box-sizing: border-box;
 }
 .pnl-search input:focus { border-color: #0a84ff; box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.15); }
@@ -627,7 +718,7 @@ watch(searching, (v) => {
   left: 9px;
   top: 50%;
   transform: translateY(-50%);
-  color: #8e8e93;
+  color: var(--g-text-muted);
   pointer-events: none;
 }
 .pnl-search-clear {
@@ -641,12 +732,12 @@ watch(searching, (v) => {
   width: 20px;
   height: 20px;
   border: none;
-  background: rgba(0, 0, 0, 0.06);
-  color: #6e6e73;
+  background: var(--g-hover);
+  color: var(--g-text-muted);
   border-radius: 50%;
   cursor: pointer;
 }
-.pnl-search-clear:hover { background: rgba(0, 0, 0, 0.12); }
+.pnl-search-clear:hover { background: var(--g-active); }
 
 /* 菜单 */
 .pnl-menu {
@@ -667,12 +758,12 @@ watch(searching, (v) => {
   background: transparent;
   font-size: 11px;
   font-weight: 600;
-  color: #8e8e93;
+  color: var(--g-text-muted);
   border-radius: 7px;
   cursor: pointer;
   text-align: left;
 }
-.pnl-group-head:hover { background: rgba(0, 0, 0, 0.04); color: #1d1d1f; }
+.pnl-group-head:hover { background: var(--g-hover); color: var(--g-text); }
 .pnl-group-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pnl-chev { transition: transform 0.2s; flex-shrink: 0; }
 .pnl-chev.open { transform: rotate(180deg); }
@@ -686,7 +777,7 @@ watch(searching, (v) => {
   border: none;
   background: transparent;
   font-size: 13px;
-  color: #3a3a3c;
+  color: var(--g-text-secondary);
   border-radius: 8px;
   cursor: pointer;
   text-align: left;
@@ -706,17 +797,47 @@ watch(searching, (v) => {
   bottom: -3px;
   padding: 1px;
   color: #fff;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--g-active);
   border-radius: 50%;
   pointer-events: none;
 }
 .pnl-item-label { overflow: hidden; text-overflow: ellipsis; }
+/* 收藏标记：常驻显示在收藏项/已收藏项右侧 */
+.pnl-item-star { margin-left: auto; color: #f5a623; flex-shrink: 0; }
+/* 收藏分组：与普通分组之间留出分隔，突出置顶位置 */
+.pnl-fav-group { margin-bottom: 6px; }
+.pnl-fav-head { cursor: default; color: #f5a623; }
+.pnl-fav-head:hover { background: transparent; color: #f5a623; }
+.pnl-fav-icon { margin-right: 2px; }
+
+/* 应用右键菜单：浮层固定定位，层级高于侧边栏 */
+.pnl-ctxmenu {
+  position: fixed;
+  z-index: 12000;
+  min-width: 170px;
+  padding: 5px;
+  background: var(--g-menu-bg);
+  border: 1px solid var(--g-border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+}
+.pnl-ctxmenu-title {
+  padding: 6px 10px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--g-text-muted);
+  border-bottom: 1px solid var(--g-border-soft);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* 主页固定入口：与分组菜单之间留出分隔 */
 .pnl-home-entry {
   margin: 2px 8px 8px;
   width: calc(100% - 16px);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid var(--g-border-soft);
   border-radius: 8px;
 }
 
@@ -733,7 +854,7 @@ watch(searching, (v) => {
 .pnl-mask {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--g-overlay);
   z-index: 35;
 }
 .pnl-slide-enter-active, .pnl-slide-leave-active { transition: transform 0.25s ease; }
@@ -747,7 +868,7 @@ watch(searching, (v) => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: #f5f6f8;
+  background: var(--g-bg-page);
 }
 
 /* 标签栏 */
@@ -756,8 +877,8 @@ watch(searching, (v) => {
   align-items: stretch;
   gap: 2px;
   padding: 6px 10px 0;
-  background: #f5f6f8;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: var(--g-bg-page);
+  border-bottom: 1px solid var(--g-border-soft);
   overflow-x: auto;
   overflow-y: hidden;
   flex-shrink: 0;
@@ -770,7 +891,7 @@ watch(searching, (v) => {
   max-width: 180px;
   padding: 7px 6px 7px 12px;
   background: transparent;
-  color: #6e6e73;
+  color: var(--g-text-muted);
   border-radius: 9px 9px 0 0;
   border: 1px solid transparent;
   cursor: pointer;
@@ -778,11 +899,11 @@ watch(searching, (v) => {
   white-space: nowrap;
   flex-shrink: 0;
 }
-.pnl-tab:hover { background: rgba(0, 0, 0, 0.04); }
+.pnl-tab:hover { background: var(--g-hover); }
 .pnl-tab.active {
-  background: #fff;
+  background: var(--g-surface);
   color: #0a84ff;
-  border-color: rgba(0, 0, 0, 0.06);
+  border-color: var(--g-border-soft);
   border-bottom-color: transparent;
   font-weight: 500;
 }
@@ -801,7 +922,7 @@ watch(searching, (v) => {
   cursor: pointer;
   flex-shrink: 0;
 }
-.pnl-tab-close:hover { background: rgba(0, 0, 0, 0.1); color: #e5484d; }
+.pnl-tab-close:hover { background: var(--g-active); color: #e5484d; }
 
 /* 内容区 */
 .pnl-content {
@@ -817,10 +938,10 @@ watch(searching, (v) => {
   justify-content: center;
   gap: 8px;
   height: 100%;
-  background: #f5f6f8;
+  background: var(--g-bg-page);
 }
 .pnl-empty-icon { color: #c7c7cc; }
-.pnl-empty-text { font-size: 14px; font-weight: 600; color: #6e6e73; }
+.pnl-empty-text { font-size: 14px; font-weight: 600; color: var(--g-text-muted); }
 .pnl-empty-sub { font-size: 12px; color: #aeaeb2; }
 
 /* ---- 窄屏（移动端）---- */

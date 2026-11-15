@@ -11,8 +11,8 @@
     <!-- 顶部工具栏：刷新 + 分区计数 -->
     <div class="toolbar">
       <button class="btn" @click="refresh">{{ $t('disks.refresh') }}</button>
-      <span v-if="loading" style="margin-left:auto;color:#888;">{{ $t('common.loading') }}</span>
-      <span v-else style="margin-left:auto;color:#888;">{{ $t('disks.total', { count: partitions.length }) }}</span>
+      <span v-if="loading" style="margin-left:auto;color:var(--g-text-muted);">{{ $t('common.loading') }}</span>
+      <span v-else style="margin-left:auto;color:var(--g-text-muted);">{{ $t('disks.total', { count: partitions.length }) }}</span>
     </div>
 
     <div style="flex:1; overflow:auto;">
@@ -181,24 +181,24 @@ onUnmounted(() => clearInterval(timer))   // 窗口关闭时清理定时器，�
 .badge { font-size: 10px; padding: 1px 6px; border-radius: 4px; color: #fff; margin-left: 4px; vertical-align: 1px; }
 .badge-sys { background: #f5a623; }
 .usage-wrap { display: flex; align-items: center; gap: 6px; }
-.usage-bar { flex: 1; height: 6px; background: #eee; border-radius: 3px; overflow: hidden; min-width: 60px; }
+.usage-bar { flex: 1; height: 6px; background: var(--g-border); border-radius: 3px; overflow: hidden; min-width: 60px; }
 .usage-fill { height: 100%; border-radius: 3px; transition: width .2s; }
-.usage-text { font-size: 11px; color: #555; width: 40px; text-align: right; }
+.usage-text { font-size: 11px; color: var(--g-text-muted); width: 40px; text-align: right; }
 .op-disabled { color: #b0b0b6; font-size: 12px; }
 .op-mounted { color: #22b8cf; font-size: 12px; }
 .btn.action { font-size: 11px; padding: 2px 10px; }
-.empty-cell { text-align: center; color: #999; font-size: 12px; padding: 16px; }
-.dlg-mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 300; }
-.dlg { background: #fff; border-radius: 12px; width: 420px; box-shadow: 0 12px 40px rgba(0,0,0,.2); overflow: hidden; }
-.dlg-title { font-weight: 700; color: #0a3d7a; padding: 14px 18px; border-bottom: 1px solid #eee; }
+.empty-cell { text-align: center; color: var(--g-text-muted); font-size: 12px; padding: 16px; }
+.dlg-mask { position: fixed; inset: 0; background: var(--g-overlay); display: flex; align-items: center; justify-content: center; z-index: 300; }
+.dlg { background: var(--g-surface); border-radius: 12px; width: 420px; box-shadow: 0 12px 40px rgba(0,0,0,.2); overflow: hidden; }
+.dlg-title { font-weight: 700; color: var(--g-text); padding: 14px 18px; border-bottom: 1px solid var(--g-border); }
 .dlg-body { padding: 16px 18px; }
 .field { margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px; }
-.field label { font-size: 12px; color: #555; }
-.field input { padding: 7px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; background: #fafafa; }
-.field input:not(:disabled):focus { outline: none; border-color: #22b8cf; background: #fff; }
+.field label { font-size: 12px; color: var(--g-text-muted); }
+.field input { padding: 7px 10px; border: 1px solid var(--g-border); border-radius: 6px; font-size: 13px; background: var(--g-surface-muted); }
+.field input:not(:disabled):focus { outline: none; border-color: #22b8cf; background: var(--g-surface); }
 .msg { font-size: 12px; margin-top: 6px; }
 .msg.err { color: #e03e3e; }
-.dlg-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid #eee; }
+.dlg-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--g-border); }
 .btn.primary { background: #22b8cf; color: #fff; }
 .btn.primary:hover { background: #1ba5ba; }
 .btn.primary:disabled { opacity: .5; cursor: not-allowed; }

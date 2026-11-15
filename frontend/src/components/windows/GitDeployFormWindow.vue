@@ -212,9 +212,9 @@ onMounted(async () => {
 .gitdeploy-form-window { padding: 14px; display: flex; flex-direction: column; gap: 2px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .check-line { display: flex; align-items: center; gap: 8px; margin-top: 22px; }
-.check-line label { font-size: 13px; color: #374151; cursor: pointer; }
-.webhook-box { margin-top: 10px; padding: 8px 10px; background: #f7f8fb; border: 1px dashed #b7c5dd; border-radius: 6px; }
-.webhook-box code { font-size: 11px; word-break: break-all; color: #0a3d7a; }
+.check-line label { font-size: 13px; color: var(--g-text); cursor: pointer; }
+.webhook-box { margin-top: 10px; padding: 8px 10px; background: var(--g-surface-soft); border: 1px dashed var(--g-border-strong); border-radius: 6px; }
+.webhook-box code { font-size: 11px; word-break: break-all; color: var(--g-text); }
 .error-box {
   color: #b91c1c;
   font-size: 12.5px;

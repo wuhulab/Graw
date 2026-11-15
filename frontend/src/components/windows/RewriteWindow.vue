@@ -160,31 +160,31 @@ onMounted(loadAll)
 
 <style scoped>
 .rewrite-window { padding: 10px; display: flex; flex-direction: column; gap: 12px; height: 100%; box-sizing: border-box; overflow: auto; }
-.intro { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #6b7280; background: #f3f4f6; border-radius: 8px; padding: 8px 12px; }
-.panel { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 14px; background: #fff; }
-.panel-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #1d1d1f; margin-bottom: 10px; }
+.intro { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--g-text-muted); background: var(--g-surface-soft); border-radius: 8px; padding: 8px 12px; }
+.panel { border: 1px solid var(--g-border); border-radius: 10px; padding: 12px 14px; background: var(--g-surface); }
+.panel-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--g-text); margin-bottom: 10px; }
 .select-row { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
 .sel-group { display: flex; flex-direction: column; gap: 4px; }
-.sel-group label { font-size: 11px; color: #6b7280; }
-.sel { padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; background: #fff; min-width: 180px; }
+.sel-group label { font-size: 11px; color: var(--g-text-muted); }
+.sel { padding: 6px 8px; border: 1px solid var(--g-border-strong); border-radius: 6px; font-size: 12px; background: var(--g-surface); min-width: 180px; }
 .preview { margin-top: 12px; }
-.preview-title { font-size: 11px; color: #6b7280; margin-bottom: 6px; }
-.code { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 10px 12px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; line-height: 1.6; overflow: auto; max-height: 200px; margin: 0; }
-.btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 5px; }
-.btn:hover:not(:disabled) { background: #f9fafb; }
+.preview-title { font-size: 11px; color: var(--g-text-muted); margin-bottom: 6px; }
+.code { background: var(--g-code-bg); color: #e2e8f0; border-radius: 8px; padding: 10px 12px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; line-height: 1.6; overflow: auto; max-height: 200px; margin: 0; }
+.btn { padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 5px; }
+.btn:hover:not(:disabled) { background: var(--g-surface-muted); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn.primary { background: #111827; color: #fff; border-color: #111827; }
-.btn.primary:hover:not(:disabled) { background: #1f2937; }
+.btn.primary { background: var(--g-strong); color: #fff; border-color: #111827; }
+.btn.primary:hover:not(:disabled) { background: var(--g-strong); }
 .msg { margin-top: 10px; font-size: 12px; padding: 6px 10px; border-radius: 6px; }
 .msg.ok { background: #d1fae5; color: #065f46; }
 .msg.err { background: #fee2e2; color: #b91c1c; }
-.empty { color: #9ca3af; font-size: 12px; padding: 16px 0; text-align: center; }
+.empty { color: var(--g-text-muted); font-size: 12px; padding: 16px 0; text-align: center; }
 .dt { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.dt th, .dt td { padding: 7px 10px; border-bottom: 1px solid #f0f0f0; text-align: left; }
-.dt th { background: #f9fafb; font-size: 11px; color: #6b7280; }
+.dt th, .dt td { padding: 7px 10px; border-bottom: 1px solid var(--g-border); text-align: left; }
+.dt th { background: var(--g-surface-muted); font-size: 11px; color: var(--g-text-muted); }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
 .badge.ok { background: #d1fae5; color: #065f46; }
-.badge.off { background: #f3f4f6; color: #6b7280; }
+.badge.off { background: var(--g-surface-soft); color: var(--g-text-muted); }
 .badge.info { background: #dbeafe; color: #1d4ed8; }
-.muted { color: #9ca3af; font-size: 12px; }
+.muted { color: var(--g-text-muted); font-size: 12px; }
 </style>

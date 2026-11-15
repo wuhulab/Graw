@@ -14,7 +14,7 @@
 
     <div v-if="loading" class="empty">加载中…</div>
     <div v-else-if="sites.length === 0" class="empty">
-      <ShieldCheck :size="40" style="color:#9ca3af;" />
+      <ShieldCheck :size="40" style="color:var(--g-text-muted);" />
       <div>暂无站点</div>
     </div>
     <div v-else class="sites-list">
@@ -136,25 +136,25 @@ onMounted(load)
 <style scoped>
 .siteopts-window { padding: 10px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; gap: 10px; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.hint { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #1d1d1f; }
+.hint { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--g-text); }
 .sites-list { overflow-y: auto; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; align-content: flex-start; }
-.site-card { border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; flex-shrink: 0; }
-.card-header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #f9fafb; font-size: 13px; font-weight: 600; border-bottom: 1px solid #e5e7eb; }
+.site-card { border: 1px solid var(--g-border); border-radius: 10px; overflow: hidden; flex-shrink: 0; }
+.card-header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--g-surface-muted); font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--g-border); }
 .site-name { flex: 1; }
-.site-type { font-weight: 400; font-size: 11px; color: #6e6e73; }
-.badge.off { background: #f3f4f6; color: #6b7280; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+.site-type { font-weight: 400; font-size: 11px; color: var(--g-text-muted); }
+.badge.off { background: var(--g-surface-soft); color: var(--g-text-muted); padding: 2px 8px; border-radius: 999px; font-size: 11px; }
 .card-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .opt-row { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
 .opt-sub { margin-left: 24px; display: flex; flex-direction: column; gap: 8px; }
 .field { display: block; }
-.field .label { display: block; font-size: 11px; color: #1d1d1f; font-weight: 600; margin-bottom: 4px; }
-.note-input { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; box-sizing: border-box; font-family: inherit; }
+.field .label { display: block; font-size: 11px; color: var(--g-text); font-weight: 600; margin-bottom: 4px; }
+.note-input { width: 100%; padding: 8px; border: 1px solid var(--g-border-strong); border-radius: 6px; font-size: 13px; box-sizing: border-box; font-family: inherit; }
 .card-actions { display: flex; gap: 8px; }
 .err-text { color: #b91c1c; font-size: 12px; }
-.btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
-.btn:hover:not(:disabled) { background: #f9fafb; }
+.btn { padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover:not(:disabled) { background: var(--g-surface-muted); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn.primary { background: #111827; color: #fff; border-color: #111827; }
-.btn.primary:hover:not(:disabled) { background: #1f2937; }
-.empty { text-align: center; color: #9ca3af; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.btn.primary { background: var(--g-strong); color: #fff; border-color: #111827; }
+.btn.primary:hover:not(:disabled) { background: var(--g-strong); }
+.empty { text-align: center; color: var(--g-text-muted); padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 </style>

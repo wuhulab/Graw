@@ -9,7 +9,7 @@
   <div style="display:flex; flex-direction:column; height:100%;" @click="closeMenus">
     <div class="toolbar">
       <button class="btn" @click="refresh">{{ $t('common.refresh') }}</button>
-      <label style="font-size:11px;color:#0a3d7a;">{{ $t('process.sortLabel') }}</label>
+      <label style="font-size:11px;color:var(--g-text);">{{ $t('process.sortLabel') }}</label>
       <select v-model="sortBy" @change="refresh" style="font-size:11px;">
         <option value="cpu">{{ $t('process.cpu') }}</option>
         <option value="memory">{{ $t('process.memory') }}</option>
@@ -17,8 +17,8 @@
         <option value="name">{{ $t('process.name') }}</option>
       </select>
       <input type="text" v-model="filter" :placeholder="$t('process.searchPlaceholder')" style="max-width:200px;" />
-      <span v-if="loading" style="margin-left:auto;color:#888;">{{ $t('common.loading') }}</span>
-      <span v-else style="margin-left:auto;color:#888;">{{ $t('process.count', { count: filteredList.length }) }}</span>
+      <span v-if="loading" style="margin-left:auto;color:var(--g-text-muted);">{{ $t('common.loading') }}</span>
+      <span v-else style="margin-left:auto;color:var(--g-text-muted);">{{ $t('process.count', { count: filteredList.length }) }}</span>
     </div>
     <div style="flex:1; overflow:auto;">
       <table class="dt">
@@ -156,11 +156,11 @@ onDeactivated(onViewLeaved)
 
 <style scoped>
 .menu-item { padding: 8px 12px; font-size: 12px; cursor: pointer; }
-.menu-item:hover { background: #f5f5f7; }
+.menu-item:hover { background: var(--g-surface-soft); }
 .context-menu {
   position: fixed;
-  background: #fff;
-  border: 1px solid rgba(0,0,0,0.1);
+  background: var(--g-surface);
+  border: 1px solid var(--g-border);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.12);
   z-index: 200;

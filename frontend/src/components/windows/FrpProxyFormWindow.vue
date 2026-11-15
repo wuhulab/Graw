@@ -155,7 +155,7 @@ async function save() {
 .proxy-form-window { padding: 14px; display: flex; flex-direction: column; gap: 2px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .check-row { display: flex; gap: 14px; flex-wrap: wrap; margin: 10px 0 4px; }
-.ui-inline { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #374151; cursor: pointer; }
+.ui-inline { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--g-text); cursor: pointer; }
 .error-box {
   color: #b91c1c;
   font-size: 12.5px;

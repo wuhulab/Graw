@@ -15,7 +15,7 @@
         <option value="networks">网络</option>
       </select>
       <button class="btn" @click="onViewChange">刷新</button>
-      <span v-if="loading" style="margin-left:auto;color:#888;">加载中...</span>
+      <span v-if="loading" style="margin-left:auto;color:var(--g-text-muted);">加载中...</span>
     </div>
 
     <div style="flex:1; overflow:auto;">
@@ -34,7 +34,7 @@
             <tr v-for="v in volumes" :key="v.name">
               <td>
                 {{ v.name }}
-                <div style="font-size:10px;color:#888;">{{ v.mountpoint || '-' }}</div>
+                <div style="font-size:10px;color:var(--g-text-muted);">{{ v.mountpoint || '-' }}</div>
               </td>
               <td>{{ v.driver }}</td>
               <td style="font-family:monospace;font-size:11px;">{{ v.mountpoint || '-' }}</td>
@@ -189,10 +189,10 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.empty { text-align: center; color: #9ca3af; padding: 40px; }
+.empty { text-align: center; color: var(--g-text-muted); padding: 40px; }
 .view-select {
-  padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 6px;
-  font-size: 13px; background: #fff; color: #111827; cursor: pointer;
+  padding: 4px 8px; border: 1px solid var(--g-border-strong); border-radius: 6px;
+  font-size: 13px; background: var(--g-surface); color: var(--g-text); cursor: pointer;
 }
 .btn.sm { padding: 2px 8px; font-size: 11px; margin-right: 4px; }
 .btn.sm.danger { color: #b91c1c; }

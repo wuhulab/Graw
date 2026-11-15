@@ -32,6 +32,7 @@ import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/compon
 import VChart from 'vue-echarts'             // ECharts 的 Vue 封装
 import { formatSpeed } from '../../api'       // 字节速率格式化（如 1.2M/s）
 import { systemState } from '../../store/systemMetrics'   // 共享系统指标状态
+import { settings } from '../../store/settings'           // 主题偏好（暗色下调整坐标轴文字/分割线颜色）
 import MetricsFallback from './MetricsFallback.vue'       // 监控数据降级提示
 
 use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent])   // 注册所需 ECharts 模块
@@ -97,6 +98,11 @@ const option = computed(() => {
   const b = isNet ? s.down : s.write
   const nameA = isNet ? '上传' : '读取'
   const nameB = isNet ? '下载' : '写入'
+  // 图表由 Canvas 绘制，无法读取 CSS 变量：按当前主题切换坐标轴/图例配色
+  const dark = settings.theme === 'dark'
+  const axisColor = dark ? '#c9ccd4' : '#0a3d7a'
+  const axisLineColor = dark ? 'rgba(255, 255, 255, 0.28)' : '#9bb5d8'
+  const splitLineColor = dark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(155,181,216,0.4)'
   return {
     grid: { left: 50, right: 12, top: 24, bottom: 22 },
     tooltip: {
@@ -105,21 +111,21 @@ const option = computed(() => {
         return params.map(p => `${p.marker}${p.seriesName}: ${formatSpeed(p.value)}`).join('<br/>')
       }
     },
-    legend: { top: 0, right: 8, textStyle: { fontSize: 10 }, itemHeight: 8, itemWidth: 12 },
+    legend: { top: 0, right: 8, textStyle: { fontSize: 10, color: axisColor }, itemHeight: 8, itemWidth: 12 },
     xAxis: {
       type: 'category',
       data: s.times,
-      axisLabel: { fontSize: 9, color: '#0a3d7a' },
-      axisLine: { lineStyle: { color: '#9bb5d8' } }
+      axisLabel: { fontSize: 9, color: axisColor },
+      axisLine: { lineStyle: { color: axisLineColor } }
     },
     yAxis: {
       type: 'value',
       axisLabel: {
         fontSize: 9,
-        color: '#0a3d7a',
+        color: axisColor,
         formatter: v => formatSpeed(v)
       },
-      splitLine: { lineStyle: { color: 'rgba(155,181,216,0.4)' } }
+      splitLine: { lineStyle: { color: splitLineColor } }
     },
     series: [
       {

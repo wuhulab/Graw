@@ -210,17 +210,17 @@ async function testConn() {
 </script>
 
 <style scoped>
-.ns-form { display: flex; flex-direction: column; height: 100%; background: #f5f5f7; }
-.toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; background: #fff; }
-.toolbar .title { display: flex; align-items: center; gap: 6px; font-weight: 600; color: #0a3d7a; }
+.ns-form { display: flex; flex-direction: column; height: 100%; background: var(--g-surface-soft); }
+.toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--g-border); background: var(--g-surface); }
+.toolbar .title { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--g-text); }
 .body { flex: 1; overflow: auto; padding: 12px 14px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field.span-2 { grid-column: span 2; }
-.field-label { font-size: 12px; color: #374151; }
-.field-hint { font-size: 11px; color: #6e6e73; }
+.field-label { font-size: 12px; color: var(--g-text); }
+.field-hint { font-size: 11px; color: var(--g-text-muted); }
 .req { color: #b91c1c; }
-.inp { padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; width: 100%; box-sizing: border-box; background: #fff; }
+.inp { padding: 8px 10px; border: 1px solid var(--g-border-strong); border-radius: 6px; font-size: 13px; width: 100%; box-sizing: border-box; background: var(--g-surface); }
 .inp.mono { font-family: ui-monospace, monospace; }
 .inp.err { border-color: #b91c1c; }
 .error { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; padding: 6px 8px; border-radius: 6px; font-size: 12px; }
@@ -229,7 +229,7 @@ async function testConn() {
 .test-msg { font-size: 12px; }
 .test-msg.ok { color: #1a7f4a; }
 .test-msg.fail { color: #b91c1c; }
-.btn { padding: 6px 14px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.btn { padding: 6px 14px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 13px; }
 .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-.btn.primary { background: #111827; color: #fff; border-color: #111827; }
+.btn.primary { background: var(--g-strong); color: #fff; border-color: #111827; }
 </style>

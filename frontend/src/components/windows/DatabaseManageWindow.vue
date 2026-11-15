@@ -248,7 +248,7 @@ onMounted(loadData)
 .panel { flex: 1; overflow: auto; min-height: 0; }
 .sql-box { margin-bottom: 8px; }
 .query-error { color: #b91c1c; font-size: 12.5px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 8px 10px; margin: 8px 0; word-break: break-all; }
-.pre { background: #f3f4f6; padding: 10px; border-radius: 6px; font-size: 12px; overflow: auto; max-height: 300px; white-space: pre-wrap; word-break: break-all; }
+.pre { background: var(--g-surface-soft); padding: 10px; border-radius: 6px; font-size: 12px; overflow: auto; max-height: 300px; white-space: pre-wrap; word-break: break-all; }
 .result { margin-top: 8px; }
 .mongo-row { display: flex; gap: 8px; margin-bottom: 8px; }
 .mongo-row input:first-child { flex: 1; }

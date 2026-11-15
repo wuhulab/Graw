@@ -110,7 +110,7 @@ onBeforeUnmount(() => {
   padding: 8px 12px; background: #252526; border-bottom: 1px solid #333;
 }
 .log-title { font-weight: 600; font-size: 13px; color: #fff; }
-.log-id { font-size: 11px; color: #888; font-family: Consolas, monospace; }
+.log-id { font-size: 11px; color: var(--g-text-muted); font-family: Consolas, monospace; }
 .btn {
   padding: 4px 10px; border: 1px solid #3c3c3c; background: #333;
   color: #ddd; border-radius: 6px; cursor: pointer; font-size: 12px;
@@ -120,7 +120,7 @@ onBeforeUnmount(() => {
 .close-btn { margin-left: auto; background: #5a1e1e; border-color: #7a2a2a; }
 .close-btn:hover { background: #6e2424; }
 .tail-select { padding: 4px 6px; background: #333; color: #ddd; border: 1px solid #3c3c3c; border-radius: 6px; font-size: 12px; }
-.loading { color: #aaa; font-size: 12px; }
+.loading { color: var(--g-text-muted); font-size: 12px; }
 .log-content {
   flex: 1; overflow: auto; margin: 0; padding: 10px 14px;
   font-size: 12px; line-height: 1.5;

@@ -168,14 +168,14 @@ onUnmounted(stop)   // 关闭窗口停止采集，避免定时器泄漏
 .legend .cpu i { background: #0a84ff; }
 .legend .mem i { background: #16a34a; }
 .toolbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-.now { font-size: 12px; color: #374151; }
-.now b { color: #111827; }
-.chart { width: 100%; height: 260px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; flex: 1; min-height: 200px; }
-.empty { text-align: center; color: #9ca3af; padding: 40px; }
-.foot { font-size: 11.5px; color: #6e6e73; display: flex; align-items: center; gap: 6px; }
+.now { font-size: 12px; color: var(--g-text); }
+.now b { color: var(--g-text); }
+.chart { width: 100%; height: 260px; border: 1px solid var(--g-border); border-radius: 8px; background: var(--g-surface); flex: 1; min-height: 200px; }
+.empty { text-align: center; color: var(--g-text-muted); padding: 40px; }
+.foot { font-size: 11.5px; color: var(--g-text-muted); display: flex; align-items: center; gap: 6px; }
 .live .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #16a34a; margin-right: 4px; }
 .paused { color: #b45309; }
-.btn { padding: 4px 10px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 12px; }
-.btn:hover:not(:disabled) { background: #f9fafb; }
+.btn { padding: 4px 10px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 12px; }
+.btn:hover:not(:disabled) { background: var(--g-surface-muted); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

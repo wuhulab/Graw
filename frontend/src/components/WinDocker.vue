@@ -92,18 +92,18 @@ onMounted(loadContainers)   // 打开窗口即加载一次容器列表
 </script>
 
 <style scoped>
-.docker-wrap { height: 100%; display: flex; flex-direction: column; background: #fff; }
+.docker-wrap { height: 100%; display: flex; flex-direction: column; background: var(--g-surface); }
 .docker-toolbar {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  background: #f5f5f7;
-  border-bottom: 1px solid rgba(0,0,0,0.06);
+  background: var(--g-surface-soft);
+  border-bottom: 1px solid var(--g-border-soft);
 }
 .docker-stats {
   font-size: 12px;
-  color: #6e6e73;
+  color: var(--g-text-muted);
 }
 .docker-table-wrap { flex: 1; overflow: auto; }
 .docker-table {
@@ -114,17 +114,17 @@ onMounted(loadContainers)   // 打开窗口即加载一次容器列表
 .docker-table th, .docker-table td {
   text-align: left;
   padding: 8px 10px;
-  border-bottom: 1px solid rgba(0,0,0,0.06);
+  border-bottom: 1px solid var(--g-border-soft);
 }
 .docker-table th {
-  background: #f5f5f7;
+  background: var(--g-surface-soft);
   font-weight: 600;
-  color: #1d1d1f;
+  color: var(--g-text);
   position: sticky;
   top: 0;
   z-index: 1;
 }
-.docker-table tr:hover td { background: #f5f5f7; }
+.docker-table tr:hover td { background: var(--g-surface-soft); }
 .status-badge {
   padding: 2px 10px;
   border-radius: 999px;
@@ -140,18 +140,18 @@ onMounted(loadContainers)   // 打开窗口即加载一次容器列表
   font-size: 13px;
 }
 .win7-btn2 {
-  border: 1px solid rgba(0,0,0,0.1);
+  border: 1px solid var(--g-border);
   border-radius: 8px;
-  background: #fff;
-  color: #1d1d1f;
+  background: var(--g-surface);
+  color: var(--g-text);
   padding: 4px 12px;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   margin-right: 4px;
 }
-.win7-btn2:hover { background: #f5f5f7; }
-.win7-btn2:active { background: #ebebed; }
+.win7-btn2:hover { background: var(--g-surface-soft); }
+.win7-btn2:active { background: var(--g-surface-hover); }
 .win7-btn2:disabled { opacity: 0.5; cursor: default; }
 .win7-btn2.danger {
   background: #ff3b30;

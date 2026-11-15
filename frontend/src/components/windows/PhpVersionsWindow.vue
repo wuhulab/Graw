@@ -24,7 +24,7 @@
     <div class="section-title">{{ $t('phpversions.detectedTitle') }}</div>
     <div v-if="loading" class="empty">{{ $t('phpversions.loading') }}</div>
     <div v-else-if="phpVersions.length === 0" class="empty">
-      <ServerCog :size="40" style="color:#9ca3af;" />
+      <ServerCog :size="40" style="color:var(--g-text-muted);" />
       <div>{{ $t('phpversions.noPhp') }}</div>
       <div class="hint">{{ $t('phpversions.noPhpHint') }}</div>
     </div>
@@ -165,33 +165,33 @@ onMounted(loadAll)
 .global-status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
 .status-badge.ok { background: #d1fae5; color: #065f46; }
-.status-badge.off { background: #f3f4f6; color: #6b7280; }
-.hint { color: #6e6e73; font-size: 12px; }
+.status-badge.off { background: var(--g-surface-soft); color: var(--g-text-muted); }
+.hint { color: var(--g-text-muted); font-size: 12px; }
 .toolbar-actions { display: flex; gap: 8px; }
 
-.section-title { font-size: 13px; font-weight: 600; color: #1d1d1f; margin: 8px 0 6px; }
+.section-title { font-size: 13px; font-weight: 600; color: var(--g-text); margin: 8px 0 6px; }
 
-.table-wrap { overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 12px; }
+.table-wrap { overflow: auto; border: 1px solid var(--g-border); border-radius: 8px; margin-bottom: 12px; }
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-th, td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; text-align: left; vertical-align: middle; white-space: nowrap; }
-th { background: #f9fafb; position: sticky; top: 0; }
-tbody tr:hover { background: #f9fafb; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--g-border); text-align: left; vertical-align: middle; white-space: nowrap; }
+th { background: var(--g-surface-muted); position: sticky; top: 0; }
+tbody tr:hover { background: var(--g-surface-muted); }
 .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; white-space: normal; }
-.sub { font-size: 10px; color: #888; }
+.sub { font-size: 10px; color: var(--g-text-muted); }
 .actions-cell { display: flex; gap: 4px; }
 .table-hint { margin: 6px 2px; }
 
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
 .badge.ok { background: #d1fae5; color: #065f46; }
 
-.php-select { padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12.5px; font-family: inherit; background: #fff; }
+.php-select { padding: 5px 8px; border: 1px solid var(--g-border-strong); border-radius: 6px; font-size: 12.5px; font-family: inherit; background: var(--g-surface); }
 .php-select:focus { outline: none; border-color: #0a84ff; }
 .php-select:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
-.btn:hover:not(:disabled) { background: #f9fafb; }
+.btn { padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover:not(:disabled) { background: var(--g-surface-muted); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn.mini { padding: 3px 8px; font-size: 11.5px; }
 
-.empty { text-align: center; color: #9ca3af; padding: 30px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.empty { text-align: center; color: var(--g-text-muted); padding: 30px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 </style>

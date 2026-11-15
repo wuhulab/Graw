@@ -26,10 +26,10 @@
     「设置」窗口（SettingsWindow）的「用户」页签内嵌。
 -->
 <template>
-  <div style="display:flex; flex-direction:column; height:100%; background:#f5f5f7;" @click="closeMenus">
+  <div style="display:flex; flex-direction:column; height:100%; background:var(--g-surface-soft);" @click="closeMenus">
     <div class="toolbar">
-      <span style="color:#0a3d7a; font-weight:600;">{{ $t('users.title') }}</span>
-      <span style="color:#6e6e73; font-size:11px;">{{ $t('users.count', { count: users.length }) }}</span>
+      <span style="color:var(--g-text); font-weight:600;">{{ $t('users.title') }}</span>
+      <span style="color:var(--g-text-muted); font-size:11px;">{{ $t('users.count', { count: users.length }) }}</span>
       <button class="btn" style="margin-left:auto;" @click="openCreate">+ {{ $t('users.create') }}</button>
       <button class="btn" @click="refresh">{{ $t('users.refresh') }}</button>
     </div>
@@ -59,8 +59,8 @@
             </td>
             <td style="font-size:11px;">
               <!-- 模块权限：null/缺失 = 全量（完整管理员）；数组 = 受限管理员白名单 -->
-              <span v-if="u.role !== 'admin'" style="color:#6e6e73;">-</span>
-              <span v-else-if="u.perms == null" style="color:#0a3d7a;">{{ $t('users.permAll') }}</span>
+              <span v-if="u.role !== 'admin'" style="color:var(--g-text-muted);">-</span>
+              <span v-else-if="u.perms == null" style="color:var(--g-text);">{{ $t('users.permAll') }}</span>
               <span v-else :title="(u.perms || []).map(permLabel).join('、')" style="color:#c0392b;">
                 {{ $t('users.permCount', { count: (u.perms || []).length }) }}
               </span>
@@ -69,7 +69,7 @@
               <span v-if="u.must_change_password" style="color:#c0392b; font-size:11px;">{{ $t('users.mustChange') }}</span>
               <span v-else style="color:#67c23a; font-size:11px;">{{ $t('users.normal') }}</span>
             </td>
-            <td style="font-size:11px; color:#6e6e73;">{{ formatTime(u.created_at) }}</td>
+            <td style="font-size:11px; color:var(--g-text-muted);">{{ formatTime(u.created_at) }}</td>
           </tr>
         </tbody>
       </table>
@@ -466,8 +466,8 @@ onUnmounted(() => {
   border-radius: 10px;
   font-weight: 600;
 }
-.role-pill.admin { background: rgba(10, 132, 255, 0.12); color: #0a3d7a; }
-.role-pill.user { background: rgba(0, 0, 0, 0.06); color: #1d1d1f; }
+.role-pill.admin { background: rgba(10, 132, 255, 0.12); color: var(--g-text); }
+.role-pill.user { background: var(--g-hover); color: var(--g-text); }
 
 /* --- 模块授权（受限管理员）多选区 --- */
 .perm-block {
@@ -477,10 +477,10 @@ onUnmounted(() => {
 .perm-list {
   max-height: 190px;
   overflow: auto;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--g-border);
   border-radius: 8px;
   padding: 8px 10px;
-  background: #fafafa;
+  background: var(--g-surface-muted);
 }
 
 .perm-actions {
@@ -505,19 +505,19 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #1d1d1f;
+  color: var(--g-text);
   padding: 2px 0;
   cursor: pointer;
 }
 .perm-item input { width: auto; }
 
 .menu-item { padding: 8px 12px; font-size: 12px; cursor: pointer; }
-.menu-item:hover { background: #f5f5f7; }
+.menu-item:hover { background: var(--g-surface-soft); }
 .menu-item.danger { color: #c0392b; }
 .context-menu {
   position: fixed;
-  background: #fff;
-  border: 1px solid rgba(0,0,0,0.1);
+  background: var(--g-surface);
+  border: 1px solid var(--g-border);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.12);
   z-index: 200;
@@ -528,7 +528,7 @@ onUnmounted(() => {
 .modal-mask {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.32);
+  background: var(--g-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -537,7 +537,7 @@ onUnmounted(() => {
 
 .modal {
   width: 360px;
-  background: #ffffff;
+  background: var(--g-surface);
   border-radius: 14px;
   padding: 22px 22px 16px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.32);
@@ -547,7 +547,7 @@ onUnmounted(() => {
 .modal-title {
   font-size: 14px;
   font-weight: 700;
-  color: #1d1d1f;
+  color: var(--g-text);
   margin-bottom: 14px;
 }
 
@@ -561,7 +561,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #1d1d1f;
+  color: var(--g-text);
 }
 
 .field.checkbox input { width: auto; }
@@ -569,7 +569,7 @@ onUnmounted(() => {
 .field .label {
   display: block;
   font-size: 11px;
-  color: #6e6e73;
+  color: var(--g-text-muted);
   font-weight: 600;
   margin-bottom: 4px;
 }
@@ -579,11 +579,11 @@ onUnmounted(() => {
   padding: 8px 10px;
   font-size: 13px;
   font-family: inherit;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--g-border);
   border-radius: 8px;
   outline: none;
-  background: #ffffff;
-  color: #1d1d1f;
+  background: var(--g-surface);
+  color: var(--g-text);
 }
 
 .field input:focus, .field select:focus {

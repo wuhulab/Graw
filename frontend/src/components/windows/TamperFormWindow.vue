@@ -194,8 +194,8 @@ async function save() {
 .default-ignore { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
 .pat {
   font-size: 10.5px;
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--g-surface-soft);
+  color: var(--g-text);
   padding: 1px 6px;
   border-radius: 999px;
 }

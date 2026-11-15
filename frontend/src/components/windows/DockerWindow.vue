@@ -25,7 +25,7 @@
         <button class="btn" @click="openPull"><Download :size="13" /> 拉取镜像</button>
         <button class="btn" @click="openBuild"><Hammer :size="13" /> 构建镜像</button>
       </template>
-      <span style="margin-left:8px; color:#0a3d7a;" v-if="status && view === 'containers'">
+      <span style="margin-left:8px; color:var(--g-text);" v-if="status && view === 'containers'">
         <template v-if="status.available">
           Docker {{ status.server_version }} · 容器 {{ status.containers_running }}/{{ status.containers }} · 镜像 {{ status.images }}
         </template>
@@ -33,7 +33,7 @@
           Docker 不可用：{{ status.reason }}
         </template>
       </span>
-      <span v-if="loading" style="margin-left:auto;color:#888;">加载中...</span>
+      <span v-if="loading" style="margin-left:auto;color:var(--g-text-muted);">加载中...</span>
       <span class="hint" v-if="view === 'containers'">右键点击容器打开操作菜单</span>
     </div>
 
@@ -65,7 +65,7 @@
               <td>
                 {{ c.name }}
                 <span v-if="c.note" style="margin-left:4px;" title="有备注">{{ c.note.length > 20 ? c.note.slice(0, 20) + '…' : c.note }}</span>
-                <div style="font-size:10px;color:#888;">{{ c.id }}</div>
+                <div style="font-size:10px;color:var(--g-text-muted);">{{ c.id }}</div>
               </td>
               <td>{{ c.image }}</td>
               <td><span :style="{ color: c.state === 'running' ? '#2a8f3c' : '#a04040' }">{{ c.state }}</span></td>
@@ -73,14 +73,14 @@
                 <template v-if="c.state === 'running'">
                   <span :style="{ color: cpuColor(c.cpu_percent) }">{{ c.cpu_percent }}%</span>
                 </template>
-                <span v-else style="color:#aaa;">—</span>
+                <span v-else style="color:var(--g-text-muted);">—</span>
               </td>
               <td>
                 <template v-if="c.state === 'running' && c.mem_usage">
                   <div>{{ c.mem_usage }}</div>
                   <div class="mem-bar"><div class="mem-fill" :style="{ width: memBarWidth(c.mem_percent), background: cpuColor(c.mem_percent) }"></div></div>
                 </template>
-                <span v-else style="color:#aaa;">—</span>
+                <span v-else style="color:var(--g-text-muted);">—</span>
               </td>
               <td style="font-family:monospace;font-size:11px;">{{ c.ports.join(', ') || '-' }}</td>
             </tr>
@@ -143,14 +143,14 @@
             <tr v-for="p in composeProjects" :key="p.name">
               <td>
                 {{ p.name }}
-                <div style="font-size:10px;color:#888;">{{ p.path }}</div>
+                <div style="font-size:10px;color:var(--g-text-muted);">{{ p.path }}</div>
               </td>
               <td style="font-size:11px;">{{ p.services.join(', ') || '-' }}</td>
               <td>
                 <span :style="{ color: p.running === p.total && p.total > 0 ? '#2a8f3c' : '#a04040' }">
                   {{ p.running }}/{{ p.total }}
                 </span>
-                <span v-if="p.total === 0" style="color:#aaa;">未运行</span>
+                <span v-if="p.total === 0" style="color:var(--g-text-muted);">未运行</span>
               </td>
               <td>
                 <button class="btn sm" @click="composeOp(p, 'up')">启动</button>
@@ -239,7 +239,7 @@
             <tr v-for="v in volumes" :key="v.name">
               <td>
                 {{ v.name }}
-                <div style="font-size:10px;color:#888;">{{ v.mountpoint || '-' }}</div>
+                <div style="font-size:10px;color:var(--g-text-muted);">{{ v.mountpoint || '-' }}</div>
               </td>
               <td>{{ v.driver }}</td>
               <td style="font-family:monospace;font-size:11px;">{{ v.mountpoint || '-' }}</td>
@@ -965,59 +965,59 @@ onDeactivated(() => {
 </script>
 
 <style scoped>
-.hint { margin-left: auto; color: #888; font-size: 11px; }
-.empty { text-align: center; color: #9ca3af; padding: 40px; }
-.mem-bar { width: 120px; height: 5px; background: #e5e7eb; border-radius: 3px; margin-top: 3px; overflow: hidden; }
+.hint { margin-left: auto; color: var(--g-text-muted); font-size: 11px; }
+.empty { text-align: center; color: var(--g-text-muted); padding: 40px; }
+.mem-bar { width: 120px; height: 5px; background: var(--g-border); border-radius: 3px; margin-top: 3px; overflow: hidden; }
 .mem-fill { height: 100%; border-radius: 3px; transition: width 0.4s; }
 .star-on { color: #d97706; }
 .view-select {
-  padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 6px;
-  font-size: 13px; background: #fff; color: #111827; cursor: pointer;
+  padding: 4px 8px; border: 1px solid var(--g-border-strong); border-radius: 6px;
+  font-size: 13px; background: var(--g-surface); color: var(--g-text); cursor: pointer;
 }
 .btn.sm { padding: 2px 8px; font-size: 11px; margin-right: 4px; }
 .btn.sm.danger { color: #b91c1c; }
-.btn.primary { background: #0a3d7a; color: #fff; border-color: #0a3d7a; }
+.btn.primary { background: var(--g-strong); color: #fff; border-color: #0a3d7a; }
 
 /* 配置视图 */
 .config-view { padding: 14px; }
 .config-card {
-  max-width: 560px; border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; background: #fafafa;
+  max-width: 560px; border: 1px solid var(--g-border); border-radius: 10px; padding: 16px; background: var(--g-surface-muted);
 }
 .config-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
-.config-path { font-size: 11px; color: #6b7280; margin-bottom: 10px; font-family: Consolas, monospace; }
+.config-path { font-size: 11px; color: var(--g-text-muted); margin-bottom: 10px; font-family: Consolas, monospace; }
 .config-warn {
   font-size: 12px; color: #b45309; background: #fef3c7; border: 1px solid #fde68a;
   border-radius: 6px; padding: 6px 10px; margin-bottom: 12px;
 }
 .cfg-row { margin: 10px 0; }
 .cfg-row.check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
-.cfg-label { font-size: 12px; color: #374151; margin-bottom: 4px; }
+.cfg-label { font-size: 12px; color: var(--g-text); margin-bottom: 4px; }
 .cfg-textarea {
   width: 100%; min-height: 56px; resize: vertical; padding: 8px;
-  border: 1px solid #d1d5db; border-radius: 6px; font-size: 12.5px; box-sizing: border-box;
+  border: 1px solid var(--g-border-strong); border-radius: 6px; font-size: 12.5px; box-sizing: border-box;
 }
 .cfg-actions { display: flex; gap: 8px; margin-top: 14px; }
 .cfg-msg { margin-top: 10px; font-size: 12px; color: #2a8f3c; }
 .cfg-msg.err { color: #b91c1c; }
 
 .context-menu {
-  position: fixed; background: #fff; border: 1px solid rgba(0,0,0,0.1);
+  position: fixed; background: var(--g-surface); border: 1px solid var(--g-border);
   border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);
   z-index: 3000; min-width: 150px; padding: 4px 0;
 }
-.menu-header { padding: 8px 14px; font-size: 12px; font-weight: 600; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
-.menu-item { padding: 8px 14px; font-size: 12.5px; cursor: pointer; color: #374151; }
-.menu-item:hover { background: #f5f5f7; }
+.menu-header { padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--g-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+.menu-item { padding: 8px 14px; font-size: 12.5px; cursor: pointer; color: var(--g-text); }
+.menu-item:hover { background: var(--g-surface-soft); }
 .menu-item.danger { color: #b91c1c; }
 .menu-item.danger:hover { background: #fef2f2; }
-.menu-divider { height: 1px; background: #e5e7eb; margin: 4px 0; }
+.menu-divider { height: 1px; background: var(--g-border); margin: 4px 0; }
 
 /* 备注笔记弹窗 */
-.note-mask { position: absolute; inset: 0; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; z-index: 2000; }
-.note-dialog { width: 420px; max-width: 90%; background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 12px 32px rgba(0,0,0,0.2); }
+.note-mask { position: absolute; inset: 0; background: var(--g-overlay); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+.note-dialog { width: 420px; max-width: 90%; background: var(--g-surface); border-radius: 10px; padding: 16px; box-shadow: 0 12px 32px rgba(0,0,0,0.2); }
 .note-title { font-weight: 600; margin-bottom: 10px; }
-.note-textarea { width: 100%; height: 140px; resize: vertical; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; box-sizing: border-box; }
-.note-input { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; box-sizing: border-box; font-family: inherit; }
+.note-textarea { width: 100%; height: 140px; resize: vertical; padding: 8px; border: 1px solid var(--g-border-strong); border-radius: 6px; font-size: 13px; box-sizing: border-box; }
+.note-input { width: 100%; padding: 8px; border: 1px solid var(--g-border-strong); border-radius: 6px; font-size: 13px; box-sizing: border-box; font-family: inherit; }
 .err-text { color: #b91c1c; font-size: 12px; margin-top: 8px; }
 .note-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 </style>

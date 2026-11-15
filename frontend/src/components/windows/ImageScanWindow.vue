@@ -50,7 +50,7 @@
               <td class="ui-mono">{{ f.cve }}</td>
               <td>{{ f.pkg }}</td>
               <td class="ui-mono">{{ f.version }}</td>
-              <td style="font-size:11px; color:#666;">{{ f.desc }}</td>
+              <td style="font-size:11px; color:var(--g-text-muted);">{{ f.desc }}</td>
             </tr>
           </tbody>
         </table>
@@ -88,7 +88,7 @@
               <td class="ui-mono">{{ a.versions }}</td>
               <td class="ui-mono">{{ a.cve }}</td>
               <td><span class="sev" :class="a.severity">{{ a.severity }}</span></td>
-              <td style="font-size:11px; color:#666;">{{ a.desc }}</td>
+              <td style="font-size:11px; color:var(--g-text-muted);">{{ a.desc }}</td>
             </tr>
             <tr v-if="advPkgs.length === 0">
               <td colspan="5" class="ui-empty">{{ $t('imgscan.advEmpty') }}</td>
@@ -200,8 +200,8 @@ onMounted(() => {
 .ok-tip { color: #27ae60; font-size: 12px; margin-top: 6px; }
 .adv-area { width: 100%; font-family: Consolas, monospace; font-size: 11px; }
 .adv-row { display: flex; gap: 8px; margin: 8px 0; align-items: center; }
-.import-msg { font-size: 12px; color: #0a3d7a; align-self: center; }
-.adv-count { font-size: 11px; color: #888; margin-bottom: 6px; }
+.import-msg { font-size: 12px; color: var(--g-text); align-self: center; }
+.adv-count { font-size: 11px; color: var(--g-text-muted); margin-bottom: 6px; }
 .sev { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: #eef2ff; color: #4338ca; }
 .sev.critical { background: #7f1d1d; color: #fff; }
 .sev.high { background: #c0392b; color: #fff; }

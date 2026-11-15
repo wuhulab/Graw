@@ -11,14 +11,14 @@
     <!-- 工具栏：类型过滤 + 刷新 -->
     <div class="toolbar">
       <button class="btn" @click="loadList">{{ $t('common.refresh') }}</button>
-      <label style="font-size:11px;color:#0a3d7a;">{{ $t('rollback.kindLabel') }}</label>
+      <label style="font-size:11px;color:var(--g-text);">{{ $t('rollback.kindLabel') }}</label>
       <select v-model="kind" @change="loadList" style="font-size:11px;">
         <option value="">{{ $t('rollback.kindAll') }}</option>
         <option value="site">{{ $t('rollback.kind.site') }}</option>
         <option value="firewall">{{ $t('rollback.kind.firewall') }}</option>
       </select>
-      <span v-if="loading" style="margin-left:auto;color:#888;">{{ $t('common.loading') }}</span>
-      <span v-else style="margin-left:auto;color:#888;">{{ $t('rollback.count', { count: items.length }) }}</span>
+      <span v-if="loading" style="margin-left:auto;color:var(--g-text-muted);">{{ $t('common.loading') }}</span>
+      <span v-else style="margin-left:auto;color:var(--g-text-muted);">{{ $t('rollback.count', { count: items.length }) }}</span>
     </div>
 
     <!-- 主体：左列表 + 右详情 -->
@@ -36,13 +36,13 @@
             <span class="kind-badge" :class="it.kind">{{ it.kind === 'site' ? $t('rollback.kind.site') : $t('rollback.kind.firewall') }}</span>
             <span style="font-weight:600; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ it.target_id }}</span>
           </div>
-          <div style="font-size:11px; color:#666; margin-top:4px;">
+          <div style="font-size:11px; color:var(--g-text-muted); margin-top:4px;">
             {{ it.when }}
             <template v-if="it.user"> · {{ it.user }}</template>
           </div>
-          <div style="font-size:10px; color:#999; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ it.file_path }}</div>
+          <div style="font-size:10px; color:var(--g-text-muted); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ it.file_path }}</div>
         </div>
-        <div v-if="!loading && items.length === 0" style="padding:24px; text-align:center; color:#999; font-size:12px;">
+        <div v-if="!loading && items.length === 0" style="padding:24px; text-align:center; color:var(--g-text-muted); font-size:12px;">
           {{ $t('rollback.noSnapshots') }}
         </div>
       </div>
@@ -53,8 +53,8 @@
           <div class="toolbar" style="border-bottom:1px solid #dfe3ec;">
             <button class="btn danger" :disabled="restoring" @click="doRestore">{{ $t('rollback.restore') }}</button>
             <button class="btn" @click="doDelete">{{ $t('rollback.delete') }}</button>
-            <span v-if="restoring" style="margin-left:auto;color:#888;">{{ $t('common.loading') }}</span>
-            <span v-else style="margin-left:auto;color:#888;font-size:11px;">{{ detail.file_path }}</span>
+            <span v-if="restoring" style="margin-left:auto;color:var(--g-text-muted);">{{ $t('common.loading') }}</span>
+            <span v-else style="margin-left:auto;color:var(--g-text-muted);font-size:11px;">{{ detail.file_path }}</span>
           </div>
           <div style="flex:1; overflow:auto; padding:10px;">
             <!-- 元信息 -->
@@ -68,11 +68,11 @@
               </tbody>
             </table>
             <!-- 内容预览（base64 解码） -->
-            <div style="margin-top:10px; font-size:11px; color:#0a3d7a; font-weight:600;">{{ $t('rollback.preview') }}</div>
+            <div style="margin-top:10px; font-size:11px; color:var(--g-text); font-weight:600;">{{ $t('rollback.preview') }}</div>
             <pre class="preview">{{ previewText }}</pre>
           </div>
         </template>
-        <div v-else style="flex:1; display:flex; align-items:center; justify-content:center; color:#999; font-size:12px;">
+        <div v-else style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--g-text-muted); font-size:12px;">
           {{ $t('rollback.selectHint') }}
         </div>
       </div>
@@ -181,8 +181,8 @@ onMounted(loadList)
   border-bottom: 1px solid #eef0f6;
   cursor: pointer;
 }
-.snap-item:hover { background: #f5f7fb; }
-.snap-item.selected { background: #eaf1fb; }
+.snap-item:hover { background: var(--g-surface-soft); }
+.snap-item.selected { background: var(--g-selected); }
 .kind-badge {
   font-size: 10px;
   padding: 1px 6px;
@@ -195,11 +195,11 @@ onMounted(loadList)
 .meta td {
   font-size: 12px;
   padding: 3px 10px 3px 0;
-  color: #333;
+  color: var(--g-text);
 }
-.meta td:first-child { color: #0a3d7a; font-weight: 600; width: 90px; }
+.meta td:first-child { color: var(--g-text); font-weight: 600; width: 90px; }
 .preview {
-  background: #f7f8fb;
+  background: var(--g-surface-soft);
   border: 1px solid #e4e7f0;
   border-radius: 4px;
   padding: 10px;

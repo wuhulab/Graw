@@ -156,7 +156,7 @@ onUnmounted(() => {
 <style scoped>
 .log-window { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 
-.toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; flex-shrink: 0; }
+.toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--g-border); flex-shrink: 0; }
 .title { font-weight: 700; font-size: 13.5px; display: inline-flex; align-items: center; gap: 6px; }
 .badge { font-size: 11px; padding: 1px 8px; border-radius: 999px; }
 .badge.warn { background: #fffbeb; color: #b45309; }
@@ -166,7 +166,7 @@ onUnmounted(() => {
 
 .body { flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; overflow-y: auto; }
 
-.log-box { flex: 1; min-height: 0; overflow-y: auto; background: #0f172a; border-radius: 8px; padding: 10px; font-family: Consolas, monospace; font-size: 12px; line-height: 1.55; user-select: text; cursor: text; }
+.log-box { flex: 1; min-height: 0; overflow-y: auto; background: var(--g-code-bg); border-radius: 8px; padding: 10px; font-family: Consolas, monospace; font-size: 12px; line-height: 1.55; user-select: text; cursor: text; }
 .line { display: flex; gap: 6px; white-space: pre-wrap; word-break: break-all; }
 .line.log .text { color: #cbd5e1; }
 .line.status .text { color: #60a5fa; font-weight: 600; }
@@ -175,7 +175,7 @@ onUnmounted(() => {
 
 .result-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
 .result-row { display: flex; gap: 8px; }
-.result-row span { color: #6b7280; width: 72px; flex-shrink: 0; }
+.result-row span { color: var(--g-text-muted); width: 72px; flex-shrink: 0; }
 .warn-box { margin-top: 4px; padding: 6px 8px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; }
 .warn-line { display: flex; align-items: flex-start; gap: 6px; color: #92400e; font-size: 12px; line-height: 1.5; }
 

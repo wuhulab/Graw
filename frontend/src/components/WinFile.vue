@@ -126,18 +126,18 @@ onMounted(() => load(''))           // 打开窗口即载入根目录
 </script>
 
 <style scoped>
-.file-wrap { height: 100%; display: flex; flex-direction: column; background: #fff; }
-.file-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #f5f5f7; border-bottom: 1px solid rgba(0,0,0,0.06); }
-.file-path { font-size: 12px; color: #6e6e73; margin-left: auto; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.file-wrap { height: 100%; display: flex; flex-direction: column; background: var(--g-surface); }
+.file-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--g-surface-soft); border-bottom: 1px solid var(--g-border-soft); }
+.file-path { font-size: 12px; color: var(--g-text-muted); margin-left: auto; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 .file-table-wrap { flex: 1; overflow: auto; }
 .file-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.file-table th, .file-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid rgba(0,0,0,0.06); }
-.file-table th { background: #f5f5f7; position: sticky; top: 0; z-index: 1; font-weight: 600; color: #1d1d1f; }
-.file-table tr:hover { background: #f5f5f7; }
+.file-table th, .file-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--g-border-soft); }
+.file-table th { background: var(--g-surface-soft); position: sticky; top: 0; z-index: 1; font-weight: 600; color: var(--g-text); }
+.file-table tr:hover { background: var(--g-surface-soft); }
 .file-msg { padding: 10px; color: #ff3b30; font-size: 12px; }
-.win7-btn2 { border: 1px solid rgba(0,0,0,0.1); border-radius: 8px; background: #fff; color: #1d1d1f; padding: 4px 12px; font-size: 12px; cursor: pointer; margin-right: 4px; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; }
-.win7-btn2:hover { background: #f5f5f7; }
-.win7-btn2:active { background: #ebebed; }
+.win7-btn2 { border: 1px solid var(--g-border); border-radius: 8px; background: var(--g-surface); color: var(--g-text); padding: 4px 12px; font-size: 12px; cursor: pointer; margin-right: 4px; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; }
+.win7-btn2:hover { background: var(--g-surface-soft); }
+.win7-btn2:active { background: var(--g-surface-hover); }
 .win7-btn2.danger { background: #ff3b30; color: #fff; border-color: transparent; }
 .win7-btn2.danger:hover { background: #e0342a; }
 </style>

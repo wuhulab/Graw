@@ -335,6 +335,11 @@ async function handleChangePassword() {
       pendingToken.value = nextToken
       setAuth(nextToken, user)            // 此时才真正登录：刷新页面也会保持在线
     }
+    // 初次安装（默认密码）改密完成后，进入面板时强制选择主题与界面形态。
+    // 仅对「默认密码」场景打标记；普通重置密码不打扰用户。
+    if (forceChangeReason.value === 'default') {
+      try { localStorage.setItem('graw_onboarding_pending', '1') } catch (e) { /* 存储不可用时跳过引导 */ }
+    }
     forceChange.value = false
     forceChangeReason.value = ''
     oldPassword.value = ''
@@ -356,7 +361,7 @@ async function handleChangePassword() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: #1f2937;
+  background-color: var(--g-login-bg);
   background-image: url('../assets/hero.png');
   background-size: cover;
   background-position: center;
@@ -368,7 +373,7 @@ async function handleChangePassword() {
   inset: 0;
   z-index: 0;
   overflow: hidden;
-  background: #1f2937;
+  background: var(--g-login-bg);
 }
 .login-wallpaper-video video {
   width: 100%;
@@ -389,7 +394,7 @@ async function handleChangePassword() {
 .login-wallpaper-mask {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.18);
+  background: var(--g-mask);
 }
 
 .login-card {
@@ -407,7 +412,7 @@ async function handleChangePassword() {
 .login-title {
   font-size: 28px;
   font-weight: 700;
-  color: #0a3d7a;
+  color: var(--g-text);
   letter-spacing: 0.5px;
 }
 
@@ -421,7 +426,7 @@ async function handleChangePassword() {
 
 .login-subtitle {
   font-size: 12px;
-  color: #6e6e73;
+  color: var(--g-text-muted);
   margin-bottom: 22px;
 }
 
@@ -433,7 +438,7 @@ async function handleChangePassword() {
 .field .label {
   display: block;
   font-size: 11px;
-  color: #1d1d1f;
+  color: var(--g-text);
   font-weight: 600;
   margin-bottom: 6px;
 }
@@ -443,9 +448,9 @@ async function handleChangePassword() {
   padding: 9px 12px;
   font-size: 13px;
   font-family: inherit;
-  color: #1d1d1f;
-  background: #ffffff;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  color: var(--g-text);
+  background: var(--g-surface);
+  border: 1px solid var(--g-border);
   border-radius: 8px;
   outline: none;
 }
@@ -457,7 +462,7 @@ async function handleChangePassword() {
 
 .hint {
   background: rgba(10, 132, 255, 0.12);
-  color: #0a3d7a;
+  color: var(--g-text);
   border: 1px solid rgba(10, 132, 255, 0.3);
   border-radius: 8px;
   padding: 8px 10px;
@@ -505,7 +510,7 @@ async function handleChangePassword() {
   align-items: center;
   gap: 10px;
   margin: 16px 0 12px;
-  color: #8e8e93;
+  color: var(--g-text-muted);
   font-size: 11px;
   user-select: none;
 }
@@ -514,7 +519,7 @@ async function handleChangePassword() {
   content: '';
   flex: 1;
   height: 1px;
-  background: rgba(0, 0, 0, 0.1);
+  background: var(--g-active);
 }
 .btn-oauth {
   display: block;
@@ -524,14 +529,14 @@ async function handleChangePassword() {
   text-decoration: none;
   font-size: 13px;
   font-weight: 600;
-  color: #1d1d1f;
-  background: #ffffff;
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  color: var(--g-text);
+  background: var(--g-surface);
+  border: 1px solid var(--g-border);
   border-radius: 10px;
   transition: background 0.15s, border-color 0.15s;
 }
 .btn-oauth:hover {
-  background: #f5f5f7;
-  border-color: rgba(0, 0, 0, 0.2);
+  background: var(--g-surface-soft);
+  border-color: var(--g-border);
 }
 </style>

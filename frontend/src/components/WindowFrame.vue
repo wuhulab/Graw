@@ -161,8 +161,8 @@ function onResizeEnd() {
   bottom: 3px;
   width: 8px;
   height: 8px;
-  border-right: 2px solid rgba(0, 0, 0, 0.25);
-  border-bottom: 2px solid rgba(0, 0, 0, 0.25);
+  border-right: 2px solid var(--g-border);
+  border-bottom: 2px solid var(--g-border);
   border-bottom-right-radius: 4px;
 }
 .node-tag {

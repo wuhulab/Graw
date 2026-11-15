@@ -21,7 +21,7 @@
       <input type="text" v-model="pathInput" @keyup.enter="go" />
       <div style="position:relative;">
         <button class="btn" @click.stop="newMenuOpen = !newMenuOpen">{{ $t('files.new') }}</button>
-        <div v-if="newMenuOpen" style="position:absolute; top:100%; left:0; margin-top:4px; background:#fff; border:1px solid rgba(0,0,0,0.1); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.12); z-index:100; min-width:120px;">
+        <div v-if="newMenuOpen" style="position:absolute; top:100%; left:0; margin-top:4px; background:var(--g-surface); border:1px solid var(--g-border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.12); z-index:100; min-width:120px;">
           <div class="menu-item" @click="createFolder">{{ $t('files.newFolder') }}</div>
           <div class="menu-item" @click="createFile">{{ $t('files.newFile') }}</div>
         </div>
@@ -686,12 +686,12 @@ onUnmounted(() => {
 
 <style scoped>
 .menu-item { padding: 8px 12px; font-size: 12px; cursor: pointer; }
-.menu-item:hover { background: #f5f5f7; }
+.menu-item:hover { background: var(--g-surface-soft); }
 .menu-item.disabled { opacity: 0.45; cursor: not-allowed; }
 .context-menu {
   position: fixed;
-  background: #fff;
-  border: 1px solid rgba(0,0,0,0.1);
+  background: var(--g-surface);
+  border: 1px solid var(--g-border);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.12);
   z-index: 200;
@@ -721,8 +721,8 @@ tr.selected td { background: rgba(10, 132, 255, 0.10); }
 /* 上传进度条 */
 .upload-progress {
   padding: 6px 12px; background: #f0f7ff; border: 1px solid #b3d7ff;
-  border-radius: 6px; margin-bottom: 6px; font-size: 12px; color: #0a3d7a;
+  border-radius: 6px; margin-bottom: 6px; font-size: 12px; color: var(--g-text);
 }
-.progress-bar { height: 4px; background: #e5e7eb; border-radius: 2px; margin-top: 4px; overflow: hidden; }
+.progress-bar { height: 4px; background: var(--g-border); border-radius: 2px; margin-top: 4px; overflow: hidden; }
 .progress-fill { height: 100%; background: #0a84ff; transition: width 0.3s; }
 </style>

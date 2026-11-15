@@ -39,7 +39,7 @@
     <!-- 空状态 -->
     <div v-if="loading" class="ui-empty">加载中…</div>
     <div v-else-if="keys.length === 0" class="ui-empty">
-      <KeyRound :size="40" style="color:#9ca3af;" />
+      <KeyRound :size="40" style="color:var(--g-text-muted);" />
       <div>还没有 SSH 密钥，点击「生成密钥」创建一对新密钥，或「导入私钥」使用已有密钥</div>
     </div>
 
@@ -215,6 +215,6 @@ onMounted(loadAll)   // 窗口一打开就拉一次密钥列表
 .tag { background: #eef2ff; color: #4338ca; border-radius: 4px; padding: 2px 6px; font-size: 11px; }
 .actions-cell { white-space: nowrap; }
 .danger-text { color: #dc2626; }
-.pub-box { resize: none; background: #f9fafb; }
-.fp { color: #6e6e73; font-size: 12px; margin: 8px 0; }
+.pub-box { resize: none; background: var(--g-surface-muted); }
+.fp { color: var(--g-text-muted); font-size: 12px; margin: 8px 0; }
 </style>

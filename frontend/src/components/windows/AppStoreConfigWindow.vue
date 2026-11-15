@@ -62,6 +62,6 @@ async function save() {
 
 <style scoped>
 .appstore-config-window { padding: 14px; }
-.desc { font-size: 12.5px; color: #6b7280; margin: 0 0 12px; line-height: 1.6; }
+.desc { font-size: 12.5px; color: var(--g-text-muted); margin: 0 0 12px; line-height: 1.6; }
 .error-box { color: #b91c1c; font-size: 12.5px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; word-break: break-all; }
 </style>

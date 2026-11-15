@@ -107,6 +107,6 @@ onMounted(load)   // 窗口一打开就拉一次证书列表
 
 <style scoped>
 .ssl-window { padding: 0; } /* 内嵌于「网站」聚合视图：外边距由父容器提供，上栏与父边缘平齐 */
-.iconbtn { padding: 4px; border: 1px solid #e5e7eb; background: #fff; border-radius: 6px; cursor: pointer; }
+.iconbtn { padding: 4px; border: 1px solid var(--g-border); background: var(--g-surface); border-radius: 6px; cursor: pointer; }
 .iconbtn.danger:hover { background: #fee2e2; border-color: #fca5a5; }
 </style>

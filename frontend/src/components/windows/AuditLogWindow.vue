@@ -49,7 +49,7 @@
     <pre v-if="contentText" ref="logBox" class="content">{{ contentText }}</pre>
     <div v-else-if="loading" class="empty">加载中…</div>
     <div v-else class="empty">
-      <ScrollText :size="40" style="color:#9ca3af;" />
+      <ScrollText :size="40" style="color:var(--g-text-muted);" />
       <div>{{ emptyText }}</div>
     </div>
   </div>
@@ -140,26 +140,26 @@ onMounted(async () => {
 .global-status { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #dbeafe; color: #1e40af; }
 .field { display: flex; align-items: center; gap: 6px; }
-.field .label { font-size: 12px; color: #4b5563; }
-.input { padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12.5px; background: #fff; }
+.field .label { font-size: 12px; color: var(--g-text-muted); }
+.input { padding: 5px 8px; border: 1px solid var(--g-border-strong); border-radius: 6px; font-size: 12.5px; background: var(--g-surface); }
 .input:disabled { opacity: 0.6; cursor: not-allowed; }
 .select { width: auto; }
-.meta { font-size: 11.5px; color: #6b7280; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta { font-size: 11.5px; color: var(--g-text-muted); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .toolbar-actions { display: flex; gap: 8px; align-items: center; }
-.loading { font-size: 12px; color: #6b7280; }
+.loading { font-size: 12px; color: var(--g-text-muted); }
 
 /* 日志展示区：等宽字体、自动换行、可滚动 */
 .content {
   flex: 1; overflow: auto; margin: 0; padding: 12px 14px;
-  border: 1px solid #e5e7eb; border-radius: 8px; background: #fff;
+  border: 1px solid var(--g-border); border-radius: 8px; background: var(--g-surface);
   font-family: ui-monospace, Menlo, Consolas, 'Courier New', monospace;
-  font-size: 12px; line-height: 1.6; color: #111827;
+  font-size: 12px; line-height: 1.6; color: var(--g-text);
   white-space: pre-wrap; word-break: break-all;
 }
-.empty { text-align: center; color: #9ca3af; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.empty { text-align: center; color: var(--g-text-muted); padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 
-.btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
-.btn:hover:not(:disabled) { background: #f9fafb; }
+.btn { padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover:not(:disabled) { background: var(--g-surface-muted); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .spinning { animation: spin 1s linear infinite; }

@@ -1,0 +1,209 @@
+/* theme.css — 全局明暗主题变量与暗色适配
+   业务背景：面板此前大量使用浅色硬编码，暗色主题无法只靠一条规则覆盖。
+   这里定义一套中性色 CSS 变量：组件内的背景 / 边框 / 文字统一引用变量，
+   浅色变量保持原有取值，暗色只替换变量值，避免逐个组件写两套样式。
+
+   使用方式：
+     - 根元素由 store/settings.js（运行时）与 index.html（首屏前置）写入
+       <html data-theme="light|dark">；
+     - 组件样式优先使用 var(--g-*)（见下方 token 说明）；
+     - 语义色（成功绿 / 告警红 / 操作蓝）不进入变量替换，保持原有识别度。
+*/
+
+/* ---- 浅色（默认）----
+   surface：卡片 / 窗口内容等主表面
+   surface-soft / muted / hover：浅灰底、表头、悬停态
+   text / secondary / muted / faint：四级文字层级
+   strong：深色主按钮 / 激活页签（暗色下替换为强调蓝，避免与背景融为一体） */
+:root {
+  color-scheme: light;
+
+  --g-bg-page: #f5f6f8;
+  --g-surface: #ffffff;
+  --g-surface-soft: #f5f5f7;
+  --g-surface-muted: #fafafa;
+  --g-surface-hover: #f3f4f6;
+  --g-sidebar: #fafbfc;
+
+  --g-border: #e5e7eb;
+  --g-border-strong: #d1d5db;
+  --g-border-soft: rgba(0, 0, 0, 0.06);
+  --g-hover: rgba(0, 0, 0, 0.06);
+  --g-active: rgba(0, 0, 0, 0.1);
+
+  --g-text: #1d1d1f;
+  --g-text-secondary: #3a3a3c;
+  --g-text-muted: #6e6e73;
+  --g-text-faint: #8e8e93;
+
+  --g-strong: #111827;
+  --g-strong-hover: #1f2937;
+  --g-selected: #eaf1fb;
+  --g-accent-soft: #eef5ff;
+  --g-indigo-soft: #eef2ff;
+
+  --g-window-bg: rgba(246, 246, 248, 0.94);
+  --g-titlebar-bg: rgba(246, 246, 248, 0.88);
+  --g-glass: rgba(255, 255, 255, 0.72);
+  --g-menu-bg: rgba(255, 255, 255, 0.96);
+  --g-dock-bg: rgba(255, 255, 255, 0.45);
+  --g-dock-border: rgba(255, 255, 255, 0.5);
+  --g-overlay: rgba(0, 0, 0, 0.35);
+  --g-mask: rgba(0, 0, 0, 0.18);
+  --g-login-bg: #1f2937;
+  --g-code-bg: #111827;
+  --g-shadow: 0 24px 60px rgba(0, 0, 0, 0.25), 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+/* ---- 暗色 ----
+   不追求纯黑：以 #101114 页面底 + #1b1c20 卡片为主，层级靠明度递进；
+   文字使用带一点冷调的浅灰，降低纯白在长时间运维场景下的刺眼感。 */
+html[data-theme="dark"] {
+  color-scheme: dark;
+
+  --g-bg-page: #101114;
+  --g-surface: #1b1c20;
+  --g-surface-soft: #24252a;
+  --g-surface-muted: #202126;
+  --g-surface-hover: #2a2b31;
+  --g-sidebar: #17181c;
+
+  --g-border: rgba(255, 255, 255, 0.12);
+  --g-border-strong: rgba(255, 255, 255, 0.2);
+  --g-border-soft: rgba(255, 255, 255, 0.08);
+  --g-hover: rgba(255, 255, 255, 0.07);
+  --g-active: rgba(255, 255, 255, 0.12);
+
+  --g-text: #e8e9ed;
+  --g-text-secondary: #c9cbd2;
+  --g-text-muted: #a0a3ac;
+  --g-text-faint: #858892;
+
+  --g-strong: #2f6fed;
+  --g-strong-hover: #4a84f0;
+  --g-selected: rgba(10, 132, 255, 0.2);
+  --g-accent-soft: rgba(10, 132, 255, 0.14);
+  --g-indigo-soft: rgba(99, 102, 241, 0.18);
+
+  --g-window-bg: rgba(27, 28, 32, 0.97);
+  --g-titlebar-bg: rgba(34, 35, 40, 0.95);
+  --g-glass: rgba(31, 32, 37, 0.8);
+  --g-menu-bg: rgba(36, 37, 42, 0.97);
+  --g-dock-bg: rgba(28, 29, 34, 0.55);
+  --g-dock-border: rgba(255, 255, 255, 0.14);
+  --g-overlay: rgba(0, 0, 0, 0.62);
+  --g-mask: rgba(0, 0, 0, 0.35);
+  --g-login-bg: #0d1117;
+  --g-code-bg: #0f1115;
+  --g-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
+
+  /* 设计系统（style.css 底部 .ui-* 使用的 token）同步切换 */
+  --ui-border: rgba(255, 255, 255, 0.12);
+  --ui-border-strong: rgba(255, 255, 255, 0.2);
+  --ui-bg: #1b1c20;
+  --ui-bg-muted: #24252a;
+  --ui-text: #e8e9ed;
+  --ui-text-secondary: #a0a3ac;
+  --ui-text-tertiary: #858892;
+  --ui-primary: #2f6fed;
+  --ui-primary-hover: #4a84f0;
+  --ui-off-bg: #2a2b31;
+  --ui-off-fg: #a0a3ac;
+  --ui-ok-bg: rgba(16, 185, 129, 0.16);
+  --ui-ok-fg: #6ee7b7;
+  --ui-warn-bg: rgba(245, 158, 11, 0.16);
+  --ui-warn-fg: #fcd34d;
+  --ui-danger-bg: rgba(239, 68, 68, 0.16);
+  --ui-danger-fg: #fca5a5;
+  --ui-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
+  --ui-shadow-md: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* ---- 基础页面 ---- */
+html[data-theme="dark"] body,
+html[data-theme="dark"] #app {
+  background: var(--g-bg-page);
+  color: var(--g-text);
+}
+
+/* 原生控件（复选框 / 单选框 / 进度条）跟随主题强调色 */
+html[data-theme="dark"] {
+  accent-color: #4a84f0;
+}
+
+/* ---- 登录页：登录卡片在暗色下改为深色玻璃，输入框与 OAuth 按钮同步 ---- */
+html[data-theme="dark"] .login-card {
+  background: rgba(27, 28, 32, 0.86);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+html[data-theme="dark"] .login-title { color: #dbe4f5; }
+html[data-theme="dark"] .login-subtitle { color: var(--g-text-muted); }
+html[data-theme="dark"] .field .label { color: var(--g-text-secondary); }
+html[data-theme="dark"] .btn-oauth {
+  background: var(--g-surface-soft);
+  color: var(--g-text);
+  border-color: var(--g-border);
+}
+html[data-theme="dark"] .btn-oauth:hover { background: var(--g-surface-hover); }
+
+/* ---- 窗口 / 桌面外壳的暗色细节 ---- */
+html[data-theme="dark"] .window {
+  box-shadow: var(--g-shadow);
+}
+html[data-theme="dark"] .taskbar {
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+html[data-theme="dark"] .shortcut .icon {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+html[data-theme="dark"] .shortcut:hover { background: rgba(255, 255, 255, 0.1); }
+html[data-theme="dark"] .shortcut.selected { background: rgba(255, 255, 255, 0.18); }
+
+/* ---- 通用表单控件兜底 ----
+   仍有少量组件直接给输入框写死白底 / 深色文字，这里按元素兜底，
+   避免暗色窗口里出现刺眼的白色输入框。彩色按钮 / 终端输入不受影响。 */
+html[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]),
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea {
+  background-color: var(--g-surface);
+  color: var(--g-text);
+  border-color: var(--g-border-strong);
+}
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder {
+  color: var(--g-text-faint);
+}
+
+/* ---- 表格兜底：未使用变量的组件也保持暗色可读 ---- */
+html[data-theme="dark"] th {
+  background: var(--g-surface-soft);
+  color: var(--g-text);
+}
+html[data-theme="dark"] th,
+html[data-theme="dark"] td {
+  border-color: var(--g-border-soft);
+}
+html[data-theme="dark"] tr:hover td {
+  background: var(--g-surface-soft);
+}
+
+/* ---- 右键菜单 / 弹层兜底 ---- */
+html[data-theme="dark"] .context-menu,
+html[data-theme="dark"] .ui-context-menu,
+html[data-theme="dark"] .pnl-dropdown {
+  background: var(--g-menu-bg);
+  border-color: var(--g-border);
+}
+html[data-theme="dark"] .menu-item:hover,
+html[data-theme="dark"] .ui-context-menu .menu-item:hover {
+  background: var(--g-surface-hover);
+}
+
+/* ---- 滚动条 ---- */
+html[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+}
+html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+}

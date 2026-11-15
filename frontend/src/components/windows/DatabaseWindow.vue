@@ -49,7 +49,7 @@
     </div>
     <!-- 空状态独立于卡片网格：垂直水平居中于应用内容区中央 -->
     <div v-if="connections.length === 0" class="conn-empty">
-      <Database :size="36" style="color:#9ca3af;" />
+      <Database :size="36" style="color:var(--g-text-muted);" />
       <div>{{ $t('database.noConnections') }}</div>
     </div>
 
@@ -149,14 +149,14 @@ onMounted(load)   // 进入窗口即加载
 <style scoped>
 .db-window { padding: 10px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; position: relative; }
 /* 「添加连接」工具栏下方的分隔线 */
-.db-window :deep(.ui-toolbar) { border-bottom: 1px solid #e5e7eb; padding-bottom: 10px; margin-bottom: 4px; }
+.db-window :deep(.ui-toolbar) { border-bottom: 1px solid var(--g-border); padding-bottom: 10px; margin-bottom: 4px; }
 .connections { flex: 1; min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); align-content: start; gap: 10px; padding: 4px; }
 /* 空状态：绝对定位覆盖内容区，垂直水平居中于应用中央（不拦截工具栏点击） */
-.conn-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #9ca3af; font-size: 13px; pointer-events: none; }
-.conn-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; background: #fff; }
+.conn-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--g-text-muted); font-size: 13px; pointer-events: none; }
+.conn-card { border: 1px solid var(--g-border); border-radius: 10px; padding: 12px; background: var(--g-surface); }
 .conn-head { margin-bottom: 8px; }
 .conn-title { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px; }
 .tag { background: #eef2ff; color: #3730a3; font-size: 11px; padding: 2px 6px; border-radius: 4px; }
-.conn-addr { color: #6b7280; font-size: 12px; margin-top: 4px; }
+.conn-addr { color: var(--g-text-muted); font-size: 12px; margin-top: 4px; }
 .conn-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 </style>

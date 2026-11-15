@@ -125,23 +125,23 @@ onMounted(refreshNodes)
 
 <style scoped>
 .batch-window { display: flex; flex-direction: column; height: 100%; padding: 10px; box-sizing: border-box; gap: 8px; }
-.node-label { margin-left: 8px; color: #0a3d7a; font-size: 12px; align-self: center; }
+.node-label { margin-left: 8px; color: var(--g-text); font-size: 12px; align-self: center; }
 .node-chip {
   display: inline-flex; align-items: center; gap: 4px; font-size: 12px;
-  background: #f0f3fa; padding: 2px 8px; border-radius: 10px; cursor: pointer;
-  border: 1px solid #e5e7eb;
+  background: var(--g-surface-soft); padding: 2px 8px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--g-border);
 }
-.node-chip .ssh-tag { color: #888; font-size: 10px; }
+.node-chip .ssh-tag { color: var(--g-text-muted); font-size: 10px; }
 .input-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; }
 .cmd-area { flex: 1; min-width: 300px; font-family: Consolas, monospace; font-size: 12px; }
 .kw-input { width: 200px; }
 .result-area { flex: 1; overflow: auto; padding: 0 4px 12px; }
 .node-result { margin-bottom: 10px; }
 .result-head { display: flex; align-items: center; gap: 8px; }
-.id-text { font-size: 11px; color: #888; }
-.exit-text { font-size: 11px; color: #555; }
-.duration-text { margin-left: auto; font-size: 11px; color: #888; }
-.no-ctr { font-size: 12px; color: #999; padding: 4px 0; }
+.id-text { font-size: 11px; color: var(--g-text-muted); }
+.exit-text { font-size: 11px; color: var(--g-text-muted); }
+.duration-text { margin-left: auto; font-size: 11px; color: var(--g-text-muted); }
+.no-ctr { font-size: 12px; color: var(--g-text-muted); padding: 4px 0; }
 .ctr-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 12px; }
 .ctr-detail { font-size: 11px; color: #c0392b; margin-left: 8px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }

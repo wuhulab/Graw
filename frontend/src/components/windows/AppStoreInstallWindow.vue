@@ -344,7 +344,7 @@ onMounted(() => {
 <style scoped>
 .install-window { position: relative; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 
-.toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; flex-shrink: 0; }
+.toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--g-border); flex-shrink: 0; }
 .title { font-weight: 700; font-size: 13.5px; display: inline-flex; align-items: center; gap: 6px; }
 .badge { font-size: 11px; background: #eef2ff; color: #4338ca; padding: 1px 8px; border-radius: 999px; }
 
@@ -367,13 +367,13 @@ onMounted(() => {
 
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
 .field { display: flex; flex-direction: column; gap: 3px; }
-.field-label { font-size: 12px; color: #374151; }
+.field-label { font-size: 12px; color: var(--g-text); }
 .field-label .req { color: #dc2626; }
-.inp { padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12.5px; outline: none; background: #fff; }
+.inp { padding: 6px 8px; border: 1px solid var(--g-border-strong); border-radius: 6px; font-size: 12.5px; outline: none; background: var(--g-surface); }
 .inp:focus { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,.15); }
 .inp.err { border-color: #dc2626; }
-.inp:disabled { background: #f9fafb; color: #9ca3af; }
-.field-hint { font-size: 11px; color: #9ca3af; }
+.inp:disabled { background: var(--g-surface-muted); color: var(--g-text-muted); }
+.field-hint { font-size: 11px; color: var(--g-text-muted); }
 
 /* 多端口映射 */
 .port-list { display: flex; flex-direction: column; gap: 6px; }
@@ -381,18 +381,18 @@ onMounted(() => {
 .port-container {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 12px;
-  color: #374151;
+  color: var(--g-text);
   flex: 1;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.port-container em { font-style: normal; font-size: 11px; color: #9ca3af; }
+.port-container em { font-style: normal; font-size: 11px; color: var(--g-text-muted); }
 .port-inp { width: 110px; flex-shrink: 0; }
 
 .options { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 14px; }
-.check-label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #374151; cursor: pointer; }
+.check-label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--g-text); cursor: pointer; }
 .edited-hint { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: #047857; }
 
 .error-banner { margin-top: 10px; padding: 6px 10px; background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; }
@@ -412,7 +412,7 @@ onMounted(() => {
 .modal {
   width: 100%;
   max-width: 380px;
-  background: #fff;
+  background: var(--g-surface);
   border-radius: 12px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
   padding: 18px 20px;
@@ -431,7 +431,7 @@ onMounted(() => {
 .modal-msg {
   font-size: 13px;
   line-height: 1.7;
-  color: #374151;
+  color: var(--g-text);
   margin: 0;
 }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }

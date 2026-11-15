@@ -106,11 +106,9 @@ export const LogCollectFormWindow = lazy(() => import('./LogCollectFormWindow.vu
 export const ServiceMonitorFormWindow = lazy(() => import('./ServiceMonitorFormWindow.vue'))
 export const UptimeFormWindow = lazy(() => import('./UptimeFormWindow.vue'))
 
-// ---------------- 网络 / 存储 / 端口转发 ----------------
+// ---------------- 网络 / 存储 ----------------
 export const FrpWindow = lazy(() => import('./FrpWindow.vue'))
 export const FrpProxyFormWindow = lazy(() => import('./FrpProxyFormWindow.vue'))
-export const PortForwardWindow = lazy(() => import('./PortForwardWindow.vue'))
-export const PortForwardFormWindow = lazy(() => import('./PortForwardFormWindow.vue'))
 export const VpnWindow = lazy(() => import('./VpnWindow.vue'))
 export const NetmapWindow = lazy(() => import('./NetmapWindow.vue'))
 export const NetStorageWindow = lazy(() => import('./NetStorageWindow.vue'))

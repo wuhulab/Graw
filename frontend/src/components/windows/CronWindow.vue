@@ -177,15 +177,15 @@ onMounted(load)   // 进入窗口即加载任务列表
 .cron-window { padding: 0; } /* 内嵌于「任务」聚合窗口：外边距由父容器提供 */
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; position: relative; }
 .add-wrap { position: relative; }
-.dropdown { position: absolute; top: 100%; left: 0; margin-top: 4px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.12); z-index: 3000; min-width: 120px; overflow: hidden; }
-.dropdown-item { padding: 8px 14px; font-size: 13px; cursor: pointer; color: #111827; }
-.dropdown-item:hover { background: #f3f4f6; }
+.dropdown { position: absolute; top: 100%; left: 0; margin-top: 4px; background: var(--g-surface); border: 1px solid var(--g-border); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.12); z-index: 3000; min-width: 120px; overflow: hidden; }
+.dropdown-item { padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--g-text); }
+.dropdown-item:hover { background: var(--g-surface-soft); }
 .grp { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 11px; background: #eff6ff; color: #1d4ed8; }
-.type-tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; background: #f3f4f6; color: #374151; margin-right: 6px; white-space: nowrap; }
-.cmd-text { color: #374151; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; }
+.type-tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; background: var(--g-surface-soft); color: var(--g-text); margin-right: 6px; white-space: nowrap; }
+.cmd-text { color: var(--g-text); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; }
 .bell { margin-left: 4px; }
 .actions { display: flex; gap: 4px; }
-.iconbtn { padding: 4px; border: 1px solid #e5e7eb; background: #fff; border-radius: 6px; cursor: pointer; }
-.iconbtn:hover { background: #f9fafb; }
+.iconbtn { padding: 4px; border: 1px solid var(--g-border); background: var(--g-surface); border-radius: 6px; cursor: pointer; }
+.iconbtn:hover { background: var(--g-surface-muted); }
 .iconbtn.danger:hover { background: #fee2e2; border-color: #fca5a5; }
 </style>

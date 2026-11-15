@@ -103,8 +103,8 @@ onMounted(loadConns)
 }
 .query-time { color: #c0392b; }
 .sql {
-  font-family: Consolas, monospace; font-size: 11px; color: #2c3e50;
+  font-family: Consolas, monospace; font-size: 11px; color: var(--g-text);
   word-break: break-all;
 }
-.suggest { font-size: 11px; color: #0a3d7a; margin-top: 2px; }
+.suggest { font-size: 11px; color: var(--g-text); margin-top: 2px; }
 </style>

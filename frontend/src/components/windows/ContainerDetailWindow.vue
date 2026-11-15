@@ -16,8 +16,8 @@
 <template>
   <div style="display:flex; flex-direction:column; height:100%;">
     <div class="toolbar">
-      <span style="color:#0a3d7a; font-weight:600;">{{ $t('containerdetail.title', { name }) }}</span>
-      <span style="font-size:11px; color:#888; font-family:Consolas,monospace;">{{ id }}</span>
+      <span style="color:var(--g-text); font-weight:600;">{{ $t('containerdetail.title', { name }) }}</span>
+      <span style="font-size:11px; color:var(--g-text-muted); font-family:Consolas,monospace;">{{ id }}</span>
       <button class="btn" style="margin-left:auto;" @click="load">{{ $t('containerdetail.refresh') }}</button>
       <button class="btn" @click="$emit('close')">{{ $t('containerdetail.close') }}</button>
     </div>
@@ -86,7 +86,7 @@
           <div class="detail-label">{{ $t('containerdetail.mounts', { count: info.mounts.length }) }}</div>
           <div class="detail-value mono wrap">
             <div v-for="(m, i) in info.mounts" :key="i" style="margin:2px 0;">
-              <span style="color:#555;">{{ m.Type || 'bind' }}:</span> {{ m.Source || m.Name || '' }} → {{ m.Destination || '' }}
+              <span style="color:var(--g-text-muted);">{{ m.Type || 'bind' }}:</span> {{ m.Source || m.Name || '' }} → {{ m.Destination || '' }}
             </div>
           </div>
         </div>
@@ -169,23 +169,23 @@ onMounted(load)   // 打开窗口即加载详情
 </script>
 
 <style scoped>
-.empty { text-align: center; color: #9ca3af; padding: 40px; }
+.empty { text-align: center; color: var(--g-text-muted); padding: 40px; }
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: 10px;
 }
 .detail-card {
-  border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px;
-  background: #fafafa;
+  border: 1px solid var(--g-border); border-radius: 8px; padding: 10px 12px;
+  background: var(--g-surface-muted);
 }
 .detail-card.wide { grid-column: 1 / -1; }
-.detail-label { font-size: 11px; color: #6b7280; margin-bottom: 4px; }
-.detail-value { font-size: 13px; color: #111827; font-weight: 600; }
-.detail-value.sub { font-size: 11px; font-weight: 400; color: #6b7280; margin-left: 6px; }
+.detail-label { font-size: 11px; color: var(--g-text-muted); margin-bottom: 4px; }
+.detail-value { font-size: 13px; color: var(--g-text); font-weight: 600; }
+.detail-value.sub { font-size: 11px; font-weight: 400; color: var(--g-text-muted); margin-left: 6px; }
 .detail-value.mono { font-family: Consolas, monospace; font-weight: 400; font-size: 12px; }
 .detail-value.kv div { display: flex; gap: 12px; padding: 3px 0; }
-.detail-value.kv span { color: #6b7280; width: 90px; flex-shrink: 0; }
+.detail-value.kv span { color: var(--g-text-muted); width: 90px; flex-shrink: 0; }
 .detail-value.kv b { font-weight: 600; }
 .wrap { word-break: break-all; white-space: normal; }
 </style>

@@ -28,7 +28,7 @@
 
     <div v-if="loading" class="empty">加载中…</div>
     <div v-else-if="items.length === 0" class="empty">
-      <UserCheck :size="40" style="color:#9ca3af;" />
+      <UserCheck :size="40" style="color:var(--g-text-muted);" />
       <div>还没有 FTP 用户，点击「添加用户」创建一个虚拟 FTP 账号</div>
     </div>
     <div v-else class="table-wrap">
@@ -165,30 +165,30 @@ onMounted(loadAll)
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; justify-content: space-between; }
 .global-status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #dbeafe; color: #1e40af; }
-.hint { color: #6e6e73; font-size: 12px; }
+.hint { color: var(--g-text-muted); font-size: 12px; }
 .toolbar-actions { display: flex; gap: 8px; }
 .table-toolbar { display: flex; align-items: center; justify-content: flex-end; margin-bottom: 8px; }
 
-.table-wrap { overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; flex: 1; }
+.table-wrap { overflow: auto; border: 1px solid var(--g-border); border-radius: 8px; flex: 1; }
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-th, td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; text-align: left; vertical-align: middle; white-space: nowrap; }
-th { background: #f9fafb; position: sticky; top: 0; }
-tbody tr:hover { background: #f9fafb; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--g-border); text-align: left; vertical-align: middle; white-space: nowrap; }
+th { background: var(--g-surface-muted); position: sticky; top: 0; }
+tbody tr:hover { background: var(--g-surface-muted); }
 .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; white-space: normal; }
 .desc { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .actions-cell { display: flex; gap: 4px; }
 
-.btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
-.btn:hover:not(:disabled) { background: #f9fafb; }
+.btn { padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover:not(:disabled) { background: var(--g-surface-muted); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn.mini { padding: 3px 8px; font-size: 11.5px; }
-.btn.primary { background: #111827; color: #fff; border-color: #111827; }
-.btn.primary:hover:not(:disabled) { background: #1f2937; }
+.btn.primary { background: var(--g-strong); color: #fff; border-color: #111827; }
+.btn.primary:hover:not(:disabled) { background: var(--g-strong); }
 .danger-text { color: #b91c1c; }
 
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
 .badge.ok { background: #d1fae5; color: #065f46; }
-.badge.off { background: #f3f4f6; color: #6b7280; }
+.badge.off { background: var(--g-surface-soft); color: var(--g-text-muted); }
 
-.empty { text-align: center; color: #9ca3af; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.empty { text-align: center; color: var(--g-text-muted); padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 </style>

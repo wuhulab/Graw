@@ -54,12 +54,12 @@
       <div>{{ $t('appstore.loadingIndex') }}</div>
     </div>
     <div v-else-if="apps.length === 0" class="empty">
-      <Store :size="40" style="color:#6b7280;" />
+      <Store :size="40" style="color:var(--g-text-muted);" />
       <div>{{ $t('appstore.noApps') }}</div>
     </div>
     <!-- 筛选无结果 -->
     <div v-else-if="filteredApps.length === 0" class="empty">
-      <Search :size="40" style="color:#6b7280;" />
+      <Search :size="40" style="color:var(--g-text-muted);" />
       <div>{{ $t('appstore.noMatch') }}</div>
       <div class="hint">{{ $t('appstore.noMatchHint') }}</div>
     </div>
@@ -273,10 +273,10 @@ onMounted(async () => {
 <style scoped>
 .store-window { position: relative; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 
-.toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; flex-wrap: wrap; }
+.toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--g-border); flex-wrap: wrap; }
 .title-wrap { display: flex; align-items: center; gap: 8px; margin-right: auto; min-width: 0; }
 .title { font-weight: 700; font-size: 13.5px; display: inline-flex; align-items: center; gap: 6px; }
-.updated { color: #6b7280; font-size: 11.5px; }
+.updated { color: var(--g-text-muted); font-size: 11.5px; }
 .badge { font-size: 11px; padding: 1px 8px; border-radius: 999px; }
 .badge.ok { background: #ecfdf5; color: #047857; }
 .badge.warn { background: #fffbeb; color: #b45309; }
@@ -285,10 +285,10 @@ onMounted(async () => {
 .cat-select {
   font-size: 12px;
   padding: 4px 8px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--g-border);
   border-radius: 8px;
-  background: #fff;
-  color: #1d1d1f;
+  background: var(--g-surface);
+  color: var(--g-text);
   cursor: pointer;
   max-width: 130px;
 }
@@ -298,50 +298,50 @@ onMounted(async () => {
 .search-inp {
   font-size: 12px;
   padding: 5px 10px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--g-border);
   border-radius: 8px;
-  background: #fff;
-  color: #1d1d1f;
+  background: var(--g-surface);
+  color: var(--g-text);
   width: 180px;
   min-width: 120px;
 }
-.search-inp::placeholder { color: #9ca3af; }
+.search-inp::placeholder { color: var(--g-text-muted); }
 .search-inp:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.15); }
 
 .error-banner { margin: 8px 12px 0; padding: 6px 10px; background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; display: flex; align-items: center; gap: 6px; }
-.error-banner .hint { color: #6b7280; }
+.error-banner .hint { color: var(--g-text-muted); }
 
-.empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #6b7280; font-size: 13px; }
-.empty .hint { color: #9ca3af; font-size: 11.5px; }
+.empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--g-text-muted); font-size: 13px; }
+.empty .hint { color: var(--g-text-muted); font-size: 11.5px; }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* 应用卡片网格 */
 .app-grid { flex: 1; overflow-y: auto; padding: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; align-content: start; }
 
-.app-card { border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; padding: 12px; display: flex; flex-direction: column; gap: 8px; transition: box-shadow .15s, border-color .15s; }
+.app-card { border: 1px solid var(--g-border); border-radius: 10px; background: var(--g-surface); padding: 12px; display: flex; flex-direction: column; gap: 8px; transition: box-shadow .15s, border-color .15s; }
 .app-card:hover { border-color: #c7d2fe; box-shadow: 0 4px 14px rgba(0,0,0,.08); }
 
 .card-head { display: flex; align-items: center; gap: 10px; }
-.app-icon { width: 42px; height: 42px; border-radius: 8px; object-fit: cover; background: #f3f4f6; }
+.app-icon { width: 42px; height: 42px; border-radius: 8px; object-fit: cover; background: var(--g-surface-soft); }
 .card-titles { min-width: 0; flex: 1; }
 .app-name { font-weight: 700; font-size: 13.5px; display: flex; align-items: center; gap: 4px; min-width: 0; }
 .app-name .name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-tag { flex-shrink: 0; font-size: 10px; font-weight: 600; padding: 0 6px; border-radius: 999px; }
 .app-tag.recommend { background: #fff7e6; color: #d46b08; border: 1px solid #ffd591; }
 .app-tag.blue { background: #e6f4ff; color: #0958d9; border: 1px solid #91caff; }
-.app-id { font-size: 11px; color: #9ca3af; }
+.app-id { font-size: 11px; color: var(--g-text-muted); }
 .card-actions { display: flex; align-items: center; gap: 2px; }
-.icon-link { color: #6b7280; padding: 4px; border-radius: 6px; display: inline-flex; }
-.icon-link:hover { background: #f3f4f6; color: #2563eb; }
-.readme-btn { display: inline-flex; align-items: center; color: #6b7280; background: transparent; border: none; padding: 4px; border-radius: 6px; cursor: pointer; }
-.readme-btn:hover { background: #f3f4f6; color: #2563eb; }
+.icon-link { color: var(--g-text-muted); padding: 4px; border-radius: 6px; display: inline-flex; }
+.icon-link:hover { background: var(--g-surface-soft); color: #2563eb; }
+.readme-btn { display: inline-flex; align-items: center; color: var(--g-text-muted); background: transparent; border: none; padding: 4px; border-radius: 6px; cursor: pointer; }
+.readme-btn:hover { background: var(--g-surface-soft); color: #2563eb; }
 
-.app-desc { font-size: 12px; color: #374151; line-height: 1.6; margin: 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; min-height: 58px; }
+.app-desc { font-size: 12px; color: var(--g-text); line-height: 1.6; margin: 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; min-height: 58px; }
 
 .card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
 .tags { display: flex; flex-wrap: wrap; gap: 4px; }
-.tag { font-size: 10.5px; background: #f3f4f6; color: #374151; padding: 1px 6px; border-radius: 999px; display: inline-flex; align-items: center; gap: 3px; }
+.tag { font-size: 10.5px; background: var(--g-surface-soft); color: var(--g-text); padding: 1px 6px; border-radius: 999px; display: inline-flex; align-items: center; gap: 3px; }
 .tag.arch { background: #eef2ff; color: #4338ca; }
 .tag.port { background: #ecfdf5; color: #047857; }
 .btn.install { flex-shrink: 0; }
@@ -361,7 +361,7 @@ onMounted(async () => {
   width: 100%;
   max-width: 620px;
   max-height: 92%;
-  background: #fff;
+  background: var(--g-surface);
   border-radius: 12px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
   display: flex;
@@ -375,16 +375,16 @@ onMounted(async () => {
   padding: 12px 16px;
   font-weight: 700;
   font-size: 14px;
-  color: #1d1d1f;
-  border-bottom: 1px solid #e5e7eb;
-  background: #fafafa;
+  color: var(--g-text);
+  border-bottom: 1px solid var(--g-border);
+  background: var(--g-surface-muted);
   flex-shrink: 0;
 }
 .disc-version {
   margin-left: auto;
   font-size: 11px;
-  color: #6b7280;
-  background: #f3f4f6;
+  color: var(--g-text-muted);
+  background: var(--g-surface-soft);
   padding: 1px 8px;
   border-radius: 999px;
 }
@@ -398,14 +398,14 @@ onMounted(async () => {
   font-family: inherit;
   font-size: 12.5px;
   line-height: 1.75;
-  color: #374151;
+  color: var(--g-text);
   white-space: pre-wrap;
   word-break: break-word;
 }
 .disc-foot {
   padding: 12px 16px;
-  border-top: 1px solid #e5e7eb;
-  background: #fafafa;
+  border-top: 1px solid var(--g-border);
+  background: var(--g-surface-muted);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -416,7 +416,7 @@ onMounted(async () => {
   align-items: flex-start;
   gap: 8px;
   font-size: 12.5px;
-  color: #374151;
+  color: var(--g-text);
   cursor: pointer;
   line-height: 1.6;
 }

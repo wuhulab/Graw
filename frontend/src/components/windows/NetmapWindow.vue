@@ -222,15 +222,15 @@ onMounted(async () => {
 .nm-form { margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px; }
 .nm-form-title { font-weight: 600; font-size: 13px; }
 .nm-form-row { display: flex; align-items: center; gap: 8px; }
-.nm-form-row label { width: 70px; flex: none; font-size: 12px; color: #455; }
+.nm-form-row label { width: 70px; flex: none; font-size: 12px; color: var(--g-text-secondary); }
 .nm-form-row .ui-input { flex: 1; }
 .nm-form-err { color: #c0392b; font-size: 12px; }
 .nm-form-actions { display: flex; align-items: center; gap: 8px; }
 .nm-row { margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px; }
 .nm-row-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.nm-addr { font-size: 12px; color: #455; }
+.nm-addr { font-size: 12px; color: var(--g-text-secondary); }
 .nm-row-actions { display: flex; gap: 6px; }
 .nm-preview-title { font-weight: 600; font-size: 13px; }
-.nm-frame { flex: 1; width: 100%; border: 1px solid rgba(0,0,0,.12); border-radius: 6px; background: #fff; box-sizing: border-box; }
+.nm-frame { flex: 1; width: 100%; border: 1px solid var(--g-border); border-radius: 6px; background: var(--g-surface); box-sizing: border-box; }
 .nm-ws-hint { font-size: 11px; color: #98a2b3; padding-top: 4px; }
 </style>

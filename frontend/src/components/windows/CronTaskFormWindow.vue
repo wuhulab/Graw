@@ -257,7 +257,7 @@ async function save() {
 .period { display: flex; gap: 8px; }
 .period select, .period input.time { flex: 1; }
 /* 同步时间类任务的静态说明框 */
-.note { font-size: 12px; color: #6b7280; background: #f9fafb; border: 1px dashed #e5e7eb; border-radius: 6px; padding: 8px 10px; }
+.note { font-size: 12px; color: var(--g-text-muted); background: var(--g-surface-muted); border: 1px dashed var(--g-border); border-radius: 6px; padding: 8px 10px; }
 /* 勾选项（提醒）横向排布 */
 .check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .check input { width: auto; }

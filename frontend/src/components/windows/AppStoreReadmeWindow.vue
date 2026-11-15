@@ -168,27 +168,27 @@ onMounted(async () => {
 <style scoped>
 .readme-window { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 
-.toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; flex-shrink: 0; }
+.toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--g-border); flex-shrink: 0; }
 .title { font-weight: 700; font-size: 13.5px; display: inline-flex; align-items: center; gap: 6px; }
-.repo { font-size: 11.5px; color: #6b7280; }
+.repo { font-size: 11.5px; color: var(--g-text-muted); }
 .mono { font-family: Consolas, monospace; }
 
 .body { flex: 1; overflow-y: auto; padding: 14px 18px; }
-.center { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #6b7280; font-size: 13px; }
+.center { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--g-text-muted); font-size: 13px; }
 .center.err { color: #b91c1c; }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ============ markdown 内容样式（GitHub 风格） ============ */
-.md-body { font-size: 13px; color: #24292f; line-height: 1.7; word-break: break-word; }
+.md-body { font-size: 13px; color: var(--g-text); line-height: 1.7; word-break: break-word; }
 
 .md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6 {
   margin: 20px 0 10px;
   line-height: 1.4;
   font-weight: 600;
 }
-.md-body h1 { font-size: 20px; border-bottom: 1px solid #d0d7de; padding-bottom: 7px; }
-.md-body h2 { font-size: 17px; border-bottom: 1px solid #d0d7de; padding-bottom: 5px; }
+.md-body h1 { font-size: 20px; border-bottom: 1px solid var(--g-border); padding-bottom: 7px; }
+.md-body h2 { font-size: 17px; border-bottom: 1px solid var(--g-border); padding-bottom: 5px; }
 .md-body h3 { font-size: 15px; }
 .md-body h4 { font-size: 13.5px; }
 .md-body h5, .md-body h6 { font-size: 13px; }
@@ -216,8 +216,8 @@ onMounted(async () => {
   color: #cf222e;
 }
 .md-body pre {
-  background: #f6f8fa;
-  border: 1px solid #d0d7de;
+  background: var(--g-surface-soft);
+  border: 1px solid var(--g-border);
   border-radius: 8px;
   padding: 12px 14px;
   overflow-x: auto;
@@ -227,18 +227,18 @@ onMounted(async () => {
 }
 .md-body pre code {
   background: transparent;
-  color: #24292f;
+  color: var(--g-text);
   padding: 0;
   font-size: 12px;
 }
 
 /* 引用 */
 .md-body blockquote {
-  border-left: 4px solid #d0d7de;
+  border-left: 4px solid var(--g-border);
   margin: 10px 0;
   padding: 2px 14px;
-  color: #57606a;
-  background: rgba(246, 248, 250, 0.6);
+  color: var(--g-text-muted);
+  background: var(--g-surface-soft);
 }
 .md-body blockquote > p { margin: 6px 0; }
 
@@ -253,15 +253,15 @@ onMounted(async () => {
   font-size: 12.5px;
 }
 .md-body th, .md-body td {
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--g-border);
   padding: 6px 12px;
   text-align: left;
 }
 .md-body th {
-  background: #f6f8fa;
+  background: var(--g-surface-soft);
   font-weight: 600;
 }
-.md-body tr:nth-child(2n) td { background: #f8fafc; }
+.md-body tr:nth-child(2n) td { background: var(--g-surface-soft); }
 
 /* 水平线 */
 .md-body hr { border: none; border-top: 1px solid #d0d7de; margin: 16px 0; }
@@ -270,23 +270,23 @@ onMounted(async () => {
 .md-body img { max-width: 100%; border-radius: 6px; margin: 6px 0; }
 
 /* 删除线 */
-.md-body del { color: #57606a; }
+.md-body del { color: var(--g-text-muted); }
 
 /* GitHub README 常用原始 HTML 元素 */
 .md-body kbd {
   display: inline-block;
   padding: 1px 6px;
   font: 11px Consolas, monospace;
-  color: #24292f;
+  color: var(--g-text);
   vertical-align: middle;
-  background-color: #f6f8fa;
-  border: 1px solid #d0d7de;
-  border-bottom-color: #b6bcc4;
+  background-color: var(--g-surface-soft);
+  border: 1px solid var(--g-border);
+  border-bottom-color: var(--g-border-strong);
   border-radius: 5px;
-  box-shadow: inset 0 -1px 0 #b6bcc4;
+  box-shadow: inset 0 -1px 0 var(--g-border-strong);
 }
 .md-body details { margin: 10px 0; }
 .md-body summary { cursor: pointer; font-weight: 600; }
 .md-body sup { font-size: 10px; }
-.md-body mark { background: #fff8c5; color: #24292f; padding: 0 2px; }
+.md-body mark { background: #fff8c5; color: #1d1d1f; padding: 0 2px; }
 </style>

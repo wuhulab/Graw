@@ -9,8 +9,8 @@
   <div style="display:flex; flex-direction:column; height:100%;">
     <!-- 工具栏：新增打开独立表单窗口 -->
     <div class="toolbar">
-      <span style="color:#0a3d7a; font-weight:600;">{{ $t('netstorage.title') }}</span>
-      <span style="color:#6e6e73; font-size:11px;">{{ $t('netstorage.count', { count: conns.length }) }}</span>
+      <span style="color:var(--g-text); font-weight:600;">{{ $t('netstorage.title') }}</span>
+      <span style="color:var(--g-text-muted); font-size:11px;">{{ $t('netstorage.count', { count: conns.length }) }}</span>
       <button class="btn" style="margin-left:auto;" @click="openAdd">+ {{ $t('netstorage.addConn') }}</button>
       <button class="btn" @click="load">{{ $t('netstorage.refresh') }}</button>
     </div>
@@ -156,23 +156,23 @@ onMounted(load)
 
 <style scoped>
 /* 与其它应用一致的主按钮配色（中性深色，替代旧的 btn-primary 蓝） */
-.btn.primary { background: #111827; color: #fff; border-color: #111827; }
-.btn.primary:hover:not(:disabled) { background: #1f2937; }
+.btn.primary { background: var(--g-strong); color: #fff; border-color: #111827; }
+.btn.primary:hover:not(:disabled) { background: var(--g-strong); }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
-.card { background: #fff; border: 1px solid rgba(0,0,0,0.08); border-radius: 12px; padding: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); transition: box-shadow .2s; }
+.card { background: var(--g-surface); border: 1px solid var(--g-border-soft); border-radius: 12px; padding: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); transition: box-shadow .2s; }
 .card:hover { box-shadow: 0 6px 18px rgba(0,0,0,0.1); }
 .card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; color: #0a84ff; }
-.card-name { flex: 1; font-weight: 600; color: #1d1d1f; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pill { background: #eef5ff; color: #0a3d7a; border-radius: 10px; font-size: 11px; padding: 2px 8px; }
+.card-name { flex: 1; font-weight: 600; color: var(--g-text); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill { background: var(--g-accent-soft); color: var(--g-text); border-radius: 10px; font-size: 11px; padding: 2px 8px; }
 .pill.proto-smb { background: #fff4e6; color: #b4640a; }
 .pill.proto-webdav { background: #eafaf0; color: #1a7f4a; }
 .pill.proto-s3 { background: #fdf1f6; color: #b8336e; }
-.card-meta { font-size: 11px; color: #6e6e73; margin-bottom: 12px; display: flex; flex-direction: column; gap: 3px; }
+.card-meta { font-size: 11px; color: var(--g-text-muted); margin-bottom: 12px; display: flex; flex-direction: column; gap: 3px; }
 .meta-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-actions { display: flex; gap: 4px; flex-wrap: wrap; }
 .btn-sm { font-size: 11px; padding: 4px 8px; }
 .test-result { margin-top: 8px; font-size: 11px; border-radius: 6px; padding: 5px 8px; }
 .test-result.ok { background: #eafaf0; color: #1a7f4a; }
 .test-result.fail { background: #fdf0f0; color: #c0392b; }
-.empty { color: #6e6e73; text-align: center; padding: 40px 0; font-size: 13px; }
+.empty { color: var(--g-text-muted); text-align: center; padding: 40px 0; font-size: 13px; }
 </style>

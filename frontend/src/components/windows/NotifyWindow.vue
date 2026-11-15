@@ -49,7 +49,7 @@
       </div>
       <div v-if="loading" class="ui-empty">加载中…</div>
       <div v-else-if="channels.length === 0" class="ui-empty">
-        <BellRing :size="40" style="color:#9ca3af;" />
+        <BellRing :size="40" style="color:var(--g-text-muted);" />
         <div>还没有通知渠道</div>
       </div>
       <div v-else class="ui-table-wrap">
@@ -85,7 +85,7 @@
       </div>
       <div v-if="loading" class="ui-empty">加载中…</div>
       <div v-else-if="rules.length === 0" class="ui-empty">
-        <Gauge :size="40" style="color:#9ca3af;" />
+        <Gauge :size="40" style="color:var(--g-text-muted);" />
         <div>还没有告警规则</div>
       </div>
       <div v-else class="ui-table-wrap">
@@ -117,7 +117,7 @@
       </div>
       <div v-if="loading" class="ui-empty">加载中…</div>
       <div v-else-if="logs.length === 0" class="ui-empty">
-        <History :size="40" style="color:#9ca3af;" />
+        <History :size="40" style="color:var(--g-text-muted);" />
         <div>暂无告警记录</div>
       </div>
       <div v-else class="ui-table-wrap">
@@ -368,11 +368,11 @@ onMounted(loadAll)
 .tabs { display: flex; gap: 4px; margin-bottom: 10px; }
 .tab {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 12px; border: 1px solid #d1d5db; background: #fff;
-  border-radius: 8px; cursor: pointer; font-size: 13px; color: #374151;
+  padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface);
+  border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--g-text);
 }
-.tab:hover { background: #f9fafb; }
-.tab.active { background: #111827; color: #fff; border-color: #111827; }
+.tab:hover { background: var(--g-surface-muted); }
+.tab.active { background: var(--g-strong); color: #fff; border-color: #111827; }
 .count-badge { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #2563eb; color: #fff; font-size: 10px; display: inline-flex; align-items: center; justify-content: center; }
 .count-badge.warn { background: #dc2626; }
 

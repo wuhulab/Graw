@@ -17,7 +17,7 @@
 
     <div v-if="loading" class="empty">加载中…</div>
     <div v-else-if="sessions.length === 0" class="empty">
-      <MonitorSmartphone :size="40" style="color:#9ca3af;" />
+      <MonitorSmartphone :size="40" style="color:var(--g-text-muted);" />
       <div>暂无在线会话</div>
     </div>
     <div v-else class="table-wrap">
@@ -118,20 +118,20 @@ onMounted(load)
 <style scoped>
 .sessions-window { padding: 10px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; gap: 10px; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.hint { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #1d1d1f; }
-.hint .sub { color: #6e6e73; font-size: 11px; }
-.table-wrap { overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; flex: 1; }
+.hint { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--g-text); }
+.hint .sub { color: var(--g-text-muted); font-size: 11px; }
+.table-wrap { overflow: auto; border: 1px solid var(--g-border); border-radius: 8px; flex: 1; }
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-th, td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; text-align: left; vertical-align: middle; white-space: nowrap; }
-th { background: #f9fafb; position: sticky; top: 0; }
-tbody tr:hover { background: #f9fafb; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--g-border); text-align: left; vertical-align: middle; white-space: nowrap; }
+th { background: var(--g-surface-muted); position: sticky; top: 0; }
+tbody tr:hover { background: var(--g-surface-muted); }
 .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
-.btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
-.btn:hover:not(:disabled) { background: #f9fafb; }
+.btn { padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover:not(:disabled) { background: var(--g-surface-muted); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn.mini { padding: 3px 8px; font-size: 11.5px; }
 .danger-text { color: #b91c1c; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
 .badge.ok { background: #d1fae5; color: #065f46; }
-.empty { text-align: center; color: #9ca3af; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.empty { text-align: center; color: var(--g-text-muted); padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 </style>

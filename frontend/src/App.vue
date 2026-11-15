@@ -155,7 +155,7 @@
         </div>
         <div class="start-header">
           <div style="font-weight:700;">{{ auth.user?.username }}</div>
-          <div style="font-size:11px;color:#6e6e73;">{{ $t(auth.user?.role === 'admin' ? 'app.admin' : 'app.normalUser') }}</div>
+          <div style="font-size:11px;color:var(--g-text-muted);">{{ $t(auth.user?.role === 'admin' ? 'app.admin' : 'app.normalUser') }}</div>
         </div>
         <div class="start-list">
           <button v-if="isFullAdmin()" class="start-item" @click="openUsers(); startMenuOpen = false"><UserCircle2 :size="16" /> {{ $t('app.accountManage') }}</button>
@@ -209,6 +209,9 @@
 
   <!-- ShunX 安全入口：登录后未配置入口时强制设置，阻止使用面板其他功能 -->
   <ShunXSetup v-if="loggedIn && shunxRequired" @saved="onShunxSaved" />
+
+  <!-- 首次安装引导：初始管理员改密完成后强制选择主题与界面形态（不可跳过） -->
+  <FirstRunSetup v-if="loggedIn && firstRunSetup" @done="firstRunSetup = false" />
 
   <!-- 全局快捷搜索（Ctrl+K / Spotlight）：搜索功能/节点/站点/容器并直达 -->
   <CommandPalette v-if="loggedIn" ref="paletteRef" :app-items="paletteItems" @open="onPaletteOpen" />
@@ -284,12 +287,13 @@ import {
   NetStorageBrowseWindow, NetStorageFormWindow, RuntimeWindow, RuntimeCreateWindow, DisksWindow,
   MonitoringWindow, CertWindow, WebStatsWindow, RewriteWindow, SiteOptsWindow,
   MetricsHistoryWindow, RollbackWindow, BatchWindow, GitDeployWindow, ReportWindow,
-  PortForwardWindow, PortForwardFormWindow, NetmapWindow, ImageScanWindow, SlowQueryWindow, FtpUsersWindow,
+  NetmapWindow, ImageScanWindow, SlowQueryWindow, FtpUsersWindow,
   VpnWindow,
   PhpVersionsWindow, SessionsWindow, NodeOverviewWindow,
   preloadWindows,   // 空闲预加载：桌面模式下分批预取全部窗口 chunk（打开即渲染）
 } from './components/windows/lazyWindows.js'
 import ShunXSetup from './components/ShunXSetup.vue'
+import FirstRunSetup from './components/FirstRunSetup.vue'
 import TamperAlert from './components/TamperAlert.vue'
 import InstallCheckAlert from './components/InstallCheckAlert.vue'
 import CommandPalette from './components/CommandPalette.vue'
@@ -391,12 +395,14 @@ const isCurrentHostRemote = computed(() => hostBadgeRemote.value)
 const currentHostAgentReady = computed(() =>
   !!(currentHost.value && currentHost.value.type === 'ssh' && currentHost.value.agent_enabled)
 )
-// --- 登录后回调：检查 ShunX 安全入口 + 安装完整性 ---
+// --- 登录后回调：检查 ShunX 安全入口 + 安装完整性 + 首次安装引导 ---
 function onLoggedIn() {
   // 触发响应式重渲染，并检查是否需要强制设置安全入口
   checkShunxRequired()
   // 检测安装环境是否完整（未按 README 安装则弹窗提醒重新安装）
   checkInstallCheck()
+  // 初次安装：完成默认管理员改密后，强制选择主题与界面形态
+  checkFirstRunSetup()
 }
 
 // --- 桌面快捷方式清单：key/图标/窗口组件/尺寸/权限/远端能力 ---
@@ -485,8 +491,6 @@ const shortcuts = ref([
   { key: 'gitdeploy', label: 'Git 部署', titleKey: 'app.shortcut.gitdeploy', icon: markRaw(FileCode2), component: markRaw(GitDeployWindow), w: 960, h: 600, adminOnly: true, perm: 'gitdeploy', remoteCap: 'local' },
   // 巡检报告：每日/手动生成系统健康汇总并推送（管理员）
   { key: 'report', label: '巡检报告', titleKey: 'app.shortcut.report', icon: markRaw(BarChart3), component: markRaw(ReportWindow), w: 960, h: 600, adminOnly: true, perm: 'report' },
-  // SSH 端口转发：本地直连远程节点服务（管理员，面向远程节点的隧道）
-  { key: 'portforward', label: '端口转发', titleKey: 'app.shortcut.portforward', icon: markRaw(Unlink), component: markRaw(PortForwardWindow), w: 880, h: 580, adminOnly: true, perm: 'portforward' },
   // VPN 转发策略：Clash 兼容订阅生成 + 核心托管（管理员，面板所在主机执行）
   { key: 'vpn', label: 'VPN转发策略', titleKey: 'app.shortcut.vpn', icon: markRaw(Network), component: markRaw(VpnWindow), w: 1000, h: 680, adminOnly: true, perm: 'vpn' },
   // 内网映射：当前节点的内网 HTTP 服务反代访问（数据随节点走，远端经 Agent 代理）
@@ -644,6 +648,21 @@ const panelModeOn = computed(() => !!settings.panelMode)
 // 仅管理员触发（保存入口需要管理员权限）；后端对普通用户已脱敏
 // entry_path，普通用户凭 enabled 判断即可。
 const shunxRequired = ref(false)
+
+// 首次安装引导：Login.vue 在「默认密码改密成功」后写入待引导标记；
+// 刷新页面时登录态仍在，因此挂载时也要检查一次，保证引导不会丢失。
+const firstRunSetup = ref(false)
+function checkFirstRunSetup() {
+  if (!auth.token) return
+  try {
+    const pending = localStorage.getItem('graw_onboarding_pending') === '1'
+    const done = localStorage.getItem('graw_onboarding_done') === '1'
+    firstRunSetup.value = pending && !done
+  } catch (e) {
+    // 存储被禁用：无法判断首次安装，直接跳过引导
+    firstRunSetup.value = false
+  }
+}
 
 // 安装环境不完整时的缺失项 key 列表（非空则弹窗提醒重新安装）
 const installCheckMissing = ref([])
@@ -933,7 +952,7 @@ const STAR_LOCKED_KEYS = new Set([
   // 应用 / 任务 / 部署
   'appstore', 'tasks', 'gitdeploy', 'batch',
   // 网络 / 安全
-  'frp', 'portforward', 'vpn', 'netmap', 'shunxprotection', 'ftpusers',
+  'frp', 'vpn', 'netmap', 'shunxprotection', 'ftpusers',
   // 备份 / 报告
   'rollback', 'report',
 ])
@@ -1027,7 +1046,6 @@ const winEvents = {
   onOpenSshKeyGen: openSshKeyGen,
   onOpenSshKeyImport: openSshKeyImport,
   onOpenSshKeyDeploy: openSshKeyDeploy,
-  onOpenPortForwardForm: openPortForwardForm,
 }
 
 // 更新指定窗口的 dirty 标记（编辑器未保存时关闭前提示）
@@ -1090,7 +1108,7 @@ function openWindow(key, extraProps, opts) {
     const extras = {
       users: { label: '账号管理', titleKey: 'app.winTitle.users', icon: markRaw(UserCircle2), component: markRaw(UserWindow), w: 600, h: 460, adminOnly: true, fullAdminOnly: true },
       changepwd: { label: '修改密码', titleKey: 'app.winTitle.changepwd', icon: markRaw(UserCircle2), component: markRaw(ChangePasswordWindow), w: 420, h: 360 },
-      settings: { label: '设置', titleKey: 'app.winTitle.settings', icon: markRaw(Settings), component: markRaw(SettingsWindow), w: 520, h: 480 },
+      settings: { label: '设置', titleKey: 'app.winTitle.settings', icon: markRaw(Settings), component: markRaw(SettingsWindow), w: 900, h: 640 },
       // 面板模式「主页」：系统概览 + 实时监控 + 系统信息/备忘录（非窗口外壳的全屏视图）
       panelhome: { label: '主页', titleKey: 'panel.home', icon: markRaw(Home), component: markRaw(PanelHome), w: 900, h: 620 }
     }
@@ -1853,32 +1871,6 @@ function openAppStoreConfig(payload) {
   activeWindowId.value = id
 }
 
-// 端口转发：点击「新建」打开的独立表单窗口（选择节点 + 端口配置，误触不丢内容）
-function openPortForwardForm() {
-  const id = ++windowSeq
-  const boundNode = unifiedPanelOn.value ? nodesStore.currentId : ''
-  const w = reactive({
-    id,
-    key: 'portforward-form',
-    nodeId: boundNode,
-    title: t('pf.create'),
-    titleKey: 'pf.create',
-    icon: markRaw(Unlink),
-    component: markRaw(PortForwardFormWindow),
-    props: {},
-    x: 180 + (openWindows.value.length * 30),
-    y: 80 + (openWindows.value.length * 25),
-    width: 420,
-    height: 480,
-    z: ++zSeq,
-    minimized: false,
-    maximized: false,
-    prev: null
-  })
-  openWindows.value.push(w)
-  activeWindowId.value = id
-}
-
 // 「网站」应用创建/编辑站点的独立表单窗口（类型选择留在网站窗口内，提交做成独立可移动窗口）
 function openSiteEdit(payload) {
   const id = ++windowSeq
@@ -2448,6 +2440,7 @@ onMounted(() => {
   if (loggedIn.value) {
     startRealtime()
     checkShunxRequired()
+    checkFirstRunSetup()
     // 已登录态（如页面刷新）也重新检测安装环境，确保缺失时弹窗提醒
     checkInstallCheck()
     // 加载当前账号生效的动态壁纸 / 环形图（「仅用于这个账号」优先）

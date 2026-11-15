@@ -28,26 +28,26 @@
     「设置」窗口（SettingsWindow）的「界面」页签内嵌。
 -->
 <template>
-  <div style="display:flex; flex-direction:column; height:100%; background:#f5f5f7;">
+  <div style="display:flex; flex-direction:column; height:100%; background:var(--g-surface-soft);">
     <div style="flex:1; overflow:auto; padding:16px; display:flex; flex-direction:column; gap:14px;">
       <!-- 网站名 -->
       <div class="block">
         <div class="block-title">{{ $t('ui.siteName') }}</div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('ui.siteNameHint') }}</div>
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">{{ $t('ui.siteNameHint') }}</div>
         <input v-model.trim="form.site_name" :placeholder="'Graw'" maxlength="60" spellcheck="false" />
       </div>
 
       <!-- 欢迎语 -->
       <div class="block">
         <div class="block-title">{{ $t('ui.welcome') }}</div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('ui.welcomeHint') }}</div>
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">{{ $t('ui.welcomeHint') }}</div>
         <textarea v-model.trim="form.welcome" rows="2" maxlength="200" spellcheck="false" :placeholder="$t('ui.welcomePlaceholder')"></textarea>
       </div>
 
       <!-- Logo -->
       <div class="block">
         <div class="block-title">{{ $t('ui.logo') }}</div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('ui.logoHint') }}</div>
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">{{ $t('ui.logoHint') }}</div>
         <div class="logo-row">
           <!-- Logo 预览 -->
           <div v-if="logoPreview" class="logo-preview">
@@ -65,14 +65,14 @@
       <!-- 动态壁纸：多背景轮播 / 视频 -->
       <div class="block">
         <div class="block-title">{{ $t('ui.wallpaper') }}</div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('ui.wallpaperHint') }}</div>
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">{{ $t('ui.wallpaperHint') }}</div>
 
         <!-- 仅用于这个账号：勾选后动态壁纸只对该账号生效，否则走全局 -->
         <label class="switch-label">
           <input type="checkbox" v-model="wallpaperPersonal" />
           <span>{{ $t('ui.personalOnly') }}</span>
         </label>
-        <div style="font-size:11px;color:#8e8e93;margin:-4px 0 6px 24px;">{{ $t('ui.personalOnlyHint') }}</div>
+        <div style="font-size:11px;color:var(--g-text-muted);margin:-4px 0 6px 24px;">{{ $t('ui.personalOnlyHint') }}</div>
 
         <!-- 模式切换：图片（可轮播） / 视频 -->
         <div class="row" style="flex-wrap:wrap; gap:16px;">
@@ -88,7 +88,7 @@
 
         <!-- 图片模式：多背景列表 + 轮播间隔 -->
         <template v-if="form.background_mode === 'image'">
-          <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin:8px 0 6px;">
+          <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin:8px 0 6px;">
             {{ $t('ui.bgListHint', { n: form.backgrounds.length }) }}
           </div>
           <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
@@ -105,15 +105,15 @@
           </div>
           <div v-if="bgError" class="msg err">{{ bgError }}</div>
           <div class="row" style="gap:8px; margin-top:6px;">
-            <span style="font-size:12px;color:#1d1d1f;">{{ $t('ui.bgInterval') }}</span>
+            <span style="font-size:12px;color:var(--g-text);">{{ $t('ui.bgInterval') }}</span>
             <input v-model.number="form.background_interval" type="number" min="3" max="120" style="width:80px;" />
           </div>
-          <div style="font-size:11px;color:#8e8e93;">{{ $t('ui.intervalHint') }}</div>
+          <div style="font-size:11px;color:var(--g-text-muted);">{{ $t('ui.intervalHint') }}</div>
         </template>
 
         <!-- 视频模式：上传视频壁纸 -->
         <template v-else>
-          <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin:8px 0 6px;">{{ $t('ui.videoHint') }}</div>
+          <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin:8px 0 6px;">{{ $t('ui.videoHint') }}</div>
           <div class="btn-group">
             <label class="btn btn-secondary" for="video-upload">{{ $t('ui.uploadVideo') }}</label>
             <input id="video-upload" type="file" accept="video/mp4,video/webm,video/ogg" style="display:none;" @change="(e) => onVideoChange(e)" />
@@ -129,9 +129,9 @@
       <!-- 系统概览环形统计图配色 -->
       <div class="block">
         <div class="block-title">{{ $t('ui.ringColor') }}</div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('ui.ringColorHint') }}</div>
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">{{ $t('ui.ringColorHint') }}</div>
         <div class="row" style="gap:8px;">
-          <input type="color" :value="validColorValue" @input="onColorPick" style="width:42px;height:34px;padding:2px;border:1px solid rgba(0,0,0,0.12);border-radius:6px;background:#fff;" />
+          <input type="color" :value="validColorValue" @input="onColorPick" style="width:42px;height:34px;padding:2px;border:1px solid var(--g-border);border-radius:6px;background:var(--g-surface);" />
           <input v-model.trim="ringColorText" maxlength="7" spellcheck="false" style="flex:1;" :placeholder="'#409eff'" />
         </div>
         <div class="row">
@@ -147,7 +147,7 @@
             <span>{{ $t('ui.overviewDecimals') }}</span>
           </label>
         </div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('ui.overviewDecimalsHint') }}</div>
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">{{ $t('ui.overviewDecimalsHint') }}</div>
         <!-- 仅用于这个账号：勾选后环形图配色只对该账号生效，否则走全局 -->
         <label class="switch-label">
           <input type="checkbox" v-model="ringPersonal" />
@@ -184,19 +184,19 @@
             <span>{{ $t('settings.desktopPreload') }}</span>
           </label>
         </div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('settings.desktopPreloadHint') }}</div>
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">{{ $t('settings.desktopPreloadHint') }}</div>
 
         <!-- 桌面应用图标下方文字样式：字号 / 颜色 / 黑边描边（即改即存，应用到桌面） -->
-        <div style="border-top:1px dashed rgba(0,0,0,0.12); margin:8px 0 4px; padding-top:10px;">
+        <div style="border-top:1px dashed var(--g-border); margin:8px 0 4px; padding-top:10px;">
           <div class="row" style="gap:10px; justify-content:space-between;">
-            <span style="font-size:12px; color:#1d1d1f;">{{ $t('settings.shortcutFontSize') }}</span>
+            <span style="font-size:12px; color:var(--g-text);">{{ $t('settings.shortcutFontSize') }}</span>
             <input v-model.number="settings.shortcutFontSize" type="number" min="8" max="24" step="1" style="width:80px;" />
           </div>
-          <div style="font-size:11px;color:#8e8e93;">{{ $t('settings.shortcutFontSizeHint') }}</div>
+          <div style="font-size:11px;color:var(--g-text-muted);">{{ $t('settings.shortcutFontSizeHint') }}</div>
           <div class="row" style="gap:10px; justify-content:space-between;">
-            <span style="font-size:12px; color:#1d1d1f;">{{ $t('settings.shortcutLabelColor') }}</span>
+            <span style="font-size:12px; color:var(--g-text);">{{ $t('settings.shortcutLabelColor') }}</span>
             <div style="display:flex; gap:6px; align-items:center;">
-              <input type="color" v-model="settings.shortcutLabelColor" style="width:42px;height:30px;padding:2px;border:1px solid rgba(0,0,0,0.12);border-radius:6px;background:#fff;" />
+              <input type="color" v-model="settings.shortcutLabelColor" style="width:42px;height:30px;padding:2px;border:1px solid var(--g-border);border-radius:6px;background:var(--g-surface);" />
               <input v-model.trim="settings.shortcutLabelColor" maxlength="7" spellcheck="false" style="width:90px;" placeholder="#ffffff" />
             </div>
           </div>
@@ -206,39 +206,39 @@
               <span>{{ $t('settings.shortcutLabelStroke') }}</span>
             </label>
           </div>
-          <div style="font-size:11px;color:#8e8e93;">{{ $t('settings.shortcutLabelStrokeHint') }}</div>
+          <div style="font-size:11px;color:var(--g-text-muted);">{{ $t('settings.shortcutLabelStrokeHint') }}</div>
         </div>
       </div>
 
       <!-- 桌面快捷方式：隐藏的应用（恢复） / 固定到任务栏（取消固定） / 仅当前用户 -->
       <div class="block">
         <div class="block-title">{{ $t('desktop.title') }}</div>
-        <div style="font-size:11px;color:#8e8e93;line-height:1.6;margin-bottom:8px;">{{ $t('desktop.titleHint') }}</div>
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">{{ $t('desktop.titleHint') }}</div>
 
         <!-- 仅当前用户开关：控制隐藏/固定偏好只对本账号生效（否则全局共享） -->
         <div class="row" style="justify-content:space-between; padding:2px 0 6px;">
           <label class="switch-label">
             <input type="checkbox" v-model="desktopPrefs.perUser" @change="onPerUserChange" />
-            <span style="font-size:12px;font-weight:600;color:#1d1d1f;">{{ $t('desktop.perUser') }}</span>
+            <span style="font-size:12px;font-weight:600;color:var(--g-text);">{{ $t('desktop.perUser') }}</span>
           </label>
-          <span style="font-size:11px;color:#8e8e93;">{{ $t('desktop.perUserHint') }}</span>
+          <span style="font-size:11px;color:var(--g-text-muted);">{{ $t('desktop.perUserHint') }}</span>
         </div>
 
         <!-- 已隐藏的应用：可在此恢复；已固定的应用：可取消固定 -->
         <template v-if="hiddenShortcuts.length || pinnedShortcutsManage.length">
-          <div style="font-size:12px;font-weight:600;color:#1d1d1f;margin:6px 0 4px;">{{ $t('desktop.hiddenSection') }}</div>
+          <div style="font-size:12px;font-weight:600;color:var(--g-text);margin:6px 0 4px;">{{ $t('desktop.hiddenSection') }}</div>
           <div v-for="h in hiddenShortcuts" :key="'h-' + h.key" class="row" style="justify-content:space-between;padding:3px 0;">
-            <span style="font-size:12px;color:#1d1d1f;">{{ displayScName(h) }}</span>
+            <span style="font-size:12px;color:var(--g-text);">{{ displayScName(h) }}</span>
             <button class="btn btn-mini" @click="restoreShortcut(h.key)">{{ $t('desktop.restore') }}</button>
           </div>
 
-          <div style="font-size:12px;font-weight:600;color:#1d1d1f;margin:8px 0 4px;">{{ $t('desktop.pinnedSection') }}</div>
+          <div style="font-size:12px;font-weight:600;color:var(--g-text);margin:8px 0 4px;">{{ $t('desktop.pinnedSection') }}</div>
           <div v-for="p in pinnedShortcutsManage" :key="'p-' + p.key" class="row" style="justify-content:space-between;padding:3px 0;">
-            <span style="font-size:12px;color:#1d1d1f;">{{ displayScName(p) }}</span>
+            <span style="font-size:12px;color:var(--g-text);">{{ displayScName(p) }}</span>
             <button class="btn btn-mini" @click="unpinShortcut(p.key)">{{ $t('desktop.unpin') }}</button>
           </div>
         </template>
-        <div v-else style="font-size:12px;color:#8e8e93;padding:4px 0;">{{ $t('desktop.empty') }}</div>
+        <div v-else style="font-size:12px;color:var(--g-text-muted);padding:4px 0;">{{ $t('desktop.empty') }}</div>
       </div>
 
       <div v-if="msg" :class="['msg', msgType]">{{ msg }}</div>
@@ -544,15 +544,15 @@ function onPerUserChange() {
 
 <style scoped>
 .block {
-  background: #fff;
+  background: var(--g-surface);
   border-radius: 10px;
   padding: 12px 14px;
-  border: 1px solid rgba(0,0,0,0.06);
+  border: 1px solid var(--g-border-soft);
 }
 .block-title {
   font-size: 12px;
   font-weight: 600;
-  color: #1d1d1f;
+  color: var(--g-text);
   margin-bottom: 10px;
 }
 input, textarea {
@@ -560,8 +560,8 @@ input, textarea {
   padding: 8px 10px;
   font-size: 12px;
   font-family: inherit;
-  color: #1d1d1f;
-  border: 1px solid rgba(0,0,0,0.12);
+  color: var(--g-text);
+  border: 1px solid var(--g-border);
   border-radius: 8px;
   outline: none;
   box-sizing: border-box;
@@ -585,8 +585,8 @@ input:focus, textarea:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #fafafa;
-  border: 1px dashed rgba(0,0,0,0.15);
+  background: var(--g-surface-muted);
+  border: 1px dashed var(--g-border);
   border-radius: 10px;
   overflow: hidden;
 }
@@ -601,8 +601,8 @@ input:focus, textarea:focus {
   height: 72px;
   border-radius: 10px;
   overflow: hidden;
-  border: 1px solid rgba(0,0,0,0.12);
-  background: #fafafa;
+  border: 1px solid var(--g-border);
+  background: var(--g-surface-muted);
 }
 .bg-item img.bg-thumb {
   width: 100%;
@@ -615,7 +615,7 @@ input:focus, textarea:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0,0,0,0.35);
+  background: var(--g-overlay);
   opacity: 0;
   transition: opacity 0.15s;
 }
@@ -675,7 +675,7 @@ input:focus, textarea:focus {
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  color: #1d1d1f;
+  color: var(--g-text);
   /* 与界面设置其它说明文字保持相同字号（如「仅用于这个账号」） */
   font-size: 12px;
 }

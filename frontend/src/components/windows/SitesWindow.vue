@@ -372,38 +372,38 @@ onMounted(load)   // 窗口一打开就拉一次站点列表
 <style scoped>
 .sites-window { padding: 10px; }
 /* 视图切换标签（网站 / SSL证书） */
-.mode-tabs { display: inline-flex; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 10px; }
-.mode-tabs .tab { padding: 6px 14px; font-size: 13px; background: #fff; border: none; cursor: pointer; color: #6b7280; }
-.mode-tabs .tab.active { background: #111827; color: #fff; }
+.mode-tabs { display: inline-flex; border: 1px solid var(--g-border); border-radius: 8px; overflow: hidden; margin-bottom: 10px; }
+.mode-tabs .tab { padding: 6px 14px; font-size: 13px; background: var(--g-surface); border: none; cursor: pointer; color: var(--g-text-muted); }
+.mode-tabs .tab.active { background: var(--g-strong); color: #fff; }
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.hint { color: #6e6e73; font-size: 12px; }
+.hint { color: var(--g-text-muted); font-size: 12px; }
 .hint.right { margin-left: auto; }
-.table-wrap { overflow: auto; max-height: 420px; border: 1px solid #e5e7eb; border-radius: 8px; }
+.table-wrap { overflow: auto; max-height: 420px; border: 1px solid var(--g-border); border-radius: 8px; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th, td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; text-align: left; }
-th { background: #f9fafb; position: sticky; top: 0; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--g-border); text-align: left; }
+th { background: var(--g-surface-muted); position: sticky; top: 0; }
 .site-row { cursor: context-menu; }
-.site-row:hover { background: #f9fafb; }
+.site-row:hover { background: var(--g-surface-muted); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; margin-right: 4px; }
 .badge.ok { background: #d1fae5; color: #065f46; }
 .badge.warn { background: #fef3c7; color: #92400e; }
-.badge.off { background: #f3f4f6; color: #6b7280; }
+.badge.off { background: var(--g-surface-soft); color: var(--g-text-muted); }
 .badge.maint { background: #fde68a; color: #92400e; }
 .type-badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; background: #eef2ff; color: #4338ca; }
 .tag-1p { display: inline-block; margin-left: 4px; padding: 1px 6px; border-radius: 6px; font-size: 10px; background: #fffbeb; color: #b45309; border: 1px solid #fcd34d; white-space: nowrap; }
 
 /* 右键菜单 */
-.empty { text-align: center; color: #9ca3af; padding: 24px; }
-.btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
-.btn.primary { background: #111827; color: #fff; border-color: #111827; }
+.empty { text-align: center; color: var(--g-text-muted); padding: 24px; }
+.btn { padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 13px; }
+.btn.primary { background: var(--g-strong); color: #fff; border-color: #111827; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .type-modal { width: 560px; }
 .type-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
-.type-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; cursor: pointer; transition: all 0.15s; }
-.type-card:hover { border-color: #94a3b8; background: #f9fafb; }
-.type-card.active { border-color: #111827; background: #f3f4f6; }
+.type-card { border: 1px solid var(--g-border); border-radius: 10px; padding: 14px; cursor: pointer; transition: all 0.15s; }
+.type-card:hover { border-color: #94a3b8; background: var(--g-surface-muted); }
+.type-card.active { border-color: #111827; background: var(--g-surface-soft); }
 .t-name { font-size: 14px; font-weight: 600; margin-top: 8px; }
-.t-desc { font-size: 12px; color: #6b7280; margin-top: 2px; }
-.code { background: #f3f4f6; padding: 12px; border-radius: 8px; font-size: 12px; overflow: auto; max-height: 360px; white-space: pre-wrap; word-break: break-all; }
+.t-desc { font-size: 12px; color: var(--g-text-muted); margin-top: 2px; }
+.code { background: var(--g-surface-soft); padding: 12px; border-radius: 8px; font-size: 12px; overflow: auto; max-height: 360px; white-space: pre-wrap; word-break: break-all; }
 </style>

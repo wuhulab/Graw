@@ -59,8 +59,8 @@ function switchMode(m) {
 <style scoped>
 .tasks-hub { padding: 10px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; gap: 10px; }
 .toolbar { display: flex; align-items: center; }
-.mode-tabs { display: inline-flex; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
-.mode-tabs .tab { padding: 6px 14px; font-size: 13px; background: #fff; border: none; cursor: pointer; color: #6b7280; }
-.mode-tabs .tab.active { background: #111827; color: #fff; }
+.mode-tabs { display: inline-flex; border: 1px solid var(--g-border); border-radius: 8px; overflow: hidden; }
+.mode-tabs .tab { padding: 6px 14px; font-size: 13px; background: var(--g-surface); border: none; cursor: pointer; color: var(--g-text-muted); }
+.mode-tabs .tab.active { background: var(--g-strong); color: #fff; }
 .hub-body { flex: 1; min-height: 0; }
 </style>

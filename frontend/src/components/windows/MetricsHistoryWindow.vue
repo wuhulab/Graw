@@ -37,7 +37,7 @@
 
     <!-- 空状态 -->
     <div v-if="!loading && !err && !hasData" class="empty">
-      <LineChart :size="40" style="color:#9ca3af;" />
+      <LineChart :size="40" style="color:var(--g-text-muted);" />
       <div>该时间范围内暂无历史数据。面板正在持续采样并落盘（每 2 秒一个采样点），稍后刷新即可看到曲线。</div>
     </div>
 
@@ -306,21 +306,21 @@ onUnmounted(() => {
 .metrics-history-window { padding: 10px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; overflow: auto; }
 .toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; justify-content: space-between; }
 .toolbar-left { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.sel-label { font-size: 11px; color: #6b7280; }
-.sel { padding: 4px 6px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; background: #fff; }
-.auto { font-size: 12px; color: #4b5563; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.sel-label { font-size: 11px; color: var(--g-text-muted); }
+.sel { padding: 4px 6px; border: 1px solid var(--g-border-strong); border-radius: 6px; font-size: 12px; background: var(--g-surface); }
+.auto { font-size: 12px; color: var(--g-text-muted); display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
 .auto input { cursor: pointer; }
-.status { font-size: 12px; color: #888; }
+.status { font-size: 12px; color: var(--g-text-muted); }
 .status.err { color: #b91c1c; }
 
 .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.chart-box { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; background: #fff; }
-.chart-title { font-size: 12px; font-weight: 600; color: #1d1d1f; margin-bottom: 6px; }
+.chart-box { border: 1px solid var(--g-border); border-radius: 10px; padding: 10px; background: var(--g-surface); }
+.chart-title { font-size: 12px; font-weight: 600; color: var(--g-text); margin-bottom: 6px; }
 .chart-body { height: 230px; }
 
-.empty { text-align: center; color: #9ca3af; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: 13px; line-height: 1.6; }
-.btn { padding: 5px 10px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 12px; display: inline-flex; align-items: center; gap: 5px; }
-.btn:hover:not(:disabled) { background: #f9fafb; }
+.empty { text-align: center; color: var(--g-text-muted); padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: 13px; line-height: 1.6; }
+.btn { padding: 5px 10px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 12px; display: inline-flex; align-items: center; gap: 5px; }
+.btn:hover:not(:disabled) { background: var(--g-surface-muted); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn.danger { color: #b91c1c; border-color: #fca5a5; }
 .btn.danger:hover:not(:disabled) { background: #fef2f2; }

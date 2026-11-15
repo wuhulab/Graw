@@ -361,7 +361,7 @@ onUnmounted(() => {
 .filter-label { font-size: 12px; color: var(--ui-text-secondary); }
 .tag-chip {
   font-size: 11px; padding: 2px 8px; border-radius: 10px; cursor: pointer;
-  border: 1px solid var(--ui-border, #e5e7eb); background: var(--ui-bg-muted, #f0f3fa); color: inherit;
+  border: 1px solid var(--ui-border, var(--g-border)); background: var(--ui-bg-muted, #f0f3fa); color: inherit;
 }
 .tag-chip.active { background: var(--ui-primary, #2563eb); color: #fff; border-color: transparent; }
 
@@ -427,7 +427,7 @@ onUnmounted(() => {
 .dot.fail { background: #c0392b; }
 
 .modal-mask {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+  position: fixed; inset: 0; background: var(--g-overlay);
   display: flex; align-items: center; justify-content: center; z-index: 50;
 }
 .modal { width: 320px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }

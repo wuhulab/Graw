@@ -601,9 +601,9 @@ function aclActionClass(a) {
 
 .site-select { width: 220px; padding: 4px 6px; }
 
-.tabs { display: flex; gap: 2px; border-bottom: 1px solid #ddd; flex-wrap: wrap; }
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--g-border); flex-wrap: wrap; }
 .tab { padding: 6px 12px; background: transparent; border: none; border-bottom: 2px solid transparent;
-  cursor: pointer; font-size: 13px; color: #555; }
+  cursor: pointer; font-size: 13px; color: var(--g-text-muted); }
 .tab.active { color: #2563eb; border-bottom-color: #2563eb; font-weight: 600; }
 
 .body { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 10px;
@@ -618,39 +618,39 @@ h4 { margin: 8px 0 8px; font-size: 13px; }
 .form-row input[type="checkbox"] { width: auto; }
 .wide { width: 100% !important; padding: 6px; }
 
-.hint { font-size: 12px; color: #888; }
-.notice, .summary { font-size: 13px; color: #333; background: #f6f8ff; border: 1px solid #dbe4ff; border-radius: 8px; padding: 10px; }
+.hint { font-size: 12px; color: var(--g-text-muted); }
+.notice, .summary { font-size: 13px; color: var(--g-text); background: var(--g-accent-soft); border: 1px solid var(--g-border); border-radius: 8px; padding: 10px; }
 .summary li { margin: 4px 0; }
 
 .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
-.tag { background: #eef; border-radius: 12px; padding: 2px 8px; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
-.tag .iconbtn { border: none; background: transparent; cursor: pointer; color: #888; }
-.empty-tag { color: #aaa; font-size: 12px; }
+.tag { background: var(--g-indigo-soft); border-radius: 12px; padding: 2px 8px; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
+.tag .iconbtn { border: none; background: transparent; cursor: pointer; color: var(--g-text-muted); }
+.empty-tag { color: var(--g-text-muted); font-size: 12px; }
 .add-row { display: flex; gap: 6px; margin-top: 6px; }
 .add-row input { flex: 1; padding: 4px 6px; }
 
 .table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.table th, .table td { border: 1px solid #eee; padding: 5px 8px; text-align: left; }
+.table th, .table td { border: 1px solid var(--g-border); padding: 5px 8px; text-align: left; }
 .table th { background: #f7f7f8; }
 .mono { font-family: monospace; font-size: 11px; }
 .clamp { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.iconbtn { border: none; background: transparent; cursor: pointer; font-size: 12px; color: #555; }
+.iconbtn { border: none; background: transparent; cursor: pointer; font-size: 12px; color: var(--g-text-muted); }
 .iconbtn.danger { color: #c0392b; }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.modal { background: #fff; border-radius: 12px; padding: 18px; width: 420px; max-width: 92vw;
+.modal-overlay { position: fixed; inset: 0; background: var(--g-overlay); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal { background: var(--g-surface); border-radius: 12px; padding: 18px; width: 420px; max-width: 92vw;
   max-height: 86vh; overflow: auto; box-shadow: 0 8px 30px rgba(0,0,0,.2); }
 .modal.wide { width: 760px; }
 .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 
-.preview { background: #0f172a; color: #cbd5e1; padding: 12px; border-radius: 8px;
+.preview { background: var(--g-code-bg); color: #cbd5e1; padding: 12px; border-radius: 8px;
   font-size: 12px; white-space: pre-wrap; max-height: 60vh; overflow: auto; }
 
 .bars { display: flex; flex-direction: column; gap: 6px; }
 .bar-row { display: flex; align-items: center; gap: 10px; }
 .bar-label { width: 120px; font-size: 13px; text-align: right; }
-.bar-track { flex: 1; background: #eee; height: 16px; border-radius: 8px; overflow: hidden; }
+.bar-track { flex: 1; background: var(--g-border); height: 16px; border-radius: 8px; overflow: hidden; }
 .bar-fill { height: 100%; background: linear-gradient(90deg, #4f8cff, #2563eb); }
 .bar-val { width: 60px; font-size: 12px; }
 </style>

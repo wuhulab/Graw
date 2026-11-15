@@ -8,7 +8,7 @@
   打开方式：桌面「网络储存」卡片选择连接后进入；下载用 fetch+blob 带 Bearer 头（与文件管理器一致）。
 -->
 <template>
-  <div style="display:flex; flex-direction:column; height:100%; background:#fff;" @click="closeMenus">
+  <div style="display:flex; flex-direction:column; height:100%; background:var(--g-surface);" @click="closeMenus">
     <!-- 工具栏：协议徽标 + 当前连接名 + 路径导航 -->
     <div class="toolbar">
       <span class="proto-tag" :class="'tag-' + (conn?.type || '')">{{ protoLabel(conn?.type) }}</span>
@@ -17,7 +17,7 @@
       <input type="text" v-model="pathInput" @keyup.enter="go" />
       <div style="position:relative;">
         <button class="btn" @click.stop="newMenuOpen = !newMenuOpen">{{ $t('files.new') }}</button>
-        <div v-if="newMenuOpen" style="position:absolute; top:100%; left:0; margin-top:4px; background:#fff; border:1px solid rgba(0,0,0,0.1); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.12); z-index:100; min-width:120px;">
+        <div v-if="newMenuOpen" style="position:absolute; top:100%; left:0; margin-top:4px; background:var(--g-surface); border:1px solid var(--g-border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.12); z-index:100; min-width:120px;">
           <div class="menu-item" @click="createFolder">{{ $t('files.newFolder') }}</div>
           <div class="menu-item" @click="createFile">{{ $t('files.newFile') }}</div>
         </div>
@@ -290,16 +290,16 @@ onMounted(() => load('/'))   // 挂载后从根目录开始浏览
 
 <style scoped>
 .menu-item { padding: 8px 12px; font-size: 12px; cursor: pointer; }
-.menu-item:hover { background: #f5f5f7; }
+.menu-item:hover { background: var(--g-surface-soft); }
 .context-menu {
-  position: fixed; background: #fff; border: 1px solid rgba(0,0,0,0.1);
+  position: fixed; background: var(--g-surface); border: 1px solid var(--g-border);
   border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 200;
   min-width: 140px; padding: 4px 0;
 }
-.proto-tag { background: #eef5ff; color: #0a3d7a; border-radius: 10px; font-size: 11px; padding: 3px 9px; font-weight: 600; }
+.proto-tag { background: var(--g-accent-soft); color: var(--g-text); border-radius: 10px; font-size: 11px; padding: 3px 9px; font-weight: 600; }
 .proto-tag.tag-smb { background: #fff4e6; color: #b4640a; }
 .proto-tag.tag-webdav { background: #eafaf0; color: #1a7f4a; }
 .proto-tag.tag-s3 { background: #fdf1f6; color: #b8336e; }
-.empty { color: #6e6e73; text-align: center; padding: 40px 0; font-size: 13px; }
-.editor-area { width: 100%; height: 300px; font-family: ui-monospace, monospace; font-size: 12px; border: 1px solid rgba(0,0,0,0.12); border-radius: 6px; padding: 8px; resize: vertical; }
+.empty { color: var(--g-text-muted); text-align: center; padding: 40px 0; font-size: 13px; }
+.editor-area { width: 100%; height: 300px; font-family: ui-monospace, monospace; font-size: 12px; border: 1px solid var(--g-border); border-radius: 6px; padding: 8px; resize: vertical; }
 </style>

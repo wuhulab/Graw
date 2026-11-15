@@ -103,7 +103,8 @@ function ringOption(percent, color) {
         // 两位小数时文案变长（最多「100.00%」7 个字符），同步收小字号避免溢出环形内圈
         fontSize: decimals ? 11 : 14,
         fontWeight: 'bold',
-        color: '#0a3d7a'
+        // Canvas 图表无法读取 CSS 变量：暗色主题下中心百分比改用浅色
+        color: settings.theme === 'dark' ? '#e8e9ed' : '#0a3d7a'
       },
       data: [
         { value: p, itemStyle: { color } },
@@ -136,12 +137,12 @@ const storageOption = computed(() => ringOption(props.overview?.storage?.percent
   margin-top: 2px;
   overflow: hidden;
   font-size: 11px;
-  color: #6e6e73;
+  color: var(--g-text-muted);
   white-space: nowrap;
 }
 .temp-title {
   font-weight: 600;
-  color: #1d1d1f;
+  color: var(--g-text);
 }
 .temp-item {
   max-width: 96px;
@@ -154,6 +155,6 @@ const storageOption = computed(() => ringOption(props.overview?.storage?.percent
   font-weight: 600;
 }
 .temp-more {
-  color: #9ca3af;
+  color: var(--g-text-muted);
 }
 </style>

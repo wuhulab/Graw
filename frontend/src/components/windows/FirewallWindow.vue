@@ -223,10 +223,10 @@ onMounted(load)   // 打开即加载防火墙状态与规则
 <style scoped>
 .fw-window { padding: 0; } /* 内嵌于 ShunX 保护机制聚合窗口，外边距由父容器统一提供，上栏可与父窗口边缘平齐 */
 h4 { margin: 12px 0 6px; font-size: 14px; }
-.block-unopened-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid #f0f0f0; }
-.block-msg { font-size: 12px; color: #6e6e73; flex: 1; }
+.block-unopened-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--g-border); }
+.block-msg { font-size: 12px; color: var(--g-text-muted); flex: 1; }
 .danger-text { color: #dc2626; }
 .danger-text:hover { background: #fee2e2; }
-.iconbtn { padding: 4px; border: 1px solid #e5e7eb; background: #fff; border-radius: 6px; cursor: pointer; }
+.iconbtn { padding: 4px; border: 1px solid var(--g-border); background: var(--g-surface); border-radius: 6px; cursor: pointer; }
 .iconbtn.danger:hover { background: #fee2e2; border-color: #fca5a5; }
 </style>

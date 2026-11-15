@@ -9,8 +9,8 @@
 <template>
   <div style="display:flex; flex-direction:column; height:100%;">
     <div class="toolbar">
-      <span style="color:#0a3d7a; font-weight:600;">{{ $t('dockerconfig.title') }}</span>
-      <span style="font-size:11px; color:#888; font-family:Consolas,monospace;">{{ configPath || $t('common.loading') }}</span>
+      <span style="color:var(--g-text); font-weight:600;">{{ $t('dockerconfig.title') }}</span>
+      <span style="font-size:11px; color:var(--g-text-muted); font-family:Consolas,monospace;">{{ configPath || $t('common.loading') }}</span>
       <button class="btn" style="margin-left:auto;" @click="load">{{ $t('dockerconfig.reload') }}</button>
       <button class="btn primary" @click="save">{{ $t('dockerconfig.save') }}</button>
       <button class="btn" @click="$emit('close')">{{ $t('dockerconfig.close') }}</button>
@@ -73,12 +73,12 @@ onMounted(load)
 <style scoped>
 .cfg-editor {
   flex: 1; margin: 10px; padding: 10px; resize: none;
-  border: 1px solid #d1d5db; border-radius: 8px;
+  border: 1px solid var(--g-border-strong); border-radius: 8px;
   font-family: Consolas, 'Courier New', monospace; font-size: 12.5px;
-  background: #fafafa; color: #111827; line-height: 1.5;
+  background: var(--g-surface-muted); color: var(--g-text); line-height: 1.5;
   box-sizing: border-box;
 }
-.btn.primary { background: #0a3d7a; color: #fff; border-color: #0a3d7a; }
+.btn.primary { background: var(--g-strong); color: #fff; border-color: #0a3d7a; }
 .msg { margin: 0 10px 10px; font-size: 12px; color: #2a8f3c; }
 .msg.err { color: #b91c1c; }
 </style>

@@ -161,25 +161,25 @@ onMounted(refresh)   // 打开即加载日志源列表
 .logs-window { padding: 10px; display: flex; flex-direction: column; height: 100%; }
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 /* 视图切换标签 */
-.mode-tabs { display: inline-flex; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
-.mode-tabs .tab { padding: 6px 14px; font-size: 13px; background: #fff; border: none; cursor: pointer; color: #6b7280; }
-.mode-tabs .tab.active { background: #111827; color: #fff; }
+.mode-tabs { display: inline-flex; border: 1px solid var(--g-border); border-radius: 8px; overflow: hidden; }
+.mode-tabs .tab { padding: 6px 14px; font-size: 13px; background: var(--g-surface); border: none; cursor: pointer; color: var(--g-text-muted); }
+.mode-tabs .tab.active { background: var(--g-strong); color: #fff; }
 /* 登录日志视图容器 */
 .login-wrap { flex: 1; min-height: 0; }
 .layout { display: flex; gap: 10px; flex: 1; min-height: 0; }
-.sidebar { width: 220px; border: 1px solid #e5e7eb; border-radius: 8px; overflow: auto; background: #fff; }
-.log-item { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; cursor: pointer; }
-.log-item:hover, .log-item.active { background: #f9fafb; }
+.sidebar { width: 220px; border: 1px solid var(--g-border); border-radius: 8px; overflow: auto; background: var(--g-surface); }
+.log-item { padding: 10px 12px; border-bottom: 1px solid var(--g-border); cursor: pointer; }
+.log-item:hover, .log-item.active { background: var(--g-surface-muted); }
 .log-name { font-weight: 600; font-size: 13px; }
-.log-path { font-size: 11px; color: #6b7280; word-break: break-all; }
+.log-path { font-size: 11px; color: var(--g-text-muted); word-break: break-all; }
 .exist { font-size: 11px; padding: 1px 6px; border-radius: 999px; }
 .exist.ok { background: #d1fae5; color: #065f46; }
 .exist.warn { background: #fee2e2; color: #991b1b; }
-.viewer { flex: 1; border: 1px solid #e5e7eb; border-radius: 8px; display: flex; flex-direction: column; background: #fff; overflow: hidden; }
-.viewer-toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #f3f4f6; }
-.meta { font-size: 12px; color: #6b7280; margin-right: auto; }
-.content { flex: 1; padding: 10px; overflow: auto; font-size: 12px; line-height: 1.5; background: #fff; color: #111827; margin: 0; }
-.btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.viewer { flex: 1; border: 1px solid var(--g-border); border-radius: 8px; display: flex; flex-direction: column; background: var(--g-surface); overflow: hidden; }
+.viewer-toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--g-border); }
+.meta { font-size: 12px; color: var(--g-text-muted); margin-right: auto; }
+.content { flex: 1; padding: 10px; overflow: auto; font-size: 12px; line-height: 1.5; background: var(--g-surface); color: var(--g-text); margin: 0; }
+.btn { padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 13px; }
 .btn.small { padding: 4px 8px; font-size: 12px; }
-.btn.primary { background: #111827; color: #fff; border-color: #111827; }
+.btn.primary { background: var(--g-strong); color: #fff; border-color: #111827; }
 </style>

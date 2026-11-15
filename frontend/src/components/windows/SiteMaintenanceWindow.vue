@@ -17,7 +17,7 @@
       <input type="checkbox" v-model="enabled" style="width:auto;" />
       {{ enabled ? $t('sites.maintEnabled') : $t('sites.maintDisabled') }}
     </label>
-    <div style="font-size:11px; color:#888; margin-bottom:6px;">{{ $t('sites.maintHtmlHint') }}</div>
+    <div style="font-size:11px; color:var(--g-text-muted); margin-bottom:6px;">{{ $t('sites.maintHtmlHint') }}</div>
     <textarea
       v-model="html"
       class="ui-textarea mono-area"

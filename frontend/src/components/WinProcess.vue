@@ -72,23 +72,23 @@ onMounted(loadProcesses)          // 打开窗口即加载进程列表
 </script>
 
 <style scoped>
-.proc-wrap { height: 100%; display: flex; flex-direction: column; background: #fff; }
+.proc-wrap { height: 100%; display: flex; flex-direction: column; background: var(--g-surface); }
 .proc-toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  background: #f5f5f7;
-  border-bottom: 1px solid rgba(0,0,0,0.06);
+  background: var(--g-surface-soft);
+  border-bottom: 1px solid var(--g-border-soft);
 }
 .proc-search {
   flex: 1;
-  border: 1px solid rgba(0,0,0,0.1);
+  border: 1px solid var(--g-border);
   border-radius: 6px;
   padding: 5px 10px;
   font-size: 12px;
-  background: #fff;
-  color: #1d1d1f;
+  background: var(--g-surface);
+  color: var(--g-text);
   outline: none;
 }
 .proc-search:focus {
@@ -97,7 +97,7 @@ onMounted(loadProcesses)          // 打开窗口即加载进程列表
 }
 .proc-count {
   font-size: 12px;
-  color: #6e6e73;
+  color: var(--g-text-muted);
 }
 .proc-table-wrap {
   flex: 1;
@@ -111,30 +111,30 @@ onMounted(loadProcesses)          // 打开窗口即加载进程列表
 .proc-table th, .proc-table td {
   text-align: left;
   padding: 8px 10px;
-  border-bottom: 1px solid rgba(0,0,0,0.06);
+  border-bottom: 1px solid var(--g-border-soft);
 }
 .proc-table th {
-  background: #f5f5f7;
+  background: var(--g-surface-soft);
   font-weight: 600;
-  color: #1d1d1f;
+  color: var(--g-text);
   position: sticky;
   top: 0;
   z-index: 1;
 }
-.proc-table tr:hover td { background: #f5f5f7; }
+.proc-table tr:hover td { background: var(--g-surface-soft); }
 .win7-btn2 {
-  border: 1px solid rgba(0,0,0,0.1);
+  border: 1px solid var(--g-border);
   border-radius: 8px;
-  background: #fff;
-  color: #1d1d1f;
+  background: var(--g-surface);
+  color: var(--g-text);
   padding: 4px 12px;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   margin-right: 4px;
 }
-.win7-btn2:hover { background: #f5f5f7; }
-.win7-btn2:active { background: #ebebed; }
+.win7-btn2:hover { background: var(--g-surface-soft); }
+.win7-btn2:active { background: var(--g-surface-hover); }
 .win7-btn2.danger {
   background: #ff3b30;
   color: #fff;

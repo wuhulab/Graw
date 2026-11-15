@@ -37,7 +37,7 @@
 <template>
   <div style="display:flex; flex-direction:column; height:100%; background:#1e1e1e; overflow:hidden;">
     <div class="toolbar">
-      <span style="color:#0a3d7a;">{{ $t('terminal.title') }}{{ container ? ' · ' + $t('terminal.inContainer', { name: container }) : '' }} · {{ statusText }}</span>
+      <span style="color:var(--g-text);">{{ $t('terminal.title') }}{{ container ? ' · ' + $t('terminal.inContainer', { name: container }) : '' }} · {{ statusText }}</span>
       <!-- 持久化终端开关（容器内终端不支持）：勾选后终端进程常驻后端，
            刷新面板 / 重开窗口会接回同一会话；取消勾选则结束该常驻会话 -->
       <label v-if="!container" class="persist-toggle" :title="$t('terminal.persistHint')">
@@ -48,7 +48,7 @@
       <button class="btn" @click="clear">{{ $t('terminal.clear') }}</button>
       <!-- 鼠标模式开关：开启后向 TUI 与应用写入鼠标启用序列，支持 vim/tmux/ranger/htop 等点击交互 -->
       <button class="btn" :disabled="!mouseSupported"
-        :style="mouseSupported && mouseOn ? 'background:#0a3d7a; color:#fff;' : ''"
+        :style="mouseSupported && mouseOn ? 'background:var(--g-strong); color:#fff;' : ''"
         :title="!mouseSupported ? (mouseReason || $t('terminal.mouseUnsupported')) : (mouseOn ? $t('terminal.mouseOffHint') : $t('terminal.mouseOnHint'))"
         @click="toggleMouse">{{ $t('terminal.mouse') }}:{{ mouseOn ? $t('terminal.on') : $t('terminal.off') }}</button>
     </div>
@@ -615,7 +615,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 .term-ctx-menu .menu-item:hover {
-  background: #0a3d7a;
+  background: var(--g-strong);
   color: #fff;
 }
 
@@ -652,5 +652,5 @@ onBeforeUnmount(() => {
   border-color: #0a84ff;
   box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.24);
 }
-.term-cmd-input::placeholder { color: #6e6e73; }
+.term-cmd-input::placeholder { color: var(--g-text-muted); }
 </style>

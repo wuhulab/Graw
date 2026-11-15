@@ -117,12 +117,12 @@ onBeforeUnmount(() => {
   width: 52px;
   height: 52px;
   border-radius: 14px;
-  background: rgba(0, 0, 0, 0.06);
-  color: #1d1d1f;
+  background: var(--g-hover);
+  color: var(--g-text);
   cursor: pointer;
   border: none;
 }
-.taskbar-start:hover { background: rgba(0, 0, 0, 0.12); }
+.taskbar-start:hover { background: var(--g-active); }
 .taskbar-item {
   display: inline-flex;
   align-items: center;
@@ -132,7 +132,7 @@ onBeforeUnmount(() => {
   border-radius: 12px;
   background: transparent;
   border: none;
-  color: #1d1d1f;
+  color: var(--g-text);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -143,7 +143,7 @@ onBeforeUnmount(() => {
   position: relative;
 }
 .taskbar-item.active {
-  background: rgba(0, 0, 0, 0.08);
+  background: var(--g-active);
 }
 .taskbar-item.active::after {
   content: '';
@@ -157,7 +157,7 @@ onBeforeUnmount(() => {
   background: #1d1d1f;
 }
 .taskbar-item:hover {
-  background: rgba(0, 0, 0, 0.06);
+  background: var(--g-hover);
 }
 .task-title {
   overflow: hidden;
@@ -169,9 +169,9 @@ onBeforeUnmount(() => {
   height: 52px;
   display: inline-flex;
   align-items: center;
-  color: #1d1d1f;
+  color: var(--g-text);
   font-size: 12px;
-  border-left: 1px solid rgba(0, 0, 0, 0.1);
+  border-left: 1px solid var(--g-border);
 }
 .start-menu {
   position: absolute;
@@ -179,7 +179,7 @@ onBeforeUnmount(() => {
   left: 12px;
   width: 240px;
   background: rgba(246, 246, 248, 0.85);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--g-border-soft);
   border-radius: 14px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
   backdrop-filter: saturate(180%) blur(30px);
@@ -188,11 +188,11 @@ onBeforeUnmount(() => {
   z-index: 10000;
 }
 .start-header {
-  color: #1d1d1f;
+  color: var(--g-text);
   padding: 12px 16px 8px;
   font-weight: 600;
   font-size: 13px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid var(--g-border-soft);
 }
 .start-list {
   padding: 6px;
@@ -200,7 +200,7 @@ onBeforeUnmount(() => {
 .start-item {
   padding: 8px 12px;
   font-size: 13px;
-  color: #1d1d1f;
+  color: var(--g-text);
   cursor: pointer;
   border-radius: 8px;
   display: flex;
@@ -208,6 +208,6 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 .start-item:hover {
-  background: rgba(0, 0, 0, 0.06);
+  background: var(--g-hover);
 }
 </style>

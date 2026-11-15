@@ -46,7 +46,7 @@
 
     <div v-if="loading" class="empty">加载中…</div>
     <div v-else-if="logs.length === 0" class="empty">
-      <Fingerprint :size="40" style="color:#9ca3af;" />
+      <Fingerprint :size="40" style="color:var(--g-text-muted);" />
       <div>暂无登录日志</div>
     </div>
     <div v-else class="table-wrap">
@@ -216,29 +216,29 @@ onMounted(refresh)
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; justify-content: space-between; }
 .global-status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #dbeafe; color: #1e40af; }
-.stat { font-size: 12px; color: #4b5563; }
+.stat { font-size: 12px; color: var(--g-text-muted); }
 .stat.ok { color: #065f46; }
 .stat.err { color: #b91c1c; }
 .stat.warn { color: #9a3412; }
 .toolbar-actions { display: flex; gap: 8px; align-items: center; }
-.toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #374151; cursor: pointer; }
+.toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--g-text); cursor: pointer; }
 .toggle input { cursor: pointer; }
 
 .filters { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
-.input { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12.5px; width: 180px; }
+.input { padding: 6px 10px; border: 1px solid var(--g-border-strong); border-radius: 6px; font-size: 12.5px; width: 180px; }
 .select { width: 130px; }
-.mine-hint { font-size: 12px; color: #9ca3af; }
+.mine-hint { font-size: 12px; color: var(--g-text-muted); }
 
-.table-wrap { overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; flex: 1; }
+.table-wrap { overflow: auto; border: 1px solid var(--g-border); border-radius: 8px; flex: 1; }
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-th, td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; text-align: left; vertical-align: middle; white-space: nowrap; }
-th { background: #f9fafb; position: sticky; top: 0; }
-tbody tr:hover { background: #f9fafb; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--g-border); text-align: left; vertical-align: middle; white-space: nowrap; }
+th { background: var(--g-surface-muted); position: sticky; top: 0; }
+tbody tr:hover { background: var(--g-surface-muted); }
 .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
-.detail { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #6b7280; }
+.detail { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--g-text-muted); }
 
-.btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
-.btn:hover:not(:disabled) { background: #f9fafb; }
+.btn { padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover:not(:disabled) { background: var(--g-surface-muted); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .danger-text { color: #b91c1c; }
 
@@ -247,7 +247,7 @@ tbody tr:hover { background: #f9fafb; }
 .badge.err { background: #fee2e2; color: #b91c1c; }
 .badge.warn { background: #fed7aa; color: #9a3412; }
 
-.empty { text-align: center; color: #9ca3af; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.empty { text-align: center; color: var(--g-text-muted); padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .msg { font-size: 12.5px; margin-top: 10px; }
 .msg.ok { color: #065f46; }
 .msg.err { color: #b91c1c; }

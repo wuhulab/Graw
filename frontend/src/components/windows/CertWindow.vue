@@ -34,7 +34,7 @@
     <!-- 证书列表 -->
     <div v-if="loading" class="empty">加载中…</div>
     <div v-else-if="certs.length === 0" class="empty">
-      <Lock :size="40" style="color:#9ca3af;" />
+      <Lock :size="40" style="color:var(--g-text-muted);" />
       <div>还没有证书，先在「SSL」窗口上传或申请证书</div>
     </div>
     <div v-else class="table-wrap">
@@ -166,35 +166,35 @@ onMounted(loadAll)   // 进入窗口即加载状态与证书列表
 .status-badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
 .status-badge.ok { background: #d1fae5; color: #065f46; }
 .status-badge.off { background: #fee2e2; color: #b91c1c; }
-.hint { color: #6e6e73; font-size: 12px; }
+.hint { color: var(--g-text-muted); font-size: 12px; }
 .toolbar-actions { display: flex; gap: 8px; }
 
-.table-wrap { overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; flex: 1; }
+.table-wrap { overflow: auto; border: 1px solid var(--g-border); border-radius: 8px; flex: 1; }
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-th, td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; text-align: left; vertical-align: middle; white-space: nowrap; }
-th { background: #f9fafb; position: sticky; top: 0; }
-tbody tr:hover { background: #f9fafb; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--g-border); text-align: left; vertical-align: middle; white-space: nowrap; }
+th { background: var(--g-surface-muted); position: sticky; top: 0; }
+tbody tr:hover { background: var(--g-surface-muted); }
 .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; white-space: normal; }
 .warn-text { color: #b45309; font-weight: 600; }
 
-.btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
-.btn:hover:not(:disabled) { background: #f9fafb; }
+.btn { padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover:not(:disabled) { background: var(--g-surface-muted); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn.primary { background: #111827; color: #fff; border-color: #111827; }
-.btn.primary:hover:not(:disabled) { background: #1f2937; }
+.btn.primary { background: var(--g-strong); color: #fff; border-color: #111827; }
+.btn.primary:hover:not(:disabled) { background: var(--g-strong); }
 
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
 .badge.ok { background: #d1fae5; color: #065f46; }
-.badge.off { background: #f3f4f6; color: #6b7280; }
+.badge.off { background: var(--g-surface-soft); color: var(--g-text-muted); }
 .badge.warn { background: #fed7aa; color: #9a3412; }
 .badge.danger { background: #fee2e2; color: #b91c1c; font-weight: 600; }
 
-.empty { text-align: center; color: #9ca3af; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.empty { text-align: center; color: var(--g-text-muted); padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 
 .config-row { display: flex; align-items: flex-end; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
 .field { flex: 1; min-width: 220px; display: block; }
-.field .label { display: block; font-size: 11px; color: #1d1d1f; font-weight: 600; margin-bottom: 5px; }
-.field input { width: 100%; box-sizing: border-box; border: 1px solid rgba(0,0,0,0.15); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-family: inherit; }
+.field .label { display: block; font-size: 11px; color: var(--g-text); font-weight: 600; margin-bottom: 5px; }
+.field input { width: 100%; box-sizing: border-box; border: 1px solid var(--g-border); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-family: inherit; }
 .field input:focus { outline: none; border-color: #0a84ff; box-shadow: 0 0 0 3px rgba(10,132,255,0.15); }
 .field .hint { display: block; margin-top: 4px; }
 .msg { font-size: 12px; }

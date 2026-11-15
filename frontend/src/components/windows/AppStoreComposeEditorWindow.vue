@@ -61,7 +61,7 @@ function save() {
 </script>
 
 <style scoped>
-.toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; flex-shrink: 0; }
+.toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--g-border); flex-shrink: 0; }
 .saved-hint { color: #047857; font-size: 11.5px; }
 .editor-area { flex: 1; border: none; outline: none; padding: 8px; font-family: Consolas, monospace; font-size: 12px; resize: none; }
 </style>

@@ -43,23 +43,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. 准备 Docker 多架构构建环境 (buildx)
+      # 2. 按 tag 覆盖内置版本号
+      #    tag 指向的提交里 AppVersion 可能仍是旧值（新版本号由 sync-version.yml
+      #    在 tag 推送后补提交到默认分支），构建前先按 tag 覆盖一次，
+      #    保证镜像内 /api/health 上报的版本与镜像 tag 一致。
+      #    手动触发（workflow_dispatch）不是 tag，跳过此步。
+      - name: Override AppVersion from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          sed -i -E "s/^const AppVersion = \".*\"$/const AppVersion = \"${version}\"/" backend-go/internal/graw/cfg.go
+          grep -n '^const AppVersion' backend-go/internal/graw/cfg.go
+
+      # 3. 准备 Docker 多架构构建环境 (buildx)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 3. 启用 QEMU 模拟器（多架构镜像的 runtime 阶段需在目标平台执行 apk，
+      # 4. 启用 QEMU 模拟器（多架构镜像的 runtime 阶段需在目标平台执行 apk，
       #    前端与 Go 编译都在 BUILDPLATFORM 上完成，不经过 QEMU）
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      # 4. 登录 Docker Hub（使用仓库 Secrets 中的令牌）
+      # 5. 登录 Docker Hub（使用仓库 Secrets 中的令牌）
       - name: Log in to Docker Hub
         uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # 5. 生成镜像标签
+      # 6. 生成镜像标签
       #    - tag 推送 (v1.2.3)   -> 1.2.3 和 latest
       - name: Generate image tags
         id: meta
@@ -67,7 +79,7 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           echo "tags=${{ env.IMAGE_NAME }}:${version},${{ env.IMAGE_NAME }}:latest" >> "$GITHUB_OUTPUT"
 
-      # 6. 构建并推送镜像（多架构：amd64 + arm64）
+      # 7. 构建并推送镜像（多架构：amd64 + arm64）
       - name: Build and push
         id: build
         uses: docker/build-push-action@v6
@@ -89,7 +101,7 @@ jobs:
           provenance: mode=max
           sbom: true
 
-      # 7. 输出构建摘要（镜像 digest、标签等）
+      # 8. 输出构建摘要（镜像 digest、标签等）
       - name: Build summary
         run: |
           echo "## 构建完成" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,76 @@
+# ============================================================
+# Graw Version Sync —— 推送版本 tag 后自动同步代码内的版本号
+#
+# 背景：
+#   面板版本号的唯一来源是 backend-go/internal/graw/cfg.go 的 AppVersion，
+#   以前每次发版都要手动修改，容易遗漏，导致 /api/health、更新检查里显示旧版本。
+#
+# 触发：push tag（如 v1.9.0）
+# 行为：
+#   1. 检出默认分支（main）而不是 tag —— tag 指向的提交无法再改写；
+#   2. 把 cfg.go 的 AppVersion 改写为 tag 版本（去掉前缀 v）；
+#   3. 只有版本确实不同才提交并推回默认分支（重复推送同一 tag 不会产生空提交）。
+#
+# 说明：
+#   - 打 tag 时指向的提交仍可能带旧版本号，因此 docker-publish.yml 在构建前
+#     也会按 tag 覆盖一次，保证发布镜像上报的版本与镜像 tag 一致；
+#   - 推送需要 contents: write；若默认分支启用了保护规则，请把
+#     github-actions[bot] 加入允许推送名单，否则本工作流会失败。
+# ============================================================
+
+name: Sync Version
+
+on:
+  push:
+    tags:
+      - 'v*'            # 版本 tag，如 v1.9.0
+
+# 写回版本号需要提交并推送
+permissions:
+  contents: write
+
+# 连续推送多个 tag 时串行执行，避免两次提交互相覆盖
+concurrency:
+  group: sync-version
+  cancel-in-progress: false
+
+jobs:
+  sync-version:
+    name: Sync AppVersion from tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # 1. 检出默认分支最新代码（版本号提交的目标分支）
+      - name: Checkout default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      # 2. 按 tag 改写 AppVersion，有变化才提交推送
+      - name: Update AppVersion and push
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          version="${TAG_NAME#v}"
+          # 只接受 x.y.z（允许 -rc.1 / +build 之类的后缀），其余 tag 跳过
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.+][0-9A-Za-z.-]+)?$'; then
+            echo "::notice::tag ${TAG_NAME} 不是 x.y.z 版本格式，跳过版本号同步"
+            exit 0
+          fi
+
+          file="backend-go/internal/graw/cfg.go"
+          current="$(sed -nE 's/^const AppVersion = "(.*)"$/\1/p' "$file")"
+          if [ "$current" = "$version" ]; then
+            echo "::notice::AppVersion 已是 ${version}，无需提交"
+            exit 0
+          fi
+
+          sed -i -E "s/^const AppVersion = \".*\"$/const AppVersion = \"${version}\"/" "$file"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$file"
+          git commit -m "chore: 同步版本号至 v${version}"
+          git push origin "HEAD:${BRANCH}"

@@ -73,6 +73,27 @@ export default {
   },
   settings: {
     title: 'Account',
+    // Settings category navigation
+    nav: {
+      general: 'General & Appearance',
+      account: 'Account & Security',
+      nodes: 'Nodes & Agent',
+      system: 'System & Maintenance',
+      about: 'About',
+    },
+    // Theme
+    themeTitle: 'Theme',
+    themeHint: 'Choose light or dark appearance. Changes apply instantly.',
+    themeLight: 'Light',
+    themeDark: 'Dark',
+    // Interface layout
+    interfaceModeTitle: 'Interface',
+    interfaceModeHint: 'Switch between the next-gen desktop and the classic server panel. Changes apply instantly.',
+    modeDesktop: 'Next-gen desktop',
+    modeDesktopHint: 'OS-like desktop with windows, Dock taskbar and desktop shortcuts.',
+    modePanel: 'Classic server panel',
+    modePanelHint: '1Panel-style sidebar menu with tabbed content, familiar to server admins.',
+    languageHint: 'Choose the interface language. Changes apply instantly.',
     openUsers: 'Open Account Management',
     uiSettingsTitle: 'UI Settings',
     uiSettingsHint: 'Customize the login page and desktop appearance: site name, welcome text, logo, dynamic wallpaper, ring chart colors, etc.',
@@ -1217,6 +1238,10 @@ Document version: 1.1.0 | Updated: 2026-08-16`,
     emptySub: 'Open an app from the sidebar menu',
     switchHost: 'Switch host',    // Topbar host-switch dropdown title
     noNodes: 'No SSH nodes yet',  // Placeholder when no sub-node is configured
+    favorites: 'Favorites',
+    favAdd: 'Add to top',
+    favRemove: 'Remove favorite',
+    favHint: 'Right-click an app to favorite and pin it to the top',
     menu: {
       monitor: 'Monitor',
       site: 'Websites',
@@ -1229,6 +1254,23 @@ Document version: 1.1.0 | Updated: 2026-08-16`,
       store: 'Store',
       system: 'System',
     },
+  },
+  // First-run onboarding: choose theme and interface mode after initial account setup
+  onboarding: {
+    title: 'Welcome to Graw',
+    desc: 'Your initial account is ready. Choose an interface theme and layout now; you can change them later in Settings.',
+    themeTitle: 'Choose a theme',
+    modeTitle: 'Choose an interface',
+    themeLight: 'Light mode',
+    themeLightHint: 'Bright and clear, suitable for daytime use.',
+    themeDark: 'Dark mode',
+    themeDarkHint: 'Easy on the eyes for nighttime and long operations.',
+    modeDesktop: 'Next-gen desktop',
+    modeDesktopHint: 'OS-like desktop with windows, Dock taskbar and desktop shortcuts.',
+    modePanel: 'Classic server panel',
+    modePanelHint: '1Panel-style sidebar menu with tabbed content, familiar to server admins.',
+    required: 'Please complete both choices above',
+    confirm: 'Enter Panel',
   },
   // Desktop shortcuts (hide / pin to taskbar)
   desktop: {

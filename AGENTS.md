@@ -260,8 +260,10 @@ CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o graw-go .
 4. **`data/` 权限与凭据**：含 SSH/数据库/JWT 密钥，勿提交到仓库、勿放宽权限、勿明文回传前端（`agent_cfg.public_status()` 已脱敏，照此模式）。
 5. **容器高权限（仅可信环境）**：`docker-compose.yml` 使用 `privileged` + `network_mode: host` + `pid: host` + `-v /:/host:rslave` + docker.sock。目的是让面板完整管理宿主机；**Docker Desktop for Windows 上这些无法完整生效**。开发阶段建议本地直接跑前后端，而非依赖该 compose。
 6. **前端构建产物由后端托管**：`npm run build` 输出 `frontend/dist`，Go 的 `registerStatic`（`httpx.go`）自动挂载 `/assets` 与 SPA 回退。改了前端后若生产不生效，先确认 `frontend/dist` 已生成。
-7. **版本号单一来源**：升级版本改 `backend-go/internal/graw/cfg.go` 的 `AppVersion`；Python 旧版对应
-   `backend/app/main.py` 的 `APP_VERSION`，两处需同步。`/api/health` 在容器部署时优先读镜像 tag/label。
+7. **版本号自动同步**：唯一来源仍是 `backend-go/internal/graw/cfg.go` 的 `AppVersion`，但**不再手改**——
+   推送 `v*` tag 后 `.github/workflows/sync-version.yml` 会把 tag 版本写回默认分支；
+   `docker-publish.yml` 构建前也会按 tag 覆盖一次，保证发布镜像上报的版本正确。
+   Python 旧版已冻结，`backend/app/main.py` 的 `APP_VERSION` 不再同步。
 8. **不要绕过远端能力门控 / Agent 代理**：设计新接口时明确它是 local-only 还是需要子节点透传，避免越权或代理失效。`batch` / `gitdeploy` / `portforward` 三类**永远留在主面板执行**，别把它们改成可代理。
 9. **请求体大小受限**：全局中间件对 `Transfer-Encoding` 返回 411、超限返回 413（普通 16MB / multipart 2GB）。新增接收大负载的端点时不能用 chunked 上传，必要时改环境变量而不是改代码常量。
 10. **文档要跟着改**：功能变更后同步更新 `docs/`（面向开发者/运维）与 `GETMEREAD/`（大白话运行逻辑，规矩见 `GETMEREAD/README.md`：在对应模块文件里追加一节并刷新文字与图，别新建同名文件）。
@@ -291,4 +293,4 @@ CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o graw-go .
 | 改网站 / WAF / 引擎模式 | Go：`backend-go/internal/graw/handlers_sites.go`、`handlers_siteopts_ssl.go`（原理见 `GETMEREAD/09`）；Python 旧版：`routers/sites.py`、`waf.py`、`webmode.py`、`webserver.py` |
 | 改部署方式 / 环境变量 | 根 `Dockerfile`、`backend-go/Dockerfile`、`docker-compose.yml`、`graw.sh`/`graw.bat`、`docs/deployment.md` |
 | 重置/查凭据/用户数据 | `backend/data/`、`backend-go/cmd/reset-password`；Python 旧版 `backend/reset_password.py` |
-| 升级版本号 | 改 `backend-go/internal/graw/cfg.go` 的 `AppVersion`（Python 旧版同步 `backend/app/main.py` 的 `APP_VERSION`），并在 `CHANGELOG.md` 记一笔 |
+| 升级版本号 | 直接打 `v*` tag 推送即可，`sync-version.yml` 自动写回 `backend-go/internal/graw/cfg.go` 的 `AppVersion`（无需手改；`CHANGELOG.md` 仍建议补一笔） |

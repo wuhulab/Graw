@@ -119,7 +119,7 @@ onBeforeUnmount(() => {
 .monitor-tabs {
   display: flex;
   gap: 6px;
-  background: rgba(0,0,0,0.15);
+  background: var(--g-active);
   border-radius: 4px;
   padding: 2px;
 }

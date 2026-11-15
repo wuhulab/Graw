@@ -21,6 +21,9 @@
         以及展示括号内的哪种内容，由 locales/index.js 的 postTranslation 钩子生效。
     overviewDecimals —— 系统概览数值精度：开启后环形统计中心百分比保留两位小数
         （如 31.25%），关闭则取整（31%）。
+    theme —— 界面主题：'light'（浅色）/ 'dark'（暗色）。写入 <html data-theme>，
+        由 assets/theme.css 的 CSS 变量切换全局配色；启动前也会由 index.html
+        读取本地缓存提前应用，避免刷新时白屏闪烁。
 
   用法：任意组件直接读 settings 的响应式字段即可；修改会自动被 watch 落盘，
   无需手动保存。
@@ -60,6 +63,26 @@ const defaults = {
   bracketLang: 'both',
   // 系统概览数值精度：true=环形统计中心百分比保留两位小数（31.25%），false=取整（31%）
   overviewDecimals: true,
+  // 界面主题：light=浅色 / dark=暗色（通过 html[data-theme] 切换 CSS 变量）
+  theme: 'light',
+  // 传统服务器面板收藏：右键菜单收藏的应用 key，按收藏顺序置顶显示在侧边栏
+  panelFavorites: [],
+}
+
+// 主题合法值：非法值统一回退浅色，避免缓存损坏导致界面配色异常
+const THEMES = ['light', 'dark']
+
+/**
+ * 把主题写入根元素，供 assets/theme.css 的变量选择器切换配色。
+ * @param {string} theme - 'light' | 'dark'
+ */
+export function applyTheme(theme) {
+  if (typeof document === 'undefined') return
+  const value = THEMES.includes(theme) ? theme : 'light'
+  document.documentElement.setAttribute('data-theme', value)
+  // 同步移动端浏览器地址栏 / 状态栏颜色，避免暗色页面顶部仍是亮色
+  const meta = document.querySelector('meta[name="theme-color"]')
+  if (meta) meta.setAttribute('content', value === 'dark' ? '#101114' : '#0f1722')
 }
 
 // 设备是否更适合「传统服务器面板」布局：
@@ -122,6 +145,9 @@ function load() {
     const merged = { ...defaults, ...parsed }    // 与默认值合并：新增偏好项时旧缓存也能正常读出
     // 界面模式以独立偏好键为准：旧快照里的 panelMode 不再代表用户选择
     merged.panelMode = initialPanelMode()
+    // 主题与收藏列表做合法性兜底：旧缓存 / 手工修改损坏时回退默认，避免界面配色异常
+    if (!THEMES.includes(merged.theme)) merged.theme = 'light'
+    if (!Array.isArray(merged.panelFavorites)) merged.panelFavorites = []
     return merged
   } catch {
     return { ...defaults, panelMode: initialPanelMode() }   // 存储损坏/被禁用：宁可丢偏好也不能让应用启动失败
@@ -130,6 +156,9 @@ function load() {
 
 // --- 对外暴露：全站唯一的设置单例（修改任意字段即触发 watch 落盘） ---
 export const settings = reactive(load())
+
+// 启动即应用主题：保证首屏渲染前 <html data-theme> 已就绪（index.html 也会提前设置，双保险）
+applyTheme(settings.theme)
 
 // 监听全部偏好字段，任一变化就整体写回 localStorage（即改即存，无需手动保存）
 watch(
@@ -148,6 +177,8 @@ watch(
     bracketEnabled: settings.bracketEnabled,
     bracketLang: settings.bracketLang,
     overviewDecimals: settings.overviewDecimals,
+    theme: settings.theme,
+    panelFavorites: settings.panelFavorites,
   }),
   (val) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(val))   // 整份快照覆盖写，保持存储结构与 defaults 对齐
@@ -158,3 +189,6 @@ watch(
 // 界面模式偏好单独落盘：用户在设置里切换「面板 / 桌面」后立即生效，
 // 后续启动不再受当前屏幕宽度影响（手机/平板横竖屏切换也保持用户选择）。
 watch(() => settings.panelMode, (val) => writePanelModePref(!!val))
+
+// 主题切换即时生效：写入根元素 data-theme，theme.css 的变量随之切换
+watch(() => settings.theme, (val) => applyTheme(val))

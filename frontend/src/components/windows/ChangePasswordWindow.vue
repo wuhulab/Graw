@@ -85,7 +85,7 @@ async function submit() {
 <style scoped>
 .change-pwd {
   height: 100%;
-  background: #f5f5f7;
+  background: var(--g-surface-soft);
   padding: 18px;
 }
 
@@ -97,7 +97,7 @@ async function submit() {
 .field .label {
   display: block;
   font-size: 11px;
-  color: #6e6e73;
+  color: var(--g-text-muted);
   font-weight: 600;
   margin-bottom: 4px;
 }
@@ -107,11 +107,11 @@ async function submit() {
   padding: 8px 10px;
   font-size: 13px;
   font-family: inherit;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--g-border);
   border-radius: 8px;
   outline: none;
-  background: #ffffff;
-  color: #1d1d1f;
+  background: var(--g-surface);
+  color: var(--g-text);
 }
 
 .field input:focus {

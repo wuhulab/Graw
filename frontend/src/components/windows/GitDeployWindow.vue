@@ -222,26 +222,26 @@ onMounted(async () => {
 .toolbar-actions { margin-left: auto; display: flex; gap: 8px; }
 .table-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; }
 .table-toolbar .hint { font-size: 11px; color: #8a94a6; }
-.table-wrap { background: #fff; border: 1px solid #e4e7f0; border-radius: 8px; overflow: hidden; }
+.table-wrap { background: var(--g-surface); border: 1px solid #e4e7f0; border-radius: 8px; overflow: hidden; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
-thead th { text-align: left; padding: 9px 12px; background: #f7f8fb; color: #4b5563; font-size: 12px; font-weight: 600; border-bottom: 1px solid #eef0f6; white-space: nowrap; }
+thead th { text-align: left; padding: 9px 12px; background: var(--g-surface-soft); color: var(--g-text-muted); font-size: 12px; font-weight: 600; border-bottom: 1px solid var(--g-border); white-space: nowrap; }
 tbody td { padding: 9px 12px; border-bottom: 1px solid #f3f4f8; vertical-align: top; }
 tbody tr:last-child td { border-bottom: none; }
 .sub { font-size: 11px; color: #9aa3b2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; margin-top: 2px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
 .site-tag { display: inline-block; background: #eef2ff; color: #4338ca; border-radius: 6px; padding: 1px 8px; font-size: 12px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.branch-tag { display: inline-block; background: #f0f3fa; color: #3b5478; border-radius: 6px; padding: 1px 8px; font-size: 11px; margin-right: 4px; }
+.branch-tag { display: inline-block; background: var(--g-surface-soft); color: var(--g-text-secondary); border-radius: 6px; padding: 1px 8px; font-size: 11px; margin-right: 4px; }
 .auth-tag { display: inline-block; background: #fef3c7; color: #92400e; border-radius: 6px; padding: 1px 6px; font-size: 10px; }
 .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; }
 .badge.ok { background: #d1fae5; color: #065f46; }
 .badge.warn { background: #fef3c7; color: #92400e; }
 .badge.danger { background: #fee2e2; color: #b91c1c; }
-.badge.off { background: #f3f4f6; color: #6b7280; }
+.badge.off { background: var(--g-surface-soft); color: var(--g-text-muted); }
 .ok-text { color: #065f46; }
 .err-text { color: #b91c1c; }
 .actions { white-space: nowrap; }
-.iconbtn { border: none; background: none; cursor: pointer; color: #6b7280; padding: 4px; border-radius: 6px; }
-.iconbtn:hover { background: #f0f2f7; color: #0a3d7a; }
+.iconbtn { border: none; background: none; cursor: pointer; color: var(--g-text-muted); padding: 4px; border-radius: 6px; }
+.iconbtn:hover { background: var(--g-surface-soft); color: var(--g-text); }
 .iconbtn.danger:hover { background: #fee2e2; color: #b91c1c; }
 .empty { text-align: center; color: #9aa3b2; padding: 30px; font-size: 12px; }
 </style>

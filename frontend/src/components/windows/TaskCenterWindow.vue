@@ -255,24 +255,24 @@ onUnmounted(() => {
 <style scoped>
 .tasks-window { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 
-.toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; flex-shrink: 0; }
+.toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--g-border); flex-shrink: 0; }
 .title { font-weight: 700; font-size: 13.5px; display: inline-flex; align-items: center; gap: 6px; }
-.hint { color: #9ca3af; font-size: 11.5px; }
+.hint { color: var(--g-text-muted); font-size: 11.5px; }
 
 .body { flex: 1; display: flex; min-height: 0; }
-.task-list { width: 240px; flex-shrink: 0; border-right: 1px solid #e5e7eb; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.task-list { width: 240px; flex-shrink: 0; border-right: 1px solid var(--g-border); overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
 .log-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 8px 10px; gap: 8px; }
 
-.empty { flex: 1; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 12.5px; }
+.empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--g-text-muted); font-size: 12.5px; }
 
-.task-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 10px; cursor: pointer; transition: border-color .15s, box-shadow .15s; position: relative; min-width: 0; overflow: hidden; }
+.task-card { border: 1px solid var(--g-border); border-radius: 8px; padding: 8px 10px; cursor: pointer; transition: border-color .15s, box-shadow .15s; position: relative; min-width: 0; overflow: hidden; }
 .task-card:hover { border-color: #c7d2fe; }
-.task-card.active { border-color: #6366f1; box-shadow: 0 0 0 1px rgba(99,102,241,.25); background: #f5f6ff; }
+.task-card.active { border-color: #6366f1; box-shadow: 0 0 0 1px rgba(99,102,241,.25); background: var(--g-selected); }
 .task-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .t-name { font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
-.task-meta { font-size: 10.5px; color: #9ca3af; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.task-meta .fin { color: #6b7280; }
-.running-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 0 0 8px 8px; overflow: hidden; background: #eef2ff; }
+.task-meta { font-size: 10.5px; color: var(--g-text-muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.task-meta .fin { color: var(--g-text-muted); }
+.running-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 0 0 8px 8px; overflow: hidden; background: var(--g-indigo-soft); }
 .running-bar span { display: block; height: 100%; width: 40%; background: #6366f1; animation: slide 1.2s ease-in-out infinite; }
 @keyframes slide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
 
@@ -286,7 +286,7 @@ onUnmounted(() => {
 .live { font-size: 11px; color: #2563eb; margin-left: auto; animation: blink 1.2s infinite; }
 @keyframes blink { 50% { opacity: .4; } }
 
-.log-box { flex: 1; min-height: 0; overflow-y: auto; background: #0f172a; border-radius: 8px; padding: 10px; font-family: Consolas, monospace; font-size: 12px; line-height: 1.55; user-select: text; cursor: text; }
+.log-box { flex: 1; min-height: 0; overflow-y: auto; background: var(--g-code-bg); border-radius: 8px; padding: 10px; font-family: Consolas, monospace; font-size: 12px; line-height: 1.55; user-select: text; cursor: text; }
 .line { display: flex; gap: 6px; white-space: pre-wrap; word-break: break-all; }
 .line.log .text { color: #cbd5e1; }
 .line.status .text { color: #60a5fa; font-weight: 600; }

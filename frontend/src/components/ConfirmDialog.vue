@@ -122,14 +122,14 @@ async function submit() {
 .confirm-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--g-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 3000;
 }
 .confirm-modal {
-  background: #fff;
+  background: var(--g-surface);
   border-radius: 12px;
   padding: 18px;
   width: 420px;
@@ -153,7 +153,7 @@ async function submit() {
 .confirm-msg {
   margin: 0 0 12px;
   font-size: 13px;
-  color: #374151;
+  color: var(--g-text);
   line-height: 1.6;
   white-space: pre-line;
 }
@@ -164,11 +164,11 @@ async function submit() {
 }
 .confirm-form label {
   font-size: 12px;
-  color: #374151;
+  color: var(--g-text);
 }
 .confirm-form input {
   padding: 8px 10px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--g-border-strong);
   border-radius: 6px;
   font-size: 13px;
 }
@@ -189,8 +189,8 @@ async function submit() {
 }
 .btn {
   padding: 6px 14px;
-  border: 1px solid #d1d5db;
-  background: #fff;
+  border: 1px solid var(--g-border-strong);
+  background: var(--g-surface);
   border-radius: 6px;
   cursor: pointer;
   font-size: 13px;

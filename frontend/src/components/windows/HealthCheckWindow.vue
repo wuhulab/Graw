@@ -32,7 +32,7 @@
     <!-- 空状态 -->
     <div v-if="loading" class="empty">正在扫描，请稍候…</div>
     <div v-else-if="!report" class="empty">
-      <ShieldCheck :size="40" style="color:#9ca3af;" />
+      <ShieldCheck :size="40" style="color:var(--g-text-muted);" />
       <div>点击「开始体检」扫描系统安全隐患</div>
     </div>
     <div v-else-if="report.items.length === 0" class="empty">
@@ -115,9 +115,9 @@ async function run() {
 .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; }
 .toolbar-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .title { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; }
-.hint { color: #6e6e73; font-size: 12px; }
+.hint { color: var(--g-text-muted); font-size: 12px; }
 .toolbar-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.score-txt { font-size: 12px; color: #374151; margin-right: 6px; }
+.score-txt { font-size: 12px; color: var(--g-text); margin-right: 6px; }
 .score-txt b { font-size: 16px; }
 .score-txt b.good { color: #16a34a; }
 .score-txt b.warn { color: #d97706; }
@@ -130,20 +130,20 @@ async function run() {
 .badge.low, .badge.lv-low { background: #d1fae5; color: #065f46; }
 .badge.lv-high, .badge.lv-medium, .badge.lv-low { font-weight: 600; }
 
-.btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
-.btn:hover:not(:disabled) { background: #f9fafb; }
+.btn { padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover:not(:disabled) { background: var(--g-surface-muted); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn.primary { background: #111827; color: #fff; border-color: #111827; }
-.btn.primary:hover:not(:disabled) { background: #1f2937; }
+.btn.primary { background: var(--g-strong); color: #fff; border-color: #111827; }
+.btn.primary:hover:not(:disabled) { background: var(--g-strong); }
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.empty { text-align: center; color: #9ca3af; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.table-wrap { overflow: auto; flex: 1; border: 1px solid #e5e7eb; border-radius: 8px; }
+.empty { text-align: center; color: var(--g-text-muted); padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.table-wrap { overflow: auto; flex: 1; border: 1px solid var(--g-border); border-radius: 8px; }
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-th, td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; text-align: left; vertical-align: top; }
-th { background: #f9fafb; position: sticky; top: 0; font-weight: 600; }
-tbody tr:hover { background: #f9fafb; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--g-border); text-align: left; vertical-align: top; }
+th { background: var(--g-surface-muted); position: sticky; top: 0; font-weight: 600; }
+tbody tr:hover { background: var(--g-surface-muted); }
 .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; font-weight: 600; }
-.advice-label { color: #374151; font-weight: 600; }
+.advice-label { color: var(--g-text); font-weight: 600; }
 </style>

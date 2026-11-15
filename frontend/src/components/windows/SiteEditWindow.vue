@@ -161,13 +161,13 @@ function cancel() {
 <style scoped>
 .site-edit-window { padding: 14px; }
 .form { display: flex; flex-direction: column; gap: 10px; }
-.form label { font-size: 12px; color: #374151; }
-.form input { padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
+.form label { font-size: 12px; color: var(--g-text); }
+.form input { padding: 8px 10px; border: 1px solid var(--g-border-strong); border-radius: 6px; font-size: 13px; }
 .form .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .radio-row { display: flex; gap: 16px; }
-.radio { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #111827; cursor: pointer; }
+.radio { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--g-text); cursor: pointer; }
 .err { margin: 0; font-size: 12px; color: #dc2626; }
-.btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
-.btn.primary { background: #111827; color: #fff; border-color: #111827; }
+.btn { padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 13px; }
+.btn.primary { background: var(--g-strong); color: #fff; border-color: #111827; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

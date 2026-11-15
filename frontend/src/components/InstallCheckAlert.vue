@@ -69,14 +69,14 @@ defineEmits(['close'])   // 「知道了」按钮 → 通知父组件隐藏弹�
   width: 500px;
   max-width: 94vw;
   padding: 24px 26px 20px;
-  background: #fff;
+  background: var(--g-surface);
   border-radius: 16px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
   border-top: 4px solid #d97706;
 }
 
 .alert-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
-.alert-logo { font-size: 24px; font-weight: 800; color: #0a3d7a; }
+.alert-logo { font-size: 24px; font-weight: 800; color: var(--g-text); }
 .alert-sub { font-size: 13px; font-weight: 600; color: #b45309; }
 
 .alert-desc {
@@ -88,12 +88,12 @@ defineEmits(['close'])   // 「知道了」按钮 → 通知父组件隐藏弹�
 }
 
 .alert-detail {
-  background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px;
+  background: var(--g-surface-muted); border: 1px solid var(--g-border); border-radius: 10px;
   padding: 10px 12px; margin-bottom: 12px;
 }
 .detail-row { display: flex; gap: 8px; font-size: 12.5px; line-height: 1.8; }
 .detail-row .dot { color: #d97706; flex-shrink: 0; }
-.detail-row .v { color: #1d1d1f; word-break: break-all; }
+.detail-row .v { color: var(--g-text); word-break: break-all; }
 
 .reinstall-hint {
   margin: 0 0 14px;

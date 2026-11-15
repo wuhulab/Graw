@@ -41,7 +41,7 @@ const overview = computed(() => systemState.overview)
 .panel-home {
   height: 100%;
   padding: 16px;
-  background: #f5f6f8;
+  background: var(--g-bg-page);
   box-sizing: border-box;
   overflow-y: auto;
 }
