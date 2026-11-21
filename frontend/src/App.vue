@@ -201,6 +201,11 @@
     </div>
   </div>
 
+  <!-- 面板水印：在设置 → 账户与安全中配置后，覆盖整个界面（不影响点击） -->
+  <div v-if="loggedIn && panelSecurity.watermark" class="graw-watermark" aria-hidden="true">
+    <span v-for="i in 24" :key="i">{{ panelSecurity.watermark }}</span>
+  </div>
+
   <!-- ShunX 网页防篡改告警弹窗：篡改发生时对在线面板用户弹窗 -->
   <TamperAlert v-if="loggedIn && tamperState.alerts.length > 0" />
 
@@ -301,6 +306,7 @@ import ErrorLogPanel from './components/ErrorLogPanel.vue'
 import Login from './views/Login.vue'
 import { shunxApi, systemApi } from './api'
 import { auth, clearAuth, isAdmin, isFullAdmin, hasPerm } from './store/auth'
+import { panelSecurity, loadPanelSecurity } from './store/panelSecurity'   // 面板水印 / 标签页锁
 import { uiState, loadUi, loadUiEffective } from './store/ui'
 import { settings } from './store/settings'
 import { desktopPrefs, bindUser as bindDesktopUser, hideShortcut, pinShortcut, unpinShortcut } from './store/desktopPrefs'
@@ -2480,12 +2486,15 @@ watch(loggedIn, (v) => {
   if (v) {
     startRealtime()
     loadUiEffective().catch(() => {})
+    loadPanelSecurity().catch(() => {})
     // 登录成功（含切号后重新登录）：同样在数据就绪后启动空闲预加载
     maybePreloadWindows()
   } else {
     stopRealtime()
   }
 })
+// 刷新页面时 token 已存在，watch 不会触发，这里补一次水印/标签页锁加载。
+if (loggedIn.value) loadPanelSecurity().catch(() => {})
 
 onUnmounted(() => {
   stopRealtime()

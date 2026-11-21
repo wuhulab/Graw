@@ -190,18 +190,24 @@ func registerCronRoutes(a *App) {
 		if windowsTarget() {
 			platform = "windows"
 		}
-		return WriteJSON(w, 200, map[string]any{"tasks": loadCronTasks(), "platform": platform})
+		tasks := loadCronTasks()
+		return WriteJSON(w, 200, map[string]any{
+			"tasks": tasks, "platform": platform, "groups": cronGroups(tasks),
+		})
 	})
 	a.Post("/api/cron/create", perm("cron"), func(w http.ResponseWriter, r *http.Request) error {
 		var req struct {
-			Name     string `json:"name"`
-			Schedule string `json:"schedule"`
-			Command  string `json:"command"`
-			Enabled  *bool  `json:"enabled"`
-			TaskType string `json:"task_type"`
-			Content  string `json:"content"`
-			Group    string `json:"group"`
-			Alert    bool   `json:"alert"`
+			Name      string `json:"name"`
+			Schedule  string `json:"schedule"`
+			Command   string `json:"command"`
+			Enabled   *bool  `json:"enabled"`
+			TaskType  string `json:"task_type"`
+			Content   string `json:"content"`
+			Group     string `json:"group"`
+			Alert     bool   `json:"alert"`
+			Timeout   int    `json:"timeout"`
+			Retry     int    `json:"retry"`
+			KeepCount int    `json:"keep_count"`
 		}
 		if err := DecodeJSON(r, &req); err != nil {
 			return err
@@ -235,6 +241,8 @@ func registerCronRoutes(a *App) {
 			"id": "task_" + randomHex(8), "name": req.Name, "schedule": req.Schedule,
 			"command": command, "enabled": enabled, "task_type": taskType,
 			"content": strings.TrimSpace(req.Content), "group": group, "alert": req.Alert,
+			"timeout": normalizeCronTimeout(req.Timeout), "retry": normalizeCronRetry(req.Retry),
+			"keep_count": normalizeCronKeep(req.KeepCount),
 			"created_at": time.Now().Format("2006-01-02T15:04:05"),
 		}
 		if windowsTarget() {
@@ -310,6 +318,15 @@ func registerCronRoutes(a *App) {
 		}
 		if v, ok := raw["alert"]; ok && v != nil {
 			task["alert"] = boolOf(v)
+		}
+		if v, ok := raw["timeout"]; ok && v != nil {
+			task["timeout"] = normalizeCronTimeout(int(int64Of(v)))
+		}
+		if v, ok := raw["retry"]; ok && v != nil {
+			task["retry"] = normalizeCronRetry(int(int64Of(v)))
+		}
+		if v, ok := raw["keep_count"]; ok && v != nil {
+			task["keep_count"] = normalizeCronKeep(int(int64Of(v)))
 		}
 		if _, hasCommand := raw["command"]; !hasCommand {
 			if _, hasType := raw["task_type"]; hasType {
@@ -390,13 +407,10 @@ func registerCronRoutes(a *App) {
 		if task == nil {
 			return NewHTTPError(404, "Task not found")
 		}
-		if windowsTarget() {
-			runCommand(30*time.Second, "schtasks", "/run", "/tn", str(task["name"]))
-		} else {
-			HostShell(300*time.Second, str(task["command"]))
-		}
-		return WriteJSON(w, 200, map[string]any{"ok": true})
+		result := runCronTaskNow(task)
+		return WriteJSON(w, 200, result)
 	})
+	registerCronEnhancedRoutes(a)
 }
 
 // --- 系统日志 ---
@@ -595,4 +609,5 @@ func registerLogsRoutes(a *App) {
 		}
 		return WriteJSON(w, 200, map[string]any{"ok": true})
 	})
+	registerAuditCenterRoutes(a)
 }

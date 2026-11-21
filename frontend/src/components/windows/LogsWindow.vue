@@ -35,6 +35,36 @@
       </div>
     </div>
 
+    <!-- 统一审计视图：分类 + 级别 + 关键词 -->
+    <div v-else-if="mode === 'auditCenter'" class="login-wrap audit-center">
+      <div class="toolbar">
+        <select v-model="auditCategory" class="ui-select" style="width:140px" @change="loadAudit">
+          <option v-for="c in auditCategories" :key="c.key" :value="c.key">{{ c.name }}</option>
+        </select>
+        <select v-model="auditLevel" class="ui-select" style="width:110px" @change="loadAudit">
+          <option value="">全部级别</option>
+          <option value="info">info</option>
+          <option value="warn">warn</option>
+          <option value="error">error</option>
+        </select>
+        <input v-model.trim="auditQuery" class="ui-input" style="flex:1" placeholder="关键词过滤（回车搜索）" @keyup.enter="loadAudit" />
+        <button class="ui-btn" @click="loadAudit">{{ $t('logs.refresh') }}</button>
+      </div>
+      <div class="ui-table-wrap" style="flex:1; min-height:0; overflow:auto;">
+        <table>
+          <thead><tr><th style="width:150px;">时间</th><th style="width:70px;">级别</th><th>内容</th></tr></thead>
+          <tbody>
+            <tr v-for="(e, i) in auditEntries" :key="i">
+              <td class="ui-mono">{{ e.time || '-' }}</td>
+              <td><span class="ui-badge" :class="e.level === 'error' ? 'danger' : e.level === 'warn' ? 'warn' : 'ok'">{{ e.level }}</span></td>
+              <td class="ui-mono audit-msg">{{ e.message }}</td>
+            </tr>
+            <tr v-if="!auditEntries.length"><td colspan="3" class="ui-empty">暂无日志</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- 登录日志视图（合并自独立的「登录日志」应用） -->
     <div v-else-if="mode === 'login'" class="login-wrap">
       <LoginLogWindow />
@@ -78,7 +108,7 @@ import AuditLogWindow from './AuditLogWindow.vue'
 // 表单保存信号：独立「添加日志源」窗口保存成功后刷新本列表
 import { formBus } from '../../store/formBus'
 import WindowTabNav from '../WindowTabNav.vue'   // 统一左侧竖排页签导航
-import { ScrollText, Fingerprint, ClipboardList } from 'lucide-vue-next'
+import { ScrollText, Fingerprint, ClipboardList, ListFilter } from 'lucide-vue-next'
 
 const { t } = useI18n()
 
@@ -90,18 +120,54 @@ const current = ref(null)    // 当前选中的日志源对象
 const lines = ref([])        // 当前日志文件读出的内容行
 // 高风险操作二次确认状态
 const confirm = ref({ show: false, path: '' })
-// 视图模式：'logs' 系统日志 / 'login' 登录日志 / 'audit' 审计日志
+// 视图模式：'logs' 系统日志 / 'login' 登录日志 / 'audit' 审计日志 / 'auditCenter' 统一审计
 const mode = ref('logs')
 
-// 左侧页签：系统日志 / 登录日志 / 审计日志
+// 统一审计视图状态
+const auditCategories = ref([])
+const auditCategory = ref('operation')
+const auditLevel = ref('')
+const auditQuery = ref('')
+const auditEntries = ref([])
+
+// 左侧页签：系统日志 / 统一审计 / 登录日志 / 审计日志
 const tabs = computed(() => [
   { key: 'logs', label: t('logs.modeSys'), icon: ScrollText },
+  { key: 'auditCenter', label: t('logs.modeAuditCenter'), icon: ListFilter },
   { key: 'login', label: t('logs.modeLogin'), icon: Fingerprint },
   { key: 'audit', label: t('logs.modeAudit'), icon: ClipboardList },
 ])
 
+async function loadAudit() {
+  try {
+    const data = await logsApi.auditLogs({
+      category: auditCategory.value, level: auditLevel.value, q: auditQuery.value, limit: 300,
+    })
+    auditEntries.value = data.entries || []
+  } catch (e) {
+    alert(e?.response?.data?.detail || e.message)
+  }
+}
+
+async function loadAuditCategories() {
+  try {
+    const data = await logsApi.auditCategories()
+    auditCategories.value = data.categories || []
+  } catch {
+    auditCategories.value = [{ key: 'operation', name: '操作日志' }]
+  }
+}
+
 // 添加日志源改由独立窗口承载：保存成功后 bumpForm('logs') 触发此处重载
 watch(() => formBus.logs, refresh)
+
+// 切到统一审计页签时按需加载分类与默认日志
+watch(mode, (v) => {
+  if (v === 'auditCenter') {
+    if (!auditCategories.value.length) loadAuditCategories()
+    loadAudit()
+  }
+})
 
 // 内容视图：把多行数组直接拼成文本供 <pre> 显示
 const contentText = computed(() => lines.value.join(''))
@@ -176,4 +242,6 @@ onMounted(refresh)   // 打开即加载日志源列表
 .btn { padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 13px; }
 .btn.small { padding: 4px 8px; font-size: 12px; }
 .btn.primary { background: var(--g-strong); color: #fff; border-color: #111827; }
+.audit-center { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; }
+.audit-msg { white-space: pre-wrap; word-break: break-all; max-width: 720px; }
 </style>

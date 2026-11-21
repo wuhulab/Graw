@@ -192,8 +192,38 @@ func itoa(n int) string {
 var usernamePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
 func validatePasswordStrength(password, username string, strict bool) *HTTPError {
-	if len(password) < 8 {
-		return NewHTTPError(400, "密码至少 8 位")
+	sec := loadPanelSecurity()
+	minLen := sec.PasswordMinLength
+	if minLen < 8 {
+		minLen = 8
+	}
+	if len(password) < minLen {
+		return NewHTTPError(400, "密码至少 "+itoa(minLen)+" 位")
+	}
+	// 面板安全设置里的「密码复杂度」对所有改密/建号入口生效。
+	if sec.PasswordComplex {
+		hasUpper, hasLower, hasDigit, hasSpecial := false, false, false, false
+		for _, c := range password {
+			switch {
+			case unicode.IsUpper(c):
+				hasUpper = true
+			case unicode.IsLower(c):
+				hasLower = true
+			case unicode.IsDigit(c):
+				hasDigit = true
+			default:
+				hasSpecial = true
+			}
+		}
+		groups := 0
+		for _, ok := range []bool{hasUpper || hasLower, hasDigit, hasSpecial} {
+			if ok {
+				groups++
+			}
+		}
+		if groups < 2 {
+			return NewHTTPError(400, "密码需包含字母、数字、特殊字符中的至少两类")
+		}
 	}
 	if len(password) > 128 {
 		return NewHTTPError(400, "密码不能超过 128 位")

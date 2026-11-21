@@ -305,3 +305,38 @@ flowchart TD
 
 ## 更新记录
 - `2026-09-25`：新建，讲清网站管理、Web 引擎模式、WAF 与站点增强/统计的运行逻辑。
+## 十二、站点配置中心（2026-11-21 新增）
+
+站点右键菜单里的「高级配置」不再跳独立窗口，而是在「网站」窗口内切换成页签视图（`SiteAdvancedPanel.vue`），数据统一落在 `sites.json` 的 `site.advanced` 字段，保存后由 `nginxSiteConfig()` 重新生成配置并 reload。
+
+页签与生成规则：
+
+| 页签 | 写入 `site.advanced` | 生成的 nginx 片段 |
+|---|---|---|
+| 基础 | `default_docs[]`、`logging.enabled` | `index ...;`；开启日志时按站点写 `/var/log/nginx/graw_<id>.access.log` / `.error.log` |
+| 重定向 | `redirects[{from,to,code}]` | `location = <from> { return <code> <to>; }` |
+| 访问限制 | `basic_auth{enabled,username,password_hash}`、`rate_limit{enabled,rps,burst}` | `auth_basic` + `auth_basic_user_file`；`limit_req zone=graw_site_<id>` |
+| 跨域 | `cors{enabled,origins,methods,headers,credentials}` | `add_header Access-Control-*` |
+| 真实 IP | `real_ip{enabled,header,trusted[]}` | `set_real_ip_from` + `real_ip_header` |
+| 负载均衡 | `upstreams[{server,weight}]` | 文件顶部生成 `upstream graw_site_<id>`，`proxy_pass http://graw_site_<id>` |
+| 站点日志 | 读取上面的日志文件 | `tail -n` 返回 |
+| 配置文件 | 直接编辑 `sites-available/<id>.conf` | 保存前 `nginx -t`，失败自动回滚并返回错误 |
+
+两个容易忽略的点：
+
+1. **限流 zone 必须在 http 上下文**：所有站点的 `limit_req_zone` 汇总写到 `<引擎 base>/graw-site-zones.conf`，并在 `nginx.conf` 的 `http {}` 里自动补一行 include；文件不存在时不会影响 nginx。
+2. **密码访问只存 hash**：`htpasswdSHA()` 生成 `{SHA}` 格式写入 `<引擎 base>/graw-auth/<id>.htpasswd`，`GET /api/sites/{id}/advanced` 只回 `password_set`，不回传 hash 或明文。
+
+```mermaid
+flowchart LR
+  A[高级配置页签] --> B[POST /api/sites/{id}/advanced]
+  B --> C[validateAdvancedPayload]
+  C --> D[写 sites.json]
+  D --> E[写 htpasswd / 限流 zones]
+  E --> F[nginxSiteConfig 重新生成]
+  F --> G[nginx -t + reload]
+  G -->|失败| H[返回错误，保留旧配置]
+```
+
+**更新记录**
+- `2026-11-21`：新增站点配置中心：默认文档、重定向、密码访问、限流、跨域、真实 IP、多上游负载均衡、站点日志与原始配置在线编辑。

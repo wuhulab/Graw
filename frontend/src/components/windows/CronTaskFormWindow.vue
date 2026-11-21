@@ -80,6 +80,13 @@
       </label>
       <!-- 按任务类型动态展示内容输入 -->
       <template v-if="std.taskType === 'shell_command'">
+        <label class="ui-field" v-if="scripts.length">
+          <span class="ui-label">{{ $t('cron.pickScript') }}</span>
+          <select class="ui-select" :value="''" @change="pickScript($event)">
+            <option value="">{{ $t('cron.pickScriptHint') }}</option>
+            <option v-for="s in scripts" :key="s.id" :value="s.id">{{ s.name }}（{{ s.group }}）</option>
+          </select>
+        </label>
         <label class="ui-field">
           <span class="ui-label">{{ $t('cron.scriptContent') }}</span>
           <textarea class="ui-textarea" v-model.trim="std.content" rows="4" :placeholder="$t('cron.scriptPlaceholder')" spellcheck="false"></textarea>
@@ -112,6 +119,22 @@
       </label>
     </template>
 
+    <!-- 执行选项：手动执行与导入后执行生效（超时/重试/报告保留） -->
+    <div class="exec-opts">
+      <label class="ui-field">
+        <span class="ui-label">{{ $t('cron.timeout') }}</span>
+        <input class="ui-input" type="number" min="1" max="86400" v-model.number="opts.timeout" />
+      </label>
+      <label class="ui-field">
+        <span class="ui-label">{{ $t('cron.retry') }}</span>
+        <input class="ui-input" type="number" min="0" max="10" v-model.number="opts.retry" />
+      </label>
+      <label class="ui-field">
+        <span class="ui-label">{{ $t('cron.keepCount') }}</span>
+        <input class="ui-input" type="number" min="1" max="100" v-model.number="opts.keep_count" />
+      </label>
+    </div>
+
     <div class="ui-actions">
       <button class="ui-btn" :disabled="saving" @click="emit('close')">{{ $t('common.cancel') }}</button>
       <button class="ui-btn primary" :disabled="saving" @click="save">
@@ -123,7 +146,7 @@
 
 <script setup>
 // 响应式状态、props 与派生值
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 // 国际化
 import { useI18n } from 'vue-i18n'
 // 计划任务 API：create / update
@@ -187,6 +210,28 @@ const weekdays = computed(() => [
   t('cron.weekdays.wed'), t('cron.weekdays.thu'), t('cron.weekdays.fri'), t('cron.weekdays.sat')
 ])
 
+// 执行选项：超时 / 失败重试 / 报告保留份数（新建与编辑共用）
+const opts = reactive({
+  timeout: Number(props.task?.timeout) || 300,
+  retry: Number(props.task?.retry) || 0,
+  keep_count: Number(props.task?.keep_count) || 10,
+})
+
+// 脚本库：标准记录选择 Shell 脚本时可直接套用
+const scripts = ref([])
+onMounted(async () => {
+  try {
+    const data = await cronApi.scripts()
+    scripts.value = data.scripts || []
+  } catch { /* 脚本库不可用时不影响新建任务 */ }
+})
+
+function pickScript(e) {
+  const s = scripts.value.find(x => x.id === e.target.value)
+  if (s) std.content = s.content
+  e.target.value = ''
+}
+
 // 将周期 + 时间转换为 cron 表达式（周几/每月几日分别落到对应字段）
 function stdSchedule() {
   const [h, m] = std.time ? std.time.split(':') : ['0', '0']
@@ -209,12 +254,14 @@ async function save() {
         ? cronApi.update(props.task.id, {
             name: form.name.trim(),
             schedule: form.schedule.trim() || '0 3 * * *',
-            command: form.command
+            command: form.command,
+            ...opts
           })
         : cronApi.create({
             name: form.name.trim(),
             schedule: form.schedule.trim() || '0 3 * * *',
-            command: form.command
+            command: form.command,
+            ...opts
           })
     } else {
       // 标准记录必填校验：名称必填；除「同步时间」外内容必填
@@ -226,7 +273,8 @@ async function save() {
         task_type: std.taskType,
         content: std.content.trim(),
         group: std.group.trim() || '默认',
-        alert: std.alert
+        alert: std.alert,
+        ...opts
       }
       await props.task ? cronApi.update(props.task.id, body) : cronApi.create(body)
     }
@@ -261,4 +309,6 @@ async function save() {
 /* 勾选项（提醒）横向排布 */
 .check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .check input { width: auto; }
+/* 执行选项：超时 / 重试 / 报告保留 */
+.exec-opts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 4px; }
 </style>

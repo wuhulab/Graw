@@ -196,7 +196,8 @@
           >
             <span class="pnl-tab-icon"><component :is="w.icon" :size="14" /></span>
             <span class="pnl-tab-title">{{ tabTitle(w) }}</span>
-            <button class="pnl-tab-close" :title="$t('panel.closeTab')" @click.stop="emit('close', w.id)"><X :size="12" /></button>
+            <button v-if="!panelSecurity.tab_lock" class="pnl-tab-close" :title="$t('panel.closeTab')" @click.stop="emit('close', w.id)"><X :size="12" /></button>
+            <span v-else class="pnl-tab-lock" :title="$t('settings.tabLockOn')"><Lock :size="11" /></span>
           </div>
         </div>
 
@@ -262,6 +263,7 @@ import WindowContent from './WindowContent.vue'
 import { isAdmin } from '../store/auth'
 import { desktopPrefs, isFavorite, toggleFavorite, hideShortcut } from '../store/desktopPrefs'   // 应用收藏 / 隐藏（支持分账号隔离）
 import { nodes, refreshNodes, setCurrentNode } from '../store/nodes'   // 多节点状态与当前主机切换
+import { panelSecurity } from '../store/panelSecurity'   // 标签页锁定
 
 // 主窗口面板模式：菜单分组定义（组标题 i18n key + 成员 key 清单）。
 // 成员 key 与 App.vue shortcuts/extras（openWindow）保持一致，缺失的项自动跳过。
@@ -639,9 +641,9 @@ watch(searching, (v) => {
   max-width: 180px;
   padding: 3px 10px;
   font-size: 11px;
-  color: #0a84ff;
-  background: rgba(10, 132, 255, 0.08);
-  border: 1px solid rgba(10, 132, 255, 0.25);
+  color: var(--g-primary);
+  background: var(--g-primary-soft);
+  border: 1px solid var(--g-primary-ring);
   border-radius: 999px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -649,7 +651,7 @@ watch(searching, (v) => {
   font-family: inherit;
   cursor: pointer;
 }
-.pnl-host:hover { background: rgba(10, 132, 255, 0.14); }
+.pnl-host:hover { background: var(--g-primary-ring); }
 .pnl-host-chev { flex-shrink: 0; transition: transform 0.2s; }
 .pnl-host-chev.open { transform: rotate(180deg); }
 .pnl-host.remote { color: #7a3ce8; background: rgba(122, 60, 232, 0.08); border-color: rgba(122, 60, 232, 0.25); }
@@ -658,14 +660,14 @@ watch(searching, (v) => {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #0a84ff;
+  background: var(--g-primary);
   flex-shrink: 0;
 }
 .pnl-host.remote .pnl-host-dot { background: #7a3ce8; }
 .pnl-host-menu { min-width: 200px; max-height: 300px; overflow-y: auto; }
 .pnl-host-menu .pnl-drop-item { justify-content: flex-start; gap: 8px; }
-.pnl-host-menu .pnl-drop-item.check > span.pnl-item-icon { color: #0a84ff; }
-.pnl-drop-check { width: 14px; font-size: 12px; color: #0a84ff; flex-shrink: 0; }
+.pnl-host-menu .pnl-drop-item.check > span.pnl-item-icon { color: var(--g-primary); }
+.pnl-drop-check { width: 14px; font-size: 12px; color: var(--g-primary); flex-shrink: 0; }
 
 /* ---- 用户下拉菜单 ---- */
 .pnl-usermenu { position: relative; }
@@ -704,7 +706,7 @@ watch(searching, (v) => {
   cursor: pointer;
   text-align: left;
 }
-.pnl-drop-item:hover { background: rgba(10, 132, 255, 0.08); color: #0a84ff; }
+.pnl-drop-item:hover { background: var(--g-nav-hover-bg); color: var(--g-nav-hover-fg); }
 .pnl-drop-item.danger:hover { background: rgba(229, 72, 77, 0.08); color: #e5484d; }
 .pnl-drop-enter-active, .pnl-drop-leave-active { transition: opacity 0.15s, transform 0.15s; }
 .pnl-drop-enter-from, .pnl-drop-leave-to { opacity: 0; transform: translateY(-4px); }
@@ -747,10 +749,10 @@ watch(searching, (v) => {
   border: 1px solid var(--g-border);
   border-radius: 8px;
   outline: none;
-  background: var(--g-surface);
+  background: var(--g-bg-page);
   box-sizing: border-box;
 }
-.pnl-search input:focus { border-color: #0a84ff; box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.15); }
+.pnl-search input:focus { border-color: var(--g-primary); box-shadow: 0 0 0 3px var(--g-primary-ring); }
 /* 隐藏 type=search 的原生清除按钮：统一使用右侧自定义 X 按钮 */
 .pnl-search input::-webkit-search-cancel-button,
 .pnl-search input::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
@@ -810,6 +812,7 @@ watch(searching, (v) => {
 .pnl-chev.open { transform: rotate(180deg); }
 .pnl-group-items { padding: 2px 0; }
 .pnl-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -824,11 +827,23 @@ watch(searching, (v) => {
   text-align: left;
   white-space: nowrap;
 }
-.pnl-item:hover { background: rgba(10, 132, 255, 0.08); color: #0a84ff; }
+.pnl-item:hover { background: var(--g-nav-hover-bg); color: var(--g-nav-hover-fg); }
 .pnl-item.active {
-  background: #0a84ff;
-  color: #fff;
+  background: var(--g-nav-active-bg);
+  color: var(--g-nav-active-fg);
   font-weight: 500;
+}
+/* 激活项左侧高亮条：对齐 1Panel 的菜单选中样式（浅色主题下透明） */
+.pnl-item.active::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  width: 3px;
+  height: 16px;
+  border-radius: 0 2px 2px 0;
+  background: var(--g-nav-active-bar);
+  transform: translateY(-50%);
 }
 .pnl-item-icon { position: relative; display: inline-flex; flex-shrink: 0; }
 /* Star 锁定角标：未点亮 Star 时，高级业务模块图标右下角的小锁 */
@@ -940,7 +955,7 @@ watch(searching, (v) => {
 .pnl-tab:hover { background: var(--g-hover); }
 .pnl-tab.active {
   background: var(--g-surface);
-  color: #0a84ff;
+  color: var(--g-primary);
   border-color: var(--g-border-soft);
   border-bottom-color: transparent;
   font-weight: 500;
@@ -961,6 +976,7 @@ watch(searching, (v) => {
   flex-shrink: 0;
 }
 .pnl-tab-close:hover { background: var(--g-active); color: #e5484d; }
+.pnl-tab-lock { display: inline-flex; align-items: center; justify-content: center; width: 18px; color: var(--g-text-faint); flex-shrink: 0; }
 
 /* 内容区 */
 .pnl-content {

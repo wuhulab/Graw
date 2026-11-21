@@ -86,6 +86,7 @@ func NewApp() *App {
 	registerLogsRoutes(a)
 	registerFirewallRoutes(a)
 	registerSiteRoutes(a)
+	registerSiteAdvancedRoutes(a)
 	registerSiteExtraRoutes(a)
 	registerSecurityRoutes(a)
 	registerAppStoreRoutes(a)
@@ -94,6 +95,7 @@ func NewApp() *App {
 	registerNodeRoutes(a)
 	registerNetworkRoutes(a)
 	registerMiscRoutes(a)
+	registerPanelSecurityRoutes(a)
 	a.registerStatic()
 	return a
 }
@@ -283,6 +285,12 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logging.Header().Set("X-Content-Type-Options", "nosniff")
 	logging.Header().Set("X-Frame-Options", "DENY")
 	logging.Header().Set("Referrer-Policy", "same-origin")
+
+	// 面板安全：授权 IP / 域名绑定（未配置时不生效；本机与健康检查始终放行）。
+	if herr := panelSecurityGate(r); herr != nil {
+		WriteJSON(logging, herr.Status, map[string]any{"detail": herr.Detail})
+		return
+	}
 
 	// 请求体限额前置：未认证的大 body 在进业务前就被拒（411/413/400）。
 	if !checkBodyLimit(logging, r) {

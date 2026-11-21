@@ -90,7 +90,7 @@ function select(key) {
   cursor: pointer;
 }
 .wt-item:hover { background: var(--g-hover); color: var(--g-text); }
-.wt-item.active { background: #0a84ff; color: #fff; font-weight: 600; }
+.wt-item.active { background: var(--g-tab-active-bg); color: var(--g-tab-active-fg); font-weight: 600; }
 .wt-icon { flex-shrink: 0; }
 .wt-label {
   flex: 1;
@@ -109,7 +109,7 @@ function select(key) {
   font-size: 10px;
   line-height: 1.2;
 }
-.wt-item.active .wt-badge { background: rgba(255, 255, 255, 0.22); color: #fff; }
+.wt-item.active .wt-badge { background: var(--g-tab-active-badge-bg); color: var(--g-tab-active-badge-fg); }
 /* 右侧内容区：纵向 flex，原有窗口根元素的 height:100% 才能撑满 */
 .wt-main {
   flex: 1;

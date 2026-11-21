@@ -38,9 +38,26 @@
 
   --g-strong: #111827;
   --g-strong-hover: #1f2937;
+  --g-on-strong: #ffffff;
   --g-selected: #eaf1fb;
   --g-accent-soft: #eef5ff;
   --g-indigo-soft: #eef2ff;
+
+  /* 交互强调色：链接 / 悬停文字 / 聚焦描边（暗色下切换为 1Panel 的暖金色） */
+  --g-primary: #0a84ff;
+  --g-primary-soft: rgba(10, 132, 255, 0.1);
+  --g-primary-ring: rgba(10, 132, 255, 0.2);
+
+  /* 侧栏菜单 / 标签页选中态：浅色保持原有蓝底白字，暗色改为 1Panel 的暖金高亮 */
+  --g-nav-hover-bg: rgba(10, 132, 255, 0.08);
+  --g-nav-hover-fg: #0a84ff;
+  --g-nav-active-bg: #0a84ff;
+  --g-nav-active-fg: #ffffff;
+  --g-nav-active-bar: transparent;
+  --g-tab-active-bg: #0a84ff;
+  --g-tab-active-fg: #ffffff;
+  --g-tab-active-badge-bg: rgba(255, 255, 255, 0.22);
+  --g-tab-active-badge-fg: #ffffff;
 
   --g-window-bg: rgba(246, 246, 248, 0.94);
   --g-titlebar-bg: rgba(246, 246, 248, 0.88);
@@ -56,67 +73,100 @@
 }
 
 /* ---- 暗色 ----
-   不追求纯黑：以 #101114 页面底 + #1b1c20 卡片为主，层级靠明度递进；
-   文字使用带一点冷调的浅灰，降低纯白在长时间运维场景下的刺眼感。 */
+   对齐 1Panel 企业版 v2.4.0 的暗色配色：
+   页面底 #2e313d、侧栏/卡片 #242633、边框与选中 #434552、
+   主文字 #c0c2cf、强调色 #f0be96（暖金），语义色沿用 1Panel 的绿/黄/红。
+   层级关系：页面最亮，卡片/侧栏更暗，悬停与选中再提亮，避免大面积纯黑。 */
 html[data-theme="dark"] {
   color-scheme: dark;
 
-  --g-bg-page: #101114;
-  --g-surface: #1b1c20;
-  --g-surface-soft: #24252a;
-  --g-surface-muted: #202126;
-  --g-surface-hover: #2a2b31;
-  --g-sidebar: #17181c;
+  --g-bg-page: #2e313d;
+  --g-surface: #242633;
+  --g-surface-soft: #2a2d39;
+  --g-surface-muted: #242633;
+  --g-surface-hover: #343744;
+  --g-sidebar: #242633;
 
-  --g-border: rgba(255, 255, 255, 0.12);
-  --g-border-strong: rgba(255, 255, 255, 0.2);
-  --g-border-soft: rgba(255, 255, 255, 0.08);
-  --g-hover: rgba(255, 255, 255, 0.07);
-  --g-active: rgba(255, 255, 255, 0.12);
+  --g-border: #434552;
+  --g-border-strong: #555866;
+  --g-border-soft: rgba(67, 69, 82, 0.72);
+  --g-hover: rgba(255, 255, 255, 0.06);
+  --g-active: #434552;
 
-  --g-text: #e8e9ed;
-  --g-text-secondary: #c9cbd2;
-  --g-text-muted: #a0a3ac;
-  --g-text-faint: #858892;
+  --g-text: #c0c2cf;
+  --g-text-secondary: #aeb0bd;
+  --g-text-muted: #9597a4;
+  --g-text-faint: #7c7f8c;
 
-  --g-strong: #2f6fed;
-  --g-strong-hover: #4a84f0;
-  --g-selected: rgba(10, 132, 255, 0.2);
-  --g-accent-soft: rgba(10, 132, 255, 0.14);
-  --g-indigo-soft: rgba(99, 102, 241, 0.18);
+  --g-strong: #f0be96;
+  --g-strong-hover: #f5cba8;
+  --g-on-strong: #242633;
+  --g-selected: rgba(240, 190, 150, 0.16);
+  --g-accent-soft: rgba(240, 190, 150, 0.1);
+  --g-indigo-soft: rgba(240, 190, 150, 0.12);
 
-  --g-window-bg: rgba(27, 28, 32, 0.97);
-  --g-titlebar-bg: rgba(34, 35, 40, 0.95);
-  --g-glass: rgba(31, 32, 37, 0.8);
-  --g-menu-bg: rgba(36, 37, 42, 0.97);
-  --g-dock-bg: rgba(28, 29, 34, 0.55);
-  --g-dock-border: rgba(255, 255, 255, 0.14);
-  --g-overlay: rgba(0, 0, 0, 0.62);
-  --g-mask: rgba(0, 0, 0, 0.35);
-  --g-login-bg: #0d1117;
-  --g-code-bg: #0f1115;
-  --g-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
+  --g-primary: #f0be96;
+  --g-primary-soft: rgba(240, 190, 150, 0.12);
+  --g-primary-ring: rgba(240, 190, 150, 0.2);
+
+  --g-nav-hover-bg: rgba(255, 255, 255, 0.06);
+  --g-nav-hover-fg: #c0c2cf;
+  --g-nav-active-bg: #434552;
+  --g-nav-active-fg: #f0be96;
+  --g-nav-active-bar: #f0be96;
+  --g-tab-active-bg: rgba(240, 190, 150, 0.12);
+  --g-tab-active-fg: #f0be96;
+  --g-tab-active-badge-bg: rgba(240, 190, 150, 0.2);
+  --g-tab-active-badge-fg: #f0be96;
+
+  --g-window-bg: rgba(36, 38, 51, 0.97);
+  --g-titlebar-bg: rgba(46, 49, 61, 0.95);
+  --g-glass: rgba(36, 38, 51, 0.82);
+  --g-menu-bg: rgba(36, 38, 51, 0.98);
+  --g-dock-bg: rgba(36, 38, 51, 0.62);
+  --g-dock-border: rgba(255, 255, 255, 0.12);
+  --g-overlay: rgba(16, 18, 26, 0.62);
+  --g-mask: rgba(16, 18, 26, 0.4);
+  --g-login-bg: #242633;
+  --g-code-bg: #1f2329;
+  --g-shadow: 0 24px 60px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.35);
 
   /* 设计系统（style.css 底部 .ui-* 使用的 token）同步切换 */
-  --ui-border: rgba(255, 255, 255, 0.12);
-  --ui-border-strong: rgba(255, 255, 255, 0.2);
-  --ui-bg: #1b1c20;
-  --ui-bg-muted: #24252a;
-  --ui-text: #e8e9ed;
-  --ui-text-secondary: #a0a3ac;
-  --ui-text-tertiary: #858892;
-  --ui-primary: #2f6fed;
-  --ui-primary-hover: #4a84f0;
-  --ui-off-bg: #2a2b31;
-  --ui-off-fg: #a0a3ac;
-  --ui-ok-bg: rgba(16, 185, 129, 0.16);
-  --ui-ok-fg: #6ee7b7;
-  --ui-warn-bg: rgba(245, 158, 11, 0.16);
-  --ui-warn-fg: #fcd34d;
-  --ui-danger-bg: rgba(239, 68, 68, 0.16);
-  --ui-danger-fg: #fca5a5;
+  --ui-border: #434552;
+  --ui-border-strong: #555866;
+  --ui-bg: #242633;
+  --ui-bg-muted: #2a2d39;
+  --ui-text: #c0c2cf;
+  --ui-text-secondary: #9597a4;
+  --ui-text-tertiary: #7c7f8c;
+  --ui-primary: #f0be96;
+  --ui-primary-hover: #f5cba8;
+  --ui-accent: #f0be96;
+  --ui-off-bg: #343744;
+  --ui-off-fg: #9597a4;
+  --ui-ok-bg: rgba(63, 185, 80, 0.16);
+  --ui-ok-fg: #6fdc7c;
+  --ui-warn-bg: rgba(237, 172, 44, 0.16);
+  --ui-warn-fg: #f0c25e;
+  --ui-danger-bg: rgba(226, 50, 79, 0.16);
+  --ui-danger-fg: #ff8a9a;
   --ui-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
   --ui-shadow-md: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* 主按钮 / 激活页签：1Panel 使用暖金底 + 深色文字，保证亮底上的对比度 */
+html[data-theme="dark"] .btn.primary,
+html[data-theme="dark"] .ui-btn.primary,
+html[data-theme="dark"] .ui-tabs .ui-tab.active,
+html[data-theme="dark"] .tag-chip.active,
+html[data-theme="dark"] .el-button--primary {
+  color: var(--g-on-strong);
+  border-color: var(--g-strong);
+}
+html[data-theme="dark"] .btn.primary:hover:not(:disabled),
+html[data-theme="dark"] .ui-btn.primary:hover:not(:disabled) {
+  background: var(--g-strong-hover);
+  border-color: var(--g-strong-hover);
 }
 
 /* ---- 基础页面 ---- */
@@ -128,15 +178,15 @@ html[data-theme="dark"] #app {
 
 /* 原生控件（复选框 / 单选框 / 进度条）跟随主题强调色 */
 html[data-theme="dark"] {
-  accent-color: #4a84f0;
+  accent-color: #f0be96;
 }
 
 /* ---- 登录页：登录卡片在暗色下改为深色玻璃，输入框与 OAuth 按钮同步 ---- */
 html[data-theme="dark"] .login-card {
-  background: rgba(27, 28, 32, 0.86);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(36, 38, 51, 0.88);
+  border-color: var(--g-border);
 }
-html[data-theme="dark"] .login-title { color: #dbe4f5; }
+html[data-theme="dark"] .login-title { color: var(--g-text); }
 html[data-theme="dark"] .login-subtitle { color: var(--g-text-muted); }
 html[data-theme="dark"] .field .label { color: var(--g-text-secondary); }
 html[data-theme="dark"] .btn-oauth {
@@ -151,7 +201,24 @@ html[data-theme="dark"] .window {
   box-shadow: var(--g-shadow);
 }
 html[data-theme="dark"] .taskbar {
+  background: var(--g-dock-bg);
+  border-color: var(--g-dock-border);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+/* 开始菜单与任务栏使用同一套深色玻璃，避免暗色下出现刺眼的白色浮层 */
+html[data-theme="dark"] .start-menu,
+html[data-theme="dark"] .shortcut-menu {
+  background: var(--g-menu-bg);
+  border-color: var(--g-border);
+}
+html[data-theme="dark"] .taskbar-item.active::after {
+  background: var(--g-text);
+}
+/* 窗口标题栏的远端节点标记：暗色下跟随暖金强调色 */
+html[data-theme="dark"] .node-tag {
+  background: var(--g-primary-soft);
+  color: var(--g-primary);
+  border-color: var(--g-primary-ring);
 }
 html[data-theme="dark"] .shortcut .icon {
   background: rgba(255, 255, 255, 0.1);
@@ -166,9 +233,9 @@ html[data-theme="dark"] .shortcut.selected { background: rgba(255, 255, 255, 0.1
 html[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]),
 html[data-theme="dark"] select,
 html[data-theme="dark"] textarea {
-  background-color: var(--g-surface);
+  background-color: var(--g-bg-page);
   color: var(--g-text);
-  border-color: var(--g-border-strong);
+  border-color: var(--g-border);
 }
 html[data-theme="dark"] input::placeholder,
 html[data-theme="dark"] textarea::placeholder {
@@ -200,10 +267,20 @@ html[data-theme="dark"] .ui-context-menu .menu-item:hover {
   background: var(--g-surface-hover);
 }
 
+/* ---- 设计系统细节：暗色下替换浅色硬编码（卡片悬停 / 危险按钮悬停） ---- */
+html[data-theme="dark"] .ui-card:hover {
+  border-color: var(--g-border-strong);
+  box-shadow: var(--ui-shadow-sm);
+}
+html[data-theme="dark"] .ui-btn.danger:hover:not(:disabled) {
+  background: rgba(226, 50, 79, 0.26);
+  color: var(--ui-danger-fg);
+}
+
 /* ---- 滚动条 ---- */
 html[data-theme="dark"] ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
+  background: #434552;
 }
 html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.28);
+  background: #5b5e6a;
 }

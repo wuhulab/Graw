@@ -52,6 +52,10 @@
           <input v-model="form.database" :placeholder="dbPlaceholder" />
         </template>
         <div v-else class="hint">{{ $t('connectionform.redisHint') }}</div>
+        <label class="remote-row">
+          <input type="checkbox" v-model="form.remote" style="width:auto;" />
+          <span>{{ $t('connectionform.remote') }}</span>
+        </label>
       </template>
       <!-- SQLite：嵌入式数据库，只需指定本地文件路径；支持相对（基于数据目录）或绝对路径 -->
       <template v-else>
@@ -104,7 +108,7 @@ const DB_LABELS = {
   sqlite: { labelKey: '', phKey: '' }
 }
 
-const form = reactive({ name: '', db_type: 'mysql', host: '127.0.0.1', port: 3306, username: 'root', password: '', database: '' })   // 连接表单，默认 MySQL
+const form = reactive({ name: '', db_type: 'mysql', host: '127.0.0.1', port: 3306, username: 'root', password: '', database: '', remote: false })   // 连接表单，默认 MySQL
 const saving = ref(false)   // 保存中
 const errorMsg = ref('')   // 表单错误提示
 // 初始化过程中抑制类型切换的默认值自动套用（避免覆盖编辑态已保存的端口等）
@@ -155,7 +159,8 @@ onMounted(() => {
       username: props.conn.username || '',
       // 密码已脱敏：编辑时留空提交即保持原密码（后端配合处理）
       password: '',
-      database: props.conn.database || ''
+      database: props.conn.database || '',
+      remote: !!props.conn.remote
     })
   }
   suppressAuto.value = false
@@ -178,7 +183,8 @@ async function save() {
       port: Number(form.port) || (DEFAULTS[form.db_type]?.port || 3306),
       username: form.username,
       password: form.password,
-      database: form.database
+      database: form.database,
+      remote: !!form.remote
     }
     if (isEdit) {
       await databasesApi.updateConn(props.conn.id, payload)
@@ -204,6 +210,7 @@ async function save() {
 .form label { font-size: 12px; color: var(--g-text); }
 .form input, .form select { padding: 8px 10px; border: 1px solid var(--g-border-strong); border-radius: 6px; font-size: 13px; width: 100%; box-sizing: border-box; }
 .hint { color: var(--g-text-muted); font-size: 12px; }
+.remote-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--g-text); }
 .error { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; padding: 6px 8px; border-radius: 6px; font-size: 12px; }
 .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .btn { padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 13px; }

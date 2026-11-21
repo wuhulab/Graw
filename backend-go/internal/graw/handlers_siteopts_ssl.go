@@ -338,6 +338,7 @@ func registerSSLRoutes(a *App) {
 		}
 		return WriteJSON(w, 200, map[string]any{"ok": true})
 	})
+	registerSSLCenterRoutes(a)
 }
 
 // --- 伪静态 ---

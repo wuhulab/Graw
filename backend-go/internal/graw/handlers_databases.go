@@ -466,6 +466,7 @@ func registerDBSRoutes(a *App) {
 			Username string `json:"username"`
 			Password string `json:"password"`
 			Database string `json:"database"`
+			Remote   bool   `json:"remote"`
 		}
 		if err := DecodeJSON(r, &req); err != nil {
 			return err
@@ -482,7 +483,7 @@ func registerDBSRoutes(a *App) {
 		conn := map[string]any{
 			"id": randomHex(8), "name": req.Name, "db_type": req.DBType,
 			"host": req.Host, "port": req.Port, "username": req.Username,
-			"password": req.Password, "database": req.Database,
+			"password": req.Password, "database": req.Database, "remote": req.Remote,
 			"created_at": time.Now().Format("2006-01-02T15:04:05"),
 		}
 		if req.DBType == "sqlite" {
@@ -512,6 +513,7 @@ func registerDBSRoutes(a *App) {
 			Username string `json:"username"`
 			Password string `json:"password"`
 			Database string `json:"database"`
+			Remote   bool   `json:"remote"`
 		}
 		if err := DecodeJSON(r, &req); err != nil {
 			return err
@@ -542,6 +544,7 @@ func registerDBSRoutes(a *App) {
 			conn["password"] = req.Password
 		}
 		conn["database"] = req.Database
+		conn["remote"] = req.Remote
 		conn["updated_at"] = time.Now().Format("2006-01-02T15:04:05")
 		if req.DBType == "sqlite" {
 			if _, err := sqliteFilePath(conn); err != nil {
@@ -921,6 +924,7 @@ func registerDBSRoutes(a *App) {
 		}
 		return NewHTTPError(400, "Unsupported db_type")
 	})
+	registerDBOpsRoutes(a)
 }
 
 func validDBType(t string) bool {

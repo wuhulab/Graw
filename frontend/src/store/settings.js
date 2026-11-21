@@ -80,7 +80,7 @@ export function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', value)
   // 同步移动端浏览器地址栏 / 状态栏颜色，避免暗色页面顶部仍是亮色
   const meta = document.querySelector('meta[name="theme-color"]')
-  if (meta) meta.setAttribute('content', value === 'dark' ? '#101114' : '#0f1722')
+  if (meta) meta.setAttribute('content', value === 'dark' ? '#242633' : '#f5f6f8')
 }
 
 // 设备是否更适合「传统服务器面板」布局：

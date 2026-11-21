@@ -33,8 +33,15 @@
 <template>
   <WindowTabNav v-model="mode" :items="tabs">
     <div class="sites-window" @click="closeCtx"><!-- 点空白处收起右键菜单 -->
+      <!-- 站点配置中心：选中站点后在窗口内切换到页签视图，不另开窗口 -->
+      <SiteAdvancedPanel
+        v-if="advancedSite"
+        :site="advancedSite"
+        @close="advancedSite = null"
+        @saved="load"
+      />
       <!-- 网站页签：工具栏（新建入口 + 当前引擎提示）+ 站点列表表格 -->
-    <template v-if="mode === 'sites'">
+    <template v-if="!advancedSite && mode === 'sites'">
       <div class="toolbar">
         <button class="btn primary" @click="openTypePicker"><Plus :size="14" /> {{ $t('sites.add') }}</button>
         <span class="hint">{{ $t('sites.webServer', { server: webServer || $t('sites.none') }) }}</span>
@@ -80,7 +87,7 @@
     </template>
 
     <!-- SSL证书视图（合并自独立的「SSL」应用） -->
-    <div v-else class="ssl-wrap">
+    <div v-else-if="!advancedSite" class="ssl-wrap">
       <!-- 转发 SSL 表单窗口事件：内嵌场景下也能打开独立的「上传证书 / Let's Encrypt」窗口 -->
       <SSLWindow
         @openSslUpload="emit('openSslUpload', $event)"
@@ -105,6 +112,7 @@
           <div class="menu-item" @click="menuToggleEnable">{{ ctxMenu.site?.enabled ? $t('sites.disableAction') : $t('sites.enableAction') }}</div>
           <div class="menu-item" @click="menuMaintenance">{{ ctxMenu.site?.maintenance ? $t('sites.exitMaintenance') : $t('sites.enterMaintenance') }}</div>
           <div class="menu-item" @click="menuEdit">{{ $t('sites.config') }}</div>
+          <div class="menu-item" @click="menuAdvanced">{{ $t('siteAdv.open') }}</div>
           <div class="menu-item" @click="menuViewConfig">{{ $t('sites.viewConfigHint') }}</div>
           <div class="menu-divider"></div>
           <div class="menu-item danger" @click="menuRemove">{{ $t('common.delete') }}</div>
@@ -176,6 +184,7 @@ import { sitesApi } from '../../api'                             // 网站管理
 import { siteRevision } from '../../store/siteBus'               // 站点变更信号：别的窗口改完站点后通知本列表刷新
 import ConfirmDialog from '../ConfirmDialog.vue'                 // 高风险操作确认框（删站点要求手打站点名）
 import SSLWindow from './SSLWindow.vue'                          // SSL 页签直接复用证书管理窗口，避免功能重复实现
+import SiteAdvancedPanel from './SiteAdvancedPanel.vue'           // 站点配置中心：窗口内的页签式高级配置
 import { formBus } from '../../store/formBus'                    // 表单保存信号：维护模式窗口保存成功后刷新列表
 import {
   Plus, Globe, Share2, Network, Layers, Lock               // 新建按钮 + 四种站点类型示意图标 + SSL 页签图标
@@ -216,6 +225,8 @@ const pickedType = ref('')         // 弹窗里已选中的类型，未选时禁
 const showConfig = ref(false)      // 是否展开配置查看弹窗
 const configText = ref('')         // 后端返回的 Nginx 配置原文
 const configSite = ref(null)       // 配置属于哪个站点，用于弹窗标题
+// 站点配置中心：非空时窗口内切换到页签视图（默认文档/重定向/跨域/日志/原始配置等）
+const advancedSite = ref(null)
 // 右键菜单状态
 const ctxMenu = ref({ show: false, x: 0, y: 0, site: null })
 // 高风险操作二次确认状态：记录待删除的站点
@@ -231,6 +242,11 @@ const emit = defineEmits(['openSiteEdit', 'openSslUpload', 'openSslLeForm', 'ope
 // 免得管理员保存完还要手动刷新才看到新数据
 watch(siteRevision, () => {
   load()
+})
+
+// 切到 SSL 页签时退出站点配置中心，避免页签与内容不一致
+watch(mode, (v) => {
+  if (v !== 'sites') advancedSite.value = null
 })
 
 // 维护模式窗口保存成功后（formBus.sites）同样触发刷新
@@ -262,6 +278,13 @@ function menuEdit() {
   const s = ctxMenu.value.site
   closeCtx()
   if (s) openEdit(s)
+}
+
+// --- 菜单项：打开站点配置中心（页签式高级配置） ---
+function menuAdvanced() {
+  const s = ctxMenu.value.site
+  closeCtx()
+  if (s) advancedSite.value = s
 }
 
 // --- 菜单项：查看 Nginx 原始配置 ---

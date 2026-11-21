@@ -337,6 +337,16 @@ func nginxSiteConfig(site map[string]any, rootOverride string) string {
 	ssl := mapOf(site["ssl"])
 	enableSSL := boolOf(ssl["enabled"]) && str(ssl["cert"]) != "" && str(ssl["key"]) != ""
 	proxy := siteStr(site, "reverse_proxy")
+	// 多上游负载均衡：优先用 advanced.upstreams 生成 upstream 块与代理目标。
+	upstreamBlock, upstreamTarget := siteAdvancedUpstream(site)
+	if upstreamTarget != "" {
+		proxy = upstreamTarget
+	}
+	adv := siteAdvancedOf(site)
+	docs := advancedStringList(adv["default_docs"])
+	if len(docs) == 0 {
+		docs = []string{"index.html", "index.htm", "index.php"}
+	}
 	locations := []map[string]any{}
 	if arr, ok := site["locations"].([]any); ok {
 		for _, item := range arr {
@@ -361,7 +371,7 @@ func nginxSiteConfig(site map[string]any, rootOverride string) string {
 		}
 	} else {
 		content = append(content, "    root "+root+";")
-		content = append(content, "    index index.html index.htm index.php;")
+		content = append(content, "    index "+strings.Join(docs, " ")+";")
 		if proxy != "" {
 			content = append(content, "    location / {")
 			content = append(content, "        proxy_pass "+proxy+";")
@@ -421,8 +431,12 @@ func nginxSiteConfig(site map[string]any, rootOverride string) string {
 		lines = append(lines, "    ssl_certificate "+str(ssl["cert"])+";")
 		lines = append(lines, "    ssl_certificate_key "+str(ssl["key"])+";")
 	}
+	lines = append(lines, siteAdvancedServerLines(site)...)
 	lines = append(lines, content...)
 	lines = append(lines, "}")
+	if upstreamBlock != "" {
+		return upstreamBlock + "\n\n" + strings.Join(lines, "\n")
+	}
 	return strings.Join(lines, "\n")
 }
 

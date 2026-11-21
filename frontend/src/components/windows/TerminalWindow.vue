@@ -48,7 +48,7 @@
       <button class="btn" @click="clear">{{ $t('terminal.clear') }}</button>
       <!-- 鼠标模式开关：开启后向 TUI 与应用写入鼠标启用序列，支持 vim/tmux/ranger/htop 等点击交互 -->
       <button class="btn" :disabled="!mouseSupported"
-        :style="mouseSupported && mouseOn ? 'background:var(--g-strong); color:#fff;' : ''"
+        :style="mouseSupported && mouseOn ? 'background:var(--g-strong); color:var(--g-on-strong);' : ''"
         :title="!mouseSupported ? (mouseReason || $t('terminal.mouseUnsupported')) : (mouseOn ? $t('terminal.mouseOffHint') : $t('terminal.mouseOnHint'))"
         @click="toggleMouse">{{ $t('terminal.mouse') }}:{{ mouseOn ? $t('terminal.on') : $t('terminal.off') }}</button>
     </div>

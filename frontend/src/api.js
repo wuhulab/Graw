@@ -317,7 +317,11 @@ export const sitesApi = {
   config: (id) => api.get(`/sites/${id}/config`).then(r => r.data),
   update: (id, body) => api.post(`/sites/${id}/update`, body).then(r => r.data),
   delete: (id) => api.post(`/sites/${id}/delete`).then(r => r.data),
-  maintenance: (id, body) => api.post(`/sites/${id}/maintenance`, body).then(r => r.data)
+  maintenance: (id, body) => api.post(`/sites/${id}/maintenance`, body).then(r => r.data),
+  advanced: (id) => api.get(`/sites/${id}/advanced`).then(r => r.data),
+  saveAdvanced: (id, body) => api.post(`/sites/${id}/advanced`, body).then(r => r.data),
+  siteLogs: (id, type = 'access', lines = 200) => api.get(`/sites/${id}/logs`, { params: { type, lines } }).then(r => r.data),
+  saveRawConfig: (id, content) => api.post(`/sites/${id}/config/raw`, { content }).then(r => r.data)
 }
 
 export const databasesApi = {
@@ -330,7 +334,16 @@ export const databasesApi = {
   listDBs: (id) => api.get(`/databases/connections/${id}/databases`).then(r => r.data),
   query: (id, body) => api.post(`/databases/connections/${id}/query`, body).then(r => r.data),
   createDB: (id, name) => api.post(`/databases/connections/${id}/create-db`, { name }).then(r => r.data),
-  deleteDB: (id, name) => api.post(`/databases/connections/${id}/delete-db`, { name }).then(r => r.data)
+  deleteDB: (id, name) => api.post(`/databases/connections/${id}/delete-db`, { name }).then(r => r.data),
+  engines: () => api.get('/databases/engines').then(r => r.data),
+  engineAction: (engine, action) => api.post(`/databases/engines/${engine}/action`, { action }).then(r => r.data),
+  users: (id) => api.get(`/databases/connections/${id}/users`).then(r => r.data),
+  createUser: (id, body) => api.post(`/databases/connections/${id}/users`, body).then(r => r.data),
+  deleteUser: (id, username, host = '') => api.delete(`/databases/connections/${id}/users/${encodeURIComponent(username)}`, { params: { host } }).then(r => r.data),
+  backups: (id) => api.get(`/databases/connections/${id}/backups`).then(r => r.data),
+  backup: (id, database = '') => api.post(`/databases/connections/${id}/backup`, { database }).then(r => r.data),
+  restoreBackup: (id, name, database = '') => api.post(`/databases/connections/${id}/backups/${encodeURIComponent(name)}/restore`, { database }).then(r => r.data),
+  deleteBackup: (id, name) => api.delete(`/databases/connections/${id}/backups/${encodeURIComponent(name)}`).then(r => r.data)
 }
 
 export const cronApi = {
@@ -338,7 +351,13 @@ export const cronApi = {
   create: (body) => api.post('/cron/create', body).then(r => r.data),
   update: (id, body) => api.post(`/cron/${id}/update`, body).then(r => r.data),
   delete: (id) => api.post(`/cron/${id}/delete`).then(r => r.data),
-  run: (id) => api.post(`/cron/${id}/run`).then(r => r.data)
+  run: (id) => api.post(`/cron/${id}/run`).then(r => r.data),
+  scripts: () => api.get('/cron/scripts').then(r => r.data),
+  saveScript: (body) => api.post('/cron/scripts', body).then(r => r.data),
+  deleteScript: (id) => api.post(`/cron/scripts/${id}/delete`).then(r => r.data),
+  report: (id) => api.get(`/cron/${id}/report`).then(r => r.data),
+  exportAll: () => api.get('/cron/export').then(r => r.data),
+  importAll: (body) => api.post('/cron/import', body).then(r => r.data)
 }
 
 export const firewallApi = {
@@ -420,14 +439,31 @@ export const sslApi = {
   list: () => api.get('/ssl/list').then(r => r.data),
   upload: (formData) => api.post('/ssl/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
   letsencrypt: (body) => api.post('/ssl/letsencrypt', body).then(r => r.data),
-  delete: (id) => api.post(`/ssl/${id}/delete`).then(r => r.data)
+  delete: (id) => api.post(`/ssl/${id}/delete`).then(r => r.data),
+  detail: (id) => api.get(`/ssl/${id}`).then(r => r.data),
+  selfSigned: (body) => api.post('/ssl/selfsigned', body).then(r => r.data),
+  renew: (id) => api.post(`/ssl/${id}/renew`).then(r => r.data),
+  acmeAccounts: () => api.get('/ssl/acme-accounts').then(r => r.data),
+  addAcmeAccount: (email) => api.post('/ssl/acme-accounts', { email }).then(r => r.data),
+  deleteAcmeAccount: (id) => api.post(`/ssl/acme-accounts/${id}/delete`).then(r => r.data),
+  dnsAccounts: () => api.get('/ssl/dns-accounts').then(r => r.data),
+  addDnsAccount: (body) => api.post('/ssl/dns-accounts', body).then(r => r.data),
+  deleteDnsAccount: (id) => api.post(`/ssl/dns-accounts/${id}/delete`).then(r => r.data),
+  letsencryptDns: (body) => api.post('/ssl/letsencrypt/dns', body).then(r => r.data)
 }
 
 export const logsApi = {
   list: () => api.get('/logs/list').then(r => r.data),
   read: (path, tail = 200) => api.get('/logs/read', { params: { path, tail } }).then(r => r.data),
   add: (body) => api.post('/logs/add', body).then(r => r.data),
-  clear: (path) => api.post('/logs/clear', { path }).then(r => r.data)
+  clear: (path) => api.post('/logs/clear', { path }).then(r => r.data),
+  auditCategories: () => api.get('/audit/categories').then(r => r.data),
+  auditLogs: (params) => api.get('/audit/logs', { params }).then(r => r.data)
+}
+
+export const panelSecurityApi = {
+  get: () => api.get('/panel/security').then(r => r.data),
+  save: (body) => api.put('/panel/security', body).then(r => r.data)
 }
 
 export const protectionApi = {

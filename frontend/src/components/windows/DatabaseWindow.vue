@@ -21,6 +21,7 @@
   <div class="db-window">
     <div class="ui-toolbar">
       <button class="ui-btn primary" @click="$emit('openConnectionForm')"><Plus :size="14" /> {{ $t('database.addConnection') }}</button>
+      <button class="ui-btn" @click="openEngines"><ServerCog :size="14" /> {{ $t('database.engines') }}</button>
       <span class="ui-hint">
         {{ $t('database.mysqlInstalled', { installed: $t(status.mysql_libs ? 'database.installed' : 'database.notInstalled') }) }}
         | {{ $t('database.redisInstalled', { installed: $t(status.redis_libs ? 'database.installed' : 'database.notInstalled') }) }}
@@ -43,6 +44,8 @@
           <button class="ui-btn mini" @click="testConn(c)">{{ $t('database.testConnection') }}</button>
           <button class="ui-btn mini" @click="$emit('openConnectionForm', c)">{{ $t('database.edit') }}</button>
           <button class="ui-btn mini" @click="emit('openDatabaseManage', { conn: c })">{{ $t('database.manage') }}</button>
+          <button v-if="c.db_type === 'mysql' || c.db_type === 'postgresql'" class="ui-btn mini" @click="openUsers(c)">{{ $t('database.users') }}</button>
+          <button v-if="c.db_type === 'mysql' || c.db_type === 'postgresql'" class="ui-btn mini" @click="openBackups(c)">{{ $t('database.backups') }}</button>
           <button class="ui-btn mini danger" @click="removeConn(c)">{{ $t('database.delete') }}</button>
         </div>
       </div>
@@ -55,6 +58,86 @@
 
     <!-- 「管理连接」与「创建数据库」已拆分为独立窗口（DatabaseManageWindow /
          DatabaseCreateWindow），避免内嵌弹窗误触遮罩丢失查询内容 -->
+
+    <!-- 引擎状态：MySQL/PostgreSQL/Redis/MongoDB 的进程与服务 -->
+    <div v-if="engines.show" class="ui-modal-overlay" @click.self="engines.show = false">
+      <div class="ui-modal">
+        <h3>{{ $t('database.engines') }}</h3>
+        <div class="ui-table-wrap">
+          <table>
+            <thead><tr><th>{{ $t('database.engine') }}</th><th>{{ $t('common.status') }}</th><th>Unit</th><th></th></tr></thead>
+            <tbody>
+              <tr v-for="e in engines.list" :key="e.engine">
+                <td>{{ e.engine }}</td>
+                <td><span class="ui-badge" :class="e.running ? 'ok' : 'off'">{{ e.running ? $t('database.running') : $t('database.stopped') }}</span></td>
+                <td class="mono">{{ e.unit || '-' }}</td>
+                <td class="actions">
+                  <button class="ui-btn mini" :disabled="!e.unit" @click="engineAction(e, 'start')">{{ $t('common.start') }}</button>
+                  <button class="ui-btn mini" :disabled="!e.unit" @click="engineAction(e, 'restart')">{{ $t('common.restart') }}</button>
+                  <button class="ui-btn mini danger" :disabled="!e.unit" @click="engineAction(e, 'stop')">{{ $t('common.stop') }}</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="ui-actions"><button class="ui-btn" @click="engines.show = false">{{ $t('common.close') }}</button></div>
+      </div>
+    </div>
+
+    <!-- 用户与授权 -->
+    <div v-if="users.show" class="ui-modal-overlay" @click.self="users.show = false">
+      <div class="ui-modal wide">
+        <h3>{{ $t('database.usersTitle', { name: users.conn?.name || '' }) }}</h3>
+        <div class="acct-form">
+          <input v-model.trim="users.username" class="ui-input" :placeholder="$t('database.username')" />
+          <input v-model="users.password" type="password" class="ui-input" :placeholder="$t('database.password')" />
+          <input v-model.trim="users.host" class="ui-input" :placeholder="$t('database.userHost')" />
+          <input v-model.trim="users.database" class="ui-input" :placeholder="$t('database.databaseName')" />
+          <input v-model.trim="users.privileges" class="ui-input" placeholder="SELECT, INSERT, UPDATE" />
+          <button class="ui-btn primary" @click="createUser">{{ $t('common.create') }}</button>
+        </div>
+        <div class="ui-table-wrap">
+          <table>
+            <thead><tr><th>{{ $t('database.username') }}</th><th>Host</th><th></th></tr></thead>
+            <tbody>
+              <tr v-for="u in users.list" :key="u.username + u.host">
+                <td>{{ u.username }}</td><td class="mono">{{ u.host || '-' }}</td>
+                <td><button class="iconbtn danger" @click="dropUser(u)"><Trash2 :size="13" /></button></td>
+              </tr>
+              <tr v-if="!users.list.length"><td colspan="3" class="ui-empty">{{ $t('database.noUsers') }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="ui-actions"><button class="ui-btn" @click="users.show = false">{{ $t('common.close') }}</button></div>
+      </div>
+    </div>
+
+    <!-- 备份与恢复 -->
+    <div v-if="backups.show" class="ui-modal-overlay" @click.self="backups.show = false">
+      <div class="ui-modal wide">
+        <h3>{{ $t('database.backupsTitle', { name: backups.conn?.name || '' }) }}</h3>
+        <div class="acct-form">
+          <input v-model.trim="backups.database" class="ui-input" :placeholder="$t('database.databaseOptional')" />
+          <button class="ui-btn primary" :disabled="backups.busy" @click="createBackup">{{ $t('database.backupNow') }}</button>
+        </div>
+        <div class="ui-table-wrap">
+          <table>
+            <thead><tr><th>{{ $t('common.name') }}</th><th>{{ $t('database.size') }}</th><th>{{ $t('database.time') }}</th><th></th></tr></thead>
+            <tbody>
+              <tr v-for="b in backups.list" :key="b.name">
+                <td class="mono">{{ b.name }}</td><td>{{ fmtSize(b.size) }}</td><td>{{ b.time }}</td>
+                <td class="actions">
+                  <button class="ui-btn mini" @click="restoreBackup(b)">{{ $t('database.restore') }}</button>
+                  <button class="iconbtn danger" @click="removeBackup(b)"><Trash2 :size="13" /></button>
+                </td>
+              </tr>
+              <tr v-if="!backups.list.length"><td colspan="4" class="ui-empty">{{ $t('database.noBackups') }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="ui-actions"><button class="ui-btn" @click="backups.show = false">{{ $t('common.close') }}</button></div>
+      </div>
+    </div>
 
     <!-- 高风险操作二次确认：删除连接需面板密码 -->
     <ConfirmDialog
@@ -72,11 +155,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'   // 状态/挂载加载/共享信号监听
+import { ref, reactive, onMounted, watch } from 'vue'   // 状态/挂载加载/共享信号监听
 import { useI18n } from 'vue-i18n'   // 翻译函数
-import { databasesApi } from '../../api'   // /api/databases：数据库管理接口
+import { databasesApi, formatBytes } from '../../api'   // /api/databases：数据库管理接口
 import { dbVersion } from '../../store/databases'   // 共享版本信号：连接增改后触发本窗口刷新
-import { Plus, Database } from 'lucide-vue-next'   // 添加连接按钮 / 空状态图标
+import { Plus, Database, ServerCog, Trash2 } from 'lucide-vue-next'   // 工具栏/空状态/运维操作图标
 import ConfirmDialog from '../ConfirmDialog.vue'   // 高风险操作的二次确认对话框
 
 const { t } = useI18n()
@@ -88,6 +171,13 @@ const connections = ref([])   // 已保存的连接列表
 const status = ref({})   // 各类型客户端库是否可用（顶部提示）
 // 高风险操作二次确认状态（删除连接需输入面板密码）
 const confirm = ref({ show: false, title: '', message: '', action: null })
+
+// 引擎状态 / 用户管理 / 备份管理
+const engines = reactive({ show: false, list: [] })
+const users = reactive({ show: false, conn: null, list: [], username: '', password: '', host: '%', database: '', privileges: 'SELECT' })
+const backups = reactive({ show: false, conn: null, list: [], database: '', busy: false })
+
+function fmtSize(n) { return formatBytes ? formatBytes(Number(n) || 0) : `${n} B` }
 
 // 类型展示名映射（连接卡片标签）
 const TYPE_LABELS = { mysql: 'MySQL', redis: 'Redis', postgresql: 'PostgreSQL', mongodb: 'MongoDB', sqlite: 'SQLite' }
@@ -141,6 +231,124 @@ async function testConn(c) {
 }
 
 // 添加/编辑连接在独立窗口完成后通过共享信号触发刷新
+// --- 引擎状态与启停 ---
+async function openEngines() {
+  engines.show = true
+  try {
+    const data = await databasesApi.engines()
+    engines.list = data.engines || []
+  } catch (e) {
+    alert(e?.response?.data?.detail || e.message)
+  }
+}
+
+async function engineAction(e, action) {
+  if (action === 'stop' && !window.confirm(t('database.engineStopConfirm', { engine: e.engine }))) return
+  try {
+    await databasesApi.engineAction(e.engine, action)
+    await openEngines()
+  } catch (err) {
+    alert(err?.response?.data?.detail || err.message)
+  }
+}
+
+// --- 用户与授权 ---
+async function openUsers(c) {
+  users.conn = c
+  users.show = true
+  users.username = ''
+  users.password = ''
+  users.host = '%'
+  users.database = c.database || ''
+  users.privileges = 'SELECT'
+  await loadUsers()
+}
+
+async function loadUsers() {
+  try {
+    const data = await databasesApi.users(users.conn.id)
+    users.list = data.users || []
+  } catch (e) {
+    alert(e?.response?.data?.detail || e.message)
+  }
+}
+
+async function createUser() {
+  if (!users.username.trim() || users.password.length < 6) {
+    alert(t('database.userRequired'))
+    return
+  }
+  try {
+    await databasesApi.createUser(users.conn.id, {
+      username: users.username.trim(), password: users.password, host: users.host.trim() || '%',
+      database: users.database.trim(), privileges: users.privileges.split(',').map(s => s.trim()).filter(Boolean),
+    })
+    users.password = ''
+    await loadUsers()
+  } catch (e) {
+    alert(e?.response?.data?.detail || e.message)
+  }
+}
+
+async function dropUser(u) {
+  if (!window.confirm(t('database.dropUserConfirm', { name: u.username }))) return
+  try {
+    await databasesApi.deleteUser(users.conn.id, u.username, u.host || '')
+    await loadUsers()
+  } catch (e) {
+    alert(e?.response?.data?.detail || e.message)
+  }
+}
+
+// --- 备份与恢复 ---
+async function openBackups(c) {
+  backups.conn = c
+  backups.show = true
+  backups.database = c.database || ''
+  await loadBackups()
+}
+
+async function loadBackups() {
+  try {
+    const data = await databasesApi.backups(backups.conn.id)
+    backups.list = data.backups || []
+  } catch (e) {
+    alert(e?.response?.data?.detail || e.message)
+  }
+}
+
+async function createBackup() {
+  backups.busy = true
+  try {
+    await databasesApi.backup(backups.conn.id, backups.database.trim())
+    await loadBackups()
+  } catch (e) {
+    alert(e?.response?.data?.detail || e.message)
+  } finally {
+    backups.busy = false
+  }
+}
+
+async function restoreBackup(b) {
+  if (!window.confirm(t('database.restoreConfirm', { name: b.name }))) return
+  try {
+    await databasesApi.restoreBackup(backups.conn.id, b.name, backups.database.trim())
+    alert(t('database.restoreDone'))
+  } catch (e) {
+    alert(e?.response?.data?.detail || e.message)
+  }
+}
+
+async function removeBackup(b) {
+  if (!window.confirm(t('database.deleteBackupConfirm', { name: b.name }))) return
+  try {
+    await databasesApi.deleteBackup(backups.conn.id, b.name)
+    await loadBackups()
+  } catch (e) {
+    alert(e?.response?.data?.detail || e.message)
+  }
+}
+
 watch(dbVersion, () => load())
 
 onMounted(load)   // 进入窗口即加载
@@ -157,6 +365,12 @@ onMounted(load)   // 进入窗口即加载
 .conn-head { margin-bottom: 8px; }
 .conn-title { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px; }
 .tag { background: #eef2ff; color: #3730a3; font-size: 11px; padding: 2px 6px; border-radius: 4px; }
+.acct-form { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--g-border-soft); }
+.acct-form .ui-input { flex: 1 1 160px; }
+.actions { display: flex; gap: 4px; align-items: center; }
+.iconbtn { padding: 4px; border: 1px solid var(--g-border); background: var(--g-surface); border-radius: 6px; cursor: pointer; }
+.iconbtn.danger:hover { background: rgba(226, 50, 79, 0.16); border-color: var(--ui-danger-fg, #fca5a5); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 .conn-addr { color: var(--g-text-muted); font-size: 12px; margin-top: 4px; }
 .conn-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 </style>

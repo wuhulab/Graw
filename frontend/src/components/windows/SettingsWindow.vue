@@ -159,6 +159,45 @@
         </div>
       </div>
 
+      <!-- 面板安全：授权 IP / 域名绑定 / 密码策略 / 水印 / 标签页锁（仅管理员） -->
+      <div class="block" v-show="activeTab === 'account'" v-if="isAdmin()">
+        <div class="block-title">{{ $t('settings.panelSecurityTitle') }}</div>
+        <div class="hint" style="margin-bottom:8px;">{{ $t('settings.panelSecurityHint') }}</div>
+        <label class="ui-label">{{ $t('settings.allowedIps') }}</label>
+        <textarea v-model="secForm.allowed_ips_text" class="ui-textarea mono" rows="3"
+          :placeholder="$t('settings.allowedIpsHint')"></textarea>
+        <label class="ui-label">{{ $t('settings.allowedDomains') }}</label>
+        <textarea v-model="secForm.allowed_domains_text" class="ui-textarea mono" rows="2"
+          :placeholder="$t('settings.allowedDomainsHint')"></textarea>
+        <p class="hint">{{ $t('settings.lockoutWarning') }}</p>
+        <div class="row" style="gap:12px; flex-wrap:wrap; align-items:center;">
+          <label class="row" style="gap:6px;">
+            <span style="font-size:12px;">{{ $t('settings.passwordMinLength') }}</span>
+            <input v-model.number="secForm.password_min_length" type="number" min="8" max="64" style="width:70px;" />
+          </label>
+          <label class="switch-label">
+            <input type="checkbox" v-model="secForm.password_complexity" />
+            <span style="font-size:12px;">{{ $t('settings.passwordComplexity') }}</span>
+          </label>
+        </div>
+        <div class="row" style="gap:12px; flex-wrap:wrap; align-items:center;">
+          <label class="row" style="gap:6px; flex:1; min-width:220px;">
+            <span style="font-size:12px;">{{ $t('settings.watermark') }}</span>
+            <input v-model="secForm.watermark" maxlength="64" style="flex:1;" :placeholder="$t('settings.watermarkHint')" />
+          </label>
+          <label class="switch-label">
+            <input type="checkbox" v-model="secForm.tab_lock" />
+            <span style="font-size:12px;">{{ $t('settings.tabLock') }}</span>
+          </label>
+        </div>
+        <div class="row" style="gap:8px; margin-top:8px;">
+          <button class="btn" :disabled="secSaving" @click="savePanelSecuritySetting">
+            {{ secSaving ? $t('settings.saveSaving') : $t('settings.save') }}
+          </button>
+          <div v-if="secMsg" :class="['msg', secMsgType]" style="flex:1;">{{ secMsg }}</div>
+        </div>
+      </div>
+
       <!-- 多机（多节点）管理（仅管理员） -->
       <div class="block" v-show="activeTab === 'nodes'" v-if="isAdmin()">
         <div class="block-title">{{ $t('nodes.title') }}</div>
@@ -605,7 +644,7 @@ import { useI18n } from 'vue-i18n'                               // 国际化：
 import { settings } from '../../store/settings'                 // 全局界面设置（任务栏/语言等）
 import { desktopPrefs, showShortcut, unpinShortcut } from '../../store/desktopPrefs'   // 应用收藏/隐藏/固定偏好（分账号隔离与恢复）
 import { isAdmin, isFullAdmin } from '../../store/auth'          // 管理员门控：限定敏感区块（OAuth 配置要求完整管理员）
-import { nodesApi, shunxApi, panelApi, updateApi, webmodeApi, authApi, agentApi, recycleApi, pluginApi } from '../../api'   // 各设置区块后端接口
+import { nodesApi, shunxApi, panelApi, updateApi, webmodeApi, authApi, agentApi, recycleApi, pluginApi, panelSecurityApi } from '../../api'   // 各设置区块后端接口
 import { nodes as nodesStore, refreshNodes, setCurrentNode } from '../../store/nodes'   // 多节点状态与当前节点切换
 import { LANGUAGES, setLocale } from '../../locales'            // 语言清单与切换函数
 import ConfirmDialog from '../ConfirmDialog.vue'                // 高危操作二次确认弹窗（输入面板密码）
@@ -622,6 +661,64 @@ const SETTINGS_TABS = [
   { key: 'about', labelKey: 'settings.nav.about', icon: Info },
 ]
 const activeTab = ref('general')   // 当前设置分类（默认通用与外观）
+
+// 面板安全：授权 IP / 绑定域名 / 密码策略 / 水印 / 标签页锁
+const secForm = reactive({
+  allowed_ips_text: '', allowed_domains_text: '',
+  password_min_length: 8, password_complexity: false,
+  watermark: '', tab_lock: false,
+})
+const secMsg = ref('')
+const secMsgType = ref('ok')
+const secSaving = ref(false)
+
+async function loadPanelSecuritySetting() {
+  if (!isAdmin()) return
+  try {
+    const data = await panelSecurityApi.get()
+    const s = data.security || {}
+    secForm.allowed_ips_text = (s.allowed_ips || []).join('\n')
+    secForm.allowed_domains_text = (s.allowed_domains || []).join('\n')
+    secForm.password_min_length = s.password_min_length || 8
+    secForm.password_complexity = !!s.password_complexity
+    secForm.watermark = s.watermark || ''
+    secForm.tab_lock = !!s.tab_lock
+  } catch (e) {
+    secMsg.value = e?.response?.data?.detail || e?.message || ''
+    secMsgType.value = 'err'
+  }
+}
+
+function splitLines(text) {
+  return String(text || '').split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
+}
+
+async function savePanelSecuritySetting() {
+  secSaving.value = true
+  secMsg.value = ''
+  try {
+    const data = await panelSecurityApi.save({
+      allowed_ips: splitLines(secForm.allowed_ips_text),
+      allowed_domains: splitLines(secForm.allowed_domains_text),
+      password_min_length: Number(secForm.password_min_length) || 8,
+      password_complexity: !!secForm.password_complexity,
+      watermark: secForm.watermark.trim(),
+      tab_lock: !!secForm.tab_lock,
+    })
+    const s = data.security || {}
+    secForm.allowed_ips_text = (s.allowed_ips || []).join('\n')
+    secForm.allowed_domains_text = (s.allowed_domains || []).join('\n')
+    secMsg.value = t('settings.panelSecuritySaved')
+    secMsgType.value = 'ok'
+    // 水印与标签页锁立即生效：通知全局安全状态刷新
+    window.dispatchEvent(new CustomEvent('graw:panel-security-updated'))
+  } catch (e) {
+    secMsg.value = e?.response?.data?.detail || e?.message || ''
+    secMsgType.value = 'err'
+  } finally {
+    secSaving.value = false
+  }
+}
 const visibleTabs = computed(() => SETTINGS_TABS.filter((tab) => !tab.adminOnly || isAdmin()))
 
 const { t, te } = useI18n()
@@ -1460,6 +1557,7 @@ onMounted(() => {
   if (isAdmin()) loadAgentCfg()
   if (isAdmin()) loadRecycle()
   if (isAdmin()) loadPluginSettings()
+  if (isAdmin()) loadPanelSecuritySetting()
 })
 
 // 切换界面语言
@@ -1541,6 +1639,8 @@ async function clearEntryNow() {
 </script>
 
 <style scoped>
+.ui-label { display: block; margin: 8px 0 4px; font-size: 12px; color: var(--g-text-secondary); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 /* ---- 设置窗口外壳：左侧分类导航 + 右侧内容 ---- */
 .settings-root {
   display: flex;

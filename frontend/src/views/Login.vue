@@ -456,14 +456,14 @@ async function handleChangePassword() {
 }
 
 .field input:focus {
-  border-color: #0a84ff;
-  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.2);
+  border-color: var(--g-primary);
+  box-shadow: 0 0 0 3px var(--g-primary-ring);
 }
 
 .hint {
-  background: rgba(10, 132, 255, 0.12);
+  background: var(--g-primary-soft);
   color: var(--g-text);
-  border: 1px solid rgba(10, 132, 255, 0.3);
+  border: 1px solid var(--g-primary-ring);
   border-radius: 8px;
   padding: 8px 10px;
   font-size: 12px;
