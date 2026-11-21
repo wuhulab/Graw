@@ -144,14 +144,14 @@ type containerCreateEnv struct {
 }
 
 type containerCreateRequest struct {
-	Image   string                 `json:"image"`
-	Name    string                 `json:"name"`
-	Ports   []containerCreatePort  `json:"ports"`
-	Env     []containerCreateEnv   `json:"env"`
-	Volumes []string               `json:"volumes"`
-	Network string                 `json:"network"`
-	Restart string                 `json:"restart"`
-	Command string                 `json:"command"`
+	Image   string                `json:"image"`
+	Name    string                `json:"name"`
+	Ports   []containerCreatePort `json:"ports"`
+	Env     []containerCreateEnv  `json:"env"`
+	Volumes []string              `json:"volumes"`
+	Network string                `json:"network"`
+	Restart string                `json:"restart"`
+	Command string                `json:"command"`
 }
 
 func dockerCreateContainer(req containerCreateRequest) (map[string]any, error) {
@@ -198,7 +198,7 @@ func dockerCreateContainer(req containerCreateRequest) (map[string]any, error) {
 			continue
 		}
 		if !envKeyRe.MatchString(key) {
-			return nil, NewHTTPError(400, "环境变量名非法: " + key)
+			return nil, NewHTTPError(400, "环境变量名非法: "+key)
 		}
 		args = append(args, "-e", key+"="+e.Value)
 	}
@@ -208,7 +208,7 @@ func dockerCreateContainer(req containerCreateRequest) (map[string]any, error) {
 			continue
 		}
 		if !volumeSpecRe.MatchString(v) || strings.Contains(v, "..") {
-			return nil, NewHTTPError(400, "卷挂载格式非法: " + v)
+			return nil, NewHTTPError(400, "卷挂载格式非法: "+v)
 		}
 		args = append(args, "-v", v)
 	}

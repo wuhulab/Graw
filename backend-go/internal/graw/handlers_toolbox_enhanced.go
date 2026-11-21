@@ -17,6 +17,7 @@ import (
 
 var hostnameRe = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
 var timezoneRe = regexp.MustCompile(`^[A-Za-z0-9_+\-/]{1,64}$`)
+var jailNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 var cacheTargets = map[string]bool{"apt": true, "yum": true, "dnf": true, "journal": true, "tmp": true}
 
 func toolboxSystemInfo() map[string]any {
@@ -102,7 +103,7 @@ func toolboxSystemUpdate(action, value string) (map[string]any, error) {
 			return nil, NewHTTPError(400, "时区格式非法")
 		}
 		if !Exists(HostPath("/usr/share/zoneinfo/" + v)) {
-			return nil, NewHTTPError(400, "时区不存在: " + v)
+			return nil, NewHTTPError(400, "时区不存在: "+v)
 		}
 		res := HostCmd(30*time.Second, "timedatectl", "set-timezone", v)
 		if res.Code != 0 {
@@ -169,7 +170,7 @@ func toolboxSystemUpdate(action, value string) (map[string]any, error) {
 			return nil, NewHTTPError(500, "关闭 Swap 失败: "+strings.TrimSpace(res.Stderr))
 		}
 	default:
-		return nil, NewHTTPError(400, "不支持的系统设置: " + action)
+		return nil, NewHTTPError(400, "不支持的系统设置: "+action)
 	}
 	return toolboxSystemInfo(), nil
 }
@@ -238,7 +239,7 @@ func fail2banAction(action, jail, ip string) (map[string]any, error) {
 	case "start", "stop", "restart":
 		res = HostCmd(60*time.Second, "systemctl", action, "fail2ban")
 	case "ban", "unban":
-		if jail == "" || !hostnameRe.MatchString(strings.ReplaceAll(jail, ".", "-")) {
+		if jail == "" || !jailNameRe.MatchString(jail) {
 			return nil, NewHTTPError(400, "Jail 名称非法")
 		}
 		if net.ParseIP(ip) == nil {
@@ -250,7 +251,7 @@ func fail2banAction(action, jail, ip string) (map[string]any, error) {
 		}
 		res = HostCmd(30*time.Second, "fail2ban-client", "set", jail, verb, ip)
 	default:
-		return nil, NewHTTPError(400, "不支持的动作: " + action)
+		return nil, NewHTTPError(400, "不支持的动作: "+action)
 	}
 	out := strings.TrimSpace(res.Stdout + res.Stderr)
 	if res.Code != 0 {

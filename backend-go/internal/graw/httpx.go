@@ -100,6 +100,10 @@ func NewApp() *App {
 	registerNetworkRoutes(a)
 	registerMiscRoutes(a)
 	registerPanelSecurityRoutes(a)
+	registerAPIKeyRoutes(a)
+	registerAIRoutes(a)
+	registerVMRoutes(a)
+	registerSyncRoutes(a)
 	a.registerStatic()
 	return a
 }
@@ -184,10 +188,32 @@ func (a *App) route(method, pattern string, lv routeLevel, fn handlerFn) {
 				writeErr(w, NewHTTPError(403, "需要完整管理员权限"))
 				return
 			}
+			// API Key 的 scope 必须在 owner 权限之上再收窄：
+			// admin 类接口只认 "*" 或 "admin"，业务模块只认对应模块 key。
+			if lv.admin && !apiKeyScopeAllows(u, "admin") {
+				writeErr(w, NewHTTPError(403, "该 API Key 没有面板管理权限"))
+				return
+			}
 			// 模块权限判定：完整管理员（perms 为空）在 HasPerm 中恒通过。
 			if len(lv.perm) > 0 && !HasPerm(u, lv.perm...) {
 				writeErr(w, NewHTTPError(403, "需要 "+strings.Join(lv.perm, "/")+" 模块权限"))
 				return
+			}
+			if len(lv.perm) > 0 && !apiKeyScopeAllowsAny(u, lv.perm) {
+				writeErr(w, NewHTTPError(403, "该 API Key 没有 "+strings.Join(lv.perm, "/")+" scope"))
+				return
+			}
+			// API Key 不允许操作账户与 Key 自身：前者可改密/提权，后者可自我扩权。
+			if _, isAPIKey := u["_api_key_id"]; isAPIKey {
+				if strings.HasPrefix(r.URL.Path, "/api/auth") || strings.HasPrefix(r.URL.Path, "/api/apikeys") {
+					writeErr(w, NewHTTPError(403, "API Key 不能访问账户或密钥管理接口"))
+					return
+				}
+				// 没有模块归属的登录态接口（如 notes）只对 "*" 开放，避免 scope 被绕过。
+				if (lv.protected || lv.loginOnly) && !apiKeyScopeAllows(u, "*") {
+					writeErr(w, NewHTTPError(403, "该 API Key 没有全部模块 scope"))
+					return
+				}
 			}
 			// 注入已鉴权用户，供 CurrentUser 与审计日志使用。
 			r = r.WithContext(context.WithValue(r.Context(), ctxKeyUser{}, u))

@@ -59,8 +59,10 @@
 
 <script setup>
 import { reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { dockerApi } from '../../api'
 
+const { t } = useI18n()
 defineProps({ show: Boolean })
 const emit = defineEmits(['close', 'created'])
 const form = reactive({ image: '', name: '', ports: '', env: '', volumes: '', network: '', restart: 'unless-stopped', command: '' })
@@ -92,8 +94,15 @@ function parseEnv(text) {
 }
 
 async function submit() {
-  saving.value = true
   err.value = ''
+  // 端口行格式错误时直接提示，避免静默丢端口导致容器起来后访问不到。
+  for (const line of lines(form.ports)) {
+    if (!/^(\d+):(\d+)(?:\/(tcp|udp))?$/i.test(line)) {
+      err.value = t('docker.p1.invalidPort', { line })
+      return
+    }
+  }
+  saving.value = true
   try {
     await dockerApi.createContainer({
       image: form.image,

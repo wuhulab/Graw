@@ -364,7 +364,47 @@ export const databasesApi = {
   backups: (id) => api.get(`/databases/connections/${id}/backups`).then(r => r.data),
   backup: (id, database = '') => api.post(`/databases/connections/${id}/backup`, { database }).then(r => r.data),
   restoreBackup: (id, name, database = '') => api.post(`/databases/connections/${id}/backups/${encodeURIComponent(name)}/restore`, { database }).then(r => r.data),
-  deleteBackup: (id, name) => api.delete(`/databases/connections/${id}/backups/${encodeURIComponent(name)}`).then(r => r.data)
+  deleteBackup: (id, name) => api.delete(`/databases/connections/${id}/backups/${encodeURIComponent(name)}`).then(r => r.data),
+  cluster: (id) => api.get(`/databases/connections/${id}/cluster`).then(r => r.data)
+}
+
+// P2：AI（模型账号 / GPU / MCP）
+export const aiApi = {
+  overview: () => api.get('/ai/overview').then(r => r.data),
+  accounts: () => api.get('/ai/accounts').then(r => r.data),
+  createAccount: (body) => api.post('/ai/accounts', body).then(r => r.data),
+  updateAccount: (id, body) => api.put(`/ai/accounts/${encodeURIComponent(id)}`, body).then(r => r.data),
+  deleteAccount: (id) => api.post(`/ai/accounts/${encodeURIComponent(id)}/delete`).then(r => r.data),
+  testAccount: (id, prompt) => api.post(`/ai/accounts/${encodeURIComponent(id)}/test`, { prompt }, { timeout: 120000 }).then(r => r.data),
+  gpu: () => api.get('/ai/gpu').then(r => r.data),
+  mcp: () => api.get('/ai/mcp').then(r => r.data),
+  createMCP: (body) => api.post('/ai/mcp', body).then(r => r.data),
+  deleteMCP: (id) => api.post(`/ai/mcp/${encodeURIComponent(id)}/delete`).then(r => r.data),
+  testMCP: (id) => api.post(`/ai/mcp/${encodeURIComponent(id)}/test`).then(r => r.data)
+}
+
+// P2：虚拟机（virsh）
+export const vmApi = {
+  status: () => api.get('/vms/status').then(r => r.data),
+  list: () => api.get('/vms').then(r => r.data),
+  detail: (name) => api.get(`/vms/${encodeURIComponent(name)}`).then(r => r.data),
+  action: (name, action) => api.post(`/vms/${encodeURIComponent(name)}/action`, { action }, { timeout: 180000 }).then(r => r.data)
+}
+
+// P2：资源 / 证书同步
+export const syncApi = {
+  exportBundle: (body) => api.post('/sync/export', body).then(r => r.data),
+  importBundle: (bundle, enableSites = false) => api.post('/sync/import', { bundle, enable_sites: enableSites }, { timeout: 300000 }).then(r => r.data),
+  pushNodes: (body) => api.post('/nodes/sync', body, { timeout: 600000 }).then(r => r.data)
+}
+
+// P2：API Key
+export const apiKeyApi = {
+  list: () => api.get('/apikeys').then(r => r.data),
+  modules: () => api.get('/apikeys/modules').then(r => r.data),
+  create: (body) => api.post('/apikeys', body).then(r => r.data),
+  remove: (id) => api.post(`/apikeys/${encodeURIComponent(id)}/delete`).then(r => r.data),
+  toggle: (id) => api.post(`/apikeys/${encodeURIComponent(id)}/toggle`).then(r => r.data)
 }
 
 export const cronApi = {

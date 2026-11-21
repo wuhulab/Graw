@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"hash"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -20,6 +21,7 @@ type fileFavorite struct {
 	ID        string `json:"id"`
 	Path      string `json:"path"`
 	Name      string `json:"name"`
+	IsDir     bool   `json:"is_dir"`
 	CreatedAt string `json:"created_at"`
 }
 
@@ -93,8 +95,8 @@ func fileHash(path, algo string) (map[string]any, error) {
 		return nil, NewHTTPError(404, "文件不存在")
 	}
 	size := HostSize(p)
-	if size > 512<<20 {
-		return nil, NewHTTPError(400, "文件超过 512MB，暂不支持在线哈希")
+	if size > 128<<20 {
+		return nil, NewHTTPError(400, "文件超过 128MB，暂不支持在线哈希")
 	}
 	data, err := HostReadBytes(p)
 	if err != nil {
@@ -136,6 +138,14 @@ func moveFile(src, dstDir string) (string, error) {
 	if HostDir(srcPath) == dirPath {
 		return "", NewHTTPError(400, "源与目标目录相同")
 	}
+	// 禁止把目录移动到它自己的子目录里，否则 HostRename 会产生半移动状态。
+	if HostIsDir(srcPath) {
+		cleanSrc := filepath.Clean(srcPath) + string(filepath.Separator)
+		cleanDst := filepath.Clean(dirPath) + string(filepath.Separator)
+		if strings.HasPrefix(cleanDst, cleanSrc) {
+			return "", NewHTTPError(400, "不能把目录移动到它自己的子目录")
+		}
+	}
 	dst := HostPathJoin(dirPath, HostBase(srcPath))
 	if HostExists(dst) {
 		return "", NewHTTPError(409, "目标目录已存在同名文件")
@@ -148,7 +158,14 @@ func moveFile(src, dstDir string) (string, error) {
 
 func registerFileEnhancedRoutes(a *App) {
 	a.Get("/api/files/favorites", perm("files"), func(w http.ResponseWriter, r *http.Request) error {
-		return WriteJSON(w, 200, map[string]any{"favorites": loadFileFavorites()})
+		items := loadFileFavorites()
+		// 兼容早期没有 is_dir 字段的记录：按当前文件系统状态补齐。
+		for i := range items {
+			if p, err := safeUserPath(items[i].Path); err == nil {
+				items[i].IsDir = HostIsDir(p)
+			}
+		}
+		return WriteJSON(w, 200, map[string]any{"favorites": items})
 	})
 	a.Post("/api/files/favorites", perm("files"), func(w http.ResponseWriter, r *http.Request) error {
 		var req struct {
@@ -174,7 +191,7 @@ func registerFileEnhancedRoutes(a *App) {
 			name = HostBase(p)
 		}
 		items = append(items, fileFavorite{
-			ID: "fav_" + randomHex(6), Path: view, Name: name,
+			ID: "fav_" + randomHex(6), Path: view, Name: name, IsDir: HostIsDir(p),
 			CreatedAt: time.Now().Format("2006-01-02 15:04:05"),
 		})
 		if err := saveFileFavorites(items); err != nil {

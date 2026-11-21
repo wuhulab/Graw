@@ -925,6 +925,7 @@ func registerDBSRoutes(a *App) {
 		return NewHTTPError(400, "Unsupported db_type")
 	})
 	registerDBOpsRoutes(a)
+	registerDBClusterRoutes(a)
 }
 
 func validDBType(t string) bool {

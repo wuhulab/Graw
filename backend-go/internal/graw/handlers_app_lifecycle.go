@@ -241,7 +241,7 @@ func appComposeAction(name, action string) (map[string]any, error) {
 	case "upgrade":
 		args = []string{"pull"}
 	default:
-		return nil, NewHTTPError(400, "不支持的动作: " + action)
+		return nil, NewHTTPError(400, "不支持的动作: "+action)
 	}
 	emit := func(string) {}
 	rc, out := composeStream(composeEnginePath(composePath), args, emit)
@@ -293,29 +293,49 @@ func appUpdateState(name string) ([]map[string]any, error) {
 			}
 		}
 		item["local"] = localDigest
-		remoteRes := dockerRun(30*time.Second, "manifest", "inspect", image)
-		if remoteRes.Code == 0 {
-			remoteDigest := ""
-			var payload map[string]any
-			if json.Unmarshal([]byte(remoteRes.Stdout), &payload) == nil {
-				remoteDigest = firstNonEmpty(str(payload["digest"]), str(mapOf(payload["descriptor"])["digest"]))
-				if remoteDigest == "" {
-					if manifests, ok := payload["manifests"].([]any); ok && len(manifests) > 0 {
-						remoteDigest = str(mapOf(mapOf(manifests[0])["descriptor"])["digest"])
+		remoteDigest := ""
+		// --verbose 会返回 Descriptor.digest，单架构镜像也能拿到远端摘要；
+		// 旧版 Docker 不支持时再回退到普通 manifest inspect。
+		if vres := dockerRun(30*time.Second, "manifest", "inspect", "--verbose", image); vres.Code == 0 {
+			var verbose any
+			if json.Unmarshal([]byte(vres.Stdout), &verbose) == nil {
+				switch v := verbose.(type) {
+				case map[string]any:
+					item["remote"] = firstNonEmpty(str(mapOf(v["Descriptor"])["digest"]), str(v["digest"]))
+					remoteDigest = str(item["remote"])
+				case []any:
+					if len(v) > 0 {
+						remoteDigest = str(mapOf(mapOf(v[0])["Descriptor"])["digest"])
 					}
 				}
 			}
-			item["remote"] = remoteDigest
-			switch {
-			case remoteDigest == "":
-				item["status"] = "unknown"
-			case localDigest == "":
-				item["status"] = "not-pulled"
-			case strings.HasSuffix(localDigest, remoteDigest):
-				item["status"] = "latest"
-			default:
-				item["status"] = "update"
+		}
+		if remoteDigest == "" {
+			remoteRes := dockerRun(30*time.Second, "manifest", "inspect", image)
+			if remoteRes.Code == 0 {
+				var payload map[string]any
+				if json.Unmarshal([]byte(remoteRes.Stdout), &payload) == nil {
+					remoteDigest = firstNonEmpty(str(payload["digest"]), str(mapOf(payload["descriptor"])["digest"]))
+					if remoteDigest == "" {
+						if manifests, ok := payload["manifests"].([]any); ok && len(manifests) > 0 {
+							first := mapOf(manifests[0])
+							// 多架构清单里 digest 既可能在顶层，也可能在 descriptor 内。
+							remoteDigest = firstNonEmpty(str(first["digest"]), str(mapOf(first["descriptor"])["digest"]))
+						}
+					}
+				}
 			}
+		}
+		item["remote"] = remoteDigest
+		switch {
+		case remoteDigest == "":
+			item["status"] = "unknown"
+		case localDigest == "":
+			item["status"] = "not-pulled"
+		case strings.HasSuffix(localDigest, remoteDigest):
+			item["status"] = "latest"
+		default:
+			item["status"] = "update"
 		}
 		out = append(out, item)
 	}
@@ -396,8 +416,8 @@ func archiveDir(srcDir, dest string) error {
 		if oerr != nil {
 			return oerr
 		}
-		defer in.Close()
 		_, cerr := io.Copy(tw, in)
+		_ = in.Close() // 立即关闭，避免大目录遍历时堆积大量文件描述符
 		return cerr
 	})
 	if walkErr != nil {
@@ -582,6 +602,8 @@ func importApp(name, archivePath string) (map[string]any, error) {
 	}
 	rc, out := composeStream(composeEnginePath(filepath.Join(dir, "docker-compose.yml")), []string{"up", "-d", "--remove-orphans"}, nil)
 	if rc != 0 {
+		// 导入失败时清掉半成品目录，避免用户重试时一直报「同名应用已存在」。
+		_ = os.RemoveAll(dir)
 		return nil, NewHTTPError(500, "导入后启动失败: "+tailText(out, 2000))
 	}
 	return installedAppDetail(name)

@@ -144,12 +144,18 @@ func webstatsRealtime(path string, limit int) (map[string]any, error) {
 		limit = 50
 	}
 	text := readTailText(real, 512*1024)
-	entries := parseAccessEntries(text, limit)
+	all := parseAccessEntries(text, 0)
+	entries := all
+	if len(entries) > limit {
+		entries = entries[len(entries)-limit:]
+	}
 	now := time.Now()
 	window := now.Add(-60 * time.Second)
 	rpsCount := 0
 	bytesCount := int64(0)
-	for _, e := range entries {
+	// 统计窗口必须基于全部尾部记录，不能只用展示用的最近 limit 条，
+	// 否则高流量时会把 rps / 每秒流量算小。
+	for _, e := range all {
 		tm := parseNginxTime(e.Time)
 		if tm.IsZero() || tm.Before(window) {
 			continue
@@ -159,8 +165,8 @@ func webstatsRealtime(path string, limit int) (map[string]any, error) {
 	}
 	return map[string]any{
 		"file": display, "entries": entries,
-		"rps": float64(rpsCount) / 60.0,
-		"bytes_per_sec": float64(bytesCount) / 60.0,
+		"rps":            float64(rpsCount) / 60.0,
+		"bytes_per_sec":  float64(bytesCount) / 60.0,
 		"window_seconds": 60,
 	}, nil
 }

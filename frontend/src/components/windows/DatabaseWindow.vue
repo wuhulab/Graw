@@ -46,6 +46,7 @@
           <button class="ui-btn mini" @click="emit('openDatabaseManage', { conn: c })">{{ $t('database.manage') }}</button>
           <button v-if="c.db_type === 'mysql' || c.db_type === 'postgresql'" class="ui-btn mini" @click="openUsers(c)">{{ $t('database.users') }}</button>
           <button v-if="c.db_type === 'mysql' || c.db_type === 'postgresql'" class="ui-btn mini" @click="openBackups(c)">{{ $t('database.backups') }}</button>
+          <button v-if="c.db_type === 'mysql' || c.db_type === 'postgresql'" class="ui-btn mini" @click="openCluster(c)">{{ $t('database.cluster') }}</button>
           <button class="ui-btn mini danger" @click="removeConn(c)">{{ $t('database.delete') }}</button>
         </div>
       </div>
@@ -139,6 +140,16 @@
       </div>
     </div>
 
+    <!-- 集群 / 复制状态（只读） -->
+    <div v-if="cluster.show" class="ui-modal-overlay" @click.self="cluster.show = false">
+      <div class="ui-modal wide">
+        <h3>{{ $t('database.clusterTitle', { name: cluster.conn?.name || '' }) }}</h3>
+        <div v-if="cluster.loading" class="ui-empty">{{ $t('common.loading') }}</div>
+        <pre v-else class="cluster-json">{{ cluster.text }}</pre>
+        <div class="ui-actions"><button class="ui-btn" @click="cluster.show = false">{{ $t('common.close') }}</button></div>
+      </div>
+    </div>
+
     <!-- 高风险操作二次确认：删除连接需面板密码 -->
     <ConfirmDialog
       :show="confirm.show"
@@ -176,6 +187,7 @@ const confirm = ref({ show: false, title: '', message: '', action: null })
 const engines = reactive({ show: false, list: [] })
 const users = reactive({ show: false, conn: null, list: [], username: '', password: '', host: '%', database: '', privileges: 'SELECT' })
 const backups = reactive({ show: false, conn: null, list: [], database: '', busy: false })
+const cluster = reactive({ show: false, conn: null, loading: false, text: '' })
 
 function fmtSize(n) { return formatBytes ? formatBytes(Number(n) || 0) : `${n} B` }
 
@@ -300,6 +312,22 @@ async function dropUser(u) {
   }
 }
 
+// --- 集群 / 复制状态（只读） ---
+async function openCluster(c) {
+  cluster.conn = c
+  cluster.show = true
+  cluster.loading = true
+  cluster.text = ''
+  try {
+    const data = await databasesApi.cluster(c.id)
+    cluster.text = JSON.stringify(data, null, 2)
+  } catch (e) {
+    cluster.text = e?.response?.data?.detail || e.message
+  } finally {
+    cluster.loading = false
+  }
+}
+
 // --- 备份与恢复 ---
 async function openBackups(c) {
   backups.conn = c
@@ -373,4 +401,5 @@ onMounted(load)   // 进入窗口即加载
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 .conn-addr { color: var(--g-text-muted); font-size: 12px; margin-top: 4px; }
 .conn-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.cluster-json { background: #0f1722; color: #d7e3f4; border-radius: 8px; padding: 10px; font-size: 11.5px; max-height: 420px; overflow: auto; white-space: pre-wrap; margin: 8px 0; }
 </style>

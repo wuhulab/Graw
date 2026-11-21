@@ -422,7 +422,7 @@ var MODULES = []string{
 	"firewall", "logs", "terminal", "backup", "notify", "appstore",
 	"netstorage", "frp", "batch", "gitdeploy", "report", "tamper", "toolbox",
 	"ftpusers", "svcmonitor", "healthcheck", "portforward", "netmap", "vpn",
-	"loginlog",
+	"loginlog", "ai", "vms", "sync",
 }
 
 // moduleSet 是 MODULES 的集合形式，用于 O(1) 过滤用户 perms 里的未知 key。
@@ -586,10 +586,11 @@ func BumpTokenVersion(username string) error {
 // 前缀大小写不敏感；格式不符返回空串，由调用方转 401。
 func BearerToken(r *http.Request) string {
 	auth := strings.TrimSpace(r.Header.Get("Authorization"))
-	if len(auth) < 7 || !strings.EqualFold(auth[:7], "bearer ") {
-		return ""
+	if len(auth) >= 7 && strings.EqualFold(auth[:7], "bearer ") {
+		return strings.TrimSpace(auth[7:])
 	}
-	return strings.TrimSpace(auth[7:])
+	// API Key 也允许用 X-API-Key 头传递（方便不支持自定义 Authorization 的脚本）。
+	return strings.TrimSpace(r.Header.Get("X-API-Key"))
 }
 
 // Authenticate 校验 HTTP 请求的 Bearer 令牌，返回脱敏用户。
@@ -599,6 +600,10 @@ func Authenticate(r *http.Request, failClosedOnDefault bool) (User, *HTTPError) 
 	token := BearerToken(r)
 	if token == "" {
 		return nil, NewHTTPError(401, "未认证")
+	}
+	// gk_ 开头是长期 API Key，走独立校验（bcrypt + scope + IP + 到期）。
+	if strings.HasPrefix(token, apiKeyPrefix) {
+		return authenticateAPIKey(r, token, failClosedOnDefault)
 	}
 	claims := DecodeToken(token)
 	if claims == nil {

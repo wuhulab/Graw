@@ -249,7 +249,8 @@ function serviceText(app) {
 }
 
 function portUrl(p) {
-  return `http://${location.hostname}:${p.external}`
+  // 沿用当前面板协议，避免面板是 HTTPS 时跳到 http 被浏览器拦截。
+  return `${location.protocol}//${location.hostname}:${p.external}`
 }
 
 function fmtSize(n) {

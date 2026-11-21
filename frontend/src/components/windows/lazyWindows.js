@@ -66,6 +66,11 @@ export const RollbackWindow = lazy(() => import('./RollbackWindow.vue'))
 export const BatchWindow = lazy(() => import('./BatchWindow.vue'))
 export const NodeOverviewWindow = lazy(() => import('./NodeOverviewWindow.vue'))
 export const ReportWindow = lazy(() => import('./ReportWindow.vue'))
+// ---------------- P2：AI / 虚拟机 / API Key / 资源同步 ----------------
+export const AiWindow = lazy(() => import('./AiWindow.vue'))
+export const VmWindow = lazy(() => import('./VmWindow.vue'))
+export const ApiKeyWindow = lazy(() => import('./ApiKeyWindow.vue'))
+export const SyncWindow = lazy(() => import('./SyncWindow.vue'))
 
 // ---------------- 网站 / 数据库 / SSL ----------------
 export const SitesWindow = lazy(() => import('./SitesWindow.vue'))

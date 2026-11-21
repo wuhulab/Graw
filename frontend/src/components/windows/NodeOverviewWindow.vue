@@ -274,8 +274,8 @@ function aggDetail(it) {
 function aggStatus(it) {
   if (aggResource.value === 'certs') return it.expires_at || '-'
   if (it.status) return it.status
-  if (it.enabled !== undefined) return it.enabled ? 'enabled' : 'disabled'
-  return it.running ? 'running' : '-'
+  if (it.enabled !== undefined) return it.enabled ? t('common.enabled') : t('common.disabled')
+  return it.running ? t('common.running') : '-'
 }
 
 // --- 展示计算 ---

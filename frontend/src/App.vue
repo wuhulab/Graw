@@ -295,6 +295,7 @@ import {
   NetmapWindow, ImageScanWindow, SlowQueryWindow, FtpUsersWindow,
   VpnWindow,
   PhpVersionsWindow, SessionsWindow, NodeOverviewWindow,
+  AiWindow, VmWindow, ApiKeyWindow, SyncWindow,
   preloadWindows,   // 空闲预加载：桌面模式下分批预取全部窗口 chunk（打开即渲染）
 } from './components/windows/lazyWindows.js'
 import ShunXSetup from './components/ShunXSetup.vue'
@@ -315,7 +316,7 @@ import { startDocker, stopDocker } from './store/docker'
 import { nodes as nodesStore, refreshNodes, setCurrentNode } from './store/nodes'
 import { setRequestNode } from './store/requestNode'
 import { tamperState, startTamper, stopTamper } from './store/tamper'
-import { Archive, Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, Shield, ShieldAlert, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, BarChart3, FileCode2, History, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug, Pin, PinOff, EyeOff, Clock, BellRing, Gauge, KeyRound, FileUp, Send, Home, Github, Heart, Star, Network } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用；Star 用于 Launchpad 社区支持提示）
+import { Archive, Container, Settings, Folder, Trash2, Terminal, FileText, Image as ImageIcon, Film, LogOut, LayoutGrid, UserCircle2, Globe, Database, Lock, ScrollText, Shield, ShieldAlert, ShieldCheck, Store, BookOpen, ListChecks, Cpu, HardDrive, Palette, Radio, Cloud, Activity, BarChart3, FileCode2, History, MonitorSmartphone, Unlink, UserCheck, Wrench, Settings2, ServerCog, Bug, Pin, PinOff, EyeOff, Clock, BellRing, Gauge, KeyRound, FileUp, Send, Home, Github, Heart, Star, Network, Sparkles, Server, Share2 } from 'lucide-vue-next'   // 图标库：Lucide 矢量图标组件（桌面 / 窗口 / 按钮使用；Star 用于 Launchpad 社区支持提示）
 
 // 桌面「系统概览」三张卡片：按需加载（异步组件）。
 // RingCard / MonitorCard 依赖 ECharts（体积大），且只在「类桌面」形态的首屏渲染——
@@ -493,6 +494,11 @@ const shortcuts = ref([
   // 节点总览：全节点资源聚合视图（指标卡片 + 分组 + 标签筛选 + 批量操作）。
   // /api/nodes 属面板自身安全边界（节点凭据），故要求完整管理员
   { key: 'nodeoverview', label: '节点总览', titleKey: 'app.shortcut.nodeoverview', icon: markRaw(Gauge), component: markRaw(NodeOverviewWindow), w: 1060, h: 660, adminOnly: true, fullAdminOnly: true },
+  // P2：AI / 虚拟机 / API Key / 资源同步
+  { key: 'ai', label: 'AI 助手', titleKey: 'app.shortcut.ai', icon: markRaw(Sparkles), component: markRaw(AiWindow), w: 960, h: 620, adminOnly: true, perm: 'ai' },
+  { key: 'vms', label: '虚拟机', titleKey: 'app.shortcut.vms', icon: markRaw(Server), component: markRaw(VmWindow), w: 1000, h: 600, adminOnly: true, perm: 'vms' },
+  { key: 'apikeys', label: 'API Key', titleKey: 'app.shortcut.apikeys', icon: markRaw(KeyRound), component: markRaw(ApiKeyWindow), w: 920, h: 560, adminOnly: true, fullAdminOnly: true },
+  { key: 'sync', label: '资源同步', titleKey: 'app.shortcut.sync', icon: markRaw(Share2), component: markRaw(SyncWindow), w: 1000, h: 640, adminOnly: true, perm: 'sync' },
   // 站点 Git 自动部署：绑定仓库 + Webhook 自动发布（管理员，面板自身管理项）
   { key: 'gitdeploy', label: 'Git 部署', titleKey: 'app.shortcut.gitdeploy', icon: markRaw(FileCode2), component: markRaw(GitDeployWindow), w: 960, h: 600, adminOnly: true, perm: 'gitdeploy', remoteCap: 'local' },
   // 巡检报告：每日/手动生成系统健康汇总并推送（管理员）

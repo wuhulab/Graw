@@ -46,7 +46,7 @@
     <div style="flex:1; overflow:auto;">
       <!-- ================= 概览视图 ================= -->
       <div v-if="view === 'overview'" style="height:100%;">
-        <DockerOverviewPanel />
+        <DockerOverviewPanel :key="overviewKey" />
       </div>
 
       <!-- ================= 容器视图 ================= -->
@@ -429,6 +429,7 @@ const batchBusy = ref(false)    // 批量操作进行中
 const showCreate = ref(false)   // 新建容器弹窗
 const relatedShow = ref(false)  // 关联资源弹窗
 const relatedContainer = ref(null)
+const overviewKey = ref(0)      // 概览面板 remount key（点刷新时强制重新加载）
 const ctxMenu = ref({ show: false, x: 0, y: 0, item: null })   // 右键操作菜单（容器）
 const imgCtxMenu = ref({ show: false, x: 0, y: 0, item: null })   // 右键操作菜单（镜像）
 const noteDialog = ref({ show: false, text: '', item: null })   // 备注笔记弹窗
@@ -523,7 +524,7 @@ async function onViewChange() {
     else if (view.value === 'images') await loadImages()
     else if (view.value === 'networks') await loadNetworks()
     else if (view.value === 'volumes') await loadVolumes()
-    else if (view.value === 'overview') { /* 概览面板挂载时自行加载 */ }
+    else if (view.value === 'overview') { overviewKey.value++ }   // 概览面板靠 key 重新挂载刷新
     else await refreshContainers()    // 默认（containers）视图刷新容器
   } finally {
     loading.value = false

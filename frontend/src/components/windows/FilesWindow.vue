@@ -639,6 +639,12 @@ async function openFavorites() {
 
 function gotoFavorite(f) {
   favOpen.value = false
+  // 收藏的是文件时，跳到它所在目录，避免把文件路径当目录列目录报错。
+  if (f.is_dir === false) {
+    const idx = f.path.lastIndexOf('/')
+    load(idx > 0 ? f.path.slice(0, idx) : '/')
+    return
+  }
   load(f.path)
 }
 
