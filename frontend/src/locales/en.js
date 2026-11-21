@@ -177,6 +177,12 @@ export default {
     panelModeOff: 'Disabled',
     panelTabs: 'Use tab caching in panel mode',
     panelTabsHint: 'When enabled, opened apps are kept as tabs (state preserved when switching back); when disabled, pages switch without caching.',
+    // App favorites and hidden apps (right-click an app; optionally isolated per account)
+    appPrefsTitle: 'App favorites and hidden apps',
+    appPrefsPerUser: 'Separate favorites and hidden apps per account',
+    appPrefsPerUserHint: 'When enabled, favorites and hidden apps apply only to the current account, so different accounts in the same browser do not affect each other; when disabled, all accounts share the same settings.',
+    hiddenApps: 'Hidden apps',
+    noHiddenApps: 'No hidden apps (right-click an app in the sidebar or desktop to hide it)',
     // OAuth2.0 login (admin-only configuration; login page only shows the provider name)
     oauthTitle: 'OAuth2.0 Login',
     oauthHint: 'Allow users to sign in through an external OAuth2.0 provider (authorization code flow). A panel token is issued only after a successful callback. The GitHub template fills in the official endpoints.',
@@ -1241,6 +1247,7 @@ Document version: 1.1.0 | Updated: 2026-08-16`,
     favorites: 'Favorites',
     favAdd: 'Add to top',
     favRemove: 'Remove favorite',
+    hideApp: 'Hide this app',
     favHint: 'Right-click an app to favorite and pin it to the top',
     menu: {
       monitor: 'Monitor',
@@ -1275,9 +1282,9 @@ Document version: 1.1.0 | Updated: 2026-08-16`,
   // Desktop shortcuts (hide / pin to taskbar)
   desktop: {
     title: 'Desktop Apps',
-    titleHint: 'Right-click an app on the desktop to hide it or pin it to the taskbar. Restore hidden apps or unpin them here.',
+    titleHint: 'Right-click an app on the desktop or in the sidebar to hide it or pin it to the taskbar. Restore hidden apps or unpin them here.',
     perUser: 'Only for current user',
-    perUserHint: 'When enabled, hide/pin preferences apply only to the logged-in account; otherwise they are shared by all accounts',
+    perUserHint: 'When enabled, favorite/hide/pin preferences apply only to the logged-in account; otherwise they are shared by all accounts',
     hiddenSection: 'Hidden apps',
     pinnedSection: 'Pinned to taskbar',
     restore: 'Restore',

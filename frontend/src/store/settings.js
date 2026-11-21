@@ -65,8 +65,6 @@ const defaults = {
   overviewDecimals: true,
   // 界面主题：light=浅色 / dark=暗色（通过 html[data-theme] 切换 CSS 变量）
   theme: 'light',
-  // 传统服务器面板收藏：右键菜单收藏的应用 key，按收藏顺序置顶显示在侧边栏
-  panelFavorites: [],
 }
 
 // 主题合法值：非法值统一回退浅色，避免缓存损坏导致界面配色异常
@@ -145,9 +143,10 @@ function load() {
     const merged = { ...defaults, ...parsed }    // 与默认值合并：新增偏好项时旧缓存也能正常读出
     // 界面模式以独立偏好键为准：旧快照里的 panelMode 不再代表用户选择
     merged.panelMode = initialPanelMode()
-    // 主题与收藏列表做合法性兜底：旧缓存 / 手工修改损坏时回退默认，避免界面配色异常
+    // 主题做合法性兜底：旧缓存 / 手工修改损坏时回退默认，避免界面配色异常
     if (!THEMES.includes(merged.theme)) merged.theme = 'light'
-    if (!Array.isArray(merged.panelFavorites)) merged.panelFavorites = []
+    // 收藏已迁移到 desktopPrefs（支持分账号隔离），旧快照字段不再保留
+    delete merged.panelFavorites
     return merged
   } catch {
     return { ...defaults, panelMode: initialPanelMode() }   // 存储损坏/被禁用：宁可丢偏好也不能让应用启动失败
@@ -178,7 +177,6 @@ watch(
     bracketLang: settings.bracketLang,
     overviewDecimals: settings.overviewDecimals,
     theme: settings.theme,
-    panelFavorites: settings.panelFavorites,
   }),
   (val) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(val))   // 整份快照覆盖写，保持存储结构与 defaults 对齐

@@ -621,6 +621,7 @@ export default {
     favorites: '收藏',
     favAdd: '收藏到顶部',
     favRemove: '取消收藏',
+    hideApp: '隐藏此应用',
     favHint: '右键应用可收藏并置顶',
     menu: {
       monitor: '概览监控',
@@ -655,9 +656,9 @@ export default {
   // 桌面快捷方式（隐藏/固定到任务栏）
   desktop: {
     title: '桌面应用',
-    titleHint: '在桌面右键应用可以选择隐藏或固定到任务栏。此处可恢复隐藏的应用，或取消任务栏固定。',
+    titleHint: '在桌面或侧边栏右键应用可以选择隐藏或固定到任务栏。此处可恢复隐藏的应用，或取消任务栏固定。',
     perUser: '仅当前用户生效',
-    perUserHint: '开启后，隐藏 / 固定只对当前登录账号生效；关闭则为所有账号共享',
+    perUserHint: '开启后，收藏 / 隐藏 / 固定只对当前登录账号生效；关闭则为所有账号共享',
     hiddenSection: '已隐藏的应用',
     pinnedSection: '已固定到任务栏',
     restore: '恢复显示',
@@ -1819,6 +1820,12 @@ Graw 社区应用商店（以下简称"本商店"）是由 ShunX 公益母团队
     panelModeOff: '未启用',
     panelTabs: '面板模式使用标签页缓存',
     panelTabsHint: '开启后打开过的应用以标签页保留状态（切回不丢内容）；关闭则为单页切换。',
+    // 应用收藏与隐藏（右键应用操作，支持按账号隔离）
+    appPrefsTitle: '应用收藏与隐藏',
+    appPrefsPerUser: '收藏和隐藏应用分账号隔离',
+    appPrefsPerUserHint: '开启后，收藏与隐藏的应用只对当前登录账号生效，同一浏览器切换账号互不影响；关闭则所有账号共享同一份设置。',
+    hiddenApps: '已隐藏的应用',
+    noHiddenApps: '暂无隐藏的应用（在侧边栏或桌面右键应用可隐藏）',
     // OAuth2.0 登录（仅管理员可配置；登录页只显示提供方名称）
     oauthTitle: 'OAuth2.0 登录',
     oauthHint: '允许用户通过外部 OAuth2.0 提供方（授权码模式）登录面板。回调成功后才签发面板令牌；支持 GitHub 模板一键填充。',

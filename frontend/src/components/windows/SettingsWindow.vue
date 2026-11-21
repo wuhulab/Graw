@@ -72,6 +72,27 @@
         <div class="hint">{{ $t('settings.panelTabsHint') }}</div>
       </div>
 
+      <!-- 应用收藏与隐藏：分账号隔离开关 + 已隐藏应用恢复（右键应用隐藏后在此恢复） -->
+      <div class="block" v-show="activeTab === 'general'">
+        <div class="block-title">{{ $t('settings.appPrefsTitle') }}</div>
+        <div class="row" style="justify-content:space-between; padding:2px 0;">
+          <label class="switch-label">
+            <input type="checkbox" v-model="desktopPrefs.perUser" />
+            <span style="font-size:12px;font-weight:600;color:var(--g-text);">{{ $t('settings.appPrefsPerUser') }}</span>
+          </label>
+        </div>
+        <div class="hint">{{ $t('settings.appPrefsPerUserHint') }}</div>
+
+        <template v-if="hiddenApps.length">
+          <div style="font-size:12px;font-weight:600;color:var(--g-text);margin:10px 0 4px;">{{ $t('settings.hiddenApps') }}</div>
+          <div v-for="a in hiddenApps" :key="'hide-' + a.key" class="row" style="justify-content:space-between;padding:3px 0;">
+            <span style="font-size:12px;color:var(--g-text);">{{ a.name }}</span>
+            <button class="btn btn-mini" @click="restoreApp(a.key)">{{ $t('desktop.restore') }}</button>
+          </div>
+        </template>
+        <div v-else class="hint" style="margin-top:6px;">{{ $t('settings.noHiddenApps') }}</div>
+      </div>
+
       <!-- 语言括号提示：古代语言（古埃及语、苏美尔语等）的文案约定写成
            「本语言书写 (中文原文/拉丁转写)」，这里控制该括号注释的显示与内容 -->
       <div class="block" v-show="activeTab === 'general'">
@@ -570,6 +591,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'         // 响应式、计算属性、挂载
 import { useI18n } from 'vue-i18n'                               // 国际化：取 t() 生成动态文案
 import { settings } from '../../store/settings'                 // 全局界面设置（任务栏/语言等）
+import { desktopPrefs, showShortcut } from '../../store/desktopPrefs'   // 应用收藏/隐藏偏好（分账号隔离与恢复）
 import { isAdmin, isFullAdmin } from '../../store/auth'          // 管理员门控：限定敏感区块（OAuth 配置要求完整管理员）
 import { nodesApi, shunxApi, panelApi, updateApi, webmodeApi, authApi, agentApi, recycleApi, pluginApi } from '../../api'   // 各设置区块后端接口
 import { nodes as nodesStore, refreshNodes, setCurrentNode } from '../../store/nodes'   // 多节点状态与当前节点切换
@@ -589,7 +611,21 @@ const SETTINGS_TABS = [
 const activeTab = ref('general')   // 当前设置分类（默认通用与外观）
 const visibleTabs = computed(() => SETTINGS_TABS.filter((tab) => !tab.adminOnly || isAdmin()))
 
-const { t } = useI18n()
+const { t, te } = useI18n()
+
+// 已隐藏应用清单：名称按 key 从语言包推断（app.shortcut.<key> → app.winTitle.<key> → key），
+// 与 App.vue 的应用清单保持一致，避免在这里再维护一份易失真的名称映射。
+const hiddenApps = computed(() => desktopPrefs.hiddenKeys.map((key) => {
+  const scKey = `app.shortcut.${key}`
+  const winKey = `app.winTitle.${key}`
+  const name = te(scKey) ? t(scKey) : (te(winKey) ? t(winKey) : key)
+  return { key, name }
+}))
+
+// 恢复显示：从隐藏列表移除，应用立即回到侧边栏 / 桌面 / 全局搜索
+function restoreApp(key) {
+  showShortcut(key)
+}
 
 // 语言括号提示的「括号内语言」选项：code 对应 settings.bracketLang，
 // label 为 i18n key（在模板里用 $t(opt.label) 渲染，保证随语言切换实时更新）

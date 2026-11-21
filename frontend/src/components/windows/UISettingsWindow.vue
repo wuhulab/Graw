@@ -255,9 +255,9 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'   // 响应式�
 import { useI18n } from 'vue-i18n'   // 取 t()，界面文案跟随面板语言
 import { uiApi } from '../../api'   // 界面设置后端能力：/api/ui/* 的封装
 import { settings } from '../../store/settings'   // 全局界面设置（底栏/桌面文字样式，即改即存）
-import { desktopPrefs, showShortcut, unpinShortcut } from '../../store/desktopPrefs'   // 桌面快捷方式偏好（隐藏/固定/仅当前用户）
+import { desktopPrefs, showShortcut, unpinShortcut } from '../../store/desktopPrefs'   // 应用偏好（收藏/隐藏/固定，支持分账号隔离）
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 
 // 表单数据：网站名 / 欢迎语 / Logo / 动态壁纸（背景列表 / 视频 / 模式 / 间隔）+ 环形图配色
 const form = reactive({
@@ -481,56 +481,28 @@ async function save() {
 
 onMounted(load)   // 打开即读取当前界面配置
 
-// ---- 桌面快捷方式（隐藏/固定 管理）：列出已隐藏的应用便于恢复、已固定的应用便于取消固定 ----
-// 快捷方式的完整清单（key/标题/图标）由 App.vue 维护；这里只需一份可展示的
-// key → 名称映射（titleKey 走 i18n，缺省回退 label），用于列出隐藏/固定的项。
-const DESKTOP_SC_DEFS = [
-  { key: 'sites', label: '网站', titleKey: 'app.shortcut.sites' },
-  { key: 'database', label: '数据库', titleKey: 'app.shortcut.database' },
-  { key: 'frp', label: 'Frp内网穿透', titleKey: 'app.shortcut.frp' },
-  { key: 'logs', label: '日志', titleKey: 'app.shortcut.logs' },
-  { key: 'docker', label: 'Docker', titleKey: 'app.shortcut.docker' },
-  { key: 'appstore', label: '应用商店', titleKey: 'app.shortcut.appstore' },
-  { key: 'tasks', label: '任务', titleKey: 'app.shortcut.tasks' },
-  { key: 'shunxprotection', label: 'ShunX保护机制', titleKey: 'app.shortcut.shunxprotection' },
-  { key: 'runtime', label: '运行环境', titleKey: 'app.shortcut.runtime' },
-  { key: 'process', label: '进程管理', titleKey: 'app.shortcut.process' },
-  { key: 'files', label: '文件管理', titleKey: 'app.shortcut.files' },
-  { key: 'recycle', label: '回收站', titleKey: 'app.shortcut.recycle' },
-  { key: 'netstorage', label: '网络储存', titleKey: 'app.shortcut.netstorage' },
-  { key: 'uisettings', label: '界面设置', titleKey: 'app.shortcut.uisettings' },
-  { key: 'disks', label: '磁盘管理', titleKey: 'app.shortcut.disks' },
-  { key: 'monitoring', label: '监控', titleKey: 'app.shortcut.monitoring' },
-  { key: 'webstats', label: '访问统计', titleKey: 'app.shortcut.webstats' },
-  { key: 'rewrite', label: '伪静态规则', titleKey: 'app.shortcut.rewrite' },
-  { key: 'siteopts', label: '防盗链缓存', titleKey: 'app.shortcut.siteopts' },
-  { key: 'metricshistory', label: '历史监控', titleKey: 'app.shortcut.metricshistory' },
-  { key: 'certcheck', label: '证书到期', titleKey: 'app.shortcut.certcheck' },
-  { key: 'ftpusers', label: 'FTP用户', titleKey: 'app.shortcut.ftpusers' },
-  { key: 'phpversions', label: 'PHP版本', titleKey: 'app.shortcut.phpversions' },
-  { key: 'sessions', label: '会话管理', titleKey: 'app.shortcut.sessions' },
-  { key: 'terminal', label: '终端', titleKey: 'app.shortcut.terminal' },
-  { key: 'foxcode', label: 'Foxcode', titleKey: '' },
-]
-
-function scDefByKey(key) {
-  return DESKTOP_SC_DEFS.find(d => d.key === key)
+// ---- 应用偏好（收藏/隐藏/固定 管理）：列出已隐藏的应用便于恢复、已固定的应用便于取消固定 ----
+// 应用完整清单由 App.vue 维护；这里按 key 从语言包推断显示名，避免再维护一份易失真的映射。
+function appName(key) {
+  const scKey = `app.shortcut.${key}`
+  const winKey = `app.winTitle.${key}`
+  return te(scKey) ? t(scKey) : (te(winKey) ? t(winKey) : key)
 }
+
+// 已隐藏应用（含名称）：按隐藏顺序展示，便于恢复
+const hiddenShortcuts = computed(() =>
+  desktopPrefs.hiddenKeys.map(k => ({ key: k, name: appName(k) }))
+)
+
+// 固定到任务栏的应用（含名称），可按需取消固定
+const pinnedShortcutsManage = computed(() =>
+  desktopPrefs.pinnedKeys.map(k => ({ key: k, name: appName(k) }))
+)
 
 function displayScName(sc) {
   if (!sc) return ''
-  return sc.titleKey ? t(sc.titleKey) : (sc.label || sc.key)
+  return sc.name || appName(sc.key)
 }
-
-// 已隐藏快捷方式（含名称）：按固定顺序展示，便于恢复
-const hiddenShortcuts = computed(() =>
-  desktopPrefs.hiddenKeys.map(k => scDefByKey(k)).filter(Boolean)
-)
-
-// 固定到任务栏的快捷方式（含名称），可按需取消固定
-const pinnedShortcutsManage = computed(() =>
-  desktopPrefs.pinnedKeys.map(k => scDefByKey(k)).filter(Boolean)
-)
 
 function restoreShortcut(key) {
   showShortcut(key)

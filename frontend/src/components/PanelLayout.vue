@@ -111,11 +111,10 @@
             <span v-if="!(collapsed && !isMobile)" class="pnl-item-label">{{ $t('panel.home') }}</span>
           </button>
 
-          <!-- 收藏分组：右键应用收藏后置顶显示在侧边栏最上方 -->
+          <!-- 收藏分组：右键应用收藏后置顶显示在侧边栏最上方（样式与普通分组一致） -->
           <div v-if="favoriteItems.length && !searching" class="pnl-group pnl-fav-group">
             <div class="pnl-group-head pnl-fav-head">
               <span class="pnl-group-title">{{ $t('panel.favorites') }}</span>
-              <Star :size="12" class="pnl-fav-icon" />
             </div>
             <div class="pnl-group-items">
               <button
@@ -129,7 +128,6 @@
               >
                 <span class="pnl-item-icon"><component :is="it.icon" :size="16" /></span>
                 <span v-if="!(collapsed && !isMobile)" class="pnl-item-label">{{ itemName(it) }}</span>
-                <Star v-if="!(collapsed && !isMobile)" :size="11" class="pnl-item-star" fill="currentColor" />
               </button>
             </div>
           </div>
@@ -157,12 +155,6 @@
                     <Lock v-if="it.starLocked" :size="9" class="pnl-item-lock" />
                   </span>
                   <span v-if="!(collapsed && !isMobile)" class="pnl-item-label">{{ itemName(it) }}</span>
-                  <Star
-                    v-if="isFavorite(it.key) && !(collapsed && !isMobile)"
-                    :size="11"
-                    class="pnl-item-star"
-                    fill="currentColor"
-                  />
                 </button>
               </div>
             </div>
@@ -222,7 +214,7 @@
       </main>
     </div>
 
-    <!-- 侧边栏应用右键菜单：收藏 / 取消收藏（收藏后置顶到侧边栏最上方） -->
+    <!-- 侧边栏应用右键菜单：收藏 / 取消收藏 / 隐藏此应用（收藏置顶；隐藏后在设置里可恢复） -->
     <Transition name="pnl-drop">
       <div
         v-if="favMenu.show"
@@ -235,6 +227,10 @@
           <Star :size="14" :fill="favMenu.favorited ? 'currentColor' : 'none'" />
           {{ favMenu.favorited ? $t('panel.favRemove') : $t('panel.favAdd') }}
         </button>
+        <button v-if="favMenu.hideable" class="pnl-drop-item" @click="hideAppFromMenu">
+          <EyeOff :size="14" />
+          {{ $t('panel.hideApp') }}
+        </button>
       </div>
     </Transition>
   </div>
@@ -245,11 +241,11 @@ import { ref, reactive, computed, onMounted, onUnmounted, markRaw, watch } from 
 import { useI18n } from 'vue-i18n'
 import {
   Menu, X, Search, LogOut, Settings, UserCircle2, KeyRound, Palette,
-  ChevronDown, LayoutGrid, Home, Server, Github, Heart, Lock, Star,
+  ChevronDown, LayoutGrid, Home, Server, Github, Heart, Lock, Star, EyeOff,
 } from 'lucide-vue-next'
 import WindowContent from './WindowContent.vue'
 import { isAdmin } from '../store/auth'
-import { settings } from '../store/settings'   // 侧边栏收藏偏好（panelFavorites，本机持久化）
+import { desktopPrefs, isFavorite, toggleFavorite, hideShortcut } from '../store/desktopPrefs'   // 应用收藏 / 隐藏（支持分账号隔离）
 import { nodes, refreshNodes, setCurrentNode } from '../store/nodes'   // 多节点状态与当前主机切换
 
 // 主窗口面板模式：菜单分组定义（组标题 i18n key + 成员 key 清单）。
@@ -452,30 +448,30 @@ function itemName(it) {
   return it.titleKey ? t(it.titleKey) : (it.label || it.key)
 }
 
-// ---- 应用收藏：右键收藏后置顶显示（本机偏好，存 settings.panelFavorites） ----
-const favMenu = reactive({ show: false, x: 0, y: 0, key: '', name: '', favorited: false })
+// ---- 应用收藏 / 隐藏：右键操作（偏好存 desktopPrefs，可按账号隔离） ----
+const favMenu = reactive({ show: false, x: 0, y: 0, key: '', name: '', favorited: false, hideable: false })
 
-// 收藏列表：按收藏顺序解析成菜单项，过滤已下架 / 当前用户无权的应用
+// 收藏列表：按收藏顺序解析成菜单项，过滤已下架 / 已隐藏 / 当前用户无权的应用
 const favoriteItems = computed(() =>
-  settings.panelFavorites
+  desktopPrefs.favoriteKeys
+    .filter((key) => !desktopPrefs.hiddenKeys.includes(key))
     .map((key) => menuItem(key))
     .filter(Boolean)
     .filter((it) => !it.adminOnly || isAdmin())
 )
 
-function isFavorite(key) {
-  return settings.panelFavorites.includes(key)
-}
-
 // 打开右键菜单：限制在视口内，避免贴右边 / 底部被截断
 function openFavMenu(e, key) {
   const it = menuItem(key)
   if (!it) return
+  // 只有真正的应用快捷方式才能隐藏（设置 / 账号管理等面板自身入口不参与隐藏）
+  const hideable = props.menuShortcuts.some((s) => s.key === key)
   const menuW = 180
-  const menuH = 82
+  const menuH = hideable ? 122 : 84
   favMenu.key = key
   favMenu.name = itemName(it)
   favMenu.favorited = isFavorite(key)
+  favMenu.hideable = hideable
   favMenu.x = Math.min(e.clientX, window.innerWidth - menuW - 8)
   favMenu.y = Math.min(e.clientY, window.innerHeight - menuH - 8)
   favMenu.show = true
@@ -483,14 +479,15 @@ function openFavMenu(e, key) {
 
 // 收藏 / 取消收藏（收藏即置顶：收藏分组渲染在菜单分组之前）
 function toggleFavoriteFromMenu() {
-  const key = favMenu.key
-  if (!key) return
-  if (isFavorite(key)) {
-    settings.panelFavorites = settings.panelFavorites.filter((k) => k !== key)
-  } else {
-    // 重新收藏时放到最前，符合「最近收藏优先」的使用直觉
-    settings.panelFavorites = [key, ...settings.panelFavorites.filter((k) => k !== key)]
-  }
+  if (!favMenu.key) return
+  toggleFavorite(favMenu.key)
+  favMenu.show = false
+}
+
+// 隐藏应用：从侧边栏 / 桌面 / 全局搜索移除，可在「设置 → 应用收藏与隐藏」里恢复
+function hideAppFromMenu() {
+  if (!favMenu.key) return
+  hideShortcut(favMenu.key)
   favMenu.show = false
 }
 
@@ -802,13 +799,10 @@ watch(searching, (v) => {
   pointer-events: none;
 }
 .pnl-item-label { overflow: hidden; text-overflow: ellipsis; }
-/* 收藏标记：常驻显示在收藏项/已收藏项右侧 */
-.pnl-item-star { margin-left: auto; color: #f5a623; flex-shrink: 0; }
-/* 收藏分组：与普通分组之间留出分隔，突出置顶位置 */
-.pnl-fav-group { margin-bottom: 6px; }
-.pnl-fav-head { cursor: default; color: #f5a623; }
-.pnl-fav-head:hover { background: transparent; color: #f5a623; }
-.pnl-fav-icon { margin-right: 2px; }
+/* 收藏分组：与普通分组同色同间距（左缩进对齐 .pnl-menu 的 8px 内边距） */
+.pnl-fav-group { margin-bottom: 6px; padding: 0 8px; }
+.pnl-fav-head { cursor: default; }
+.pnl-fav-head:hover { background: transparent; }
 
 /* 应用右键菜单：浮层固定定位，层级高于侧边栏 */
 .pnl-ctxmenu {
