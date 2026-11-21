@@ -30,8 +30,9 @@
     「网站」窗口的「WAF」入口。
 -->
 <template>
-  <div class="waf-window">
-    <!-- 顶部工具栏：全局开关 + 站点选择 + 操作按钮 -->
+  <WindowTabNav v-model="activeTab" :items="navItems">
+    <div class="waf-window">
+      <!-- 顶部工具栏：全局开关 + 站点选择 + 操作按钮 -->
     <div class="toolbar">
       <span class="badge" :class="globalEnabled ? 'ok' : 'off'">
         全局 WAF：{{ globalEnabled ? '已开启' : '已关闭' }}
@@ -49,14 +50,6 @@
       <button class="ui-btn primary" :disabled="!currentSite" @click="save">保存站点策略</button>
       <button class="ui-btn" :disabled="!currentSite" @click="loadPreview">生成预览</button>
       <button class="ui-btn" @click="applyAll">全局应用</button>
-    </div>
-
-    <!-- 页签导航 -->
-    <div class="tabs">
-      <button v-for="(tab, i) in tabs" :key="tab.key" class="tab"
-              :class="{ active: activeTab === i }" @click="activeTab = i">
-        {{ tab.label }}
-      </button>
     </div>
 
     <div class="body">
@@ -301,13 +294,19 @@
       @confirm="doClearLogs"
       @cancel="confirm.show = false"
     />
-  </div>
+    </div>
+  </WindowTabNav>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'   // 响应式状态、表单对象、挂载钩子
+import { ref, reactive, computed, onMounted } from 'vue'   // 响应式状态、表单对象、页签清单、挂载钩子
 import { wafApi } from '../../api'   // WAF 后端能力：/api/waf/* 的封装
 import ConfirmDialog from '../ConfirmDialog.vue'   // 高风险操作确认框（清空日志要求输入面板密码）
+import WindowTabNav from '../WindowTabNav.vue'   // 统一左侧竖排页签导航
+import {
+  Gauge, Timer, ShieldCheck, SlidersHorizontal, Wrench, ListFilter,
+  Map, Globe2, FileCode2, ScrollText, Hourglass
+} from 'lucide-vue-next'
 
 // openWafAclForm 打开独立「ACL 编辑」窗口
 const emit = defineEmits(['openWafAclForm'])
@@ -317,19 +316,22 @@ const confirm = ref({ show: false, action: null })
 
 // ---- 页签定义 ----
 const tabs = [
-  { key: 'overview', label: '总览' },
-  { key: 'freq', label: '频率' },
-  { key: 'defense', label: '防御规则' },
-  { key: 'custom', label: '自定义' },
-  { key: 'other', label: '其他' },
-  { key: 'bw', label: '黑白名单' },
-  { key: 'map', label: '拦截地图' },
-  { key: 'geo', label: '地区' },
-  { key: 'acl', label: '自定义ACL' },
-  { key: 'logs', label: '拦截日志' },
-  { key: 'hall', label: '等候厅' },
+  { key: 'overview', label: '总览', icon: Gauge },
+  { key: 'freq', label: '频率', icon: Timer },
+  { key: 'defense', label: '防御规则', icon: ShieldCheck },
+  { key: 'custom', label: '自定义', icon: SlidersHorizontal },
+  { key: 'other', label: '其他', icon: Wrench },
+  { key: 'bw', label: '黑白名单', icon: ListFilter },
+  { key: 'map', label: '拦截地图', icon: Map },
+  { key: 'geo', label: '地区', icon: Globe2 },
+  { key: 'acl', label: '自定义ACL', icon: FileCode2 },
+  { key: 'logs', label: '拦截日志', icon: ScrollText },
+  { key: 'hall', label: '等候厅', icon: Hourglass },
 ]
 const activeTab = ref(0)
+
+// 左侧页签：沿用数字索引（模板按 activeTab === 0…10 切换内容）
+const navItems = computed(() => tabs.map((tab, i) => ({ key: i, label: tab.label, icon: tab.icon })))
 
 const defenseItems = [
   { key: 'sql', label: 'SQL 注入' },
@@ -600,11 +602,6 @@ function aclActionClass(a) {
 .sep { width: 1px; height: 20px; background: #d0d0d4; }
 
 .site-select { width: 220px; padding: 4px 6px; }
-
-.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--g-border); flex-wrap: wrap; }
-.tab { padding: 6px 12px; background: transparent; border: none; border-bottom: 2px solid transparent;
-  cursor: pointer; font-size: 13px; color: var(--g-text-muted); }
-.tab.active { color: #2563eb; border-bottom-color: #2563eb; font-weight: 600; }
 
 .body { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 10px;
   padding: 10px 4px; }

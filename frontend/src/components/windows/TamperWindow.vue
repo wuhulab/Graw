@@ -29,8 +29,9 @@
     桌面「防篡改」应用图标打开。
 -->
 <template>
-  <div class="tamper-window" @click="closeMenus">
-    <!-- 顶部：全局状态 + 全局开关 -->
+  <WindowTabNav :model-value="tab" :items="navItems" @update:model-value="switchTab">
+    <div class="tamper-window" @click="closeMenus">
+      <!-- 顶部：全局状态 + 全局开关 -->
     <div class="toolbar">
       <div class="global-status">
         <span class="status-badge" :class="globalStatusClass">{{ $t('tamper.globalStatus') }}：{{ globalStatusText }}</span>
@@ -46,18 +47,6 @@
         </template>
         <button class="ui-btn" :disabled="loading" @click="loadAll">{{ $t('common.refresh') }}</button>
       </div>
-    </div>
-
-    <!-- 标签页 -->
-    <div class="ui-tabs">
-      <button class="ui-tab" :class="{ active: tab === 'sites' }" @click="tab = 'sites'; loadAll()">
-        <ShieldAlert :size="14" /> {{ $t('tamper.tabSites') }}
-        <span v-if="protections.length" class="count-badge">{{ protections.length }}</span>
-      </button>
-      <button class="ui-tab" :class="{ active: tab === 'history' }" @click="tab = 'history'; loadHistory()">
-        <History :size="14" /> {{ $t('tamper.tabHistory') }}
-        <span v-if="history.length" class="count-badge warn">{{ history.length }}</span>
-      </button>
     </div>
 
     <!-- ============ 标签页一：防护站点 ============ -->
@@ -185,12 +174,14 @@
       @confirm="doConfirm"
       @cancel="confirm.show = false"
     />
-  </div>
+    </div>
+  </WindowTabNav>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'   // 响应式状态、派生文案、挂载钩子
 import { useI18n } from 'vue-i18n'   // 取 t()，界面文案跟随面板语言
+import WindowTabNav from '../WindowTabNav.vue'   // 统一左侧竖排页签导航
 import { ShieldAlert, ShieldCheck, History, Power, OctagonAlert } from 'lucide-vue-next'   // 页签 / 全局开关 / 危险确认的图标
 import { tamperApi } from '../../api'   // 防篡改后端能力：/api/tamper/* 的封装
 import { tamperState, refreshTamperStatus, enableProtection, disableForMinutes, disableManual } from '../../store/tamper'   // 全局防篡改状态与操作（含 WS 告警）
@@ -203,6 +194,18 @@ const { t } = useI18n()
 const emit = defineEmits(['openTamperForm'])
 
 const tab = ref('sites')      // 当前页签：'sites' 防护站点 / 'history' 篡改记录
+
+// 左侧页签：站点数 / 篡改记录数作为角标；切换时按原有逻辑加载
+const navItems = computed(() => [
+  { key: 'sites', label: t('tamper.tabSites'), icon: ShieldAlert, badge: protections.value.length || '' },
+  { key: 'history', label: t('tamper.tabHistory'), icon: History, badge: history.value.length || '' },
+])
+
+function switchTab(k) {
+  tab.value = k
+  if (k === 'history') loadHistory()
+  else loadAll()
+}
 const loading = ref(false)    // 列表加载中（首屏与空状态判断）
 const busy = ref(false)       // 行内操作进行中（启停 / 备份 / 扫描等），用于禁用按钮
 const protections = ref([])   // 已配置防篡改的站点列表
@@ -402,9 +405,6 @@ onMounted(() => {
 .status-badge.off { background: #fee2e2; color: #b91c1c; }
 .remain { font-size: 12px; color: #9a3412; }
 .toolbar-actions { display: flex; gap: 8px; }
-
-.count-badge { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #2563eb; color: #fff; font-size: 10px; display: inline-flex; align-items: center; justify-content: center; }
-.count-badge.warn { background: #dc2626; }
 
 .tab-body { flex: 1; overflow: auto; }
 .table-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }

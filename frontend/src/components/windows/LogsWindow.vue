@@ -9,19 +9,12 @@
   打开方式：桌面「日志」卡片；登录 / 审计视图内嵌 LoginLogWindow / AuditLogWindow 子组件。
 -->
 <template>
-  <div class="logs-window">
-    <div class="toolbar">
-      <!-- 视图切换：系统日志 / 登录日志 / 审计日志 -->
-      <div class="mode-tabs">
-        <button class="tab" :class="{ active: mode === 'logs' }" @click="switchMode('logs')">{{ $t('logs.modeSys') }}</button>
-        <button class="tab" :class="{ active: mode === 'login' }" @click="switchMode('login')">{{ $t('logs.modeLogin') }}</button>
-        <button class="tab" :class="{ active: mode === 'audit' }" @click="switchMode('audit')">{{ $t('logs.modeAudit') }}</button>
-      </div>
-      <template v-if="mode === 'logs'">
+  <WindowTabNav v-model="mode" :items="tabs">
+    <div class="logs-window">
+      <div v-if="mode === 'logs'" class="toolbar">
         <button class="btn primary" @click="emit('openLogCollectForm', { source: null })">{{ $t('logs.add') }}</button>
         <button class="btn" @click="refresh">{{ $t('logs.refresh') }}</button>
-      </template>
-    </div>
+      </div>
 
     <!-- 系统日志视图 -->
     <div v-if="mode === 'logs'" class="layout">
@@ -66,7 +59,8 @@
       @confirm="doClearLog"
       @cancel="confirm.show = false"
     />
-  </div>
+    </div>
+  </WindowTabNav>
 </template>
 
 <script setup>
@@ -83,6 +77,8 @@ import LoginLogWindow from './LoginLogWindow.vue'
 import AuditLogWindow from './AuditLogWindow.vue'
 // 表单保存信号：独立「添加日志源」窗口保存成功后刷新本列表
 import { formBus } from '../../store/formBus'
+import WindowTabNav from '../WindowTabNav.vue'   // 统一左侧竖排页签导航
+import { ScrollText, Fingerprint, ClipboardList } from 'lucide-vue-next'
 
 const { t } = useI18n()
 
@@ -97,13 +93,15 @@ const confirm = ref({ show: false, path: '' })
 // 视图模式：'logs' 系统日志 / 'login' 登录日志 / 'audit' 审计日志
 const mode = ref('logs')
 
+// 左侧页签：系统日志 / 登录日志 / 审计日志
+const tabs = computed(() => [
+  { key: 'logs', label: t('logs.modeSys'), icon: ScrollText },
+  { key: 'login', label: t('logs.modeLogin'), icon: Fingerprint },
+  { key: 'audit', label: t('logs.modeAudit'), icon: ClipboardList },
+])
+
 // 添加日志源改由独立窗口承载：保存成功后 bumpForm('logs') 触发此处重载
 watch(() => formBus.logs, refresh)
-
-// --- 动作：切换视图标签（系统/登录/审计） ---
-function switchMode(m) {
-  mode.value = m
-}
 
 // 内容视图：把多行数组直接拼成文本供 <pre> 显示
 const contentText = computed(() => lines.value.join(''))
@@ -158,12 +156,8 @@ onMounted(refresh)   // 打开即加载日志源列表
 </script>
 
 <style scoped>
-.logs-window { padding: 10px; display: flex; flex-direction: column; height: 100%; }
+.logs-window { padding: 10px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; min-height: 0; }
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-/* 视图切换标签 */
-.mode-tabs { display: inline-flex; border: 1px solid var(--g-border); border-radius: 8px; overflow: hidden; }
-.mode-tabs .tab { padding: 6px 14px; font-size: 13px; background: var(--g-surface); border: none; cursor: pointer; color: var(--g-text-muted); }
-.mode-tabs .tab.active { background: var(--g-strong); color: #fff; }
 /* 登录日志视图容器 */
 .login-wrap { flex: 1; min-height: 0; }
 .layout { display: flex; gap: 10px; flex: 1; min-height: 0; }

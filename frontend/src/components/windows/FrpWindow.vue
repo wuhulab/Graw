@@ -10,16 +10,11 @@
   打开方式：桌面「内网穿透」卡片。
 -->
 <template>
-  <div class="frp-window">
-    <!-- 顶部工具条：模式切换 + 状态 + 进程控制 -->
-    <div class="toolbar">
-      <label class="mode-label">{{ $t('frp.mode') }}</label>
-      <select v-model="mode" @change="onModeChange">
-        <option value="server">{{ $t('frp.modeServer') }}</option>
-        <option value="client">{{ $t('frp.modeClient') }}</option>
-      </select>
-
-      <span class="badge" :class="installed ? 'ok' : 'warn'">{{ $t(installed ? 'frp.installed' : 'frp.notInstalled') }}</span>
+  <WindowTabNav :model-value="mode" :items="tabs" @update:model-value="switchMode">
+    <div class="frp-window">
+      <!-- 顶部工具条：状态 + 进程控制 -->
+      <div class="toolbar">
+        <span class="badge" :class="installed ? 'ok' : 'warn'">{{ $t(installed ? 'frp.installed' : 'frp.notInstalled') }}</span>
       <span class="badge" :class="running ? 'ok' : 'off'">{{ $t(running ? 'frp.running' : 'frp.stopped') }}</span>
       <span class="badge neutral">{{ cfgPath }}</span>
 
@@ -115,18 +110,19 @@
         <div class="actions"><button class="btn primary" @click="showPreview=false">{{ $t('common.close') }}</button></div>
       </div>
     </div>
-  </div>
+    </div>
+  </WindowTabNav>
 </template>
 
 <script setup>
 // 响应式状态、计算属性与生命周期钩子
-import { ref, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 // 国际化
 import { useI18n } from 'vue-i18n'
+import WindowTabNav from '../WindowTabNav.vue'   // 统一左侧竖排页签导航
+import { Server, Monitor, RotateCw, Play, Square, Plus, Trash2, Pencil, Power } from 'lucide-vue-next'
 // FRP API：status/config/save/switch_mode/preview/start/stop/restart + 代理增删改
 import { frpApi } from '../../api'
-// 图标（刷新/播放/停止/添加/删除/编辑/开关）
-import { RotateCw, Play, Square, Plus, Trash2, Pencil, Power } from 'lucide-vue-next'
 // 表单保存信号：独立「新增/编辑代理」窗口保存成功后刷新本列表
 import { formBus } from '../../store/formBus'
 
@@ -135,6 +131,18 @@ const { t } = useI18n()
 const emit = defineEmits(['openFrpProxyForm'])   // 打开独立「代理规则」窗口（proxy: 编辑对象或 null）
 
 const mode = ref('server')       // 运行模式：server（服务端）/ client（客户端）
+
+// 左侧页签：服务端 / 客户端
+const tabs = computed(() => [
+  { key: 'server', label: t('frp.modeServer'), icon: Server },
+  { key: 'client', label: t('frp.modeClient'), icon: Monitor },
+])
+
+// 切换运行模式：与原下拉一致，先写状态再调用后端 switch_mode
+function switchMode(k) {
+  mode.value = k
+  onModeChange()
+}
 const installed = ref(false)     // FRP 是否已安装（有无可用二进制）
 const running = ref(false)       // FRP 进程是否运行中
 const cfgPath = ref('')          // 当前使用的配置文件路径
@@ -273,9 +281,8 @@ onMounted(load)
 </script>
 
 <style scoped>
-.frp-window { padding: 10px; }
+.frp-window { padding: 10px; height: 100%; box-sizing: border-box; overflow: auto; }
 .toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-.mode-label { font-size: 13px; color: var(--g-text); }
 .spacer { flex: 1; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
 .badge.ok { background: #d1fae5; color: #065f46; }

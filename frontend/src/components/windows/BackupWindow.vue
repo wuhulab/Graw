@@ -20,8 +20,9 @@
     由桌面/任务栏打开备份中心入口，无 props。
 -->
 <template>
-  <div class="backup-window">
-    <!-- 顶部：全局状态 -->
+  <WindowTabNav :model-value="tab" :items="navItems" @update:model-value="switchTab">
+    <div class="backup-window">
+      <!-- 顶部：全局状态 -->
     <div class="toolbar">
       <div class="global-status">
         <span class="status-badge">
@@ -35,22 +36,6 @@
           <RefreshCw :size="14" /> 刷新
         </button>
       </div>
-    </div>
-
-    <!-- 标签页 -->
-    <div class="ui-tabs">
-      <button class="ui-tab" :class="{ active: tab === 'tasks' }" @click="switchTab('tasks')">
-        <ListChecks :size="14" /> 备份任务
-        <span v-if="tasks.length" class="count-badge">{{ tasks.length }}</span>
-      </button>
-      <button class="ui-tab" :class="{ active: tab === 'records' }" @click="switchTab('records')">
-        <History :size="14" /> 备份记录
-        <span v-if="records.length" class="count-badge warn">{{ records.length }}</span>
-      </button>
-      <button class="ui-tab" :class="{ active: tab === 'remotes' }" @click="switchTab('remotes')">
-        <CloudUpload :size="14" /> 远程备份
-        <span v-if="remotes.length" class="count-badge">{{ remotes.length }}</span>
-      </button>
     </div>
 
     <!-- ============ 标签页一：备份任务 ============ -->
@@ -221,11 +206,13 @@
       @confirm="doDeleteConfirmed"
       @cancel="confirm.show = false"
     />
-  </div>
+    </div>
+  </WindowTabNav>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'   // 状态/表单/派生值/挂载钩子
+import WindowTabNav from '../WindowTabNav.vue'   // 统一左侧竖排页签导航
 import { DatabaseBackup, RefreshCw, Plus, ListChecks, History, Archive, RotateCcw, CloudUpload } from 'lucide-vue-next'   // 工具栏/标签页/弹窗图标
 import { backupApi, formatBytes } from '../../api'   // /api/backup 接口 + 字节数格式化工具
 import ConfirmDialog from '../ConfirmDialog.vue'   // 高风险操作的密码二次确认对话框
@@ -234,6 +221,13 @@ import { formBus } from '../../store/formBus'   // 表单保存信号：独立�
 const emit = defineEmits(['openBackupTaskForm', 'openBackupRemoteForm'])   // 打开独立「任务 / 远程目标」表单窗口
 
 const tab = ref('tasks')   // 当前标签页：tasks / records / remotes
+
+// 左侧页签：任务 / 记录 / 远程目标数量作为角标
+const navItems = computed(() => [
+  { key: 'tasks', label: '备份任务', icon: ListChecks, badge: tasks.value.length || '' },
+  { key: 'records', label: '备份记录', icon: History, badge: records.value.length || '' },
+  { key: 'remotes', label: '远程备份', icon: CloudUpload, badge: remotes.value.length || '' },
+])
 const loading = ref(false)   // 列表加载中
 const busy = ref(false)   // 单个动作进行中（禁用按钮防重复提交）
 const tasks = ref([])   // 备份任务列表
@@ -437,9 +431,6 @@ onMounted(loadAll)   // 进入窗口即加载全部数据
 .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #dbeafe; color: #1e40af; }
 .hint { color: var(--g-text-muted); font-size: 12px; }
 .toolbar-actions { display: flex; gap: 8px; }
-
-.count-badge { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #2563eb; color: #fff; font-size: 10px; display: inline-flex; align-items: center; justify-content: center; }
-.count-badge.warn { background: #dc2626; }
 
 .tab-body { flex: 1; overflow: auto; }
 .table-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }

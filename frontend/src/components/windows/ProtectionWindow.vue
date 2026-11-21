@@ -6,23 +6,10 @@
   打开方式：ShunX 安全中心「数据库保护」标签页聚合
 -->
 <template>
-  <div class="prot-window" @click="closeMenus">
-    <!-- 顶部工具栏：标签页 + 状态摘要 -->
-    <div class="toolbar">
-      <div class="tabs">
-        <button class="tab" :class="{ active: tab === 'docker' }" @click="tab = 'docker'; loadAll()">
-          <HardDrive :size="14" /> {{ $t('protection.tabDocker') }}
-          <span v-if="dockerWarnings.length" class="count-badge">{{ dockerWarnings.length }}</span>
-        </button>
-        <button class="tab" :class="{ active: tab === 'db' }" @click="tab = 'db'; loadAll()">
-          <DatabaseBackup :size="14" /> {{ $t('protection.tabFiles') }}
-          <span v-if="uncoveredDb.length" class="count-badge warn">{{ uncoveredDb.length }}</span>
-        </button>
-        <button class="tab" :class="{ active: tab === 'ignored' }" @click="tab = 'ignored'; loadIgnored()">
-          <BellRing :size="14" /> {{ $t('protection.tabIgnores') }}
-          <span v-if="ignoredList.length" class="count-badge">{{ ignoredList.length }}</span>
-        </button>
-      </div>
+  <WindowTabNav :model-value="tab" :items="navItems" @update:model-value="switchTab">
+    <div class="prot-window" @click="closeMenus">
+      <!-- 顶部工具栏：状态摘要 + 重新扫描 -->
+      <div class="toolbar">
       <button class="btn" :disabled="loading" @click="loadAll">
         {{ loading ? $t('protection.scanning') : $t('protection.rescan') }}
       </button>
@@ -230,13 +217,15 @@
       @confirm="doConfirm"
       @cancel="confirm.show = false"
     />
-  </div>
+    </div>
+  </WindowTabNav>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'   // Composition API：响应式、计算属性、挂载
 import { useI18n } from 'vue-i18n'                // 国际化：取 t() 生成动态文案
 import { protectionApi } from '../../api'         // 数据库保护后端接口封装
+import WindowTabNav from '../WindowTabNav.vue'    // 统一左侧竖排页签导航
 import {
   HardDrive, DatabaseBackup, BellRing, ShieldCheck, OctagonAlert, FolderOpen
 } from 'lucide-vue-next'                         // 图标集合
@@ -248,6 +237,19 @@ const ignoreDays = 7   // 临时忽略有效期（天），与界面提示中的
 
 const tab = ref('docker')
 const loading = ref(false)
+
+// 左侧页签：风险数作为角标；切换时按原有逻辑重新加载对应数据
+const navItems = computed(() => [
+  { key: 'docker', label: t('protection.tabDocker'), icon: HardDrive, badge: dockerWarnings.value.length || '' },
+  { key: 'db', label: t('protection.tabFiles'), icon: DatabaseBackup, badge: uncoveredDb.value.length || '' },
+  { key: 'ignored', label: t('protection.tabIgnores'), icon: BellRing, badge: ignoredList.value.length || '' },
+])
+
+function switchTab(k) {
+  tab.value = k
+  if (k === 'ignored') loadIgnored()
+  else loadAll()
+}
 
 // Docker 扫描结果
 const dockerWarnings = ref([])
@@ -547,20 +549,6 @@ onMounted(loadAll)
 <style scoped>
 .prot-window { padding: 0; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; } /* 内嵌聚合窗口：外边距由父容器提供 */
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-.tabs { display: flex; gap: 4px; }
-.tab {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface);
-  border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--g-text);
-}
-.tab:hover { background: var(--g-surface-muted); }
-.tab.active { background: var(--g-strong); color: #fff; border-color: #111827; }
-.count-badge {
-  min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
-  background: #2563eb; color: #fff; font-size: 10px;
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.count-badge.warn { background: #dc2626; }
 .hint { color: var(--g-text-muted); font-size: 12px; margin-left: auto; }
 
 .tab-body { flex: 1; overflow: auto; }

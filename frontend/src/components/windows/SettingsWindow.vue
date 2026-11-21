@@ -1,9 +1,11 @@
 <!--
   综合设置中心窗口
-  业务：聚合面板级设置——用户管理、ShunX 安全入口、多节点（SSH/Agent）管理、Web 引擎模式、两步验证、界面偏好、语言、版本更新。
+
+  业务：按「通用与外观 / 桌面应用 / 账户与安全 / 节点与 Agent / 系统与维护 / 关于」六个分类
+  聚合面板级设置；纯视觉品牌（网站名、Logo、壁纸、环形配色）仍由独立的「界面设置」窗口维护。
   后端模块：/api/ui、/api/nodes、/api/agent、/api/webmode、/api/auth（2FA）、/api/update、/api/shunx、/api/health
   关键状态：节点/Web模式/2FA/更新/版本等多区块响应式数据；dangerConfirm（删除节点/清除入口高危二次确认）
-  打开方式：桌面「设置」入口挂载
+  打开方式：桌面「设置」入口 / 开始菜单挂载
 -->
 <template>
   <div class="settings-root">
@@ -22,6 +24,13 @@
     </aside>
     <div class="settings-body">
     <div style="flex:1; overflow:auto; padding:16px; display:flex; flex-direction:column; gap:14px;">
+      <!-- 界面设置入口（仅完整管理员）：品牌/壁纸/概览等全局外观在独立的「界面设置」窗口维护 -->
+      <div class="block" v-show="activeTab === 'general'" v-if="isFullAdmin()">
+        <div class="block-title">{{ $t('settings.uiSettingsTitle') }}</div>
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">{{ $t('settings.uiSettingsHint') }}</div>
+        <button class="btn" @click="emit('openUiSettings')">{{ $t('settings.openUiSettings') }}</button>
+      </div>
+
       <!-- 主题外观：浅色 / 暗色（本机偏好，即改即存） -->
       <div class="block" v-show="activeTab === 'general'">
         <div class="block-title">{{ $t('settings.themeTitle') }}</div>
@@ -36,15 +45,6 @@
             <span class="choice-name">{{ $t('settings.themeDark') }}</span>
           </button>
         </div>
-      </div>
-
-      <!-- 语言：改为下拉选择，避免 28 个语言在页面上铺成一大片 -->
-      <div class="block" v-show="activeTab === 'general'">
-        <div class="block-title">{{ $t('settings.language') }}</div>
-        <div class="hint" style="margin-bottom:8px;">{{ $t('settings.languageHint') }}</div>
-        <select class="settings-select" :value="settings.locale" @change="changeLocale($event.target.value)">
-          <option v-for="lang in LANGUAGES" :key="lang.code" :value="lang.code">{{ lang.name }}</option>
-        </select>
       </div>
 
       <!-- 界面形态：传统服务器面板 / 新一代理论桌面 -->
@@ -72,25 +72,13 @@
         <div class="hint">{{ $t('settings.panelTabsHint') }}</div>
       </div>
 
-      <!-- 应用收藏与隐藏：分账号隔离开关 + 已隐藏应用恢复（右键应用隐藏后在此恢复） -->
+      <!-- 语言：改为下拉选择，避免 28 个语言在页面上铺成一大片 -->
       <div class="block" v-show="activeTab === 'general'">
-        <div class="block-title">{{ $t('settings.appPrefsTitle') }}</div>
-        <div class="row" style="justify-content:space-between; padding:2px 0;">
-          <label class="switch-label">
-            <input type="checkbox" v-model="desktopPrefs.perUser" />
-            <span style="font-size:12px;font-weight:600;color:var(--g-text);">{{ $t('settings.appPrefsPerUser') }}</span>
-          </label>
-        </div>
-        <div class="hint">{{ $t('settings.appPrefsPerUserHint') }}</div>
-
-        <template v-if="hiddenApps.length">
-          <div style="font-size:12px;font-weight:600;color:var(--g-text);margin:10px 0 4px;">{{ $t('settings.hiddenApps') }}</div>
-          <div v-for="a in hiddenApps" :key="'hide-' + a.key" class="row" style="justify-content:space-between;padding:3px 0;">
-            <span style="font-size:12px;color:var(--g-text);">{{ a.name }}</span>
-            <button class="btn btn-mini" @click="restoreApp(a.key)">{{ $t('desktop.restore') }}</button>
-          </div>
-        </template>
-        <div v-else class="hint" style="margin-top:6px;">{{ $t('settings.noHiddenApps') }}</div>
+        <div class="block-title">{{ $t('settings.language') }}</div>
+        <div class="hint" style="margin-bottom:8px;">{{ $t('settings.languageHint') }}</div>
+        <select class="settings-select" :value="settings.locale" @change="changeLocale($event.target.value)">
+          <option v-for="lang in LANGUAGES" :key="lang.code" :value="lang.code">{{ lang.name }}</option>
+        </select>
       </div>
 
       <!-- 语言括号提示：古代语言（古埃及语、苏美尔语等）的文案约定写成
@@ -110,6 +98,37 @@
           </select>
         </div>
         <div class="hint">{{ $t('settings.bracketHint') }}</div>
+      </div>
+
+      <!-- 桌面应用：应用收藏/隐藏/固定的账号级偏好（右键应用可隐藏或固定，在此恢复/取消） -->
+      <div class="block" v-show="activeTab === 'desktop'">
+        <div class="block-title">{{ $t('desktop.title') }}</div>
+        <div class="hint" style="margin-bottom:8px;">{{ $t('desktop.titleHint') }}</div>
+        <div class="row" style="justify-content:space-between; padding:2px 0;">
+          <label class="switch-label">
+            <input type="checkbox" v-model="desktopPrefs.perUser" />
+            <span style="font-size:12px;font-weight:600;color:var(--g-text);">{{ $t('desktop.perUser') }}</span>
+          </label>
+        </div>
+        <div class="hint">{{ $t('desktop.perUserHint') }}</div>
+
+        <template v-if="hiddenApps.length">
+          <div style="font-size:12px;font-weight:600;color:var(--g-text);margin:10px 0 4px;">{{ $t('desktop.hiddenSection') }}</div>
+          <div v-for="a in hiddenApps" :key="'hide-' + a.key" class="row" style="justify-content:space-between;padding:3px 0;">
+            <span style="font-size:12px;color:var(--g-text);">{{ a.name }}</span>
+            <button class="btn btn-mini" @click="restoreApp(a.key)">{{ $t('desktop.restore') }}</button>
+          </div>
+        </template>
+
+        <template v-if="pinnedApps.length">
+          <div style="font-size:12px;font-weight:600;color:var(--g-text);margin:10px 0 4px;">{{ $t('desktop.pinnedSection') }}</div>
+          <div v-for="a in pinnedApps" :key="'pin-' + a.key" class="row" style="justify-content:space-between;padding:3px 0;">
+            <span style="font-size:12px;color:var(--g-text);">{{ a.name }}</span>
+            <button class="btn btn-mini" @click="unpinApp(a.key)">{{ $t('desktop.unpin') }}</button>
+          </div>
+        </template>
+
+        <div v-if="!hiddenApps.length && !pinnedApps.length" class="hint" style="margin-top:8px;">{{ $t('desktop.empty') }}</div>
       </div>
 
       <div class="block" v-show="activeTab === 'account'">
@@ -484,13 +503,6 @@
         </div>
       </div>
 
-      <!-- 界面设置入口（仅管理员）：引导打开独立的「界面设置」窗口（网站名/欢迎语/Logo/动态壁纸/环形配色） -->
-      <div class="block" v-show="activeTab === 'general'" v-if="isAdmin()">
-        <div class="block-title">{{ $t('settings.uiSettingsTitle') }}</div>
-        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">{{ $t('settings.uiSettingsHint') }}</div>
-        <button class="btn" @click="emit('openUiSettings')">{{ $t('settings.openUiSettings') }}</button>
-      </div>
-
       <!-- 回收站设置（仅管理员）：删除的文件是否进入回收站、到期自动清理天数 -->
       <div class="block" v-show="activeTab === 'system'" v-if="isAdmin()">
         <div class="block-title">{{ $t('recycle.settingsTitle') }}</div>
@@ -591,18 +603,19 @@
 import { ref, reactive, computed, onMounted } from 'vue'         // 响应式、计算属性、挂载
 import { useI18n } from 'vue-i18n'                               // 国际化：取 t() 生成动态文案
 import { settings } from '../../store/settings'                 // 全局界面设置（任务栏/语言等）
-import { desktopPrefs, showShortcut } from '../../store/desktopPrefs'   // 应用收藏/隐藏偏好（分账号隔离与恢复）
+import { desktopPrefs, showShortcut, unpinShortcut } from '../../store/desktopPrefs'   // 应用收藏/隐藏/固定偏好（分账号隔离与恢复）
 import { isAdmin, isFullAdmin } from '../../store/auth'          // 管理员门控：限定敏感区块（OAuth 配置要求完整管理员）
 import { nodesApi, shunxApi, panelApi, updateApi, webmodeApi, authApi, agentApi, recycleApi, pluginApi } from '../../api'   // 各设置区块后端接口
 import { nodes as nodesStore, refreshNodes, setCurrentNode } from '../../store/nodes'   // 多节点状态与当前节点切换
 import { LANGUAGES, setLocale } from '../../locales'            // 语言清单与切换函数
 import ConfirmDialog from '../ConfirmDialog.vue'                // 高危操作二次确认弹窗（输入面板密码）
-import { Sun, Moon, Monitor, PanelLeft, Palette, ShieldCheck, Server, Wrench, Info } from 'lucide-vue-next'   // 设置分类导航与主题/界面形态选项图标
+import { Sun, Moon, Monitor, PanelLeft, Palette, ShieldCheck, Server, Wrench, Info, LayoutGrid } from 'lucide-vue-next'   // 设置分类导航与主题/界面形态选项图标
 
-// 设置分类：把原有区块按「通用外观 / 账户安全 / 节点 / 系统维护 / 关于」重新归组。
+// 设置分类：把原有区块按「通用外观 / 桌面应用 / 账户安全 / 节点 / 系统维护 / 关于」归组。
 // 受限管理员看不到节点与系统维护两个分类（对应区块本身也带 isAdmin 门控）。
 const SETTINGS_TABS = [
   { key: 'general', labelKey: 'settings.nav.general', icon: Palette },
+  { key: 'desktop', labelKey: 'desktop.title', icon: LayoutGrid },
   { key: 'account', labelKey: 'settings.nav.account', icon: ShieldCheck },
   { key: 'nodes', labelKey: 'settings.nav.nodes', icon: Server, adminOnly: true },
   { key: 'system', labelKey: 'settings.nav.system', icon: Wrench, adminOnly: true },
@@ -613,18 +626,26 @@ const visibleTabs = computed(() => SETTINGS_TABS.filter((tab) => !tab.adminOnly 
 
 const { t, te } = useI18n()
 
-// 已隐藏应用清单：名称按 key 从语言包推断（app.shortcut.<key> → app.winTitle.<key> → key），
+// 应用显示名：按 key 从语言包推断（app.shortcut.<key> → app.winTitle.<key> → key），
 // 与 App.vue 的应用清单保持一致，避免在这里再维护一份易失真的名称映射。
-const hiddenApps = computed(() => desktopPrefs.hiddenKeys.map((key) => {
+function appDisplayName(key) {
   const scKey = `app.shortcut.${key}`
   const winKey = `app.winTitle.${key}`
-  const name = te(scKey) ? t(scKey) : (te(winKey) ? t(winKey) : key)
-  return { key, name }
-}))
+  return te(scKey) ? t(scKey) : (te(winKey) ? t(winKey) : key)
+}
+
+// 已隐藏 / 已固定到任务栏的应用清单（均按当前生效作用域读取）
+const hiddenApps = computed(() => desktopPrefs.hiddenKeys.map((key) => ({ key, name: appDisplayName(key) })))
+const pinnedApps = computed(() => desktopPrefs.pinnedKeys.map((key) => ({ key, name: appDisplayName(key) })))
 
 // 恢复显示：从隐藏列表移除，应用立即回到侧边栏 / 桌面 / 全局搜索
 function restoreApp(key) {
   showShortcut(key)
+}
+
+// 取消任务栏固定：应用立即从底栏移除
+function unpinApp(key) {
+  unpinShortcut(key)
 }
 
 // 语言括号提示的「括号内语言」选项：code 对应 settings.bracketLang，

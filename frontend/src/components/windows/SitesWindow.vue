@@ -8,7 +8,7 @@
         绑定域名、根目录或转发目标、监听端口，以及「是否启用」+「是否在线」两种状态；
       - 通过右键菜单启用/停用站点、打开配置编辑、查看 Nginx 生成的原始配置文本、删除站点；
       - 新建站点：先弹「选类型」卡片，选好后交给独立的「站点编辑」窗口去填表单。
-    同一个窗口顶部还有一个「网站 / SSL证书」切换页，切到 SSL 时直接内嵌 SSLWindow，
+    同一个窗口左侧还有「网站 / SSL证书」两个页签，切到 SSL 时直接内嵌 SSLWindow，
     这样管理员配好站点后不用另开一个应用就能签发/上传证书。
 
   用到的后端模块：
@@ -31,14 +31,9 @@
     「站点编辑」窗口——因为站点表单字段多，塞进弹窗会挤，独立窗口还能拖到旁边对照着填。
 -->
 <template>
-  <div class="sites-window" @click="closeCtx"><!-- 点空白处收起右键菜单 -->
-    <!-- 视图切换：网站 / SSL证书 -->
-    <div class="mode-tabs">
-      <button class="tab" :class="{ active: mode === 'sites' }" @click="switchMode('sites')">{{ $t('sites.tabSites') }}</button>
-      <button class="tab" :class="{ active: mode === 'ssl' }" @click="switchMode('ssl')">{{ $t('sites.tabSsl') }}</button>
-    </div>
-
-    <!-- 网站页签：工具栏（新建入口 + 当前引擎提示）+ 站点列表表格 -->
+  <WindowTabNav v-model="mode" :items="tabs">
+    <div class="sites-window" @click="closeCtx"><!-- 点空白处收起右键菜单 -->
+      <!-- 网站页签：工具栏（新建入口 + 当前引擎提示）+ 站点列表表格 -->
     <template v-if="mode === 'sites'">
       <div class="toolbar">
         <button class="btn primary" @click="openTypePicker"><Plus :size="14" /> {{ $t('sites.add') }}</button>
@@ -170,7 +165,8 @@
       @confirm="doDeleteSite"
       @cancel="confirm.show = false"
     />
-  </div>
+    </div>
+  </WindowTabNav>
 </template>
 
 <script setup>
@@ -182,18 +178,20 @@ import ConfirmDialog from '../ConfirmDialog.vue'                 // 高风险操
 import SSLWindow from './SSLWindow.vue'                          // SSL 页签直接复用证书管理窗口，避免功能重复实现
 import { formBus } from '../../store/formBus'                    // 表单保存信号：维护模式窗口保存成功后刷新列表
 import {
-  Plus, Globe, Share2, Network, Layers                          // 新建按钮 + 四种站点类型的示意图标
+  Plus, Globe, Share2, Network, Layers, Lock               // 新建按钮 + 四种站点类型示意图标 + SSL 页签图标
 } from 'lucide-vue-next'
+import WindowTabNav from '../WindowTabNav.vue'                   // 统一左侧竖排页签导航
 
 const { t } = useI18n()
 
 // 视图模式：'sites' 网站 / 'ssl' SSL证书
 const mode = ref('sites')
 
-// --- 切换顶部页签（网站列表 / SSL 证书） ---
-function switchMode(m) {
-  mode.value = m
-}
+// 左侧页签：网站列表 / SSL 证书
+const tabs = computed(() => [
+  { key: 'sites', label: t('sites.tabSites'), icon: Globe },
+  { key: 'ssl', label: t('sites.tabSsl'), icon: Lock },
+])
 
 // 站点类型定义（文案走 i18n）
 // 用 computed 而不是常量数组：语言切换后类型名/说明要立刻跟着变
@@ -370,11 +368,7 @@ onMounted(load)   // 窗口一打开就拉一次站点列表
 </script>
 
 <style scoped>
-.sites-window { padding: 10px; }
-/* 视图切换标签（网站 / SSL证书） */
-.mode-tabs { display: inline-flex; border: 1px solid var(--g-border); border-radius: 8px; overflow: hidden; margin-bottom: 10px; }
-.mode-tabs .tab { padding: 6px 14px; font-size: 13px; background: var(--g-surface); border: none; cursor: pointer; color: var(--g-text-muted); }
-.mode-tabs .tab.active { background: var(--g-strong); color: #fff; }
+.sites-window { padding: 10px; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; min-height: 0; overflow: auto; }
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .hint { color: var(--g-text-muted); font-size: 12px; }
 .hint.right { margin-left: auto; }

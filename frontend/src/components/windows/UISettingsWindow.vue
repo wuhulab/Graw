@@ -2,15 +2,14 @@
   界面设置窗口（UI Settings）
 
   这个窗口做什么：
-    面板「设置 → 界面」页。管理员在这里自定义桌面观感：
-      - 网站名、欢迎语、Logo（上传后以 data URL 存入后端配置）；
+    面板「设置 → 界面设置」入口打开的独立窗口，只维护全局外观：
+      - 品牌：网站名、欢迎语、Logo（上传后以 data URL 存入后端配置）；
       - 动态壁纸：图片轮播（背景列表 + 切换间隔）或视频壁纸，
         每项都支持「仅用于这个账号」（否则走全局配置）；
-      - 系统概览环形统计图的配色与阈值报警开关。
+      - 系统概览环形统计图的配色与阈值报警开关；
       - 面板外观：底栏文字 / 隐藏 Foxcode / 桌面应用文字大小、颜色、黑边描边
-        （即改即存，直接写入本地 settings store）；
-      - 桌面快捷方式：恢复已隐藏的应用、取消固定到任务栏的应用、按账号隔离偏好
-        （写入 desktopPrefs store）。
+        （即改即存，直接写入本地 settings store）。
+    应用隐藏 / 固定 / 分账号隔离统一在「设置 → 桌面应用」维护，本窗口不再重复。
     保存后重新加载，保证表单始终对齐「账号级 > 全局 > 默认」的读取优先级。
 
   用到的后端模块：
@@ -25,7 +24,8 @@
     msg / msgType                      保存结果提示
 
   怎么被打开：
-    「设置」窗口（SettingsWindow）的「界面」页签内嵌。
+    「设置」窗口 →「界面设置」入口（App.vue 的 openUiSettings）；
+    也保留桌面 / 面板侧边栏的「界面设置」快捷方式。
 -->
 <template>
   <div style="display:flex; flex-direction:column; height:100%; background:var(--g-surface-soft);">
@@ -140,7 +140,15 @@
             <span>{{ $t('ui.ringAlarm') }}</span>
           </label>
         </div>
-        <!-- 系统概览数值精度：本机偏好（localStorage），即改即存，无需点「保存」 -->
+        <!-- 仅用于这个账号：勾选后环形图配色只对该账号生效，否则走全局 -->
+        <label class="switch-label">
+          <input type="checkbox" v-model="ringPersonal" />
+          <span>{{ $t('ui.personalOnly') }}</span>
+        </label>
+        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin:-4px 0 6px 24px;">{{ $t('ui.personalOnlyHint') }}</div>
+
+        <!-- 分隔线以下为本机显示偏好（localStorage），即改即存，无需点「保存」 -->
+        <div style="border-top:1px dashed var(--g-border); margin:8px 0;"></div>
         <div class="row">
           <label class="switch-label">
             <input type="checkbox" v-model="settings.overviewDecimals" />
@@ -148,11 +156,6 @@
           </label>
         </div>
         <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">{{ $t('ui.overviewDecimalsHint') }}</div>
-        <!-- 仅用于这个账号：勾选后环形图配色只对该账号生效，否则走全局 -->
-        <label class="switch-label">
-          <input type="checkbox" v-model="ringPersonal" />
-          <span>{{ $t('ui.personalOnly') }}</span>
-        </label>
         <div v-if="ringColorError" class="msg err">{{ ringColorError }}</div>
       </div>
 
@@ -210,42 +213,14 @@
         </div>
       </div>
 
-      <!-- 桌面快捷方式：隐藏的应用（恢复） / 固定到任务栏（取消固定） / 仅当前用户 -->
-      <div class="block">
-        <div class="block-title">{{ $t('desktop.title') }}</div>
-        <div style="font-size:11px;color:var(--g-text-muted);line-height:1.6;margin-bottom:8px;">{{ $t('desktop.titleHint') }}</div>
+      <!-- 应用隐藏 / 固定 / 分账号隔离统一在「设置 → 桌面应用」维护，此处不再重复 -->
 
-        <!-- 仅当前用户开关：控制隐藏/固定偏好只对本账号生效（否则全局共享） -->
-        <div class="row" style="justify-content:space-between; padding:2px 0 6px;">
-          <label class="switch-label">
-            <input type="checkbox" v-model="desktopPrefs.perUser" @change="onPerUserChange" />
-            <span style="font-size:12px;font-weight:600;color:var(--g-text);">{{ $t('desktop.perUser') }}</span>
-          </label>
-          <span style="font-size:11px;color:var(--g-text-muted);">{{ $t('desktop.perUserHint') }}</span>
-        </div>
+    </div>
 
-        <!-- 已隐藏的应用：可在此恢复；已固定的应用：可取消固定 -->
-        <template v-if="hiddenShortcuts.length || pinnedShortcutsManage.length">
-          <div style="font-size:12px;font-weight:600;color:var(--g-text);margin:6px 0 4px;">{{ $t('desktop.hiddenSection') }}</div>
-          <div v-for="h in hiddenShortcuts" :key="'h-' + h.key" class="row" style="justify-content:space-between;padding:3px 0;">
-            <span style="font-size:12px;color:var(--g-text);">{{ displayScName(h) }}</span>
-            <button class="btn btn-mini" @click="restoreShortcut(h.key)">{{ $t('desktop.restore') }}</button>
-          </div>
-
-          <div style="font-size:12px;font-weight:600;color:var(--g-text);margin:8px 0 4px;">{{ $t('desktop.pinnedSection') }}</div>
-          <div v-for="p in pinnedShortcutsManage" :key="'p-' + p.key" class="row" style="justify-content:space-between;padding:3px 0;">
-            <span style="font-size:12px;color:var(--g-text);">{{ displayScName(p) }}</span>
-            <button class="btn btn-mini" @click="unpinShortcut(p.key)">{{ $t('desktop.unpin') }}</button>
-          </div>
-        </template>
-        <div v-else style="font-size:12px;color:var(--g-text-muted);padding:4px 0;">{{ $t('desktop.empty') }}</div>
-      </div>
-
+    <!-- 固定底栏：品牌 / 壁纸 / 环形配色需点击保存；桌面外观类开关即改即存 -->
+    <div class="ui-footer">
+      <button class="btn" :disabled="saving" @click="save">{{ saving ? $t('settings.saveSaving') : $t('settings.save') }}</button>
       <div v-if="msg" :class="['msg', msgType]">{{ msg }}</div>
-
-      <div style="display:flex; gap:8px;">
-        <button class="btn" :disabled="saving" @click="save">{{ saving ? $t('settings.saveSaving') : $t('settings.save') }}</button>
-      </div>
     </div>
   </div>
 </template>
@@ -255,9 +230,8 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'   // 响应式�
 import { useI18n } from 'vue-i18n'   // 取 t()，界面文案跟随面板语言
 import { uiApi } from '../../api'   // 界面设置后端能力：/api/ui/* 的封装
 import { settings } from '../../store/settings'   // 全局界面设置（底栏/桌面文字样式，即改即存）
-import { desktopPrefs, showShortcut, unpinShortcut } from '../../store/desktopPrefs'   // 应用偏好（收藏/隐藏/固定，支持分账号隔离）
 
-const { t, te } = useI18n()
+const { t } = useI18n()
 
 // 表单数据：网站名 / 欢迎语 / Logo / 动态壁纸（背景列表 / 视频 / 模式 / 间隔）+ 环形图配色
 const form = reactive({
@@ -480,38 +454,6 @@ async function save() {
 }
 
 onMounted(load)   // 打开即读取当前界面配置
-
-// ---- 应用偏好（收藏/隐藏/固定 管理）：列出已隐藏的应用便于恢复、已固定的应用便于取消固定 ----
-// 应用完整清单由 App.vue 维护；这里按 key 从语言包推断显示名，避免再维护一份易失真的映射。
-function appName(key) {
-  const scKey = `app.shortcut.${key}`
-  const winKey = `app.winTitle.${key}`
-  return te(scKey) ? t(scKey) : (te(winKey) ? t(winKey) : key)
-}
-
-// 已隐藏应用（含名称）：按隐藏顺序展示，便于恢复
-const hiddenShortcuts = computed(() =>
-  desktopPrefs.hiddenKeys.map(k => ({ key: k, name: appName(k) }))
-)
-
-// 固定到任务栏的应用（含名称），可按需取消固定
-const pinnedShortcutsManage = computed(() =>
-  desktopPrefs.pinnedKeys.map(k => ({ key: k, name: appName(k) }))
-)
-
-function displayScName(sc) {
-  if (!sc) return ''
-  return sc.name || appName(sc.key)
-}
-
-function restoreShortcut(key) {
-  showShortcut(key)
-}
-
-function onPerUserChange() {
-  // perUser 已在 v-model 写入，store 内部会自动切换存储作用域并重读
-  desktopPrefs.perUser = !!desktopPrefs.perUser
-}
 </script>
 
 <style scoped>
@@ -526,6 +468,16 @@ function onPerUserChange() {
   font-weight: 600;
   color: var(--g-text);
   margin-bottom: 10px;
+}
+/* 固定底栏：保存按钮与结果提示常驻窗口底部，长页面无需反复滚动到底 */
+.ui-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--g-border-soft);
+  background: var(--g-surface);
+  flex-shrink: 0;
 }
 input, textarea {
   width: 100%;

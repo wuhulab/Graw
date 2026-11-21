@@ -6,75 +6,65 @@
   打开方式：桌面「ShunX 安全」入口挂载
 -->
 <template>
-  <div class="shunx-security-window">
-    <!-- 视图切换：防火墙 / 应用防火墙 / 防篡改 / 数据库保护 / 备份 / 通知 / SSH密钥 / 系统体检 / 面板备份 -->
-    <div class="toolbar">
-      <div class="mode-tabs">
-        <button class="tab" :class="{ active: mode === 'firewall' }" @click="switchMode('firewall')">{{ $t('shunx.modeFirewall') }}</button>
-        <button class="tab" :class="{ active: mode === 'waf' }" @click="switchMode('waf')">{{ $t('shunx.modeWaf') }}</button>
-        <button class="tab" :class="{ active: mode === 'tamper' }" @click="switchMode('tamper')">{{ $t('shunx.modeTamper') }}</button>
-        <button class="tab" :class="{ active: mode === 'protection' }" @click="switchMode('protection')">{{ $t('shunx.modeProtection') }}</button>
-        <button class="tab" :class="{ active: mode === 'backup' }" @click="switchMode('backup')">{{ $t('shunx.modeBackup') }}</button>
-        <button class="tab" :class="{ active: mode === 'notify' }" @click="switchMode('notify')">{{ $t('shunx.modeNotify') }}</button>
-        <button class="tab" :class="{ active: mode === 'sshkeys' }" @click="switchMode('sshkeys')">{{ $t('shunx.modeSshkeys') }}</button>
-        <button class="tab" :class="{ active: mode === 'healthcheck' }" @click="switchMode('healthcheck')">{{ $t('shunx.modeHealthcheck') }}</button>
-        <button class="tab" :class="{ active: mode === 'panelbackup' }" @click="switchMode('panelbackup')">{{ $t('shunx.modePanelbackup') }}</button>
+  <WindowTabNav v-model="mode" :items="tabs">
+    <div class="shunx-security-window">
+      <!-- 无权限标签：按约定不隐藏标签，切到无权限模块时仅在标签内提示，避免吃 403 -->
+      <div v-if="!tabAllowed(mode)" class="hub-body perm-denied">{{ $t('common.noModulePerm') }}</div>
+
+      <!-- 防火墙视图（合并自独立的「防火墙」应用） -->
+      <div v-else-if="mode === 'firewall'" class="hub-body">
+        <FirewallWindow @openFirewallRuleForm="emit('openFirewallRuleForm', $event)" />
+      </div>
+
+      <!-- 应用防火墙视图（合并自独立的「应用防火墙」应用） -->
+      <div v-else-if="mode === 'waf'" class="hub-body">
+        <WafWindow @openWafAclForm="emit('openWafAclForm', $event)" />
+      </div>
+
+      <!-- 网页防篡改视图（合并自独立的「ShunX网页防篡改」应用） -->
+      <div v-else-if="mode === 'tamper'" class="hub-body">
+        <TamperWindow @openTamperForm="emit('openTamperForm', $event)" />
+      </div>
+
+      <!-- 数据库保护视图（合并自独立的「Graw数据库保护机制」应用） -->
+      <div v-else-if="mode === 'protection'" class="hub-body">
+        <ProtectionWindow />
+      </div>
+
+      <!-- 备份中心视图（合并自独立的「备份中心」应用） -->
+      <div v-else-if="mode === 'backup'" class="hub-body">
+        <BackupWindow @openBackupTaskForm="emit('openBackupTaskForm', $event)" @openBackupRemoteForm="emit('openBackupRemoteForm', $event)" />
+      </div>
+
+      <!-- 通知中心视图（合并自独立的「通知中心」应用） -->
+      <div v-else-if="mode === 'notify'" class="hub-body">
+        <NotifyWindow @openNotifyChannelForm="emit('openNotifyChannelForm', $event)" @openNotifyRuleForm="emit('openNotifyRuleForm', $event)" />
+      </div>
+
+      <!-- SSH密钥视图（合并自独立的「SSH 密钥」应用） -->
+      <div v-else-if="mode === 'sshkeys'" class="hub-body">
+        <SSHKeysWindow @openSshKeyGen="emit('openSshKeyGen', $event)" @openSshKeyImport="emit('openSshKeyImport', $event)" @openSshKeyDeploy="emit('openSshKeyDeploy', $event)" />
+      </div>
+
+      <!-- 系统体检视图（合并自独立的「系统体检」应用） -->
+      <div v-else-if="mode === 'healthcheck'" class="hub-body">
+        <HealthCheckWindow />
+      </div>
+
+      <!-- 面板备份视图（合并自独立的「面板备份」应用） -->
+      <div v-else-if="mode === 'panelbackup'" class="hub-body">
+        <PanelBackupWindow />
       </div>
     </div>
-
-    <!-- 无权限标签：按约定不隐藏标签，切到无权限模块时仅在标签内提示，避免吃 403 -->
-    <div v-if="!tabAllowed(mode)" class="hub-body perm-denied">{{ $t('common.noModulePerm') }}</div>
-
-    <!-- 防火墙视图（合并自独立的「防火墙」应用） -->
-    <div v-else-if="mode === 'firewall'" class="hub-body">
-      <FirewallWindow @openFirewallRuleForm="emit('openFirewallRuleForm', $event)" />
-    </div>
-
-    <!-- 应用防火墙视图（合并自独立的「应用防火墙」应用） -->
-    <div v-else-if="mode === 'waf'" class="hub-body">
-      <WafWindow @openWafAclForm="emit('openWafAclForm', $event)" />
-    </div>
-
-    <!-- 网页防篡改视图（合并自独立的「ShunX网页防篡改」应用） -->
-    <div v-else-if="mode === 'tamper'" class="hub-body">
-      <TamperWindow @openTamperForm="emit('openTamperForm', $event)" />
-    </div>
-
-    <!-- 数据库保护视图（合并自独立的「Graw数据库保护机制」应用） -->
-    <div v-else-if="mode === 'protection'" class="hub-body">
-      <ProtectionWindow />
-    </div>
-
-    <!-- 备份中心视图（合并自独立的「备份中心」应用） -->
-    <div v-else-if="mode === 'backup'" class="hub-body">
-      <BackupWindow @openBackupTaskForm="emit('openBackupTaskForm', $event)" @openBackupRemoteForm="emit('openBackupRemoteForm', $event)" />
-    </div>
-
-    <!-- 通知中心视图（合并自独立的「通知中心」应用） -->
-    <div v-else-if="mode === 'notify'" class="hub-body">
-      <NotifyWindow @openNotifyChannelForm="emit('openNotifyChannelForm', $event)" @openNotifyRuleForm="emit('openNotifyRuleForm', $event)" />
-    </div>
-
-    <!-- SSH密钥视图（合并自独立的「SSH 密钥」应用） -->
-    <div v-else-if="mode === 'sshkeys'" class="hub-body">
-      <SSHKeysWindow @openSshKeyGen="emit('openSshKeyGen', $event)" @openSshKeyImport="emit('openSshKeyImport', $event)" @openSshKeyDeploy="emit('openSshKeyDeploy', $event)" />
-    </div>
-
-    <!-- 系统体检视图（合并自独立的「系统体检」应用） -->
-    <div v-else-if="mode === 'healthcheck'" class="hub-body">
-      <HealthCheckWindow />
-    </div>
-
-    <!-- 面板备份视图（合并自独立的「面板备份」应用） -->
-    <div v-else-if="mode === 'panelbackup'" class="hub-body">
-      <PanelBackupWindow />
-    </div>
-  </div>
+  </WindowTabNav>
 </template>
 
 <script setup>
-import { ref } from 'vue'                        // Composition API：响应式（当前子视图）
+import { ref, computed } from 'vue'              // Composition API：响应式（当前子视图 / 页签清单）
+import { useI18n } from 'vue-i18n'               // 页签文案随面板语言切换
 import { hasPerm, isFullAdmin } from '../../store/auth'  // 模块权限判定（受限管理员）
+import WindowTabNav from '../WindowTabNav.vue'   // 统一左侧竖排页签导航
+import { Shield, ShieldBan, ShieldAlert, ShieldCheck, DatabaseBackup, Archive, BellRing, KeyRound, Stethoscope } from 'lucide-vue-next'
 import FirewallWindow from './FirewallWindow.vue' // 子应用：防火墙
 import WafWindow from './WafWindow.vue'           // 子应用：应用防火墙
 import TamperWindow from './TamperWindow.vue'     // 子应用：网页防篡改
@@ -101,6 +91,20 @@ const emit = defineEmits([
 
 // 视图模式：firewall / waf / tamper / protection / backup / notify / sshkeys / healthcheck / panelbackup
 const mode = ref('firewall')
+const { t } = useI18n()
+
+// 左侧页签清单：与「设置」窗口一致的图标 + 文案；badge 暂不展示
+const tabs = computed(() => [
+  { key: 'firewall', label: t('shunx.modeFirewall'), icon: Shield },
+  { key: 'waf', label: t('shunx.modeWaf'), icon: ShieldBan },
+  { key: 'tamper', label: t('shunx.modeTamper'), icon: ShieldAlert },
+  { key: 'protection', label: t('shunx.modeProtection'), icon: ShieldCheck },
+  { key: 'backup', label: t('shunx.modeBackup'), icon: DatabaseBackup },
+  { key: 'notify', label: t('shunx.modeNotify'), icon: BellRing },
+  { key: 'sshkeys', label: t('shunx.modeSshkeys'), icon: KeyRound },
+  { key: 'healthcheck', label: t('shunx.modeHealthcheck'), icon: Stethoscope },
+  { key: 'panelbackup', label: t('shunx.modePanelbackup'), icon: Archive },
+])
 
 // 标签 → 权限门：模块 key 数组（任一命中即放行），'full' 表示仅完整管理员
 // （SSH 密钥 / 面板备份属「面板自身安全边界」，不在模块白名单内）。
@@ -124,19 +128,10 @@ function tabAllowed(m) {
   if (gate === 'full') return isFullAdmin()
   return hasPerm(...gate)
 }
-
-function switchMode(m) {
-  mode.value = m
-}
 </script>
 
 <style scoped>
-.shunx-security-window { padding: 10px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; gap: 10px; }
-.toolbar { display: flex; align-items: center; }
-.mode-tabs { display: inline-flex; border: 1px solid var(--g-border); border-radius: 8px; overflow: hidden; flex-wrap: wrap; }
-.mode-tabs .tab { padding: 6px 14px; font-size: 13px; background: var(--g-surface); border: none; cursor: pointer; color: var(--g-text-muted); }
-.mode-tabs .tab + .tab { border-left: 1px solid var(--g-border); }
-.mode-tabs .tab.active { background: var(--g-strong); color: #fff; }
+.shunx-security-window { padding: 10px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; }
 .hub-body { flex: 1; min-height: 0; }
 /* 无权限标签：标签内居中提示，不隐藏标签本身 */
 .hub-body.perm-denied {

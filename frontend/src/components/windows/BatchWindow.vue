@@ -7,12 +7,11 @@
   打开方式：桌面「批量操作」入口（管理员）；跨节点操作，窗口不绑定单一节点
 -->
 <template>
-  <div class="batch-window">
-    <!-- 顶部：Tab 切换 + 节点多选 -->
-    <div class="ui-toolbar">
-      <button class="ui-btn" :class="{ primary: tab === 'cmd' }" @click="tab = 'cmd'">{{ $t('batch.tabCmd') }}</button>
-      <button class="ui-btn" :class="{ primary: tab === 'ctr' }" @click="tab = 'ctr'">{{ $t('batch.tabContainers') }}</button>
-      <span class="node-label">{{ $t('batch.targetNodes') }}</span>
+  <WindowTabNav v-model="tab" :items="tabs">
+    <div class="batch-window">
+      <!-- 顶部：节点多选 -->
+      <div class="ui-toolbar">
+        <span class="node-label">{{ $t('batch.targetNodes') }}</span>
       <label v-for="n in nodes.list" :key="n.id" class="node-chip">
         <input type="checkbox" :value="n.id" v-model="checkedNodes" />
         {{ n.name }}
@@ -69,17 +68,26 @@
         </template>
       </div>
     </div>
-  </div>
+    </div>
+  </WindowTabNav>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'   // 响应式 + 挂载时刷新节点
+import { ref, reactive, computed, onMounted } from 'vue'   // 响应式 + 页签清单 + 挂载时刷新节点
 import { useI18n } from 'vue-i18n'                // 国际化
+import WindowTabNav from '../WindowTabNav.vue'    // 统一左侧竖排页签导航
+import { Terminal, Container } from 'lucide-vue-next'
 import { batchApi } from '../../api'              // 批量接口
 import { nodes, refreshNodes } from '../../store/nodes'  // 节点列表（全局状态）
 
 const { t } = useI18n()
 const tab = ref('cmd')                 // cmd | ctr
+
+// 左侧页签：批量命令 / 批量容器
+const tabs = computed(() => [
+  { key: 'cmd', label: t('batch.tabCmd'), icon: Terminal },
+  { key: 'ctr', label: t('batch.tabContainers'), icon: Container },
+])
 const command = ref('')                // 批量命令
 const keyword = ref('')                // 容器名关键字
 const action = ref('start')            // 容器动作

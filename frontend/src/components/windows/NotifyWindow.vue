@@ -9,8 +9,9 @@
   打开方式：ShunX 安全中心「通知」标签页聚合，或独立「通知中心」入口挂载
 -->
 <template>
-  <div class="notify-window">
-    <!-- 顶部：总开关 + 配置 -->
+  <WindowTabNav :model-value="tab" :items="navItems" @update:model-value="switchTab">
+    <div class="notify-window">
+      <!-- 顶部：总开关 + 配置 -->
     <div class="toolbar">
       <div class="global-status">
         <span class="status-badge" :class="cfg.enabled ? 'ok' : 'off'">总开关：{{ cfg.enabled ? '已开启' : '已关闭' }}</span>
@@ -23,22 +24,6 @@
         <button class="ui-btn" :disabled="busy" @click="doTestAlert">测试告警</button>
         <button class="ui-btn" :disabled="loading" @click="loadAll"><RefreshCw :size="14" /> 刷新</button>
       </div>
-    </div>
-
-    <!-- 标签页 -->
-    <div class="tabs">
-      <button class="tab" :class="{ active: tab === 'channels' }" @click="switchTab('channels')">
-        <BellRing :size="14" /> 通知渠道
-        <span v-if="channels.length" class="count-badge">{{ channels.length }}</span>
-      </button>
-      <button class="tab" :class="{ active: tab === 'rules' }" @click="switchTab('rules')">
-        <Gauge :size="14" /> 告警规则
-        <span v-if="rules.length" class="count-badge">{{ rules.length }}</span>
-      </button>
-      <button class="tab" :class="{ active: tab === 'logs' }" @click="switchTab('logs')">
-        <History :size="14" /> 告警记录
-        <span v-if="logs.length" class="count-badge warn">{{ logs.length }}</span>
-      </button>
     </div>
 
     <!-- ============ 渠道 ============ -->
@@ -154,12 +139,14 @@
       @confirm="doConfirm"
       @cancel="confirm.show = false"
     />
-  </div>
+    </div>
+  </WindowTabNav>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'     // Composition API 响应式与生命周期钩子
+import { ref, reactive, computed, onMounted, watch } from 'vue'     // Composition API 响应式与生命周期钩子
 import { useI18n } from 'vue-i18n'                          // 国际化：取 t() 生成动态文案
+import WindowTabNav from '../WindowTabNav.vue'              // 统一左侧竖排页签导航
 import { BellRing, Gauge, History, RefreshCw, Plus } from 'lucide-vue-next'   // 图标集合
 import { notifyApi } from '../../api'                       // 通知中心后端接口封装
 import ConfirmDialog from '../ConfirmDialog.vue'            // 高危操作二次确认弹窗（输入面板密码）
@@ -175,6 +162,13 @@ const busy = ref(false)
 const channels = ref([])
 const rules = ref([])
 const logs = ref([])
+
+// 左侧页签：渠道 / 规则 / 记录数量作为角标
+const navItems = computed(() => [
+  { key: 'channels', label: '通知渠道', icon: BellRing, badge: channels.value.length || '' },
+  { key: 'rules', label: '告警规则', icon: Gauge, badge: rules.value.length || '' },
+  { key: 'logs', label: '告警记录', icon: History, badge: logs.value.length || '' },
+])
 const cfg = reactive({ enabled: false, interval_seconds: 60, cooldown_seconds: 300 })
 
 // 高风险操作二次确认状态（删除渠道/规则、清空记录共用；action.type 区分操作）
@@ -364,17 +358,6 @@ onMounted(loadAll)
 .status-badge.ok { background: #d1fae5; color: #065f46; }
 .status-badge.off { background: #fee2e2; color: #b91c1c; }
 .toolbar-actions { display: flex; gap: 8px; }
-
-.tabs { display: flex; gap: 4px; margin-bottom: 10px; }
-.tab {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface);
-  border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--g-text);
-}
-.tab:hover { background: var(--g-surface-muted); }
-.tab.active { background: var(--g-strong); color: #fff; border-color: #111827; }
-.count-badge { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #2563eb; color: #fff; font-size: 10px; display: inline-flex; align-items: center; justify-content: center; }
-.count-badge.warn { background: #dc2626; }
 
 .tab-body { flex: 1; overflow: auto; }
 .table-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }

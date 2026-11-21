@@ -20,13 +20,9 @@
     保存成功后经 formBus 通知本窗口刷新库列表。
 -->
 <template>
-  <div class="manage-window">
-    <div class="ui-tabs">
-      <button class="ui-tab" :class="{ active: tab === 'dbs' }" @click="tab='dbs'">{{ $t('database.databases') }}</button>
-      <button class="ui-tab" :class="{ active: tab === 'query' }" @click="tab='query'">{{ $t('database.query') }}</button>
-    </div>
-
-    <!-- 库列表标签 -->
+  <WindowTabNav v-model="tab" :items="tabs">
+    <div class="manage-window">
+      <!-- 库列表标签 -->
     <div v-if="tab==='dbs'" class="panel">
       <!-- MySQL / PostgreSQL：库列表 + 创建/删除 -->
       <div v-if="conn?.db_type==='mysql' || conn?.db_type==='postgresql'">
@@ -121,16 +117,19 @@
       @confirm="doDropDB"
       @cancel="confirm.show = false"
     />
-  </div>
+    </div>
+  </WindowTabNav>
 </template>
 
 <script setup>
 // 状态/共享信号监听
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 // 翻译函数
 import { useI18n } from 'vue-i18n'
 // 数据库管理接口
 import { databasesApi } from '../../api'
+import WindowTabNav from '../WindowTabNav.vue'   // 统一左侧竖排页签导航
+import { Database, TerminalSquare } from 'lucide-vue-next'
 // 打开「创建数据库」独立窗口
 import ConfirmDialog from '../ConfirmDialog.vue'   // 删除库的「输入库名」二次确认
 import { formBus } from '../../store/formBus'   // 创建库窗口保存成功后刷新库列表
@@ -144,6 +143,12 @@ const props = defineProps({
 const emit = defineEmits(['openDatabaseCreate'])   // 打开独立「创建数据库」窗口
 
 const tab = ref('dbs')   // 库列表 / 查询 标签
+
+// 左侧页签：库列表 / SQL 查询
+const tabs = computed(() => [
+  { key: 'dbs', label: t('database.databases'), icon: Database },
+  { key: 'query', label: t('database.query'), icon: TerminalSquare },
+])
 const dbList = ref([])   // MySQL/Pg/Mongo 的库列表
 const redisInfo = ref('')   // Redis info 原文
 const sqlText = ref('')   // SQL 编辑器内容

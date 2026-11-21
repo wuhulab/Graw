@@ -8,18 +8,11 @@
   删除容器/镜像/网络/卷均为高风险操作，需输入面板密码（ConfirmDialog）确认。
 -->
 <template>
-  <div style="display:flex; flex-direction:column; height:100%;" @click="closeMenus">
-    <!-- 工具栏：视图下拉切换 -->
-    <div class="toolbar">
-      <select v-model="view" class="view-select" @change="onViewChange">
-        <option value="containers">容器</option>
-        <option value="images">镜像</option>
-        <option value="volumes">数据卷</option>
-        <option value="networks">网络</option>
-        <option value="compose">编排</option>
-        <option value="config">配置</option>
-      </select>
-      <button class="btn" @click="refreshCurrent">刷新</button>
+  <WindowTabNav :model-value="view" :items="tabs" @update:model-value="switchView">
+    <div style="display:flex; flex-direction:column; height:100%;" @click="closeMenus">
+      <!-- 工具栏：视图操作 -->
+      <div class="toolbar">
+        <button class="btn" @click="refreshCurrent">刷新</button>
       <!-- 镜像视图操作按钮与「镜像」下拉同一行对齐（面板模式工具栏观感统一） -->
       <template v-if="view === 'images'">
         <button class="btn" @click="openPull"><Download :size="13" /> 拉取镜像</button>
@@ -357,14 +350,16 @@
       @confirm="doConfirmDanger"
       @cancel="confirm.show = false"
     />
-  </div>
+    </div>
+  </WindowTabNav>
 </template>
 
 <script setup>
 // 响应式状态、生命周期与计算属性
 import { ref, onMounted, onUnmounted, onDeactivated, computed, watch } from 'vue'
-// 图标（拉取/构建按钮）
-import { Download, Hammer } from 'lucide-vue-next'
+// 图标（左侧页签 + 拉取/构建按钮）
+import { Download, Hammer, Container, Layers, Database, Network, FileCode2, Settings2 } from 'lucide-vue-next'
+import WindowTabNav from '../WindowTabNav.vue'   // 统一左侧竖排页签导航
 // Docker API：容器/镜像/网络/compose/配置/数据卷
 import { dockerApi } from '../../api'
 // 共享 Docker store：多窗口共用一份容器数据与轮询连接（startDocker 启动轮询、refresh 触发刷新）
@@ -378,6 +373,22 @@ const emit = defineEmits(['openLogs', 'openContainerTerminal', 'openContainerDet
 // 当前视图：containers / config / compose / images / networks / volumes
 const view = ref('containers')
 const loading = ref(false)
+
+// 左侧页签：容器 / 镜像 / 数据卷 / 网络 / 编排 / 配置
+const tabs = [
+  { key: 'containers', label: '容器', icon: Container },
+  { key: 'images', label: '镜像', icon: Layers },
+  { key: 'volumes', label: '数据卷', icon: Database },
+  { key: 'networks', label: '网络', icon: Network },
+  { key: 'compose', label: '编排', icon: FileCode2 },
+  { key: 'config', label: '配置', icon: Settings2 },
+]
+
+// 切换视图：沿用原下拉的加载逻辑
+function switchView(k) {
+  view.value = k
+  onViewChange()
+}
 
 // ---------- 容器：Docker 守护状态与容器列表 ----------
 const status = ref(null)        // Docker 引擎状态（可用与否、版本、运行数等）
@@ -970,10 +981,6 @@ onDeactivated(() => {
 .mem-bar { width: 120px; height: 5px; background: var(--g-border); border-radius: 3px; margin-top: 3px; overflow: hidden; }
 .mem-fill { height: 100%; border-radius: 3px; transition: width 0.4s; }
 .star-on { color: #d97706; }
-.view-select {
-  padding: 4px 8px; border: 1px solid var(--g-border-strong); border-radius: 6px;
-  font-size: 13px; background: var(--g-surface); color: var(--g-text); cursor: pointer;
-}
 .btn.sm { padding: 2px 8px; font-size: 11px; margin-right: 4px; }
 .btn.sm.danger { color: #b91c1c; }
 .btn.primary { background: var(--g-strong); color: #fff; border-color: #0a3d7a; }

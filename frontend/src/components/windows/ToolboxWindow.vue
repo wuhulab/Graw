@@ -20,21 +20,9 @@
     errorText    执行失败提示
 -->
 <template>
-  <div class="toolbox-window">
-    <!-- 顶部：功能页签切换 -->
-    <div class="tabs">
-      <button
-        v-for="t in tabs"
-        :key="t.key"
-        class="tab"
-        :class="{ active: tab === t.key }"
-        @click="tab = t.key"
-      >
-        <component :is="t.icon" :size="14" /> {{ t.label }}
-      </button>
-    </div>
-
-    <!-- Base64 编解码 -->
+  <WindowTabNav v-model="tab" :items="tabs">
+    <div class="toolbox-window">
+      <!-- Base64 编解码 -->
     <div v-if="tab === 'base64'" class="tab-body">
       <div class="field-row">
         <label class="field">
@@ -336,11 +324,13 @@
       ></textarea>
       <div v-if="errorText" class="error">{{ errorText }}</div>
     </div>
-  </div>
+    </div>
+  </WindowTabNav>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'   // 响应式状态、表单对象、生命周期
+import WindowTabNav from '../WindowTabNav.vue'   // 统一左侧竖排页签导航
 import { Binary, Hash, Clock, Radar, Globe, Network, Plug, FileCode, RefreshCw, Plus, Pencil, Trash2, Copy } from 'lucide-vue-next'
 import { toolboxApi } from '../../api'   // 工具箱后端能力：/api/toolbox/* 的封装
 
@@ -642,11 +632,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.toolbox-window { padding: 10px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; gap: 10px; }
-.tabs { display: flex; gap: 6px; flex-wrap: wrap; }
-.tab { padding: 6px 12px; border: 1px solid var(--g-border-strong); background: var(--g-surface); border-radius: 6px; cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; color: var(--g-text); }
-.tab:hover { background: var(--g-surface-muted); }
-.tab.active { background: var(--g-strong); color: #fff; border-color: #111827; }
+.toolbox-window { padding: 10px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; }
 
 .tab-body { display: flex; flex-direction: column; gap: 10px; overflow: auto; min-height: 0; }
 .field-row { display: flex; gap: 12px; }

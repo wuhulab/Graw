@@ -7,12 +7,8 @@
   打开方式：桌面「镜像扫描」入口（管理员）
 -->
 <template>
-  <div class="imgscan-window">
-    <div class="ui-toolbar">
-      <button class="ui-btn" :class="{ primary: tab === 'scan' }" @click="tab = 'scan'">{{ $t('imgscan.tabScan') }}</button>
-      <button class="ui-btn" :class="{ primary: tab === 'adv' }" @click="tab = 'adv'; loadAdvisory()">{{ $t('imgscan.tabAdvisory') }}</button>
-    </div>
-
+  <WindowTabNav :model-value="tab" :items="tabs" @update:model-value="switchTab">
+    <div class="imgscan-window">
     <!-- 扫描 tab -->
     <div v-if="tab === 'scan'" class="tab-body">
       <div class="scan-row">
@@ -97,16 +93,29 @@
         </table>
       </div>
     </div>
-  </div>
+    </div>
+  </WindowTabNav>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'         // 响应式 + 派生选中项 + 挂载
 import { useI18n } from 'vue-i18n'            // 国际化
+import WindowTabNav from '../WindowTabNav.vue'  // 统一左侧竖排页签导航
+import { ScanSearch, BookOpen } from 'lucide-vue-next'
 import { imgsafetyApi } from '../../api'      // 扫描接口
 
 const { t } = useI18n()
 const tab = ref('scan')
+
+// 左侧页签：扫描 / advisory 库；切到 advisory 时按原逻辑加载
+const tabs = computed(() => [
+  { key: 'scan', label: t('imgscan.tabScan'), icon: ScanSearch },
+  { key: 'adv', label: t('imgscan.tabAdvisory'), icon: BookOpen },
+])
+function switchTab(k) {
+  tab.value = k
+  if (k === 'adv') loadAdvisory()
+}
 const containers = ref([])      // 本地容器列表（name + image）
 const selectedId = ref('')      // 下拉选中的容器 id
 const loadError = ref('')       // 容器列表加载失败提示

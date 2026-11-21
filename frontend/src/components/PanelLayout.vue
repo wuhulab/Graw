@@ -96,7 +96,22 @@
           <!-- 快速搜索：按名称/标题实时过滤菜单项 -->
           <div v-if="!(collapsed && !isMobile)" class="pnl-search">
             <Search :size="14" class="pnl-search-icon" />
-            <input v-model.trim="search" :placeholder="$t('panel.searchPlaceholder')" spellcheck="false" />
+            <!-- autocomplete/name/type 明确声明为搜索框：避免浏览器密码管理器把登录用户名
+                 （如 admin）自动填进来，触发过滤后让侧边栏看起来「少了应用」。
+                 初始 readonly，用户点击/聚焦后才可输入，进一步阻止加载期自动填充。 -->
+            <input
+              v-model.trim="search"
+              type="search"
+              name="graw-panel-menu-search"
+              :readonly="!searchReady"
+              :placeholder="$t('panel.searchPlaceholder')"
+              spellcheck="false"
+              autocomplete="off"
+              autocapitalize="off"
+              autocorrect="off"
+              @pointerdown="activateSearch"
+              @focus="activateSearch"
+            />
             <button v-if="search" class="pnl-search-clear" @click="search = ''"><X :size="12" /></button>
           </div>
 
@@ -386,7 +401,19 @@ const collapsed = ref(!!(savedPanelUi && savedPanelUi.collapsed))  // 宽屏折�
 const drawerOpen = ref(false)                                       // 移动端抽屉展开
 const isMobile = ref(false)                                         // 是否进入移动端布局（<768px）
 const search = ref('')                                              // 菜单过滤关键词
-const searching = computed(() => search.value.trim().length > 0)
+// 搜索框是否已由用户激活：初始 readonly，避免浏览器密码管理器在页面加载时
+// 把登录用户名（如 admin）自动填进来，把菜单过滤成只剩「主页」。
+const searchReady = ref(false)
+// 只有用户真正激活搜索框后才让关键词参与过滤：自动填充的值不生效，避免侧边栏「看起来少了应用」
+const searching = computed(() => searchReady.value && search.value.trim().length > 0)
+
+// 首次点击/聚焦搜索框时激活：只读期间用户无法输入，框内已有内容只可能是浏览器自动填充，
+// 直接清空，让搜索从干净状态开始。
+function activateSearch() {
+  if (searchReady.value) return
+  searchReady.value = true
+  search.value = ''
+}
 
 // 组展开状态：优先恢复上次记忆，首次使用默认全展开
 const expandedSet = reactive(
@@ -513,12 +540,18 @@ const groups = computed(() => {
 const currentMenuKey = computed(() => (activeWindow.value ? activeWindow.value.key : ''))
 
 // 菜单动作：统一冒泡给 App（App 侧 openWindow 内含 adminOnly/remoteCap 守卫），
-// 移动端点选后自动收起抽屉；点用户菜单项时关闭下拉
+// 移动端点选后自动收起抽屉；点用户菜单项时关闭下拉。
+// 同时清空侧边栏搜索：打开应用后恢复完整菜单，避免过滤残留让用户误以为应用丢失。
 function menuAction(key) {
   userMenuOpen.value = false
+  search.value = ''
   if (isMobile.value) drawerOpen.value = false
   emit('open', key)
 }
+
+// 激活窗口变化（含从开始菜单 / 全局搜索 / 标签栏打开）时清空侧边栏搜索，
+// 保证进入设置等应用后侧边栏始终展示完整菜单。
+watch(() => props.activeId, () => { search.value = '' })
 
 // 退出登录：冒泡给 App 执行 doLogout
 function onLogout() {
@@ -532,7 +565,15 @@ function onDocClick(e) {
   if (hostMenuOpen.value && !e.target.closest('.pnl-hostswitch')) hostMenuOpen.value = false
   if (favMenu.show && !e.target.closest('.pnl-ctxmenu')) favMenu.show = false
 }
-onMounted(() => document.addEventListener('mousedown', onDocClick))
+onMounted(() => {
+  document.addEventListener('mousedown', onDocClick)
+  // 兜底：个别浏览器忽略 autocomplete=off / readonly，仍可能在挂载后自动填充。
+  // 若搜索内容恰好等于当前登录用户名，视为浏览器误填并清空，恢复完整菜单。
+  setTimeout(() => {
+    const username = props.user?.username || ''
+    if (username && search.value.trim() === username) search.value = ''
+  }, 600)
+})
 onUnmounted(() => document.removeEventListener('mousedown', onDocClick))
 
 // 搜索变化时自动展开全部组（保证命中项可见）；搜索时收起收藏分组与右键菜单
@@ -710,6 +751,9 @@ watch(searching, (v) => {
   box-sizing: border-box;
 }
 .pnl-search input:focus { border-color: #0a84ff; box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.15); }
+/* 隐藏 type=search 的原生清除按钮：统一使用右侧自定义 X 按钮 */
+.pnl-search input::-webkit-search-cancel-button,
+.pnl-search input::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
 .pnl-search-icon {
   position: absolute;
   left: 9px;
