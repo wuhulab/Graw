@@ -87,6 +87,7 @@ func registerFileRoutes(a *App) {
 	a.Post("/api/files/copy", perm("files"), filesCopyHandler)
 	a.Post("/api/files/compress", perm("files"), filesCompressHandler)
 	a.Post("/api/files/extract", perm("files"), filesExtractHandler)
+	registerFileEnhancedRoutes(a)
 
 	a.Get("/api/recycle/config", perm("files"), func(w http.ResponseWriter, r *http.Request) error {
 		cfg := LoadRecycleConfig()
@@ -385,6 +386,7 @@ func filesDownloadHandler(w http.ResponseWriter, r *http.Request) error {
 	if err := HostCopyTo(sp, w); err != nil {
 		return filesOpError(err, "下载失败")
 	}
+	recordTransfer("download", UnhostPath(sp), HostSize(sp), "done")
 	return nil
 }
 
@@ -432,6 +434,7 @@ func filesUploadHandler(w http.ResponseWriter, r *http.Request) error {
 	if err := HostWriteFrom(target, file, 0o644); err != nil {
 		return filesOpError(err, "上传失败")
 	}
+	recordTransfer("upload", UnhostPath(target), header.Size, "done")
 	AuditRecord("上传文件", u.Username(), ClientIP(r), UnhostPath(target))
 	return WriteJSON(w, 200, map[string]any{"ok": true, "path": UnhostPath(target)})
 }

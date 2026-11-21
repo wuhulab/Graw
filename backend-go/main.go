@@ -46,6 +46,7 @@ func main() {
 	graw.StartDailyReport()
 	graw.StartMonitors()
 	graw.StartTamperMonitor()
+	graw.StartNodeMonitor()
 	graw.RestorePortForwards()
 	graw.RestoreVPN()
 

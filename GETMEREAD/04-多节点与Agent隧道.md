@@ -142,7 +142,29 @@ flowchart TD
 
 ---
 
+### 跨节点资源聚合与节点巡检（P1，2026-11-21 新增）
+
+- **聚合入口**：节点总览工具栏「跨节点资源」，可选网站 / 已安装应用 / 证书。
+- **实现方式**：`GET /api/nodes/aggregate?resource=sites|apps|certs`。本机直接读 `loadSites()` / `listInstalledApps()` / `loadSSLCerts()`；远端节点经 Agent 隧道调用子节点的 `/api/sites/list`、`/api/appstore/installed`、`/api/ssl/list`，再合并并补上 `node_id / node_name / group`。
+- **失败隔离**：单节点连不上只写进 `errors`，不影响其它节点的结果；子节点必须启用 Agent，裸 SSH 节点会返回错误提示。
+- **批量元数据**：`POST /api/nodes/batch-meta` 可一次给多台节点设置分组/标签（节点总览目前仍以单卡编辑为主）。
+- **在线巡检**：`StartNodeMonitor()` 每 120 秒探测一次 SSH 节点，状态写 `data/node_status.json`；状态从在线变为离线或恢复时，经通知渠道推送「节点离线 / 节点恢复」，并记入通知日志。
+
+```mermaid
+flowchart LR
+    A[节点总览 跨节点资源] --> B{节点类型}
+    B -- 本机 --> C[直接读本地 sites/apps/certs]
+    B -- SSH+Agent --> D[agentJSONGet 子节点只读接口]
+    C --> E[合并 + 补节点/分组字段]
+    D --> E
+    E --> F[前端表格]
+    D -- 失败 --> G[errors 单节点提示]
+```
+
+---
+
 ## 更新记录
+- `2026-11-21`：新增「跨节点资源聚合与节点巡检」，说明 sites/apps/certs 的聚合来源、单节点失败隔离、批量元数据与节点离线/恢复告警。
 - `2026-10-06`：新增「第四部分：节点总览」，讲清 /api/nodes/overview 的并发采集、单节点故障隔离、分组/标签元数据与批量操作入口。
 - `2026-09-25`：修正「子节点 JWT 角色由 `GRAW_AGENT_ROLE` 决定」的过时说法（现固定 admin）；补上「隧道落点是子节点本机、Agent 端口无需暴露公网」；补齐 `remote_cap.LOCAL_PREFIX` 全量清单，并说明「远端配好 Agent 后 local 类可在子节点执行」与「哪几类请求永不代理」。
 - `2026-08-24`：拆分为独立文件，用大白话讲清 SSH 节点、Agent 隧道与能力门控。

@@ -309,6 +309,16 @@
       </div>
     </div>
 
+    <!-- 系统设置（P1：缓存清理 / 主机名 / 时区 / DNS / hosts / Swap / NTP） -->
+    <div v-if="tab === 'system'" class="tab-body panel-body">
+      <ToolboxSystemPanel />
+    </div>
+
+    <!-- Fail2ban（P1） -->
+    <div v-if="tab === 'fail2ban'" class="tab-body panel-body">
+      <Fail2banPanel />
+    </div>
+
     <!-- 结果区（前 5 个页签 + 网络诊断共用） -->
     <div v-if="showResult" class="result-area">
       <div class="result-toolbar">
@@ -331,8 +341,10 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'   // 响应式状态、表单对象、生命周期
 import WindowTabNav from '../WindowTabNav.vue'   // 统一左侧竖排页签导航
-import { Binary, Hash, Clock, Radar, Globe, Network, Plug, FileCode, RefreshCw, Plus, Pencil, Trash2, Copy } from 'lucide-vue-next'
+import { Binary, Hash, Clock, Radar, Globe, Network, Plug, FileCode, RefreshCw, Plus, Pencil, Trash2, Copy, Settings, ShieldAlert } from 'lucide-vue-next'
 import { toolboxApi } from '../../api'   // 工具箱后端能力：/api/toolbox/* 的封装
+import ToolboxSystemPanel from './ToolboxSystemPanel.vue'   // 系统设置页签
+import Fail2banPanel from './Fail2banPanel.vue'             // Fail2ban 页签
 
 // 当前页签 & 定义：key 与后端 exec 的 tool 参数一一对应（网络诊断沿用 exec）
 const tab = ref('base64')
@@ -345,14 +357,16 @@ const tabs = [
   { key: 'net', label: '网络诊断', icon: Network },
   { key: 'ports', label: '端口排查', icon: Plug },
   { key: 'scripts', label: '脚本库', icon: FileCode },
+  { key: 'system', label: '系统设置', icon: Settings },
+  { key: 'fail2ban', label: 'Fail2ban', icon: ShieldAlert },
 ]
 
 // 状态与结果
 const busy = ref(false)         // exec 请求进行中（禁用执行按钮）
 const resultText = ref('')      // 结果区文本（所有 exec 页签共用）
 const errorText = ref('')       // 执行失败提示
-// 结果区只在会产出文本的页签显示（端口排查/脚本库用独立面板）
-const showResult = computed(() => ['ports', 'scripts'].indexOf(tab.value) === -1)
+// 结果区只在会产出文本的页签显示（端口排查/脚本库/系统设置/Fail2ban 用独立面板）
+const showResult = computed(() => ['ports', 'scripts', 'system', 'fail2ban'].indexOf(tab.value) === -1)
 
 // Base64 表单
 const b64 = reactive({ mode: 'encode', input: '' })

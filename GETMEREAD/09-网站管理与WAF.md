@@ -303,8 +303,33 @@ flowchart TD
 - **访问统计的域名过滤**：全局日志（combined）行首没有 host 字段，此时 `_domain_matches(None, domain)` 直接判不匹配。所以既指定 domain 又用全局日志会统计为空——用站点级日志时才自动把 domain 置空兜底。
 - **WAF 频率限制要手动搬 zone**：`limit_req_zone` 在 http 上下文，片段里只以注释形式给出，忘了搬过去则 `limit_req` 找不到 zone，nginx reload 会报错。
 
-## 更新记录
-- `2026-09-25`：新建，讲清网站管理、Web 引擎模式、WAF 与站点增强/统计的运行逻辑。
+## 十三、网站监控增强（P1，2026-11-21 新增）
+
+网站统计窗口在原有「概览」之外新增三个页签：
+
+| 页签 | 接口 | 说明 |
+|------|------|------|
+| 实时 | `GET /api/webstats/realtime` | 读日志尾部 512KB，返回最近请求、60 秒窗口内的每秒请求数与每秒流量；前端每 3 秒刷新 |
+| 请求明细 | `GET /api/webstats/requests` | 读尾部 8MB，按方法 / 状态码 / 关键词（IP、路径、UA、Referer）过滤，返回最近 N 条 |
+| 访客分布 | `GET /api/webstats/visitors` | 聚合 IP 与地区；内网地址标「内网」，其余按 `data/geoip_countries.json` 的 CIDR→国家映射解析，未配置则「未知」 |
+
+「概览」页签底部新增**站点汇总**（`GET /api/webstats/summary`）：对每个发现的访问日志读尾部 4MB，统计请求数、独立 IP、流量与错误率，按请求量降序。
+
+所有接口都只读日志尾部，不会全量载入大文件；日志路径仍复用原有的 `..` / data 目录 / 文件存在性校验。访客地图没有内置 GeoIP 数据库，避免引入许可受限的 mmdb 文件。
+
+```mermaid
+flowchart LR
+    A[WebStatsWindow] --> B[概览: analyze]
+    A --> C[实时: realtime 3s]
+    A --> D[明细: requests 过滤]
+    A --> E[访客: visitors]
+    A --> F[站点汇总: summary]
+    C --> G[readTail 512KB]
+    D --> H[readTail 8MB]
+    E --> I[readTail 4MB + geoip_countries.json]
+    F --> J[逐日志 readTail 4MB]
+```
+
 ## 十二、站点配置中心（2026-11-21 新增）
 
 站点右键菜单里的「高级配置」不再跳独立窗口，而是在「网站」窗口内切换成页签视图（`SiteAdvancedPanel.vue`），数据统一落在 `sites.json` 的 `site.advanced` 字段，保存后由 `nginxSiteConfig()` 重新生成配置并 reload。
@@ -340,3 +365,7 @@ flowchart LR
 
 **更新记录**
 - `2026-11-21`：新增站点配置中心：默认文档、重定向、密码访问、限流、跨域、真实 IP、多上游负载均衡、站点日志与原始配置在线编辑。
+
+## 更新记录
+- `2026-11-21`：新增「十二、站点配置中心」与「十三、网站监控增强」；后者含实时请求/流量、请求明细、站点汇总、访客分布（CIDR 地区映射，不内置 GeoIP 库）。
+- `2026-09-25`：新建，讲清网站管理、Web 引擎模式、WAF 与站点增强/统计的运行逻辑。

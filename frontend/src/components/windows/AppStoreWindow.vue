@@ -23,25 +23,31 @@
     <div class="toolbar">
       <div class="title-wrap">
         <span class="title"><Store :size="16" /> {{ $t('appstore.title') }}</span>
+        <span class="mode-tabs">
+          <button class="mode-tab" :class="{ active: mode === 'store' }" @click="mode = 'store'">{{ $t('appstore.tabStore') }}</button>
+          <button class="mode-tab" :class="{ active: mode === 'installed' }" @click="mode = 'installed'">{{ $t('appstore.tabInstalled') }}</button>
+        </span>
         <span class="badge" :class="indexState.source === 'remote' ? 'ok' : 'warn'">
           {{ indexState.source === 'remote' ? $t('appstore.remoteIndex') : $t('appstore.localIndex') }}
         </span>
         <span v-if="indexState.updated_at" class="updated">{{ $t('appstore.updatedAt', { time: fmtTime(indexState.updated_at) }) }}</span>
       </div>
       <!-- 分类筛选下拉 -->
-      <select class="cat-select" v-model="selectedCategory" :title="$t('appstore.filterByCategory')">
+      <select v-if="mode === 'store'" class="cat-select" v-model="selectedCategory" :title="$t('appstore.filterByCategory')">
         <option value="">{{ $t('appstore.allCategories') }}</option>
         <option v-for="cat in categories" :key="cat" :value="cat">{{ $t('appstore.categories.' + cat, cat) }}</option>
       </select>
       <!-- 搜索输入框 -->
-      <input class="search-inp" type="text" v-model.trim="searchQuery"
+      <input v-if="mode === 'store'" class="search-inp" type="text" v-model.trim="searchQuery"
              :placeholder="$t('appstore.searchPlaceholder')" />
-      <button class="btn" :disabled="loading" @click="loadIndex(false)">
+      <button v-if="mode === 'store'" class="btn" :disabled="loading" @click="loadIndex(false)">
         {{ loading ? $t('common.loading') : $t('common.refresh') }}
       </button>
       <button class="btn" @click="emit('openAppStoreConfig', { indexUrl: configForm.index_url })"><Settings2 :size="14" /> {{ $t('appstore.indexConfig') }}</button>
     </div>
 
+    <!-- ============ 商店索引视图 ============ -->
+    <template v-if="mode === 'store'">
     <!-- 索引错误提示 -->
     <div v-if="indexState.error" class="error-banner">
       <AlertTriangle :size="14" /> {{ indexState.error }}
@@ -98,6 +104,9 @@
         </div>
       </div>
     </div>
+    </template>
+    <!-- ============ 已安装应用视图 ============ -->
+    <AppLifecyclePanel v-else />
 
     <!-- ============ 首次进入免责声明弹窗（保留内嵌确认） ============ -->
     <div v-if="showDisclaimer" class="disc-modal-overlay">
@@ -135,6 +144,7 @@ import { appStoreApi } from '../../api'   // 应用商店 API（索引/配置）
 import { localizedName, localizedDescription } from '../../appStoreL10n'   // 应用名/描述的多语言文案
 import { formBus } from '../../store/formBus'   // 表单保存信号：索引配置窗口保存成功后强制刷新
 import { Store, Settings2, Globe, Github, Container, AlertTriangle, Loader2, BookOpen, Search, ShieldAlert } from 'lucide-vue-next'   // 工具栏/卡片/弹窗图标
+import AppLifecyclePanel from './AppLifecyclePanel.vue'   // 已安装应用生命周期页签
 
 const { t, te, locale } = useI18n()
 const emit = defineEmits(['openAppInstall', 'openReadme', 'openAppStoreConfig', 'close'])   // openAppInstall 打开安装表单；openReadme 打开 README；openAppStoreConfig 打开索引配置窗口；close 关窗
@@ -167,6 +177,7 @@ function tagClass(t) {
 }
 
 const apps = ref([])   // 索引中的应用列表
+const mode = ref('store')   // store=商店索引，installed=已安装应用
 const loading = ref(false)   // 索引加载中（禁用刷新按钮）
 const indexState = reactive({ source: '', updated_at: '', error: '' })   // 索引来源（远程/本地）、更新时间、错误信息
 
@@ -280,6 +291,11 @@ onMounted(async () => {
 .badge { font-size: 11px; padding: 1px 8px; border-radius: 999px; }
 .badge.ok { background: #ecfdf5; color: #047857; }
 .badge.warn { background: #fffbeb; color: #b45309; }
+
+/* 商店 / 已安装 页签 */
+.mode-tabs { display: inline-flex; border: 1px solid var(--g-border); border-radius: 8px; overflow: hidden; }
+.mode-tab { border: none; background: transparent; color: var(--g-text-muted); font-size: 11.5px; padding: 3px 10px; cursor: pointer; }
+.mode-tab.active { background: var(--g-surface-soft); color: var(--g-text); font-weight: 600; }
 
 /* 分类下拉 */
 .cat-select {

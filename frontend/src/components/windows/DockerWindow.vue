@@ -13,6 +13,19 @@
       <!-- 工具栏：视图操作 -->
       <div class="toolbar">
         <button class="btn" @click="refreshCurrent">刷新</button>
+      <!-- 容器：新建与批量操作 -->
+      <template v-if="view === 'containers'">
+        <button class="btn" @click="showCreate = true"><Plus :size="13" /> 创建容器</button>
+        <template v-if="selectedIds.length">
+          <span class="hint">已选 {{ selectedIds.length }}</span>
+          <button class="btn sm" :disabled="batchBusy" @click="batchAct('start')">启动</button>
+          <button class="btn sm" :disabled="batchBusy" @click="batchAct('stop')">停止</button>
+          <button class="btn sm" :disabled="batchBusy" @click="batchAct('restart')">重启</button>
+          <button class="btn sm danger" :disabled="batchBusy" @click="batchRemove">删除</button>
+        </template>
+      </template>
+      <!-- 编排：导入与模板库 -->
+      <DockerComposeTools v-if="view === 'compose'" @changed="loadCompose" />
       <!-- 镜像视图操作按钮与「镜像」下拉同一行对齐（面板模式工具栏观感统一） -->
       <template v-if="view === 'images'">
         <button class="btn" @click="openPull"><Download :size="13" /> 拉取镜像</button>
@@ -31,14 +44,20 @@
     </div>
 
     <div style="flex:1; overflow:auto;">
+      <!-- ================= 概览视图 ================= -->
+      <div v-if="view === 'overview'" style="height:100%;">
+        <DockerOverviewPanel />
+      </div>
+
       <!-- ================= 容器视图 ================= -->
-      <div v-if="view === 'containers'">
+      <div v-else-if="view === 'containers'">
         <div v-if="status && !status.available" class="empty">
           无法连接到 Docker。请确认 Docker 服务正在运行，并且当前用户具有访问权限。
         </div>
         <table v-else class="dt">
           <thead>
             <tr>
+              <th style="width:26px;"><input type="checkbox" :checked="allSelected" title="全选" @change="toggleSelectAll" /></th>
               <th style="width:28px;">★</th>
               <th>名称</th>
               <th>镜像</th>
@@ -50,6 +69,7 @@
           </thead>
           <tbody>
             <tr v-for="c in sortedContainers" :key="c.id" @contextmenu.prevent="onContextMenu($event, c)">
+              <td style="text-align:center;"><input type="checkbox" :checked="selectedIds.includes(c.id)" @change="toggleSelect(c.id)" @click.stop /></td>
               <td style="text-align:center;">
                 <span style="cursor:pointer;" :class="{ 'star-on': c.starred }" :title="c.starred ? '已标星' : '未标星'" @click.stop="toggleStar(c)">
                   {{ c.starred ? '★' : '☆' }}
@@ -78,7 +98,7 @@
               <td style="font-family:monospace;font-size:11px;">{{ c.ports.join(', ') || '-' }}</td>
             </tr>
             <tr v-if="!containers.length && status && status.available">
-              <td colspan="7"><div class="empty">暂无容器</div></td>
+              <td colspan="8"><div class="empty">暂无容器</div></td>
             </tr>
           </tbody>
         </table>
@@ -263,6 +283,7 @@
         <div class="menu-item" @click="menuEditNotes">备注笔记</div>
         <div class="menu-divider"></div>
         <div class="menu-item" @click="menuDetails">详细信息</div>
+        <div class="menu-item" @click="openRelated">关联资源</div>
         <div class="menu-item" @click="menuStats">资源图表</div>
         <div class="menu-item" @click="menuBackup">备份</div>
         <div class="menu-item" @click="menuUpgrade">升级</div>
@@ -350,6 +371,10 @@
       @confirm="doConfirmDanger"
       @cancel="confirm.show = false"
     />
+
+    <!-- P1：新建容器 / 关联资源 -->
+    <ContainerCreateDialog :show="showCreate" @close="showCreate = false" @created="refreshContainers" />
+    <ContainerRelatedDialog :show="relatedShow" :container="relatedContainer" @close="relatedShow = false" />
     </div>
   </WindowTabNav>
 </template>
@@ -358,8 +383,13 @@
 // 响应式状态、生命周期与计算属性
 import { ref, onMounted, onUnmounted, onDeactivated, computed, watch } from 'vue'
 // 图标（左侧页签 + 拉取/构建按钮）
-import { Download, Hammer, Container, Layers, Database, Network, FileCode2, Settings2 } from 'lucide-vue-next'
+import { Download, Hammer, Container, Layers, Database, Network, FileCode2, Settings2, LayoutDashboard, Plus } from 'lucide-vue-next'
 import WindowTabNav from '../WindowTabNav.vue'   // 统一左侧竖排页签导航
+// P1：概览、容器创建、关联资源、编排模板
+import DockerOverviewPanel from './DockerOverviewPanel.vue'
+import ContainerCreateDialog from './ContainerCreateDialog.vue'
+import ContainerRelatedDialog from './ContainerRelatedDialog.vue'
+import DockerComposeTools from './DockerComposeTools.vue'
 // Docker API：容器/镜像/网络/compose/配置/数据卷
 import { dockerApi } from '../../api'
 // 共享 Docker store：多窗口共用一份容器数据与轮询连接（startDocker 启动轮询、refresh 触发刷新）
@@ -374,8 +404,9 @@ const emit = defineEmits(['openLogs', 'openContainerTerminal', 'openContainerDet
 const view = ref('containers')
 const loading = ref(false)
 
-// 左侧页签：容器 / 镜像 / 数据卷 / 网络 / 编排 / 配置
+// 左侧页签：概览 / 容器 / 镜像 / 数据卷 / 网络 / 编排 / 配置
 const tabs = [
+  { key: 'overview', label: '概览', icon: LayoutDashboard },
   { key: 'containers', label: '容器', icon: Container },
   { key: 'images', label: '镜像', icon: Layers },
   { key: 'volumes', label: '数据卷', icon: Database },
@@ -393,6 +424,11 @@ function switchView(k) {
 // ---------- 容器：Docker 守护状态与容器列表 ----------
 const status = ref(null)        // Docker 引擎状态（可用与否、版本、运行数等）
 const containers = ref([])      // 容器列表（由共享 store 经 watch 回填）
+const selectedIds = ref([])     // 批量操作选中的容器 ID
+const batchBusy = ref(false)    // 批量操作进行中
+const showCreate = ref(false)   // 新建容器弹窗
+const relatedShow = ref(false)  // 关联资源弹窗
+const relatedContainer = ref(null)
 const ctxMenu = ref({ show: false, x: 0, y: 0, item: null })   // 右键操作菜单（容器）
 const imgCtxMenu = ref({ show: false, x: 0, y: 0, item: null })   // 右键操作菜单（镜像）
 const noteDialog = ref({ show: false, text: '', item: null })   // 备注笔记弹窗
@@ -428,6 +464,56 @@ const sortedContainers = computed(() => {
   })
 })
 
+// 批量选择：列表变化时过滤掉已不存在的 ID
+const allSelected = computed(() => containers.value.length > 0 && selectedIds.value.length === containers.value.length)
+
+function toggleSelect(id) {
+  const i = selectedIds.value.indexOf(id)
+  if (i >= 0) selectedIds.value.splice(i, 1)
+  else selectedIds.value.push(id)
+}
+
+function toggleSelectAll() {
+  selectedIds.value = allSelected.value ? [] : containers.value.map(c => c.id)
+}
+
+// 容器列表刷新后移除已消失的选择，避免批量动作命中旧 ID
+watch(containers, (list) => {
+  const ids = new Set(list.map(c => c.id))
+  selectedIds.value = selectedIds.value.filter(id => ids.has(id))
+})
+
+async function batchAct(action) {
+  if (!selectedIds.value.length) return
+  batchBusy.value = true
+  try {
+    await dockerApi.batch([...selectedIds.value], action)
+    selectedIds.value = []
+    await refreshContainers()
+  } catch (e) {
+    alert('批量操作失败：' + (e.response?.data?.detail || e.message))
+  } finally {
+    batchBusy.value = false
+  }
+}
+
+function batchRemove() {
+  const n = selectedIds.value.length
+  confirm.value = {
+    show: true,
+    title: '批量删除容器确认',
+    message: `将强制删除选中的 ${n} 个容器（含运行中容器），此操作不可恢复。\n请输入面板密码以确认。`,
+    action: { type: 'containers-batch' }
+  }
+}
+
+// 右键「关联资源」：展示网络、挂载卷与 compose 归属
+function openRelated() {
+  relatedContainer.value = ctxMenu.value.item
+  ctxMenu.value.show = false
+  relatedShow.value = true
+}
+
 // ---------- 视图切换与数据加载 ----------
 async function onViewChange() {
   loading.value = true
@@ -437,6 +523,7 @@ async function onViewChange() {
     else if (view.value === 'images') await loadImages()
     else if (view.value === 'networks') await loadNetworks()
     else if (view.value === 'volumes') await loadVolumes()
+    else if (view.value === 'overview') { /* 概览面板挂载时自行加载 */ }
     else await refreshContainers()    // 默认（containers）视图刷新容器
   } finally {
     loading.value = false
@@ -643,6 +730,10 @@ async function doConfirmDanger() {
     } else if (a.type === 'container') {
       await dockerApi.action(a.id, 'remove')
       await refreshContainers()
+    } else if (a.type === 'containers-batch') {
+      await dockerApi.batch([...selectedIds.value], 'remove')
+      selectedIds.value = []
+      await refreshContainers()
     }
   } catch (e) {
     alert('操作失败：' + (e.response?.data?.detail || e.message))
@@ -683,7 +774,7 @@ function closeMenus() {
 
 // 预估右键菜单高度：菜单项约 31px、header 约 34px、分隔线约 9px
 function estimateMenuHeight(running) {
-  const items = 12 + (running ? 1 : 0) // 13(运行) / 12(停止) 个菜单项（运行态多一个「停止」）
+  const items = 13 + (running ? 1 : 0) // 14(运行) / 13(停止) 个菜单项（运行态多一个「停止」）
   return (items * 31) + 34 + (4 * 9) + 8
 }
 

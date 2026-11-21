@@ -30,6 +30,8 @@
         <input type="file" style="display:none;" @change="onUpload" />
         <Upload :size="14" /> {{ $t('files.upload') }}
       </label>
+      <button class="btn" @click.stop="openFavorites"><Star :size="14" /> {{ $t('files.p1.favorites') }}</button>
+      <button class="btn" @click.stop="openTransfers"><ArrowDownUp :size="14" /> {{ $t('files.p1.transfers') }}</button>
       <!-- 剪贴板状态提示：已复制内容后可在任意文件管理窗口「粘贴」（跨窗口共享） -->
       <span v-if="fileClipboard.items.length" class="clip-chip">
         <Clipboard :size="13" /> {{ $t('files.clipboardHas', { n: fileClipboard.items.length }) }}
@@ -81,6 +83,10 @@
         <template v-if="contextMenu.item">
           <div class="menu-item" @click="menuEdit">{{ $t('files.openEdit') }}</div>
           <div class="menu-item" @click="menuRename">{{ $t('files.rename') }}</div>
+          <div class="menu-item" @click="menuMove">{{ $t('files.p1.moveTo') }}</div>
+          <div class="menu-item" @click="menuHash">{{ $t('files.p1.hash') }}</div>
+          <div class="menu-item" @click="menuNote">{{ $t('files.p1.note') }}</div>
+          <div class="menu-item" @click="menuFavorite">{{ $t('files.p1.addFavorite') }}</div>
           <div class="menu-item" @click="menuDelete">{{ $t('files.delete') }}</div>
           <div class="menu-item" @click="menuCopy">{{ $t('files.copy') }}</div>
           <!-- 右键目录条目时提供「粘贴到此处」（Windows 行为） -->
@@ -101,6 +107,94 @@
         </template>
       </div>
     </Teleport>
+
+    <!-- 收藏夹 -->
+    <div v-if="favOpen" class="file-mask" @click.self="favOpen = false">
+      <div class="file-dialog">
+        <div class="file-dialog-title">{{ $t('files.p1.favorites') }}</div>
+        <div class="file-dialog-body">
+          <div v-for="f in favorites" :key="f.id" class="fav-row">
+            <button class="fav-name" @click="gotoFavorite(f)">{{ f.name }}</button>
+            <span class="fav-path mono">{{ f.path }}</span>
+            <button class="btn sm" @click="removeFavorite(f)">{{ $t('common.delete') }}</button>
+          </div>
+          <div v-if="!favorites.length" class="file-muted">{{ $t('files.p1.noFavorites') }}</div>
+        </div>
+        <div class="file-dialog-foot">
+          <button class="btn" @click="addCurrentFavorite">{{ $t('files.p1.addCurrent') }}</button>
+          <button class="btn" @click="favOpen = false">{{ $t('common.close') }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 传输记录 -->
+    <div v-if="transfersOpen" class="file-mask" @click.self="transfersOpen = false">
+      <div class="file-dialog wide">
+        <div class="file-dialog-title">{{ $t('files.p1.transfers') }}</div>
+        <div class="file-dialog-body">
+          <table class="file-table">
+            <thead><tr><th>{{ $t('files.p1.direction') }}</th><th>{{ $t('files.name') }}</th><th>{{ $t('files.size') }}</th><th>{{ $t('files.modified') }}</th></tr></thead>
+            <tbody>
+              <tr v-for="(t, i) in transfers" :key="i">
+                <td>{{ t.direction === 'upload' ? $t('files.p1.upload') : $t('files.p1.download') }}</td>
+                <td class="mono">{{ t.path }}</td><td>{{ formatBytes(t.size) }}</td><td>{{ t.time }}</td>
+              </tr>
+              <tr v-if="!transfers.length"><td colspan="4" class="file-muted">{{ $t('files.p1.noTransfers') }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="file-dialog-foot"><button class="btn" @click="transfersOpen = false">{{ $t('common.close') }}</button></div>
+      </div>
+    </div>
+
+    <!-- 移动 -->
+    <div v-if="moveDialog.show" class="file-mask" @click.self="moveDialog.show = false">
+      <div class="file-dialog">
+        <div class="file-dialog-title">{{ $t('files.p1.moveTo') }}</div>
+        <div class="file-dialog-body">
+          <div class="file-muted mono">{{ moveDialog.src }}</div>
+          <input v-model.trim="moveDialog.dst" class="file-input" :placeholder="$t('files.p1.movePlaceholder')" />
+        </div>
+        <div class="file-dialog-foot">
+          <button class="btn" @click="moveDialog.show = false">{{ $t('common.cancel') }}</button>
+          <button class="btn primary" :disabled="!moveDialog.dst" @click="doMove">{{ $t('common.confirm') }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 哈希 -->
+    <div v-if="hashDialog.show" class="file-mask" @click.self="hashDialog.show = false">
+      <div class="file-dialog">
+        <div class="file-dialog-title">{{ $t('files.p1.hash') }}</div>
+        <div class="file-dialog-body">
+          <div class="file-muted mono">{{ hashDialog.path }}</div>
+          <select v-model="hashDialog.algo" class="file-input" @change="runHash">
+            <option value="sha256">SHA256</option>
+            <option value="sha1">SHA1</option>
+            <option value="md5">MD5</option>
+          </select>
+          <div v-if="hashDialog.busy" class="file-muted">{{ $t('common.loading') }}</div>
+          <div v-else-if="hashDialog.result" class="hash-result mono">{{ hashDialog.result }}</div>
+          <div v-if="hashDialog.err" class="file-err">{{ hashDialog.err }}</div>
+        </div>
+        <div class="file-dialog-foot"><button class="btn" @click="hashDialog.show = false">{{ $t('common.close') }}</button></div>
+      </div>
+    </div>
+
+    <!-- 备注 -->
+    <div v-if="noteDialog.show" class="file-mask" @click.self="noteDialog.show = false">
+      <div class="file-dialog">
+        <div class="file-dialog-title">{{ $t('files.p1.note') }}</div>
+        <div class="file-dialog-body">
+          <div class="file-muted mono">{{ noteDialog.path }}</div>
+          <textarea v-model="noteDialog.note" class="file-input" rows="5" :placeholder="$t('files.p1.notePlaceholder')" />
+        </div>
+        <div class="file-dialog-foot">
+          <button class="btn" @click="noteDialog.show = false">{{ $t('common.cancel') }}</button>
+          <button class="btn primary" :disabled="noteDialog.busy" @click="saveNote">{{ noteDialog.busy ? $t('common.saving') : $t('common.save') }}</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -118,7 +212,7 @@ import { auth } from '../../store/auth'
 // 共享剪贴板 store：复制/粘贴跨文件管理窗口生效（类 Windows）
 import { fileClipboard, setClipboard, clearClipboard } from '../../store/fileClipboard'
 // 图标（返回上级 / 目录 / 文本 / 图片 / 视频 / 上传 / 剪贴板）
-import { ArrowUp, Folder, FileText, Image as ImageIcon, Film, Upload, Clipboard } from 'lucide-vue-next'
+import { ArrowUp, Folder, FileText, Image as ImageIcon, Film, Upload, Clipboard, Star, ArrowDownUp } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const items = ref([])            // 当前目录条目列表
@@ -135,6 +229,15 @@ const anchorIdx = ref(-1)        // Shift 范围选择锚点（条目在 items �
 const dragOver = ref(false)      // 是否显示拖拽上传遮罩
 const uploadingFiles = ref([])   // 待批量上传的文件列表（驱动进度条）
 const uploadIdx = ref(0)         // 当前正在上传的文件序号（进度条用）
+
+// P1：收藏夹 / 传输记录 / 移动 / 哈希 / 备注
+const favOpen = ref(false)
+const favorites = ref([])
+const transfersOpen = ref(false)
+const transfers = ref([])
+const moveDialog = ref({ show: false, src: '', dst: '' })
+const hashDialog = ref({ show: false, path: '', algo: 'sha256', result: '', busy: false, err: '' })
+const noteDialog = ref({ show: false, path: '', note: '', busy: false })
 
 // 子窗口事件：打开终端 / 编辑器 / 媒体预览（由父窗口接收创建）
 const emit = defineEmits(['openTerminal', 'openEditor', 'openMedia'])
@@ -523,6 +626,123 @@ async function menuChmod() {
   try { await filesApi.chmod(it.path, mode); refresh() } catch (e) { alert(t('files.permissionFailed', { error: getApiErrorMessage(e, t) })) }
 }
 
+// ---------- P1：收藏夹 ----------
+async function openFavorites() {
+  favOpen.value = true
+  try {
+    const r = await filesApi.favorites()
+    favorites.value = r.favorites || []
+  } catch (e) {
+    alert(getApiErrorMessage(e, t))
+  }
+}
+
+function gotoFavorite(f) {
+  favOpen.value = false
+  load(f.path)
+}
+
+async function addCurrentFavorite() {
+  try {
+    const r = await filesApi.addFavorite(path.value, path.value.split('/').filter(Boolean).pop() || '/')
+    favorites.value = r.favorites || []
+  } catch (e) {
+    alert(getApiErrorMessage(e, t))
+  }
+}
+
+async function removeFavorite(f) {
+  try {
+    const r = await filesApi.deleteFavorite(f.id)
+    favorites.value = r.favorites || []
+  } catch (e) {
+    alert(getApiErrorMessage(e, t))
+  }
+}
+
+function menuFavorite() {
+  const it = contextMenu.value.item
+  closeMenus()
+  if (!it) return
+  filesApi.addFavorite(it.path, it.name).then(r => { favorites.value = r.favorites || [] }).catch(e => alert(getApiErrorMessage(e, t)))
+}
+
+// ---------- P1：传输记录 ----------
+async function openTransfers() {
+  transfersOpen.value = true
+  try {
+    const r = await filesApi.transfers()
+    transfers.value = r.transfers || []
+  } catch (e) {
+    alert(getApiErrorMessage(e, t))
+  }
+}
+
+// ---------- P1：移动 ----------
+function menuMove() {
+  const it = contextMenu.value.item
+  closeMenus()
+  if (!it) return
+  moveDialog.value = { show: true, src: it.path, dst: path.value }
+}
+
+async function doMove() {
+  try {
+    await filesApi.move(moveDialog.value.src, moveDialog.value.dst)
+    moveDialog.value.show = false
+    refresh()
+  } catch (e) {
+    alert(getApiErrorMessage(e, t))
+  }
+}
+
+// ---------- P1：哈希 ----------
+function menuHash() {
+  const it = contextMenu.value.item
+  closeMenus()
+  if (!it || it.is_dir) return
+  hashDialog.value = { show: true, path: it.path, algo: 'sha256', result: '', busy: false, err: '' }
+  runHash()
+}
+
+async function runHash() {
+  hashDialog.value.busy = true
+  hashDialog.value.err = ''
+  try {
+    const r = await filesApi.hash(hashDialog.value.path, hashDialog.value.algo)
+    hashDialog.value.result = r.hash
+  } catch (e) {
+    hashDialog.value.err = getApiErrorMessage(e, t)
+    hashDialog.value.result = ''
+  } finally {
+    hashDialog.value.busy = false
+  }
+}
+
+// ---------- P1：备注 ----------
+async function menuNote() {
+  const it = contextMenu.value.item
+  closeMenus()
+  if (!it) return
+  noteDialog.value = { show: true, path: it.path, note: '', busy: false }
+  try {
+    const r = await filesApi.notes(it.path)
+    noteDialog.value.note = r.note?.note || ''
+  } catch { /* 读取失败按空备注处理 */ }
+}
+
+async function saveNote() {
+  noteDialog.value.busy = true
+  try {
+    await filesApi.saveNote(noteDialog.value.path, noteDialog.value.note)
+    noteDialog.value.show = false
+  } catch (e) {
+    alert(getApiErrorMessage(e, t))
+  } finally {
+    noteDialog.value.busy = false
+  }
+}
+
 // --- 动作：工具栏选择文件上传到当前目录 ---
 async function onUpload(e) {
   const file = e.target.files[0]
@@ -688,8 +908,7 @@ onUnmounted(() => {
 .menu-item { padding: 8px 12px; font-size: 12px; cursor: pointer; }
 .menu-item:hover { background: var(--g-surface-soft); }
 .menu-item.disabled { opacity: 0.45; cursor: not-allowed; }
-.context-menu {
-  position: fixed;
+.context-menu {  position: fixed;
   background: var(--g-surface);
   border: 1px solid var(--g-border);
   border-radius: 8px;
@@ -725,4 +944,23 @@ tr.selected td { background: rgba(10, 132, 255, 0.10); }
 }
 .progress-bar { height: 4px; background: var(--g-border); border-radius: 2px; margin-top: 4px; overflow: hidden; }
 .progress-fill { height: 100%; background: #0a84ff; transition: width 0.3s; }
+
+/* P1：收藏夹 / 传输记录 / 移动 / 哈希 / 备注弹窗 */
+.file-mask { position: fixed; inset: 0; background: var(--g-overlay, rgba(15,23,42,.55)); display: flex; align-items: center; justify-content: center; z-index: 90; padding: 24px; }
+.file-dialog { width: 100%; max-width: 520px; max-height: 86vh; background: var(--g-surface); border-radius: 12px; border: 1px solid var(--g-border); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,.28); }
+.file-dialog.wide { max-width: 720px; }
+.file-dialog-title { padding: 11px 14px; border-bottom: 1px solid var(--g-border); font-weight: 700; font-size: 13.5px; background: var(--g-surface-muted); }
+.file-dialog-body { padding: 12px 14px; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+.file-dialog-foot { padding: 10px 14px; border-top: 1px solid var(--g-border); display: flex; justify-content: flex-end; gap: 8px; background: var(--g-surface-muted); }
+.file-input { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--g-border); border-radius: 8px; background: var(--g-surface); color: var(--g-text); font-size: 12px; }
+.fav-row { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--g-border); padding-bottom: 6px; }
+.fav-name { border: none; background: transparent; color: #2563eb; font-size: 12.5px; cursor: pointer; padding: 0; flex-shrink: 0; }
+.fav-path { flex: 1; font-size: 11.5px; color: var(--g-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-muted { font-size: 12px; color: var(--g-text-muted); }
+.file-err { font-size: 12px; color: #b91c1c; }
+.hash-result { background: var(--g-surface-soft); border-radius: 8px; padding: 8px; font-size: 12px; word-break: break-all; }
+.file-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.file-table th, .file-table td { border-bottom: 1px solid var(--g-border); padding: 5px 6px; text-align: left; }
+.file-table th { color: var(--g-text-muted); font-weight: 600; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 </style>

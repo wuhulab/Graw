@@ -243,6 +243,18 @@ export const dockerApi = {
   // 编排（compose 项目）
   composeProjects: () => dockerHttp.get('/docker/compose/projects').then(r => r.data),
   composeAction: (name, action) => dockerHttp.post(`/docker/compose/${encodeURIComponent(name)}/action`, { action }).then(r => r.data),
+  // P1：概览 / 清理 / 批量 / 创建 / 关联资源 / 编排模板
+  overview: () => dockerHttp.get('/docker/overview').then(r => r.data),
+  prune: (target) => dockerHttp.post('/docker/prune', { target }, { timeout: 600000 }).then(r => r.data),
+  batch: (ids, action) => dockerHttp.post('/docker/containers/batch', { ids, action }, { timeout: 600000 }).then(r => r.data),
+  createContainer: (body) => dockerHttp.post('/docker/containers/create', body, { timeout: 600000 }).then(r => r.data),
+  related: (id) => dockerHttp.get(`/docker/containers/${id}/related`).then(r => r.data),
+  registries: () => dockerHttp.get('/docker/registries').then(r => r.data),
+  importCompose: (body) => dockerHttp.post('/docker/compose/import', body, { timeout: 1800000 }).then(r => r.data),
+  composeTemplates: () => dockerHttp.get('/docker/compose/templates').then(r => r.data),
+  saveComposeTemplate: (body) => dockerHttp.post('/docker/compose/templates', body).then(r => r.data),
+  deleteComposeTemplate: (name) => dockerHttp.delete(`/docker/compose/templates/${encodeURIComponent(name)}`).then(r => r.data),
+  deployComposeTemplate: (name, body) => dockerHttp.post(`/docker/compose/templates/${encodeURIComponent(name)}/deploy`, body, { timeout: 1800000 }).then(r => r.data),
   // 镜像删除
   removeImage: (id) => dockerHttp.post(`/docker/images/${id}/remove`).then(r => r.data),
   // 镜像管理：拉取 / 打标签 / 构建
@@ -290,7 +302,16 @@ export const filesApi = {
   copy: (src, dst) => api.post('/files/copy', { src, dst }, { timeout: FILES_TIMEOUT }).then(r => r.data),
   compress: (paths, archive, fmt) => api.post('/files/compress', { paths, archive, fmt }, { timeout: FILES_TIMEOUT }).then(r => r.data),
   extract: (archive, dest) => api.post('/files/extract', { archive, dest }, { timeout: FILES_TIMEOUT }).then(r => r.data),
-  upload: (formData) => api.post('/files/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: FILES_TIMEOUT }).then(r => r.data)
+  upload: (formData) => api.post('/files/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: FILES_TIMEOUT }).then(r => r.data),
+  // P1：收藏夹 / 移动 / 哈希 / 备注 / 传输记录
+  favorites: () => api.get('/files/favorites').then(r => r.data),
+  addFavorite: (path, name) => api.post('/files/favorites', { path, name }).then(r => r.data),
+  deleteFavorite: (id) => api.post(`/files/favorites/${encodeURIComponent(id)}/delete`).then(r => r.data),
+  notes: (path) => api.get('/files/notes', { params: path ? { path } : {} }).then(r => r.data),
+  saveNote: (path, note) => api.post('/files/notes', { path, note }).then(r => r.data),
+  move: (src, dst_dir) => api.post('/files/move', { src, dst_dir }, { timeout: FILES_TIMEOUT }).then(r => r.data),
+  hash: (path, algo = 'sha256') => api.get('/files/hash', { params: { path, algo }, timeout: FILES_TIMEOUT }).then(r => r.data),
+  transfers: () => api.get('/files/transfers').then(r => r.data)
 }
 
 // 回收站（recycle 路由）：删除的文件进入回收站，可恢复/彻底删除/自动清理
@@ -540,6 +561,11 @@ export const nodesApi = {
   test: (node_id) => api.post(`/nodes/${encodeURIComponent(node_id)}/test`).then(r => r.data),
   // 节点资源聚合视图：全部节点的指标与在线状态
   overview: () => api.get('/nodes/overview').then(r => r.data),
+  // P1：跨节点资源聚合 / 分组 / 批量元数据 / 在线状态
+  aggregate: (resource) => api.get('/nodes/aggregate', { params: { resource } }).then(r => r.data),
+  groups: () => api.get('/nodes/groups').then(r => r.data),
+  batchMeta: (body) => api.post('/nodes/batch-meta', body).then(r => r.data),
+  status: () => api.get('/nodes/status').then(r => r.data),
   // 更新节点（含本机）的分组 / 标签元数据
   setMeta: (node_id, body) => api.post(`/nodes/${encodeURIComponent(node_id)}/meta`, body).then(r => r.data)
 }
@@ -678,7 +704,12 @@ export const webstatsApi = {
   // 可用访问日志路径
   logs: () => api.get('/webstats/logs').then(r => r.data),
   // 分析日志（log_path 为空则自动探测；days 统计天数；domain 按域名过滤）
-  analyze: (params) => api.get('/webstats/analyze', { params }).then(r => r.data)
+  analyze: (params) => api.get('/webstats/analyze', { params }).then(r => r.data),
+  // P1：实时请求 / 请求明细 / 站点汇总 / 访客分布
+  realtime: (params) => api.get('/webstats/realtime', { params }).then(r => r.data),
+  requests: (params) => api.get('/webstats/requests', { params }).then(r => r.data),
+  summary: () => api.get('/webstats/summary').then(r => r.data),
+  visitors: (params) => api.get('/webstats/visitors', { params }).then(r => r.data)
 }
 
 // 伪静态规则库：常用框架一键伪静态
@@ -740,7 +771,13 @@ export const toolboxApi = {
   listScripts: () => api.get('/toolbox/scripts').then(r => r.data),
   createScript: (body) => api.post('/toolbox/scripts', body).then(r => r.data),
   updateScript: (id, body) => api.put(`/toolbox/scripts/${id}`, body).then(r => r.data),
-  deleteScript: (id) => api.delete(`/toolbox/scripts/${id}`).then(r => r.data)
+  deleteScript: (id) => api.delete(`/toolbox/scripts/${id}`).then(r => r.data),
+  // P1：系统快速设置 / 缓存清理 / Fail2ban
+  system: () => api.get('/toolbox/system').then(r => r.data),
+  updateSystem: (action, value) => api.post('/toolbox/system', { action, value }, { timeout: 180000 }).then(r => r.data),
+  cacheClean: (targets) => api.post('/toolbox/cache/clean', { targets }, { timeout: 600000 }).then(r => r.data),
+  fail2ban: () => api.get('/toolbox/fail2ban').then(r => r.data),
+  fail2banAction: (body) => api.post('/toolbox/fail2ban', body, { timeout: 120000 }).then(r => r.data)
 }
 
 // PHP 多版本管理：探测系统 PHP/FPM 版本 + 站点 PHP 版本关联（仅管理员）
@@ -767,6 +804,22 @@ export const appStoreApi = {
   readme: (app_id) => api.get(`/appstore/app/${encodeURIComponent(app_id)}/readme`).then(r => r.data),
   // 安装应用（同步，超时放宽到 30 分钟）
   install: (body) => api.post('/appstore/install', body, { timeout: 1800000 }).then(r => r.data),
+  // 已安装应用生命周期
+  installed: () => api.get('/appstore/installed').then(r => r.data),
+  installedDetail: (name) => api.get(`/appstore/installed/${encodeURIComponent(name)}`).then(r => r.data),
+  installedAction: (name, action) => api.post(`/appstore/installed/${encodeURIComponent(name)}/action`, { action }, { timeout: 1800000 }).then(r => r.data),
+  checkUpdate: (name) => api.get(`/appstore/installed/${encodeURIComponent(name)}/check-update`, { timeout: 120000 }).then(r => r.data),
+  installedCompose: (name) => api.get(`/appstore/installed/${encodeURIComponent(name)}/compose`).then(r => r.data),
+  saveInstalledCompose: (name, compose, apply = true) => api.put(`/appstore/installed/${encodeURIComponent(name)}/compose`, { compose, apply }, { timeout: 1800000 }).then(r => r.data),
+  backupInstalled: (name) => api.post(`/appstore/installed/${encodeURIComponent(name)}/backup`, {}, { timeout: 600000 }).then(r => r.data),
+  installedBackups: (name) => api.get(`/appstore/installed/${encodeURIComponent(name)}/backups`).then(r => r.data),
+  restoreInstalled: (name, backup) => api.post(`/appstore/installed/${encodeURIComponent(name)}/restore`, { name: backup }, { timeout: 1800000 }).then(r => r.data),
+  importInstalled: (name, file) => {
+    const fd = new FormData()
+    fd.append('name', name)
+    fd.append('file', file)
+    return api.post('/appstore/installed/import', fd, { timeout: 1800000 }).then(r => r.data)
+  },
   // 流式安装：SSE 逐步推送日志，onEvent 回调收到 {type:'status'|'log'|'result'|'error', ...}
   // 返回 AbortController（可中断请求）
   installStream: (body, onEvent) => {

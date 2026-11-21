@@ -260,6 +260,35 @@ flowchart TD
 
 ---
 
+## 九、应用生命周期（P1，2026-11-21 新增）
+
+应用商店新增「已安装」页签，把安装出来的 compose 项目变成可运维对象：
+
+- **发现方式**：扫描 `data/appstore/*/docker-compose.yml`，目录名即应用名；容器通过 compose 标签 `com.docker.compose.project=<应用名>` 关联。
+- **状态**：全部容器 running → `running`；部分 running → `partial`；否则 `stopped`。
+- **动作**：启动 / 停止 / 重启 / 重建（`up -d --force-recreate`，保留数据卷）/ 升级（`pull` + `up -d`）/ 停止并移除。
+- **检查更新**：用本地 `RepoDigests` 与 `docker manifest inspect` 远端摘要对比，返回 `update` / `latest` / `not-pulled` / `unknown`。
+- **参数**：直接编辑 `docker-compose.yml`；保存时校验 YAML 含 `services`，写前快照，应用失败自动回滚。
+- **备份 / 恢复 / 导入**：项目目录打包为 `data/appstore_backups/<应用>/<时间戳>.tar.gz`（不包含命名卷数据）；恢复前先停服务，解包后启动，失败回滚；导入需新应用名，解包到 `data/appstore/<名称>` 后立即启动。
+- **端口直达**：从容器 `Ports` 解析 `0.0.0.0:宿主机端口->容器端口`，前端生成 `http://<当前主机>:<端口>` 链接。
+
+```mermaid
+flowchart TD
+    A[应用商店 已安装页签] --> B[GET /api/appstore/installed]
+    B --> C[扫描 data/appstore/*/docker-compose.yml]
+    C --> D[按 compose 标签查容器与端口]
+    D --> E[前端展示状态/端口/服务]
+    E --> F[升级: pull + up -d]
+    E --> G[备份: tar.gz 项目目录]
+    E --> H[参数: 改 compose 并应用]
+    G --> I[恢复/导入: 解包 + up -d]
+```
+
+数据落盘补充：`data/appstore_backups/<应用>/<时间戳>.tar.gz`（备份归档）、`data/compose_templates.json`（Docker 编排模板，见第 11 篇）。
+
+---
+
 ## 更新记录
 
+- `2026-11-21`：新增「九、应用生命周期」，讲清已安装应用的发现方式、启停/重建/升级、compose 参数编辑、备份/恢复/导入与端口直达；补充 `appstore_backups` 落盘。
 - `2026-09-25`：新建，讲清应用商店的索引来源与每日拉取配额、SSE 安装链路与任务中心日志落盘、`GRAW_HOST_DATA` 的容器路径换算、自定义 compose 的边界，以及站点 Git 部署的 webhook 验签与按 `node_id` 分发执行链路，并说明它与 GPOP 的区别。

@@ -795,6 +795,7 @@ func discoverAccessLogs() []string {
 }
 
 func registerWebStatsRoutes(a *App) {
+	registerWebStatsEnhancedRoutes(a)
 	a.Get("/api/webstats/logs", perm("sites"), func(w http.ResponseWriter, r *http.Request) error {
 		return WriteJSON(w, 200, map[string]any{"logs": discoverAccessLogs()})
 	})

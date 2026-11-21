@@ -12,6 +12,7 @@
     <!-- 顶部工具栏：刷新 / 自动刷新 / 汇总 -->
     <div class="ui-toolbar">
       <button class="ui-btn mini" :disabled="loading" @click="refresh">{{ loading ? t('nodeoverview.loading') : t('nodeoverview.refresh') }}</button>
+      <button class="ui-btn mini" @click="openAggregate">{{ t('nodeoverview.aggregate') }}</button>
       <label class="auto-label">
         <input type="checkbox" v-model="autoRefresh" />
         <span>{{ t('nodeoverview.autoRefresh') }}</span>
@@ -142,6 +143,44 @@
       </div>
     </div>
 
+    <!-- 跨节点资源聚合 -->
+    <div v-if="aggOpen" class="modal-mask" @click.self="aggOpen = false">
+      <div class="modal ui-card agg-modal" @click.stop>
+        <div class="modal-title">{{ t('nodeoverview.aggregate') }}</div>
+        <div class="agg-toolbar">
+          <select v-model="aggResource" class="ui-select" @change="loadAggregate">
+            <option value="sites">{{ t('nodeoverview.aggSites') }}</option>
+            <option value="apps">{{ t('nodeoverview.aggApps') }}</option>
+            <option value="certs">{{ t('nodeoverview.aggCerts') }}</option>
+          </select>
+          <button class="ui-btn mini" :disabled="aggLoading" @click="loadAggregate">{{ t('nodeoverview.refresh') }}</button>
+          <span class="modal-hint">{{ t('nodeoverview.aggCount', { count: aggItems.length }) }}</span>
+        </div>
+        <div class="agg-table-wrap">
+          <table class="agg-table">
+            <thead><tr>
+              <th>{{ t('nodeoverview.node') }}</th><th>{{ t('nodeoverview.group') }}</th>
+              <th>{{ t('common.name') }}</th><th>{{ t('nodeoverview.aggDetail') }}</th><th>{{ t('common.status') }}</th>
+            </tr></thead>
+            <tbody>
+              <tr v-for="(it, i) in aggItems" :key="i">
+                <td>{{ it.node_name }}</td>
+                <td>{{ it.group || '-' }}</td>
+                <td>{{ it.name || it.domain || '-' }}</td>
+                <td class="mono">{{ aggDetail(it) }}</td>
+                <td>{{ aggStatus(it) }}</td>
+              </tr>
+              <tr v-if="!aggItems.length"><td colspan="5" class="modal-hint">{{ t('nodeoverview.aggEmpty') }}</td></tr>
+            </tbody>
+          </table>
+          <div v-for="e in aggErrors" :key="e.node_id" class="modal-msg">{{ e.node_name || e.node_id }}: {{ e.error }}</div>
+        </div>
+        <div class="modal-btns">
+          <button class="ui-btn mini" @click="aggOpen = false">{{ t('common.close') }}</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 元数据编辑弹层 -->
     <div v-if="editing" class="modal-mask" @click.self="closeEdit">
       <div class="modal ui-card" @click.stop>
@@ -191,6 +230,53 @@ const editGroup = ref('')
 const editTags = ref('')
 const editMsg = ref('')
 const savingMeta = ref(false)
+
+// 跨节点资源聚合
+const aggOpen = ref(false)
+const aggResource = ref('sites')
+const aggItems = ref([])
+const aggErrors = ref([])
+const aggLoading = ref(false)
+
+function openAggregate() {
+  aggOpen.value = true
+  loadAggregate()
+}
+
+async function loadAggregate() {
+  aggLoading.value = true
+  try {
+    const data = await nodesApi.aggregate(aggResource.value)
+    aggItems.value = data.items || []
+    aggErrors.value = data.errors || []
+  } catch (e) {
+    aggErrors.value = [{ node_id: '-', error: e?.response?.data?.detail || e.message }]
+    aggItems.value = []
+  } finally {
+    aggLoading.value = false
+  }
+}
+
+function aggDetail(it) {
+  if (aggResource.value === 'sites') {
+    const domains = (it.domains || []).join(', ') || it.domain || ''
+    return [domains, it.root || it.target || '', it.type || ''].filter(Boolean).join(' · ')
+  }
+  if (aggResource.value === 'apps') {
+    const images = (it.services || []).map(s => s.image).filter(Boolean).join(', ')
+    const ports = (it.ports || []).map(p => p.external).join(', ')
+    return [images, ports ? ':' + ports : ''].filter(Boolean).join(' ')
+  }
+  const domains = (it.domains || []).join(', ') || it.domain || ''
+  return [domains, it.expires_at || ''].filter(Boolean).join(' · ')
+}
+
+function aggStatus(it) {
+  if (aggResource.value === 'certs') return it.expires_at || '-'
+  if (it.status) return it.status
+  if (it.enabled !== undefined) return it.enabled ? 'enabled' : 'disabled'
+  return it.running ? 'running' : '-'
+}
 
 // --- 展示计算 ---
 
@@ -431,6 +517,13 @@ onUnmounted(() => {
   display: flex; align-items: center; justify-content: center; z-index: 50;
 }
 .modal { width: 320px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
+.agg-modal { width: 780px; max-width: 92vw; max-height: 86vh; }
+.agg-toolbar { display: flex; align-items: center; gap: 8px; }
+.agg-table-wrap { flex: 1; overflow: auto; min-height: 0; border: 1px solid var(--ui-border, var(--g-border)); border-radius: 8px; }
+.agg-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.agg-table th, .agg-table td { padding: 6px 8px; border-bottom: 1px solid var(--ui-border, var(--g-border)); text-align: left; }
+.agg-table th { position: sticky; top: 0; background: var(--ui-bg-muted, var(--g-surface-muted)); color: var(--ui-text-secondary); font-weight: 600; }
+.agg-table .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; }
 .modal-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
 .modal-label { font-size: 12px; color: var(--ui-text-secondary); }
 .modal-hint { font-size: 11px; color: var(--ui-text-secondary); }
