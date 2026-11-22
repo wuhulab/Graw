@@ -64,7 +64,7 @@ func validateAdvancedPayload(raw map[string]any, existing map[string]any) (map[s
 	}
 	for _, d := range docs {
 		if !advDocRe.MatchString(d) {
-			return nil, NewHTTPError(400, "默认文档名称非法: " + d)
+			return nil, NewHTTPError(400, "默认文档名称非法: "+d)
 		}
 	}
 	out["default_docs"] = docs
@@ -139,7 +139,7 @@ func validateAdvancedPayload(raw map[string]any, existing map[string]any) (map[s
 	}
 	for _, o := range origins {
 		if o != "*" && !advOriginRe.MatchString(o) {
-			return nil, NewHTTPError(400, "跨域来源格式非法: " + o)
+			return nil, NewHTTPError(400, "跨域来源格式非法: "+o)
 		}
 	}
 	methodSet := map[string]bool{"GET": true, "POST": true, "PUT": true, "DELETE": true, "PATCH": true, "HEAD": true, "OPTIONS": true}
@@ -147,7 +147,7 @@ func validateAdvancedPayload(raw map[string]any, existing map[string]any) (map[s
 	for _, m := range advancedStringList(cors["methods"]) {
 		u := strings.ToUpper(m)
 		if !methodSet[u] {
-			return nil, NewHTTPError(400, "跨域方法非法: " + m)
+			return nil, NewHTTPError(400, "跨域方法非法: "+m)
 		}
 		methods = append(methods, u)
 	}
@@ -157,7 +157,7 @@ func validateAdvancedPayload(raw map[string]any, existing map[string]any) (map[s
 	headers := []string{}
 	for _, h := range advancedStringList(cors["headers"]) {
 		if !advHeaderNameRe.MatchString(h) {
-			return nil, NewHTTPError(400, "跨域请求头名称非法: " + h)
+			return nil, NewHTTPError(400, "跨域请求头名称非法: "+h)
 		}
 		headers = append(headers, h)
 	}
@@ -187,7 +187,7 @@ func validateAdvancedPayload(raw map[string]any, existing map[string]any) (map[s
 	for _, c := range trusted {
 		if net.ParseIP(c) == nil {
 			if _, _, err := net.ParseCIDR(c); err != nil {
-				return nil, NewHTTPError(400, "可信代理必须是 IP 或 CIDR: " + c)
+				return nil, NewHTTPError(400, "可信代理必须是 IP 或 CIDR: "+c)
 			}
 		}
 	}
@@ -225,7 +225,7 @@ func validateAdvancedPayload(raw map[string]any, existing map[string]any) (map[s
 			}
 			server := strings.TrimSpace(str(m["server"]))
 			if !advUpstreamRe.MatchString(server) {
-				return nil, NewHTTPError(400, "上游地址必须是 host:port: " + server)
+				return nil, NewHTTPError(400, "上游地址必须是 host:port: "+server)
 			}
 			weight := int(int64Of(m["weight"]))
 			if weight <= 0 || weight > 100 {

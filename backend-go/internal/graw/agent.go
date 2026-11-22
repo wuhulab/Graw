@@ -897,6 +897,9 @@ var localOnlyPrefixes = []string{
 	"/api/waf", "/api/tamper", "/api/phpversions", "/api/ftpusers", "/api/sshkeys",
 	"/api/certcheck", "/api/panelbackup", "/api/update", "/api/webmode", "/api/loginlog",
 	"/api/netmap", "/api/plugins", "/api/op",
+	// 资源同步直接读写面板自己的 data 配置，裸 SSH 节点下若在本机执行会
+	// 改到主面板数据、却让用户以为操作的是远端，因此按本机专属接口处理。
+	"/api/sync",
 }
 
 // shouldAgentProxy 判断路径是否允许走 Agent 隧道：必须是 /api/ 前缀且不在排除表内。
@@ -1009,6 +1012,24 @@ func (a *App) proxyAuthGuard(r *http.Request, path string) *HTTPError {
 	u, err := Authenticate(r, true)
 	if err != nil {
 		return err
+	}
+	// API Key 经隧道代理时同样要按 scope 收窄：这里不走 route()，
+	// 若不显式判定，持有任意 scope 的 Key 可借完整管理员 owner 越权访问子节点。
+	if _, isAPIKey := u["_api_key_id"]; isAPIKey {
+		if strings.HasPrefix(path, "/api/auth") || strings.HasPrefix(path, "/api/apikeys") {
+			return NewHTTPError(403, "API Key 不能访问账户或密钥管理接口")
+		}
+		switch {
+		case info != nil && info.Admin && !apiKeyScopeAllows(u, "admin"):
+			return NewHTTPError(403, "该 API Key 没有面板管理权限")
+		case info != nil && len(info.Modules) > 0 && !apiKeyScopeAllowsAny(u, info.Modules):
+			return NewHTTPError(403, "该 API Key 没有 "+strings.Join(info.Modules, "/")+" scope")
+		case info == nil || (!info.Admin && len(info.Modules) == 0):
+			// 没有模块归属的登录态接口只对 "*" 开放，避免 scope 被绕过。
+			if !apiKeyScopeAllows(u, "*") {
+				return NewHTTPError(403, "该 API Key 没有全部模块 scope")
+			}
+		}
 	}
 	if u.Role() != "admin" {
 		// 非管理员只放行公共只读端点，其余一律 403。

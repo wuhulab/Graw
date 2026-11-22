@@ -73,8 +73,10 @@ func exportSyncBundle(resources []string, siteIDs, certIDs []string) (syncBundle
 			if certPath == "" || keyPath == "" {
 				continue
 			}
-			certPEM, cerr := os.ReadFile(certPath)
-			keyPEM, kerr := os.ReadFile(keyPath)
+			// 证书可能在 data/ssl（容器内路径），也可能是 /etc/letsencrypt
+			// （宿主机路径）；统一经 HostFilePath 解析后再读取。
+			certPEM, cerr := os.ReadFile(HostFilePath(certPath))
+			keyPEM, kerr := os.ReadFile(HostFilePath(keyPath))
 			if cerr != nil || kerr != nil || len(certPEM) > 1<<20 || len(keyPEM) > 1<<20 {
 				continue
 			}

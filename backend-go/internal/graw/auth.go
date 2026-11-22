@@ -482,7 +482,12 @@ func IsFullAdmin(u User) bool {
 
 // HasPerm 判断用户是否拥有任一模块权限（全量权限恒真）。
 // 多模块参数是「或」关系；需要「与」时必须由调用方逐个判断。
+// API Key 的 scope 会在 owner 权限之上再收窄（与 route() 的判定保持一致），
+// 避免走 WS / 自定义鉴权端点时绕过 scope。
 func HasPerm(u User, modules ...string) bool {
+	if len(modules) > 0 && !apiKeyScopeAllowsAny(u, modules) {
+		return false
+	}
 	set, full := UserPerms(u)
 	if full {
 		return true

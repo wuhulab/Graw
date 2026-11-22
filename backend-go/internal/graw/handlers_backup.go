@@ -1285,7 +1285,9 @@ func CaptureSnapshot(kind, targetID, filePath string) {
 		return
 	}
 	content := ""
-	if b, err := os.ReadFile(HostPath(filePath)); err == nil {
+	// 快照目标都是 data 目录内的配置文件；容器部署下直接读容器内路径，
+	// 不能再叠加 HOST_ROOT，否则会读到不存在的宿主机路径并把空内容存进快照。
+	if b, err := os.ReadFile(HostFilePath(filePath)); err == nil {
 		if len(b) > snapshotMaxBytes {
 			return
 		}
@@ -1429,7 +1431,9 @@ func registerRollbackRoutes(a *App) {
 		if filePath == "" {
 			return NewHTTPError(404, "快照不存在或内容非法")
 		}
-		real := HostPath(filePath)
+		// 与 CaptureSnapshot 对应：配置快照写回 data 目录内的文件，
+		// 容器部署下必须用容器内路径，避免写到 HOST_ROOT 下的错误位置。
+		real := HostFilePath(filePath)
 		if werr := os.MkdirAll(filepath.Dir(real), 0o755); werr != nil {
 			return NewHTTPError(500, "写回配置失败: "+werr.Error())
 		}

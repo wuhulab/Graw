@@ -256,6 +256,37 @@ func UnhostPath(p string) string {
 	return p
 }
 
+// HostFilePath 把「面板记录的路径」转换成当前进程可直接读写的实际路径。
+//
+// 与 HostPath 的区别：面板自己写入 data 目录的文件（DataPath 生成）在容器内
+// 已经可以直接访问，不能再叠加 HOST_ROOT；只有 /etc/letsencrypt 这类宿主机
+// 绝对路径在容器部署下才需要映射到挂载点。GRAW_HOST_DATA 视角的路径会反解
+// 回容器内的 DataDir，避免读写落到宿主机上一个不存在的目录。
+func HostFilePath(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	// 已存在且可直接访问：保持原样（覆盖 data 内文件与非容器部署）。
+	if _, err := os.Stat(p); err == nil {
+		return p
+	}
+	cfg := GetConfig()
+	// 宿主机视角的 data 文件：反解回当前进程看到的 DataDir。
+	if cfg.HostDataDir != "" {
+		if rel, err := filepath.Rel(cfg.HostDataDir, p); err == nil &&
+			rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel) {
+			return filepath.Join(cfg.DataDir, rel)
+		}
+	}
+	// data 目录内尚未创建的文件：继续用容器内路径写入。
+	if pathInDataDir(p) {
+		return p
+	}
+	// 宿主机绝对路径：容器部署下映射到 HOST_ROOT 挂载点。
+	return HostPath(p)
+}
+
 // HostVisiblePath 把 data 目录内的容器路径映射为宿主机 docker 可读路径。
 //
 // 用于把「容器内看到的文件」交给宿主机上的 docker/certbot 等进程使用。

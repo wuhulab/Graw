@@ -56,12 +56,12 @@ func generateSelfSigned(domains []string, days int) ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 	tpl := &x509.Certificate{
-		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: domains[0], Organization: []string{"Graw Panel"}},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(time.Duration(days) * 24 * time.Hour),
-		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: domains[0], Organization: []string{"Graw Panel"}},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Duration(days) * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 	}
 	for _, d := range domains {
@@ -81,7 +81,7 @@ func generateSelfSigned(domains []string, days int) ([]byte, []byte, error) {
 }
 
 func certDetail(path string) map[string]any {
-	b, err := os.ReadFile(HostPath(path))
+	b, err := os.ReadFile(HostFilePath(path))
 	if err != nil {
 		return map[string]any{"error": "证书文件不可读"}
 	}
@@ -95,7 +95,7 @@ func certDetail(path string) map[string]any {
 	}
 	return map[string]any{
 		"subject": cert.Subject.CommonName, "issuer": cert.Issuer.CommonName,
-		"serial": cert.SerialNumber.String(),
+		"serial":     cert.SerialNumber.String(),
 		"not_before": cert.NotBefore.Format("2006-01-02 15:04:05"),
 		"not_after":  cert.NotAfter.Format("2006-01-02 15:04:05"),
 		"dns_names":  cert.DNSNames,
@@ -233,8 +233,8 @@ func registerSSLCenterRoutes(a *App) {
 			if err != nil {
 				return NewHTTPError(500, "续签失败: "+err.Error())
 			}
-			_ = os.WriteFile(HostPath(str(cert["cert_path"])), certPEM, 0o600)
-			_ = os.WriteFile(HostPath(str(cert["key_path"])), keyPEM, 0o600)
+			_ = os.WriteFile(HostFilePath(str(cert["cert_path"])), certPEM, 0o600)
+			_ = os.WriteFile(HostFilePath(str(cert["key_path"])), keyPEM, 0o600)
 		}
 		cert["expires_at"] = readCertExpiry(str(cert["cert_path"]))
 		// 回写 ssl.json 中的过期时间
@@ -246,7 +246,9 @@ func registerSSLCenterRoutes(a *App) {
 			}
 		}
 		data["certs"] = certs
-		_ = WriteJSONFile(DataPath("ssl.json"), data)
+		if err := WriteJSONFile(DataPath("ssl.json"), data); err != nil {
+			return err
+		}
 		return WriteJSON(w, 200, map[string]any{"ok": true, "expires_at": cert["expires_at"]})
 	})
 
@@ -414,8 +416,8 @@ func registerSSLCenterRoutes(a *App) {
 		cert := map[string]any{
 			"id": "le_" + randomHex(6), "name": first, "domains": req.Domains,
 			"type": "letsencrypt", "issuer": "Let's Encrypt",
-			"cert_path": "/etc/letsencrypt/live/" + first + "/fullchain.pem",
-			"key_path":  "/etc/letsencrypt/live/" + first + "/privkey.pem",
+			"cert_path":  "/etc/letsencrypt/live/" + first + "/fullchain.pem",
+			"key_path":   "/etc/letsencrypt/live/" + first + "/privkey.pem",
 			"created_at": time.Now().Format("2006-01-02T15:04:05"),
 			"expires_at": readCertExpiry("/etc/letsencrypt/live/" + first + "/fullchain.pem"),
 		}

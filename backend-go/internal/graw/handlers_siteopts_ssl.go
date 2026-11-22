@@ -176,7 +176,9 @@ func sslCertsList(data map[string]any) []map[string]any {
 var certDomainRe = regexp.MustCompile(`(?i)^(\*\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$`)
 
 func readCertExpiry(path string) string {
-	b, err := os.ReadFile(HostPath(path))
+	// 证书路径可能是面板 data 文件，也可能是 /etc/letsencrypt；
+	// 容器部署下只有后者需要叠加 HOST_ROOT。
+	b, err := os.ReadFile(HostFilePath(path))
 	if err != nil {
 		return ""
 	}
@@ -329,7 +331,7 @@ func registerSSLRoutes(a *App) {
 		}
 		for _, p := range []string{str(cert["cert_path"]), str(cert["key_path"])} {
 			if p != "" {
-				_ = os.Remove(HostPath(p))
+				_ = os.Remove(HostFilePath(p))
 			}
 		}
 		data["certs"] = kept

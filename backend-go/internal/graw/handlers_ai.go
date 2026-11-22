@@ -128,7 +128,9 @@ func aiChat(account aiAccount, prompt string) (map[string]any, error) {
 	if account.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+account.APIKey)
 	}
-	client := &http.Client{Timeout: 60 * time.Second}
+	// 走统一的 SSRF 防护客户端：允许内网/本机模型（如 Ollama），
+	// 但仍拒绝云 metadata、链路本地等受保护地址，并禁用自动跳转。
+	client := NewSafeHTTPClient(60*time.Second, true, true, false)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, NewHTTPError(502, "请求模型失败: "+err.Error())
@@ -209,13 +211,17 @@ func aiMCPTest(item aiMCP) (map[string]any, error) {
 	for k, v := range item.Headers {
 		req.Header.Set(k, v)
 	}
-	client := &http.Client{Timeout: 10 * time.Second}
+	// 与对话测试一致：允许本机/内网 MCP 端点，但拒绝受保护地址。
+	client := NewSafeHTTPClient(10*time.Second, true, true, false)
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err == nil && (resp.StatusCode == 405 || resp.StatusCode == 406) {
 		// 老式 SSE 端点不支持 POST，再试一次 GET。
 		_ = resp.Body.Close()
-		req, _ = http.NewRequest("GET", item.URL, nil)
+		req, rerr := http.NewRequest("GET", item.URL, nil)
+		if rerr != nil {
+			return map[string]any{"ok": false, "error": rerr.Error()}, nil
+		}
 		for k, v := range item.Headers {
 			req.Header.Set(k, v)
 		}
@@ -273,9 +279,20 @@ func registerAIRoutes(a *App) {
 	})
 	a.Put("/api/ai/accounts/{account_id}", perm("ai"), func(w http.ResponseWriter, r *http.Request) error {
 		id := strings.TrimSpace(PathParam(r, "account_id"))
-		var req aiAccount
+		// enabled 用指针区分「未提交」与「显式关闭」：只改名称/模型时
+		// 不应把账号顺带禁用。
+		var req struct {
+			Name    string `json:"name"`
+			BaseURL string `json:"base_url"`
+			APIKey  string `json:"api_key"`
+			Model   string `json:"model"`
+			Enabled *bool  `json:"enabled"`
+		}
 		if err := DecodeJSON(r, &req); err != nil {
 			return err
+		}
+		if name := strings.TrimSpace(req.Name); len(name) > 64 {
+			return NewHTTPError(400, "名称不超过 64 字")
 		}
 		store := loadAIStore()
 		found := false
@@ -299,7 +316,9 @@ func registerAIRoutes(a *App) {
 			if strings.TrimSpace(req.APIKey) != "" {
 				store.Accounts[i].APIKey = strings.TrimSpace(req.APIKey)
 			}
-			store.Accounts[i].Enabled = req.Enabled
+			if req.Enabled != nil {
+				store.Accounts[i].Enabled = *req.Enabled
+			}
 			found = true
 			break
 		}

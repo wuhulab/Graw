@@ -335,6 +335,9 @@ func deployComposeProject(name, text string, start bool) (map[string]any, error)
 		rc, o := composeStream(composeEnginePath(path), []string{"up", "-d", "--remove-orphans"}, nil)
 		out = o
 		if rc != 0 {
+			// 启动失败时清掉刚创建的项目目录，否则用户修正配置重试会被
+			// 「同名编排项目已存在」挡住，只能手工去删目录。
+			_ = os.RemoveAll(dir)
 			return nil, NewHTTPError(500, "编排启动失败: "+tailText(o, 2000))
 		}
 	}

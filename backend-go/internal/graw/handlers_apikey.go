@@ -68,14 +68,18 @@ func apiKeyPublic(item apiKeyRecord) map[string]any {
 	}
 }
 
-func randomAPIKey() (plain, prefix string) {
+// randomAPIKey 生成 gk_ 开头的随机凭据，并返回用于查找的前缀。
+// 随机源失败必须返回错误：继续使用全零缓冲区会产出可预测的 Key。
+func randomAPIKey() (plain, prefix string, err error) {
 	buf := make([]byte, 32)
-	_, _ = rand.Read(buf)
+	if _, err := rand.Read(buf); err != nil {
+		return "", "", err
+	}
 	plain = apiKeyPrefix + base64.RawURLEncoding.EncodeToString(buf)
 	if len(plain) < apiKeyLookupLen {
-		return plain, plain
+		return plain, plain, nil
 	}
-	return plain, plain[:apiKeyLookupLen]
+	return plain, plain[:apiKeyLookupLen], nil
 }
 
 func normalizeScopes(scopes []string) []string {
@@ -273,7 +277,10 @@ func registerAPIKeyRoutes(a *App) {
 			}
 			expires = time.Now().AddDate(0, 0, req.ExpiresDays).Format("2006-01-02 15:04:05")
 		}
-		plain, prefix := randomAPIKey()
+		plain, prefix, rerr := randomAPIKey()
+		if rerr != nil {
+			return NewHTTPError(500, "生成 Key 失败")
+		}
 		hash, herr := bcrypt.GenerateFromPassword([]byte(plain), bcrypt.DefaultCost)
 		if herr != nil {
 			return NewHTTPError(500, "生成 Key 失败")

@@ -184,14 +184,14 @@ func runCronTaskNow(task map[string]any) map[string]any {
 
 func cronExport() map[string]any {
 	return map[string]any{
-		"version": 1,
+		"version":     1,
 		"exported_at": time.Now().Format("2006-01-02T15:04:05"),
-		"tasks":   loadCronTasks(),
-		"scripts": loadCronScripts(),
+		"tasks":       loadCronTasks(),
+		"scripts":     loadCronScripts(),
 	}
 }
 
-func cronImport(tasks []map[string]any, scripts []map[string]any) (int, int) {
+func cronImport(tasks []map[string]any, scripts []map[string]any) (int, int, error) {
 	existing := loadCronTasks()
 	byName := map[string]map[string]any{}
 	for _, t := range existing {
@@ -219,8 +219,8 @@ func cronImport(tasks []map[string]any, scripts []map[string]any) (int, int) {
 			"command": command, "enabled": boolOf(t["enabled"]),
 			"task_type": str(t["task_type"]), "content": str(t["content"]),
 			"group": defaultString(str(t["group"]), "默认"), "alert": boolOf(t["alert"]),
-			"timeout": normalizeCronTimeout(int(int64Of(t["timeout"]))),
-			"retry": normalizeCronRetry(int(int64Of(t["retry"]))),
+			"timeout":    normalizeCronTimeout(int(int64Of(t["timeout"]))),
+			"retry":      normalizeCronRetry(int(int64Of(t["retry"]))),
 			"keep_count": normalizeCronKeep(int(int64Of(t["keep_count"]))),
 			"created_at": time.Now().Format("2006-01-02T15:04:05"),
 		}
@@ -228,7 +228,9 @@ func cronImport(tasks []map[string]any, scripts []map[string]any) (int, int) {
 		byName[name] = nt
 		taskCount++
 	}
-	_ = saveCronTasks(existing)
+	if err := saveCronTasks(existing); err != nil {
+		return taskCount, 0, err
+	}
 
 	oldScripts := loadCronScripts()
 	scriptByName := map[string]bool{}
@@ -244,13 +246,15 @@ func cronImport(tasks []map[string]any, scripts []map[string]any) (int, int) {
 		}
 		oldScripts = append(oldScripts, map[string]any{
 			"id": "script_" + randomHex(8), "name": name, "content": content,
-			"group": defaultString(str(s["group"]), "默认"),
+			"group":      defaultString(str(s["group"]), "默认"),
 			"created_at": time.Now().Format("2006-01-02T15:04:05"),
 		})
 		scriptByName[name] = true
 		scriptCount++
 	}
-	_ = saveCronScripts(oldScripts)
+	if err := saveCronScripts(oldScripts); err != nil {
+		return taskCount, scriptCount, err
+	}
 
 	if !windowsTarget() {
 		crons := []map[string]any{}
@@ -262,9 +266,11 @@ func cronImport(tasks []map[string]any, scripts []map[string]any) (int, int) {
 			}
 		}
 		_, preserved := listLinuxCron()
-		_ = rewriteLinuxCron(crons, preserved)
+		if err := rewriteLinuxCron(crons, preserved); err != nil {
+			return taskCount, scriptCount, err
+		}
 	}
-	return taskCount, scriptCount
+	return taskCount, scriptCount, nil
 }
 
 func registerCronEnhancedRoutes(a *App) {
@@ -291,6 +297,10 @@ func registerCronEnhancedRoutes(a *App) {
 					s["name"] = strings.TrimSpace(req.Name)
 					s["content"] = req.Content
 					s["group"] = defaultString(strings.TrimSpace(req.Group), "默认")
+					// 修改现有脚本后必须落盘，否则接口返回成功但内容并未保存。
+					if err := saveCronScripts(items); err != nil {
+						return err
+					}
 					return WriteJSON(w, 200, s)
 				}
 			}
@@ -340,7 +350,10 @@ func registerCronEnhancedRoutes(a *App) {
 		if err := DecodeJSON(r, &req); err != nil {
 			return err
 		}
-		tasks, scripts := cronImport(req.Tasks, req.Scripts)
+		tasks, scripts, err := cronImport(req.Tasks, req.Scripts)
+		if err != nil {
+			return err
+		}
 		return WriteJSON(w, 200, map[string]any{"ok": true, "tasks": tasks, "scripts": scripts})
 	})
 }
