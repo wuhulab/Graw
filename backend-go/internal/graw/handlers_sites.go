@@ -526,6 +526,14 @@ func applyNginxSite(site map[string]any, enabled bool) error {
 	available := base + "/sites-available/" + id + ".conf"
 	enabledPath := base + "/sites-enabled/" + id + ".conf"
 	if enabled {
+		// 高级配置会把 htpasswd 与 limit_req zone 放在独立文件里；
+		// 无论从哪个入口（启用/导入/恢复/改 PHP 版本）重建站点配置，
+		// 都要先确保这些依赖存在，否则 nginx 校验会因未定义 zone 失败，
+		// 或运行期因 htpasswd 缺失返回 500。
+		if err := writeSiteAuthFile(site); err != nil {
+			return err
+		}
+		writeSiteZones()
 		rootOverride := ""
 		if siteBool(site, "maintenance") {
 			rootOverride = maintenanceRoot(site)

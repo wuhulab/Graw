@@ -3,6 +3,7 @@ package graw
 import (
 	"crypto/sha1"
 	"encoding/base64"
+	"encoding/hex"
 	"net"
 	"net/http"
 	"os"
@@ -41,10 +42,15 @@ func siteAdvancedOf(site map[string]any) map[string]any {
 
 func advancedStringList(v any) []string {
 	out := []string{}
+	seen := map[string]bool{}
 	for _, item := range toStringSlice(v) {
-		if s := strings.TrimSpace(item); s != "" {
-			out = append(out, s)
+		s := strings.TrimSpace(item)
+		// 去重：重复的 CORS 来源会生成重复的 map key，nginx 直接报配置错误。
+		if s == "" || seen[s] {
+			continue
 		}
+		seen[s] = true
+		out = append(out, s)
 	}
 	return out
 }
@@ -89,11 +95,13 @@ func validateAdvancedPayload(raw map[string]any, existing map[string]any) (map[s
 			if code != 301 && code != 302 && code != 307 && code != 308 {
 				return nil, NewHTTPError(400, "重定向状态码仅支持 301/302/307/308")
 			}
-			if from == "" || !strings.HasPrefix(from, "/") || strings.ContainsAny(from, " \t\r\n;{}") {
-				return nil, NewHTTPError(400, "重定向来源必须是 / 开头的路径")
+			// 引号与 # 会被直接拼进 nginx 配置：引号可截断 return 语句，
+			// # 会注释掉收尾的 ; } 导致整份配置失效，必须一并拒绝。
+			if from == "" || !strings.HasPrefix(from, "/") || strings.ContainsAny(from, " \t\r\n;{}\"'#`") {
+				return nil, NewHTTPError(400, "重定向来源必须是 / 开头的路径，且不能包含空白/分号/花括号/引号/#")
 			}
-			if to == "" || strings.ContainsAny(to, " \t\r\n;{}") {
-				return nil, NewHTTPError(400, "重定向目标不能为空且不能包含空白/分号/花括号")
+			if to == "" || strings.ContainsAny(to, " \t\r\n;{}\"'#`") {
+				return nil, NewHTTPError(400, "重定向目标不能为空，且不能包含空白/分号/花括号/引号/#")
 			}
 			if !strings.HasPrefix(to, "/") && !strings.HasPrefix(strings.ToLower(to), "http://") && !strings.HasPrefix(strings.ToLower(to), "https://") {
 				return nil, NewHTTPError(400, "重定向目标必须是站内路径或 http(s) 地址")
@@ -287,10 +295,19 @@ func siteAdvancedServerLines(site map[string]any) []string {
 		if len(origins) == 0 {
 			origins = []string{"*"}
 		}
-		allowOrigin := strings.Join(origins, ", ")
+		// 配置里出现 * 时其余来源没有意义，统一按通配处理。
+		for _, o := range origins {
+			if o == "*" {
+				origins = []string{"*"}
+				break
+			}
+		}
+		allowOrigin := origins[0]
 		if len(origins) > 1 {
-			// nginx 不支持一个 add_header 填多个来源；多来源时回显请求 Origin 更实用。
-			allowOrigin = "$http_origin"
+			// 多来源不能直接反射 $http_origin：那样等于放行任意站点，
+			// 白名单形同虚设。改由 writeSiteZones 生成 http 上下文的 map，
+			// 未命中白名单时变量为空，nginx 会自动省略该响应头。
+			allowOrigin = "$" + siteCORSVar(id)
 			lines = append(lines, "    add_header Vary Origin always;")
 		}
 		lines = append(lines,
@@ -370,9 +387,34 @@ func siteAdvancedUpstream(site map[string]any) (string, string) {
 	return strings.Join(lines, "\n"), "http://" + name
 }
 
-// writeSiteZones 汇总所有站点的限流 zone 到 http 上下文 include 文件。
+// siteCORSVar 生成站点 CORS 白名单的 nginx 变量名。
+// 变量名不允许包含 '-'（站点 ID 允许），因此用 ID 的 SHA1 前缀保证唯一。
+func siteCORSVar(id string) string {
+	sum := sha1.Sum([]byte(id))
+	return "graw_cors_" + hex.EncodeToString(sum[:4])
+}
+
+// corsOriginPattern 把来源转换为 map 的正则键：转义正则元字符，
+// 通配符 * 按「任意子域名标签」处理。
+func corsOriginPattern(origin string) string {
+	var b strings.Builder
+	for _, r := range origin {
+		switch r {
+		case '.', '+', '?', '(', ')', '[', ']', '{', '}', '^', '$', '|', '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case '*':
+			b.WriteString(`[^/]+`)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// writeSiteZones 汇总所有站点的限流 zone 与 CORS 白名单到 http 上下文 include 文件。
 func writeSiteZones() {
-	lines := []string{"# Managed by Graw - site rate limit zones (http context)", ""}
+	lines := []string{"# Managed by Graw - site zones and CORS maps (http context)", ""}
 	any := false
 	for _, s := range loadSites() {
 		id := siteStr(s, "id")
@@ -380,16 +422,37 @@ func writeSiteZones() {
 			continue
 		}
 		adv := siteAdvancedOf(s)
-		rate := mapOf(adv["rate_limit"])
-		if !boolOf(rate["enabled"]) {
-			continue
+		if rate := mapOf(adv["rate_limit"]); boolOf(rate["enabled"]) {
+			if rps := int(int64Of(rate["rps"])); rps > 0 {
+				lines = append(lines, "limit_req_zone $binary_remote_addr zone=graw_site_"+id+":10m rate="+strconv.Itoa(rps)+"r/s;")
+				any = true
+			}
 		}
-		rps := int(int64Of(rate["rps"]))
-		if rps <= 0 {
-			continue
+		// 多来源 CORS 需要 http 上下文的 map 做精确白名单；
+		// 单来源或通配在 server 块里直接写固定值即可。
+		if cors := mapOf(adv["cors"]); boolOf(cors["enabled"]) {
+			origins := advancedStringList(cors["origins"])
+			hasStar := false
+			for _, o := range origins {
+				if o == "*" {
+					hasStar = true
+					break
+				}
+			}
+			if len(origins) > 1 && !hasStar {
+				lines = append(lines, "map $http_origin $"+siteCORSVar(id)+" {")
+				lines = append(lines, `    default "";`)
+				for _, o := range origins {
+					if strings.Contains(o, "*") {
+						lines = append(lines, "    ~*^"+corsOriginPattern(o)+"$ $http_origin;")
+					} else {
+						lines = append(lines, `    "`+o+`" $http_origin;`)
+					}
+				}
+				lines = append(lines, "}")
+				any = true
+			}
 		}
-		lines = append(lines, "limit_req_zone $binary_remote_addr zone=graw_site_"+id+":10m rate="+strconv.Itoa(rps)+"r/s;")
-		any = true
 	}
 	lines = append(lines, "")
 	base := webServerBaseDir()
@@ -407,21 +470,38 @@ func ensureSiteZonesInclude() {
 		return
 	}
 	include := "include " + webServerBaseDir() + "/graw-site-zones.conf;"
-	if strings.Contains(string(content), include) {
+	lines := strings.Split(string(content), "\n")
+	// include 必须位于 http 上下文。旧实现用「http { 之后的第一个 }」定位，
+	// 一旦 http 块里有 server/map 等嵌套块就会插错位置（nginx -t 失败）。
+	httpLine := -1
+	for i, ln := range lines {
+		if strings.Contains(ln, "http {") || strings.Contains(ln, "http{") {
+			httpLine = i
+			break
+		}
+	}
+	if httpLine < 0 {
 		return
 	}
-	text := string(content)
-	idx := strings.Index(text, "http {")
-	if idx < 0 {
+	// 已经紧跟在 http 行之后：无需改动，避免每次都重写 nginx.conf。
+	if httpLine+1 < len(lines) && strings.TrimSpace(lines[httpLine+1]) == include {
 		return
 	}
-	end := strings.Index(text[idx:], "}")
-	if end < 0 {
-		return
+	// 先剔除旧版可能插到嵌套块里的 include 行，再统一插到 http 行之后。
+	cleaned := make([]string, 0, len(lines)+1)
+	for _, ln := range lines {
+		if strings.TrimSpace(ln) == include {
+			continue
+		}
+		cleaned = append(cleaned, ln)
 	}
-	end += idx + 1
-	text = text[:end] + "\n    " + include + "\n" + text[end:]
-	_ = os.WriteFile(confPath, []byte(text), 0o644)
+	for i, ln := range cleaned {
+		if strings.Contains(ln, "http {") || strings.Contains(ln, "http{") {
+			cleaned = append(cleaned[:i+1], append([]string{"    " + include}, cleaned[i+1:]...)...)
+			break
+		}
+	}
+	_ = os.WriteFile(confPath, []byte(strings.Join(cleaned, "\n")), 0o644)
 }
 
 // writeSiteAuthFile 生成 nginx htpasswd 文件。

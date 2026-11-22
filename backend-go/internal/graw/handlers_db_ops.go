@@ -86,8 +86,17 @@ func mysqlDefaultsFile(conn map[string]any) (string, func(), error) {
 	dir := DataPath("tmp")
 	_ = os.MkdirAll(dir, 0o700)
 	path := filepath.Join(dir, "mysql_"+randomHex(6)+".cnf")
+	// 值必须加引号并转义：MySQL 选项文件里未加引号的 # 会被当作注释开头，
+	// 空格/引号也会改变解析结果，导致含特殊字符的密码备份/恢复时认证失败。
+	cnfValue := func(s string) string {
+		escaped := strings.NewReplacer(
+			`\`, `\\`, `"`, `\"`, "\n", `\n`, "\r", `\r`, "\t", `\t`,
+		).Replace(s)
+		return `"` + escaped + `"`
+	}
 	content := fmt.Sprintf("[client]\nuser=%s\npassword=%s\nhost=%s\nport=%d\n",
-		str(conn["username"]), str(conn["password"]), defaultString(str(conn["host"]), "127.0.0.1"), dbConnPort(conn, 3306))
+		cnfValue(str(conn["username"])), cnfValue(str(conn["password"])),
+		cnfValue(defaultString(str(conn["host"]), "127.0.0.1")), dbConnPort(conn, 3306))
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		return "", nil, err
 	}

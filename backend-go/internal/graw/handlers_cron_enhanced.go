@@ -198,6 +198,10 @@ func cronImport(tasks []map[string]any, scripts []map[string]any) (int, int, err
 		byName[str(t["name"])] = t
 	}
 	taskCount := 0
+	// touched 记录本次导入新增/更新的任务，落盘后需要同步到系统调度器。
+	// Windows 的 schtasks 不会从 cron.json 自动生效，必须逐个重新注册。
+	touched := []map[string]any{}
+	touchedExisted := map[string]bool{}
 	for _, t := range tasks {
 		name := strings.TrimSpace(str(t["name"]))
 		schedule := strings.TrimSpace(str(t["schedule"]))
@@ -211,6 +215,8 @@ func cronImport(tasks []map[string]any, scripts []map[string]any) (int, int, err
 		if cur := byName[name]; cur != nil {
 			cur["schedule"] = schedule
 			cur["command"] = command
+			touched = append(touched, cur)
+			touchedExisted[str(cur["id"])] = true
 			taskCount++
 			continue
 		}
@@ -226,6 +232,7 @@ func cronImport(tasks []map[string]any, scripts []map[string]any) (int, int, err
 		}
 		existing = append(existing, nt)
 		byName[name] = nt
+		touched = append(touched, nt)
 		taskCount++
 	}
 	if err := saveCronTasks(existing); err != nil {
@@ -256,7 +263,13 @@ func cronImport(tasks []map[string]any, scripts []map[string]any) (int, int, err
 		return taskCount, scriptCount, err
 	}
 
-	if !windowsTarget() {
+	if windowsTarget() {
+		for _, t := range touched {
+			if err := syncWindowsTask(t, touchedExisted[str(t["id"])]); err != nil {
+				return taskCount, scriptCount, NewHTTPError(500, "任务已保存，但同步 Windows 计划任务失败: "+err.Error())
+			}
+		}
+	} else {
 		crons := []map[string]any{}
 		for _, t := range existing {
 			if boolOf(t["enabled"]) {

@@ -104,8 +104,17 @@ func panelSecurityGate(r *http.Request) *HTTPError {
 }
 
 func registerPanelSecurityRoutes(a *App) {
-	a.Get("/api/panel/security", adminOnly(), func(w http.ResponseWriter, r *http.Request) error {
-		return WriteJSON(w, 200, map[string]any{"security": loadPanelSecurity()})
+	// 水印与标签页锁对所有登录用户生效（否则仅管理员能看到水印，
+	// 普通用户截图外泄时反而没有追踪标记）；授权 IP/域名、密码策略等
+	// 管理字段仍只回给完整管理员。
+	a.Get("/api/panel/security", protected(), func(w http.ResponseWriter, r *http.Request) error {
+		cfg := loadPanelSecurity()
+		if !IsFullAdmin(CurrentUser(r)) {
+			return WriteJSON(w, 200, map[string]any{"security": map[string]any{
+				"watermark": cfg.Watermark, "tab_lock": cfg.TabLock,
+			}})
+		}
+		return WriteJSON(w, 200, map[string]any{"security": cfg})
 	})
 	a.Put("/api/panel/security", adminOnly(), func(w http.ResponseWriter, r *http.Request) error {
 		var cfg panelSecurityConfig

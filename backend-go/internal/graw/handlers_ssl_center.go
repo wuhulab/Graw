@@ -225,6 +225,10 @@ func registerSSLCenterRoutes(a *App) {
 			if res.Code != 0 {
 				return NewHTTPError(500, strings.TrimSpace(res.Stderr+res.Stdout))
 			}
+		} else if typ == "custom" || typ == "synced" {
+			// 上传/同步来的证书没有可用的签发来源；按自签逻辑「续签」会覆盖
+			// 用户原来的证书和私钥，导致站点 HTTPS 直接失效，必须拒绝。
+			return NewHTTPError(400, "上传或同步的证书不支持面板续签，请重新上传新证书")
 		} else {
 			domains := []string{}
 			for _, d := range toStringSlice(cert["domains"]) {
@@ -331,6 +335,16 @@ func registerSSLCenterRoutes(a *App) {
 		creds := map[string]string{}
 		if err := json.Unmarshal([]byte(req.Credentials), &creds); err != nil || len(creds) == 0 {
 			return NewHTTPError(400, "凭据必须是 JSON 对象，例如 {\"CLOUDFLARE_API_TOKEN\":\"...\"}")
+		}
+		// 凭据最终按 "key = value" 写入 certbot INI：值里的换行会注入
+		// 额外配置项，键里的空白/等号会让整行失效，必须在入口拒绝。
+		for k, v := range creds {
+			if strings.TrimSpace(k) == "" || strings.ContainsAny(k, " =\t\r\n\x00") {
+				return NewHTTPError(400, "凭据字段名非法: "+k)
+			}
+			if strings.ContainsAny(v, "\r\n\x00") {
+				return NewHTTPError(400, "凭据值不能包含换行或 NUL 字符")
+			}
 		}
 		name := strings.TrimSpace(req.Name)
 		if name == "" {

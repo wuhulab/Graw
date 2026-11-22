@@ -79,12 +79,23 @@ func readAuditFile(path string, limit int) []string {
 	if !HostExists(path) {
 		return nil
 	}
-	res := HostCmd(20*time.Second, "tail", "-n", itoa(limit), "--", path)
-	text := strings.TrimRight(res.Stdout, "\n")
+	var text string
+	if remoteActive() {
+		res := HostCmd(20*time.Second, "tail", "-n", itoa(limit), "--", path)
+		text = strings.TrimRight(res.Stdout, "\n")
+	} else {
+		// 本机直接读文件：Windows 开发环境没有 tail 命令，
+		// 走 HostCmd 会让审计中心在本机永远返回空列表。
+		text = strings.TrimRight(readTailText(HostPath(path), 4<<20), "\n")
+	}
 	if text == "" {
 		return nil
 	}
-	return strings.Split(text, "\n")
+	lines := strings.Split(text, "\n")
+	if len(lines) > limit {
+		lines = lines[len(lines)-limit:]
+	}
+	return lines
 }
 
 func auditLoginEntries(limit int) []auditEntry {
@@ -93,7 +104,9 @@ func auditLoginEntries(limit int) []auditEntry {
 		return nil
 	}
 	out := []auditEntry{}
-	for i := len(logs) - 1; i >= 0 && len(out) < limit; i-- {
+	// login_logs.json 按「最新在前」保存，必须从 0 开始取，
+	// 反向遍历会把最旧的记录返回给用户，最近的异常登录反而看不到。
+	for i := 0; i < len(logs) && len(out) < limit; i++ {
 		item := logs[i]
 		level := "info"
 		if item.Status != "success" {

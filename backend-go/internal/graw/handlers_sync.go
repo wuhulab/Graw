@@ -131,6 +131,17 @@ func importSyncBundle(bundle syncBundle, enableSites bool) (map[string]any, erro
 			if names[name] {
 				name = name + " (同步)"
 			}
+			// 同步包里的高级配置不能绕过站点配置中心的校验直接落盘：
+			// 重定向/跨域等值会拼进 nginx 配置，非法字符可能生成坏配置。
+			// existing 传 rawAdvanced 是为了让密码留空时复用包里的 password_hash。
+			if rawAdvanced, ok := copy["advanced"].(map[string]any); ok && len(rawAdvanced) > 0 {
+				if adv, herr := validateAdvancedPayload(rawAdvanced, rawAdvanced); herr != nil {
+					warnings = append(warnings, "站点 "+name+" 的高级配置非法，已忽略: "+herr.Error())
+					delete(copy, "advanced")
+				} else {
+					copy["advanced"] = adv
+				}
+			}
 			copy["name"] = name
 			copy["enabled"] = enableSites
 			copy["synced_at"] = time.Now().Format("2006-01-02 15:04:05")

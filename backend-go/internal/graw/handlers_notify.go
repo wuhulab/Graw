@@ -446,6 +446,11 @@ func pushAll(message string) (int, int) {
 	return sent, failed
 }
 
+// notifyLogMu 串行化 notify_logs.json 的「读-改-写」。
+// 可用性、证书、服务端口、防篡改等多个后台协程会并发写告警记录，
+// 不加锁时后写者会用旧快照覆盖前面的记录。
+var notifyLogMu sync.Mutex
+
 // appendNotifyLog 追加一条告警记录（环形截断到 200 条，与 Python notify_logs 一致）。
 // 字段名对齐前端：id/time/metric/value/threshold/message/sent_channels/failed_channels。
 func appendNotifyLog(message string, sent, failed int) {
@@ -456,6 +461,8 @@ func appendNotifyLog(message string, sent, failed int) {
 }
 
 func appendNotifyLogEntry(entry map[string]any) {
+	notifyLogMu.Lock()
+	defer notifyLogMu.Unlock()
 	var logs []map[string]any
 	_ = ReadJSON(DataPath("notify_logs.json"), &logs)
 	entry["id"] = randomHex(12)

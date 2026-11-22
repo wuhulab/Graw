@@ -1,6 +1,7 @@
 package graw
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"io"
@@ -239,13 +240,24 @@ func registerSSLRoutes(a *App) {
 		if err != nil {
 			return err
 		}
+		// 先校验证书与私钥是否成对：否则会记录一个永远无法被 nginx 使用的证书，
+		// 用户直到启用 HTTPS 时才发现，排查成本高。
+		if _, perr := tls.X509KeyPair(certData, keyData); perr != nil {
+			return NewHTTPError(400, "证书与私钥不匹配或 PEM 格式非法")
+		}
 		id := randomHex(8)
 		dir := DataPath("ssl")
 		_ = EnsureDir(dir)
 		certPath := filepath.Join(dir, id+".crt")
 		keyPath := filepath.Join(dir, id+".key")
-		_ = os.WriteFile(certPath, certData, 0o600)
-		_ = os.WriteFile(keyPath, keyData, 0o600)
+		// 写入失败必须中止：否则 ssl.json 会记录指向不存在文件的证书。
+		if werr := os.WriteFile(certPath, certData, 0o600); werr != nil {
+			return NewHTTPError(500, "写入证书失败: "+werr.Error())
+		}
+		if werr := os.WriteFile(keyPath, keyData, 0o600); werr != nil {
+			_ = os.Remove(certPath)
+			return NewHTTPError(500, "写入私钥失败: "+werr.Error())
+		}
 		domains := []string{}
 		for _, d := range strings.Split(r.FormValue("domains"), ",") {
 			if s := strings.TrimSpace(d); s != "" {

@@ -159,8 +159,8 @@
         </div>
       </div>
 
-      <!-- 面板安全：授权 IP / 域名绑定 / 密码策略 / 水印 / 标签页锁（仅管理员） -->
-      <div class="block" v-show="activeTab === 'account'" v-if="isAdmin()">
+      <!-- 面板安全：授权 IP / 域名绑定 / 密码策略 / 水印 / 标签页锁（仅完整管理员） -->
+      <div class="block" v-show="activeTab === 'account'" v-if="isFullAdmin()">
         <div class="block-title">{{ $t('settings.panelSecurityTitle') }}</div>
         <div class="hint" style="margin-bottom:8px;">{{ $t('settings.panelSecurityHint') }}</div>
         <label class="ui-label">{{ $t('settings.allowedIps') }}</label>
@@ -673,7 +673,7 @@ const secMsgType = ref('ok')
 const secSaving = ref(false)
 
 async function loadPanelSecuritySetting() {
-  if (!isAdmin()) return
+  if (!isFullAdmin()) return
   try {
     const data = await panelSecurityApi.get()
     const s = data.security || {}

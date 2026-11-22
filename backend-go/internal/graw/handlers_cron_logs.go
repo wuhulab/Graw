@@ -115,8 +115,19 @@ func listLinuxCron() ([]map[string]any, []string) {
 	return tasks, preserved
 }
 
+// cronManagedHeader 是面板写入 crontab 的固定首行注释。
+// 每次重写都会从 preserved 中剔除旧的首行，否则每执行一次创建/更新/删除
+// 就会多累积一行同样的注释。
+const cronManagedHeader = "# Managed by Graw Panel"
+
 func rewriteLinuxCron(tasks []map[string]any, preserved []string) error {
-	lines := append([]string{}, preserved...)
+	lines := make([]string, 0, len(preserved)+len(tasks)+1)
+	for _, line := range preserved {
+		if strings.TrimSpace(line) == cronManagedHeader {
+			continue
+		}
+		lines = append(lines, line)
+	}
 	for _, t := range tasks {
 		if !boolOf(t["enabled"]) && t["enabled"] != nil {
 			if v, ok := t["enabled"].(bool); ok && !v {
@@ -125,7 +136,7 @@ func rewriteLinuxCron(tasks []map[string]any, preserved []string) error {
 		}
 		lines = append(lines, str(t["schedule"])+" "+str(t["command"]))
 	}
-	text := "# Managed by Graw Panel\n" + strings.Join(lines, "\n") + "\n"
+	text := cronManagedHeader + "\n" + strings.Join(lines, "\n") + "\n"
 	res := HostCmdInput(15*time.Second, text, "crontab", "-")
 	if res.Code != 0 {
 		return NewHTTPError(500, "crontab update failed")
@@ -335,6 +346,11 @@ func registerCronRoutes(a *App) {
 				task["command"] = resolveCronCommand(str(task["task_type"]), str(task["content"]), oldCommand)
 			}
 		}
+		// 由 task_type/content 重新推导出的命令同样要过校验：
+		// shell_command 会原样返回 content，换行会让 crontab 变成多条任务。
+		if err := validateCronCommand(str(task["command"])); err != nil {
+			return err
+		}
 		if err := saveCronTasks(tasks); err != nil {
 			return err
 		}
@@ -345,10 +361,15 @@ func registerCronRoutes(a *App) {
 		} else {
 			crons, preserved := listLinuxCron()
 			kept := []map[string]any{}
+			// 只替换一条旧命令行：多个任务可能共用同一命令，
+			// 全部删除会让其它仍启用的任务静默失效。
+			replaced := false
 			for _, c := range crons {
-				if str(c["command"]) != oldCommand {
-					kept = append(kept, c)
+				if !replaced && str(c["command"]) == oldCommand {
+					replaced = true
+					continue
 				}
+				kept = append(kept, c)
 			}
 			if boolOf(task["enabled"]) {
 				kept = append(kept, map[string]any{
@@ -381,10 +402,14 @@ func registerCronRoutes(a *App) {
 		} else {
 			crons, preserved := listLinuxCron()
 			filtered := []map[string]any{}
+			// 同命令可能对应多个任务，只删除一条，保留其它任务的调度行。
+			removed := false
 			for _, c := range crons {
-				if str(c["command"]) != str(task["command"]) {
-					filtered = append(filtered, c)
+				if !removed && str(c["command"]) == str(task["command"]) {
+					removed = true
+					continue
 				}
+				filtered = append(filtered, c)
 			}
 			if err := rewriteLinuxCron(filtered, preserved); err != nil {
 				return err
