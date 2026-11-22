@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -100,17 +101,19 @@ func parseAccessEntries(text string, limit int) []webAccessEntry {
 	return out
 }
 
-var geoCountryRules []map[string]any
-var geoCountryLoaded bool
+// 地区规则是只读缓存，用 sync.Once 初始化：多个请求并发进入时
+// 不能靠「先置 true 再赋值」的裸布尔量，否则会产生数据竞争并读到半初始化切片。
+var (
+	geoCountryOnce  sync.Once
+	geoCountryRules []map[string]any
+)
 
 func loadGeoCountryRules() []map[string]any {
-	if geoCountryLoaded {
-		return geoCountryRules
-	}
-	geoCountryLoaded = true
-	var items []map[string]any
-	_ = ReadJSON(DataPath("geoip_countries.json"), &items)
-	geoCountryRules = items
+	geoCountryOnce.Do(func() {
+		var items []map[string]any
+		_ = ReadJSON(DataPath("geoip_countries.json"), &items)
+		geoCountryRules = items
+	})
 	return geoCountryRules
 }
 

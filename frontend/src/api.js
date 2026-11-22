@@ -362,8 +362,9 @@ export const databasesApi = {
   createUser: (id, body) => api.post(`/databases/connections/${id}/users`, body).then(r => r.data),
   deleteUser: (id, username, host = '') => api.delete(`/databases/connections/${id}/users/${encodeURIComponent(username)}`, { params: { host } }).then(r => r.data),
   backups: (id) => api.get(`/databases/connections/${id}/backups`).then(r => r.data),
-  backup: (id, database = '') => api.post(`/databases/connections/${id}/backup`, { database }).then(r => r.data),
-  restoreBackup: (id, name, database = '') => api.post(`/databases/connections/${id}/backups/${encodeURIComponent(name)}/restore`, { database }).then(r => r.data),
+  // 备份/恢复在服务端最长可执行 600 秒，必须放宽前端超时，否则大库必然被 60 秒默认超时误判为失败。
+  backup: (id, database = '') => api.post(`/databases/connections/${id}/backup`, { database }, { timeout: 600000 }).then(r => r.data),
+  restoreBackup: (id, name, database = '') => api.post(`/databases/connections/${id}/backups/${encodeURIComponent(name)}/restore`, { database }, { timeout: 600000 }).then(r => r.data),
   deleteBackup: (id, name) => api.delete(`/databases/connections/${id}/backups/${encodeURIComponent(name)}`).then(r => r.data),
   cluster: (id) => api.get(`/databases/connections/${id}/cluster`).then(r => r.data)
 }
@@ -412,7 +413,8 @@ export const cronApi = {
   create: (body) => api.post('/cron/create', body).then(r => r.data),
   update: (id, body) => api.post(`/cron/${id}/update`, body).then(r => r.data),
   delete: (id) => api.post(`/cron/${id}/delete`).then(r => r.data),
-  run: (id) => api.post(`/cron/${id}/run`).then(r => r.data),
+  // 手动执行会等待任务完成（含重试），服务端默认超时 300 秒，前端默认 60 秒会提前断开。
+  run: (id) => api.post(`/cron/${id}/run`, {}, { timeout: 3600000 }).then(r => r.data),
   scripts: () => api.get('/cron/scripts').then(r => r.data),
   saveScript: (body) => api.post('/cron/scripts', body).then(r => r.data),
   deleteScript: (id) => api.post(`/cron/scripts/${id}/delete`).then(r => r.data),

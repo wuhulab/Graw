@@ -176,8 +176,14 @@ func registerSSLCenterRoutes(a *App) {
 		_ = EnsureDir(dir)
 		certPath := filepath.Join(dir, id+".crt")
 		keyPath := filepath.Join(dir, id+".key")
-		_ = os.WriteFile(certPath, certPEM, 0o600)
-		_ = os.WriteFile(keyPath, keyPEM, 0o600)
+		// 写入失败必须中止：否则 ssl.json 会记录一个指向不存在文件的证书。
+		if werr := os.WriteFile(certPath, certPEM, 0o600); werr != nil {
+			return NewHTTPError(500, "写入证书失败: "+werr.Error())
+		}
+		if werr := os.WriteFile(keyPath, keyPEM, 0o600); werr != nil {
+			_ = os.Remove(certPath)
+			return NewHTTPError(500, "写入私钥失败: "+werr.Error())
+		}
 		name := strings.TrimSpace(req.Name)
 		if name == "" {
 			name = req.Domains[0]
@@ -233,8 +239,13 @@ func registerSSLCenterRoutes(a *App) {
 			if err != nil {
 				return NewHTTPError(500, "续签失败: "+err.Error())
 			}
-			_ = os.WriteFile(HostFilePath(str(cert["cert_path"])), certPEM, 0o600)
-			_ = os.WriteFile(HostFilePath(str(cert["key_path"])), keyPEM, 0o600)
+			// 自签续签：写盘失败应直接报错，避免返回「续签成功」但证书仍是旧的。
+			if werr := os.WriteFile(HostFilePath(str(cert["cert_path"])), certPEM, 0o600); werr != nil {
+				return NewHTTPError(500, "写入证书失败: "+werr.Error())
+			}
+			if werr := os.WriteFile(HostFilePath(str(cert["key_path"])), keyPEM, 0o600); werr != nil {
+				return NewHTTPError(500, "写入私钥失败: "+werr.Error())
+			}
 		}
 		cert["expires_at"] = readCertExpiry(str(cert["cert_path"]))
 		// 回写 ssl.json 中的过期时间
@@ -399,7 +410,9 @@ func registerSSLCenterRoutes(a *App) {
 			return NewHTTPError(500, "写入 DNS 凭据失败")
 		}
 		defer os.Remove(credFile)
-		args := []string{"certonly", "--dns-" + provider, "--dns-" + provider + "-credentials", credFile,
+		// certbot 经 HostCmd 在宿主机（容器部署下为 chroot）执行，凭据文件必须
+		// 使用宿主机可见路径，否则 certbot 读不到 data/tmp 里的 INI。
+		args := []string{"certonly", "--dns-" + provider, "--dns-" + provider + "-credentials", HostVisiblePath(credFile),
 			"--agree-tos", "-m", req.Email, "-n", "--preferred-challenges", "dns"}
 		for _, d := range req.Domains {
 			args = append(args, "-d", d)

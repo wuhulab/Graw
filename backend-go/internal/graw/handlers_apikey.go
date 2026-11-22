@@ -38,8 +38,14 @@ type apiKeyRecord struct {
 	LastUsedAt string   `json:"last_used_at"`
 }
 
-var apiKeyTouchMu sync.Mutex
-var apiKeyLastTouch = map[string]time.Time{}
+var (
+	apiKeyTouchMu   sync.Mutex
+	apiKeyLastTouch = map[string]time.Time{}
+	// apiKeyStoreMu 串行化 api_keys.json 的「读-改-写」：
+	// 最近使用时间回写（touchAPIKey）与后台管理操作并发时不加锁会互相覆盖，
+	// 极端情况下已删除的 Key 会被旧快照写回。
+	apiKeyStoreMu sync.Mutex
+)
 
 func apiKeyStorePath() string { return DataPath("api_keys.json") }
 
@@ -172,6 +178,8 @@ func touchAPIKey(id string) {
 		return
 	}
 	apiKeyLastTouch[id] = time.Now()
+	apiKeyStoreMu.Lock()
+	defer apiKeyStoreMu.Unlock()
 	items := loadAPIKeys()
 	now := time.Now().Format("2006-01-02 15:04:05")
 	changed := false
@@ -290,9 +298,12 @@ func registerAPIKeyRoutes(a *App) {
 			Owner: ownerName, Scopes: scopes, AllowedIPs: ips, ExpiresAt: expires, Enabled: true,
 			CreatedAt: time.Now().Format("2006-01-02 15:04:05"),
 		}
+		apiKeyStoreMu.Lock()
 		items := loadAPIKeys()
 		items = append(items, item)
-		if err := saveAPIKeys(items); err != nil {
+		err = saveAPIKeys(items)
+		apiKeyStoreMu.Unlock()
+		if err != nil {
 			return err
 		}
 		res := apiKeyPublic(item)
@@ -301,6 +312,8 @@ func registerAPIKeyRoutes(a *App) {
 	})
 	a.Post("/api/apikeys/{key_id}/delete", adminOnly(), func(w http.ResponseWriter, r *http.Request) error {
 		id := strings.TrimSpace(PathParam(r, "key_id"))
+		apiKeyStoreMu.Lock()
+		defer apiKeyStoreMu.Unlock()
 		items := loadAPIKeys()
 		out := items[:0]
 		for _, item := range items {
@@ -315,6 +328,8 @@ func registerAPIKeyRoutes(a *App) {
 	})
 	a.Post("/api/apikeys/{key_id}/toggle", adminOnly(), func(w http.ResponseWriter, r *http.Request) error {
 		id := strings.TrimSpace(PathParam(r, "key_id"))
+		apiKeyStoreMu.Lock()
+		defer apiKeyStoreMu.Unlock()
 		items := loadAPIKeys()
 		found := false
 		for i := range items {

@@ -358,7 +358,9 @@ func registerDBOpsRoutes(a *App) {
 				return NewHTTPError(500, "写入临时凭据失败")
 			}
 			defer cleanup()
-			args := []string{"--defaults-extra-file=" + cnf, "--single-transaction", "--routines", "--events",
+			// 临时凭据文件位于面板 data 目录，宿主命令经 chroot 执行时看不到容器内路径，
+			// 必须转换成宿主机可见路径（与 --result-file 同理）。
+			args := []string{"--defaults-extra-file=" + HostVisiblePath(cnf), "--single-transaction", "--routines", "--events",
 				"--result-file=" + hostOut}
 			if req.Database != "" {
 				if !dbNameRe.MatchString(req.Database) {
@@ -386,7 +388,7 @@ func registerDBOpsRoutes(a *App) {
 				return NewHTTPError(500, "写入临时凭据失败")
 			}
 			defer cleanup()
-			cmd := "PGPASSFILE=" + shellQuote(pgpass) + " pg_dump -h " + shellQuote(defaultString(str(conn["host"]), "127.0.0.1")) +
+			cmd := "PGPASSFILE=" + shellQuote(HostVisiblePath(pgpass)) + " pg_dump -h " + shellQuote(defaultString(str(conn["host"]), "127.0.0.1")) +
 				" -p " + itoa(dbConnPort(conn, 5432)) + " -U " + shellQuote(defaultString(str(conn["username"]), "postgres")) +
 				" -d " + shellQuote(dbName) + " -f " + shellQuote(hostOut)
 			res := HostShell(600*time.Second, cmd)
@@ -429,7 +431,7 @@ func registerDBOpsRoutes(a *App) {
 			if dbName != "" && !dbNameRe.MatchString(dbName) {
 				return NewHTTPError(400, "数据库名非法")
 			}
-			cmd := "mysql --defaults-extra-file=" + shellQuote(cnf)
+			cmd := "mysql --defaults-extra-file=" + shellQuote(HostVisiblePath(cnf))
 			if dbName != "" {
 				cmd += " " + shellQuote(dbName)
 			}
@@ -451,7 +453,7 @@ func registerDBOpsRoutes(a *App) {
 				return NewHTTPError(500, "写入临时凭据失败")
 			}
 			defer cleanup()
-			cmd := "PGPASSFILE=" + shellQuote(pgpass) + " psql -h " + shellQuote(defaultString(str(conn["host"]), "127.0.0.1")) +
+			cmd := "PGPASSFILE=" + shellQuote(HostVisiblePath(pgpass)) + " psql -h " + shellQuote(defaultString(str(conn["host"]), "127.0.0.1")) +
 				" -p " + itoa(dbConnPort(conn, 5432)) + " -U " + shellQuote(defaultString(str(conn["username"]), "postgres")) +
 				" -d " + shellQuote(dbName) + " -f " + shellQuote(hostPath)
 			res := HostShell(600*time.Second, cmd)

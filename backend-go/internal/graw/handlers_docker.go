@@ -1029,6 +1029,9 @@ func dockerInspectHandler(w http.ResponseWriter, r *http.Request) error {
 	})
 }
 
+// int64Of 把配置值/命令输出统一转成 int64。
+// 除 JSON 数字外也接受字符串：nvidia-smi、virsh、nginx 日志、docker ps 端口等
+// 外部命令的输出都是文本，若不解析字符串会静默变成 0（曾导致 GPU/端口/流量全为 0）。
 func int64Of(v any) int64 {
 	switch x := v.(type) {
 	case float64:
@@ -1040,6 +1043,19 @@ func int64Of(v any) int64 {
 		return x
 	case int:
 		return int64(x)
+	case string:
+		s := strings.TrimSpace(x)
+		if s == "" {
+			return 0
+		}
+		if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+			return n
+		}
+		// 兼容 "1024.0" 这类由浮点格式化产生的文本；解析失败仍按 0 处理。
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			return int64(f)
+		}
+		return 0
 	}
 	return 0
 }

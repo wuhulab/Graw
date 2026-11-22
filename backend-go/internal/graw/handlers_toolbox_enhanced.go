@@ -149,8 +149,10 @@ func toolboxSystemUpdate(action, value string) (map[string]any, error) {
 			return nil, NewHTTPError(500, "设置 NTP 失败: "+strings.TrimSpace(res.Stderr))
 		}
 	case "swap":
-		sizeMB := int(int64Of(value))
-		if sizeMB < 128 || sizeMB > 65536 {
+		// value 来自 JSON 字符串字段，必须按字符串解析；此前用 int64Of(value)
+		// 会把任意输入都当成 0，导致创建 Swap 永远返回「大小非法」。
+		sizeMB, aerr := strconv.Atoi(strings.TrimSpace(value))
+		if aerr != nil || sizeMB < 128 || sizeMB > 65536 {
 			return nil, NewHTTPError(400, "Swap 大小需在 128-65536 MB 之间")
 		}
 		script := "set -e\n" +

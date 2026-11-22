@@ -242,13 +242,31 @@ function fmtBytes(n) {
   return v + ' B'
 }
 
+// 概览/访客页签切换会卸载图表 DOM，旧 ECharts 实例仍绑定在已移除的节点上。
+// 离开时必须 dispose 并置空，否则切回来时 setOption 作用于旧节点，图表空白。
+function disposeOverviewCharts() {
+  ;[trendChart, statusChart, pagesChart, ipsChart, refererChart].forEach(c => c && c.dispose())
+  trendChart = statusChart = pagesChart = ipsChart = refererChart = null
+}
+
+function disposeVisitorChart() {
+  if (visitorChart) { visitorChart.dispose(); visitorChart = null }
+}
+
 // 切换页签：离开实时页时停掉轮询
 function switchMode(m) {
   mode.value = m
   if (rtTimer) { clearInterval(rtTimer); rtTimer = null }
-  if (m === 'overview' && !stats.value) load()
-  else if (m === 'overview') loadSummary()
-  else if (m === 'realtime') { loadRealtime(); rtTimer = setInterval(loadRealtime, 3000) }
+  if (m !== 'overview') disposeOverviewCharts()
+  if (m !== 'visitors') disposeVisitorChart()
+  if (m === 'overview') {
+    if (!stats.value) load()
+    else {
+      loadSummary()
+      // 等新 DOM 挂载后重新初始化图表实例。
+      nextTick(renderCharts)
+    }
+  } else if (m === 'realtime') { loadRealtime(); rtTimer = setInterval(loadRealtime, 3000) }
   else if (m === 'requests') loadRequests()
   else if (m === 'visitors') loadVisitors()
 }
