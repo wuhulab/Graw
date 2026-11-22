@@ -453,7 +453,7 @@ func (req appInstallRequest) validate() error {
 	}
 	for _, p := range req.Ports {
 		for _, key := range []string{"container", "external"} {
-			v := int(int64Of(p[key]))
+			v := intOf(p[key])
 			if v != 0 && (v < 1 || v > 65535) {
 				return NewHTTPError(422, "端口需在 1-65535 之间")
 			}
@@ -544,7 +544,7 @@ func applyComposeOptions(composeText string, req appInstallRequest, app map[stri
 	}
 	primaryContainerPort := 0
 	if len(appPorts) > 0 {
-		primaryContainerPort = int(int64Of(appPorts[0]["container"]))
+		primaryContainerPort = intOf(appPorts[0]["container"])
 	}
 
 	for svcName, raw := range services {
@@ -587,8 +587,8 @@ func applyComposeOptions(composeText string, req appInstallRequest, app map[stri
 		}
 		if len(req.Ports) > 0 {
 			for _, pm := range req.Ports {
-				cPort := int(int64Of(pm["container"]))
-				ePort := int(int64Of(pm["external"]))
+				cPort := intOf(pm["container"])
+				ePort := intOf(pm["external"])
 				if cPort > 0 && ePort > 0 {
 					applyServicePort(svc, ePort, cPort)
 				}
@@ -808,7 +808,7 @@ func installPrepare(req appInstallRequest) (containerName, projectDir, composePa
 		opened := []int{}
 		if len(req.Ports) > 0 {
 			for _, pm := range req.Ports {
-				if v := int(int64Of(pm["external"])); v > 0 {
+				if v := intOf(pm["external"]); v > 0 {
 					opened = append(opened, v)
 				}
 			}

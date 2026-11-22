@@ -92,7 +92,7 @@ func parseAccessEntries(text string, limit int) []webAccessEntry {
 		}
 		out = append(out, webAccessEntry{
 			Time: m[3], IP: m[1], Method: method, Path: reqPath,
-			Status: int(int64Of(m[5])), Bytes: int64Of(m[6]), Referer: m[7], UA: m[8],
+			Status: intOf(m[5]), Bytes: int64Of(m[6]), Referer: m[7], UA: m[8],
 		})
 	}
 	if limit > 0 && len(out) > limit {

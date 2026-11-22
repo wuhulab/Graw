@@ -419,7 +419,7 @@ func frpRender(data map[string]any) string {
 		c := mapOf(data["client"])
 		lines = append(lines,
 			"serverAddr = "+tomlStr(str(c["serverAddr"]))+"",
-			fmt.Sprintf("serverPort = %d", int(int64Of(c["serverPort"]))),
+			fmt.Sprintf("serverPort = %d", intOf(c["serverPort"])),
 			"loginFailExit = "+boolToml(boolOf(c["loginFailExit"])),
 			"log.level = "+tomlStr(defaultString(str(c["logLevel"]), "info")))
 		if tok := str(c["token"]); tok != "" {
@@ -433,8 +433,8 @@ func frpRender(data map[string]any) string {
 			lines = append(lines, "name = "+tomlStr(str(p["name"])))
 			lines = append(lines, "type = "+tomlStr(defaultString(str(p["type"]), "tcp")))
 			lines = append(lines, "localIP = "+tomlStr(defaultString(str(p["localIp"]), "127.0.0.1")))
-			lines = append(lines, fmt.Sprintf("localPort = %d", int(int64Of(p["localPort"]))))
-			if rp := int(int64Of(p["remotePort"])); rp > 0 {
+			lines = append(lines, fmt.Sprintf("localPort = %d", intOf(p["localPort"])))
+			if rp := intOf(p["remotePort"]); rp > 0 {
 				lines = append(lines, fmt.Sprintf("remotePort = %d", rp))
 			}
 			if cd := str(p["customDomains"]); cd != "" {
@@ -451,14 +451,14 @@ func frpRender(data map[string]any) string {
 		s := mapOf(data["server"])
 		lines = append(lines,
 			"bindAddr = "+tomlStr(defaultString(str(s["bindAddr"]), "0.0.0.0")),
-			fmt.Sprintf("bindPort = %d", int(int64Of(s["bindPort"]))))
+			fmt.Sprintf("bindPort = %d", intOf(s["bindPort"])))
 		if tok := str(s["token"]); tok != "" {
 			lines = append(lines, "auth.token = "+tomlStr(tok))
 		}
-		if int(int64Of(s["dashboardPort"])) > 0 {
+		if intOf(s["dashboardPort"]) > 0 {
 			lines = append(lines,
 				fmt.Sprintf("webServer.addr = %s", tomlStr(str(s["dashboardAddr"]))),
-				fmt.Sprintf("webServer.port = %d", int(int64Of(s["dashboardPort"]))),
+				fmt.Sprintf("webServer.port = %d", intOf(s["dashboardPort"])),
 				"webServer.user = "+tomlStr(str(s["dashboardUser"])),
 				"webServer.password = "+tomlStr(str(s["dashboardPwd"])))
 		}
@@ -804,7 +804,7 @@ func vpnDetectBinary(data map[string]any) string {
 }
 
 func vpnProxyYAML(data map[string]any) string {
-	lines := []string{"mixed-port: " + itoa(int(int64Of(data["mixedPort"]))),
+	lines := []string{"mixed-port: " + itoa(intOf(data["mixedPort"])),
 		"allow-lan: false", "mode: rule", "log-level: info"}
 	nodes := vpnItems(data, "nodes")
 	if len(nodes) == 0 {
@@ -816,7 +816,7 @@ func vpnProxyYAML(data map[string]any) string {
 		lines = append(lines, "  - name: "+yamlStr(str(n["name"])))
 		lines = append(lines, "    type: "+yamlStr(str(n["type"])))
 		lines = append(lines, "    server: "+yamlStr(str(n["server"])))
-		lines = append(lines, "    port: "+itoa(int(int64Of(n["port"]))))
+		lines = append(lines, "    port: "+itoa(intOf(n["port"])))
 		for _, key := range []string{"uuid", "password", "cipher", "username", "sni", "flow"} {
 			if v := str(n[key]); v != "" {
 				lines = append(lines, "    "+key+": "+yamlStr(v))
@@ -853,7 +853,7 @@ func vpnStatus(data map[string]any) map[string]any {
 	vpnMu.Unlock()
 	resp := map[string]any{
 		"running": running, "enabled": boolOf(data["enabled"]),
-		"mixedPort": int(int64Of(data["mixedPort"])), "binary": bin,
+		"mixedPort": intOf(data["mixedPort"]), "binary": bin,
 		"lowPower": boolOf(data["lowPower"]), "mode": "mihomo", "auto_stopped": autoStop,
 	}
 	if !startedAt.IsZero() {
@@ -951,7 +951,7 @@ func startVPNWatchdog() {
 					vpnMu.Lock()
 					running := vpnProcess != nil && vpnProcess.Signal(nil) == nil
 					lastBusy := vpnLastBusy
-					idleMinutes := int(int64Of(data["idleMinutes"]))
+					idleMinutes := intOf(data["idleMinutes"])
 					vpnMu.Unlock()
 					if idleMinutes <= 0 {
 						idleMinutes = 15
@@ -980,7 +980,7 @@ func startVPNWatchdog() {
 }
 
 func vpnActiveConnections(data map[string]any) int {
-	port := int(int64Of(data["controllerPort"]))
+	port := intOf(data["controllerPort"])
 	if port <= 0 {
 		return 0
 	}

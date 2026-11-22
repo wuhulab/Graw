@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -624,7 +625,7 @@ func reloadIfNginxStrict() error {
 	return reloadWebServer()
 }
 
-// maintenanceRoot 准备维护页目录并返回宿主机视角路径。
+// maintenanceRoot 准备维护页目录并返回宿主机可见路径。
 func maintenanceRoot(site map[string]any) string {
 	id := siteStr(site, "id")
 	if !siteIDRe.MatchString(id) {
@@ -637,7 +638,9 @@ func maintenanceRoot(site map[string]any) string {
 	if !Exists(index) {
 		_ = os.WriteFile(index, []byte(defaultMaintenanceHTML), 0o644)
 	}
-	return view
+	// 该路径会写进宿主机 nginx 配置的 root：容器内 DataPath 在宿主机上并不存在，
+	// 必须转成宿主机可见路径（GRAW_HOST_DATA 映射），否则维护页会 404。
+	return HostVisiblePath(view)
 }
 
 const defaultMaintenanceHTML = `<!DOCTYPE html>
@@ -682,29 +685,39 @@ func discoverExternalSites() []map[string]any {
 	out := []map[string]any{}
 	index := 0
 	for _, dir := range dirs {
-		realDir := HostPath(dir)
-		if !IsDir(realDir) {
+		// 目录探测与读取必须走 Host* 原语：裸 SSH 节点下 os.ReadDir 会读到
+		// 控制器本机，导致站点列表缺失（甚至展示错误主机的配置）。
+		if !HostIsDir(dir) {
 			continue
 		}
-		entries, _ := os.ReadDir(realDir)
+		entries, listErr := HostListDir(dir)
+		if listErr != nil {
+			continue
+		}
+		// 远程 find 的返回顺序不稳定，按文件名排序保证 extSiteID 中的序号稳定
+		//（前端按站点 ID 发起编辑/删除，顺序漂移会导致操作到别的站点）。
+		sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
 		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".conf") {
+			if e.IsDir || !strings.HasSuffix(e.Name, ".conf") {
 				continue
 			}
-			realPath := filepath.Join(realDir, e.Name())
-			if st, err := os.Stat(realPath); err != nil || st.IsDir() {
-				continue
-			}
-			resolved := realPath
-			if target, err := filepath.EvalSymlinks(realPath); err == nil {
+			confPath := HostPathJoin(dir, e.Name)
+			// 去重 key 用「真实文件路径」：sites-enabled 里的符号链接与
+			// sites-available 里的真实文件应视为同一个站点。
+			resolved := confPath
+			if remoteActive() {
+				if res := HostCmd(10*time.Second, "readlink", "-f", confPath); res.Code == 0 && strings.TrimSpace(res.Stdout) != "" {
+					resolved = strings.TrimSpace(res.Stdout)
+				}
+			} else if target, err := filepath.EvalSymlinks(HostPath(confPath)); err == nil {
 				resolved = target
 			}
 			if seen[resolved] {
 				continue
 			}
 			seen[resolved] = true
-			data, err := os.ReadFile(resolved)
-			if err != nil {
+			data, readErr := HostReadBytes(confPath)
+			if readErr != nil {
 				continue
 			}
 			conf := string(data)
@@ -714,7 +727,7 @@ func discoverExternalSites() []map[string]any {
 			}
 			index++
 			id := extSiteID(serverName, index)
-			enabled := strings.Contains(realPath, "sites-enabled") ||
+			enabled := strings.Contains(confPath, "sites-enabled") ||
 				(dir == "/opt/1panel/www/conf.d")
 			source := "nginx"
 			if strings.Contains(dir, "1panel") {
@@ -727,7 +740,7 @@ func discoverExternalSites() []map[string]any {
 				"reverse_proxy": parseProxyPass(conf), "locations": []any{},
 				"protocol": "tcp", "upstream": "", "subdomain": "", "domain": "",
 				"enabled": enabled, "external": true, "source": source,
-				"conf_path": dir + "/" + e.Name(), "config_file": dir + "/" + e.Name(),
+				"conf_path": confPath, "config_file": confPath,
 				"created_at": "", "maintenance": false,
 			}
 			if siteStr(site, "reverse_proxy") != "" {

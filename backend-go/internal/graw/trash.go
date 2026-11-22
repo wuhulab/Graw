@@ -139,7 +139,10 @@ func PathInTrash(p string) bool {
 			return false
 		}
 		rel, err := filepath.Rel(base, abs)
-		return err == nil && rel != "." && !strings.HasPrefix(rel, "..")
+		// 必须按路径段判断越界：只比较前缀 ".." 会把回收站内合法的 "..foo"
+		// 文件名误判为越界路径，导致这类文件无法恢复/彻底删除。
+		return err == nil && rel != "." && rel != ".." &&
+			!strings.HasPrefix(rel, ".."+string(os.PathSeparator))
 	}
 	base := path.Clean(TrashRoot())
 	abs := path.Clean(p)

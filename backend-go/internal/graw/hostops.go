@@ -616,7 +616,7 @@ func NodeSSHClient(node map[string]any) (*ssh.Client, error) {
 
 // NodeAddr 返回节点 host:port（端口缺省 22），仅用于日志/展示，不参与连接身份判断。
 func NodeAddr(node map[string]any) string {
-	port := int(int64Of(node["port"]))
+	port := intOf(node["port"])
 	if port == 0 {
 		port = 22
 	}

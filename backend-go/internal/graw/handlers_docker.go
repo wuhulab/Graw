@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -1056,6 +1057,56 @@ func int64Of(v any) int64 {
 			return int64(f)
 		}
 		return 0
+	}
+	return 0
+}
+
+// intOf 把配置值安全地转换为 int（端口、超时、数量等场景统一入口）。
+//
+// 直接写 int(int64Of(v)) 会把 64 位数值无条件收窄：在 32 位平台上超出 int
+// 范围的配置会溢出成负数，端口、超时、限流阈值随之变得不可预测。
+// 这里先按 int 的上下界夹取再转换；字符串用 Atoi（本身就按 int 位宽做溢出校验）。
+func intOf(v any) int {
+	switch x := v.(type) {
+	case int:
+		return x
+	case int64:
+		if x > math.MaxInt {
+			return math.MaxInt
+		}
+		if x < math.MinInt {
+			return math.MinInt
+		}
+		return int(x)
+	case float64:
+		// JSON 数字统一按 float64 解码；float64(math.MaxInt) 在 64 位下是 2^63，
+		// 因此用 >= / <= 比较，避免恰好 2^63 被转成负数。
+		if x >= float64(math.MaxInt) {
+			return math.MaxInt
+		}
+		if x <= float64(math.MinInt) {
+			return math.MinInt
+		}
+		return int(x)
+	case json.Number:
+		if n, err := x.Int64(); err == nil {
+			return intOf(n)
+		}
+		if f, err := x.Float64(); err == nil {
+			return intOf(f)
+		}
+	case string:
+		s := strings.TrimSpace(x)
+		if s == "" {
+			return 0
+		}
+		if n, err := strconv.Atoi(s); err == nil {
+			return n
+		}
+		// 兼容 "1024.0" 这类由浮点格式化产生的文本；仍然走夹取逻辑。
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			return intOf(f)
+		}
 	}
 	return 0
 }

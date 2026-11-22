@@ -76,17 +76,23 @@ func auditTimeOf(line string) string {
 }
 
 func readAuditFile(path string, limit int) []string {
-	if !HostExists(path) {
-		return nil
-	}
 	var text string
 	if remoteActive() {
+		if !HostExists(path) {
+			return nil
+		}
 		res := HostCmd(20*time.Second, "tail", "-n", itoa(limit), "--", path)
 		text = strings.TrimRight(res.Stdout, "\n")
 	} else {
+		// 面板自己写入 data 目录的日志（panel.log）不能叠加 HOST_ROOT，
+		// 只有 /var/log/* 这类宿主机路径才需要映射；HostFilePath 会区分两种视角。
+		real := HostFilePath(path)
+		if !fileExists(real) {
+			return nil
+		}
 		// 本机直接读文件：Windows 开发环境没有 tail 命令，
 		// 走 HostCmd 会让审计中心在本机永远返回空列表。
-		text = strings.TrimRight(readTailText(HostPath(path), 4<<20), "\n")
+		text = strings.TrimRight(readTailText(real, 4<<20), "\n")
 	}
 	if text == "" {
 		return nil

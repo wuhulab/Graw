@@ -695,14 +695,15 @@ func ClientIP(r *http.Request) string {
 			}
 			// 只信任靠近服务端一侧的 depth 个跳数，避免伪造头影响登录日志/限流。
 			if len(hops) >= depth {
-				return hops[len(hops)-depth]
+				// 落日志、进通知消息前去掉 CR/LF，避免不可见字符伪造记录（CWE-117）。
+				return stripCRLF(hops[len(hops)-depth])
 			}
 		}
 	}
 	if host == "" {
 		return "unknown"
 	}
-	return host
+	return stripCRLF(host)
 }
 
 // QueryInt 解析整数查询参数（非法或缺失时返回 def）。
@@ -732,11 +733,18 @@ func QueryFloat(r *http.Request, name string, def float64) float64 {
 }
 
 // QueryBool 解析布尔查询参数。
-// 仅 1/true/yes/on 视为真，其余（含非法值）返回 def，避免 "0" 被误判为 true。
+// 仅 1/true/yes/on 视为真、0/false/no/off 视为假；空值或无法识别的非法值返回 def。
 func QueryBool(r *http.Request, name string, def bool) bool {
 	v := strings.ToLower(strings.TrimSpace(r.URL.Query().Get(name)))
-	if v == "" {
+	switch v {
+	case "":
+		return def
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		// 非法值不猜测用户意图，回落到调用方给的默认值。
 		return def
 	}
-	return v == "1" || v == "true" || v == "yes" || v == "on"
 }

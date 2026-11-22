@@ -2,6 +2,7 @@ package graw
 
 import (
 	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"net"
@@ -88,7 +89,7 @@ func validateAdvancedPayload(raw map[string]any, existing map[string]any) (map[s
 			}
 			from := strings.TrimSpace(str(m["from"]))
 			to := strings.TrimSpace(str(m["to"]))
-			code := int(int64Of(m["code"]))
+			code := intOf(m["code"])
 			if code == 0 {
 				code = 301
 			}
@@ -206,8 +207,8 @@ func validateAdvancedPayload(raw map[string]any, existing map[string]any) (map[s
 	// ---- 流量限制 ----
 	rate := mapOf(raw["rate_limit"])
 	rateOut := map[string]any{"enabled": boolOf(rate["enabled"])}
-	rps := int(int64Of(rate["rps"]))
-	burst := int(int64Of(rate["burst"]))
+	rps := intOf(rate["rps"])
+	burst := intOf(rate["burst"])
 	if rateOut["enabled"] == true {
 		if rps <= 0 || rps > 10000 {
 			return nil, NewHTTPError(400, "限流速率需为 1-10000 次/秒")
@@ -235,7 +236,7 @@ func validateAdvancedPayload(raw map[string]any, existing map[string]any) (map[s
 			if !advUpstreamRe.MatchString(server) {
 				return nil, NewHTTPError(400, "上游地址必须是 host:port: "+server)
 			}
-			weight := int(int64Of(m["weight"]))
+			weight := intOf(m["weight"])
 			if weight <= 0 || weight > 100 {
 				weight = 1
 			}
@@ -330,8 +331,8 @@ func siteAdvancedServerLines(site map[string]any) []string {
 		lines = append(lines, "    real_ip_header "+header+";", "    real_ip_recursive on;")
 	}
 
-	if rate := mapOf(adv["rate_limit"]); boolOf(rate["enabled"]) && int(int64Of(rate["rps"])) > 0 {
-		burst := int(int64Of(rate["burst"]))
+	if rate := mapOf(adv["rate_limit"]); boolOf(rate["enabled"]) && intOf(rate["rps"]) > 0 {
+		burst := intOf(rate["burst"])
 		line := "    limit_req zone=graw_site_" + id + " burst=" + strconv.Itoa(burst) + " nodelay;"
 		lines = append(lines, line, "    limit_req_status 429;")
 	}
@@ -345,7 +346,7 @@ func siteAdvancedServerLines(site map[string]any) []string {
 			}
 			from := str(m["from"])
 			to := str(m["to"])
-			code := int(int64Of(m["code"]))
+			code := intOf(m["code"])
 			if from == "" || to == "" {
 				continue
 			}
@@ -377,7 +378,7 @@ func siteAdvancedUpstream(site map[string]any) (string, string) {
 	name := "graw_site_" + id
 	lines := []string{"upstream " + name + " {"}
 	for _, u := range ups {
-		weight := int(int64Of(u["weight"]))
+		weight := intOf(u["weight"])
 		if weight <= 0 {
 			weight = 1
 		}
@@ -388,9 +389,10 @@ func siteAdvancedUpstream(site map[string]any) (string, string) {
 }
 
 // siteCORSVar 生成站点 CORS 白名单的 nginx 变量名。
-// 变量名不允许包含 '-'（站点 ID 允许），因此用 ID 的 SHA1 前缀保证唯一。
+// 变量名不允许包含 '-'（站点 ID 允许），因此用 ID 的 SHA-256 前缀保证唯一。
+// 这里只是生成变量名、不涉及敏感数据，用现代哈希避免误报弱算法。
 func siteCORSVar(id string) string {
-	sum := sha1.Sum([]byte(id))
+	sum := sha256.Sum256([]byte(id))
 	return "graw_cors_" + hex.EncodeToString(sum[:4])
 }
 
@@ -423,7 +425,7 @@ func writeSiteZones() {
 		}
 		adv := siteAdvancedOf(s)
 		if rate := mapOf(adv["rate_limit"]); boolOf(rate["enabled"]) {
-			if rps := int(int64Of(rate["rps"])); rps > 0 {
+			if rps := intOf(rate["rps"]); rps > 0 {
 				lines = append(lines, "limit_req_zone $binary_remote_addr zone=graw_site_"+id+":10m rate="+strconv.Itoa(rps)+"r/s;")
 				any = true
 			}

@@ -200,10 +200,10 @@ func registerBackupRoutes(a *App) {
 			task["schedule"] = strings.TrimSpace(str(v))
 		}
 		if v, ok := req["keep_count"]; ok {
-			task["keep_count"] = int(int64Of(v))
+			task["keep_count"] = intOf(v)
 		}
 		if v, ok := req["keep_days"]; ok {
-			task["keep_days"] = int(int64Of(v))
+			task["keep_days"] = intOf(v)
 		}
 		if v, ok := req["enabled"]; ok {
 			task["enabled"] = boolOf(v)
@@ -809,7 +809,7 @@ func backupSyncCron(task map[string]any) error {
 		return nil
 	}
 	command, err := backupCronCommand(str(task["source"]), taskTarget(loadBackupConfig(), task),
-		str(task["safe"]), int(int64Of(task["keep_days"])))
+		str(task["safe"]), intOf(task["keep_days"]))
 	if err != nil {
 		return err
 	}
@@ -907,7 +907,7 @@ func executeBackupTask(data, task map[string]any) (map[string]any, error) {
 	if info, err := os.Stat(dest); err == nil {
 		size = info.Size()
 	}
-	removed := rotateBackupFiles(target, safe, int(int64Of(task["keep_count"])), int(int64Of(task["keep_days"])))
+	removed := rotateBackupFiles(target, safe, intOf(task["keep_count"]), intOf(task["keep_days"]))
 	remoteResult := map[string]any{"uploaded": false, "remote_id": "", "remote_name": "", "error": ""}
 	if rid := str(task["remote_id"]); rid != "" {
 		if remote := findBackupRemote(data, rid); remote != nil {

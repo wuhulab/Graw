@@ -97,7 +97,7 @@ func siteOptsExtra(site map[string]any) []string {
 	}
 	hotlink := mapOf(site["hotlink"])
 	gzipEnabled := boolOf(mapOf(site["gzip"])["enabled"])
-	cacheSeconds := int(int64Of(site["cache_expire"]))
+	cacheSeconds := intOf(site["cache_expire"])
 
 	blocks := []string{}
 	needStatic := boolOf(hotlink["enabled"]) || cacheSeconds > 0
@@ -176,10 +176,21 @@ func sslCertsList(data map[string]any) []map[string]any {
 
 var certDomainRe = regexp.MustCompile(`(?i)^(\*\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$`)
 
+// certPathRe 限定可读取的证书路径：Unix 绝对路径且以常见证书扩展名结尾。
+// 证书路径来自请求（签发/上传）或同步数据，虽只用于解析到期时间、内容不会回传，
+// 但仍需拦住 ../../ 之类的任意文件读取。
+var certPathRe = regexp.MustCompile(`^(/[^/]+)+\.(pem|crt|cer)$`)
+
 func readCertExpiry(path string) string {
 	// 证书路径可能是面板 data 文件，也可能是 /etc/letsencrypt；
 	// 容器部署下只有后者需要叠加 HOST_ROOT。
-	b, err := os.ReadFile(HostFilePath(path))
+	// 只允许 data 目录内的文件，或以证书扩展名结尾的 Unix 绝对路径。
+	p := filepath.Clean(strings.TrimSpace(path))
+	dataRoot := filepath.Clean(GetConfig().DataDir)
+	if !strings.HasPrefix(p, dataRoot+string(filepath.Separator)) && !certPathRe.MatchString(p) {
+		return ""
+	}
+	b, err := os.ReadFile(HostFilePath(p))
 	if err != nil {
 		return ""
 	}
@@ -503,11 +514,11 @@ func registerSiteOptsRoutes(a *App) {
 				o := extOpts[id]
 				hotlink = mapOf(o["hotlink"])
 				gzipEnabled = boolOf(mapOf(o["gzip"])["enabled"])
-				cacheSeconds = int(int64Of(o["cache_expire"]))
+				cacheSeconds = intOf(o["cache_expire"])
 			} else {
 				hotlink = mapOf(s["hotlink"])
 				gzipEnabled = boolOf(mapOf(s["gzip"])["enabled"])
-				cacheSeconds = int(int64Of(s["cache_expire"]))
+				cacheSeconds = intOf(s["cache_expire"])
 			}
 			items = append(items, map[string]any{
 				"id": id, "name": str(s["name"]), "type": str(s["type"]),
@@ -1092,8 +1103,8 @@ func wafZonesConfig(data map[string]any) string {
 			}
 			lines = append(lines, "}")
 			freq := mapOf(mapOf(m["frequency"])["access"])
-			count := int(int64Of(freq["count"]))
-			period := int(int64Of(freq["period"]))
+			count := intOf(freq["count"])
+			period := intOf(freq["period"])
 			if count > 0 && period > 0 {
 				lines = append(lines, "limit_req_zone $binary_remote_addr zone=graw_waf_req_"+id+
 					":10m rate="+itoa(count)+"r/"+itoa(period)+"s;")
@@ -1163,12 +1174,12 @@ func wafNginxConfig(cfg map[string]any) string {
 				wafSafePattern(strings.Join(countries, "|"))+")$\") { "+action+"; }")
 		}
 	}
-	if freq := mapOf(mapOf(cfg["frequency"])["access"]); int(int64Of(freq["count"])) > 0 {
-		burst := int(int64Of(freq["count"]))
+	if freq := mapOf(mapOf(cfg["frequency"])["access"]); intOf(freq["count"]) > 0 {
+		burst := intOf(freq["count"])
 		lines = append(lines, "limit_req zone=graw_waf_req_"+id+" burst="+itoa(burst)+" nodelay;")
 		lines = append(lines, "limit_req_status 429;")
 	}
-	if uploadMB := int(int64Of(mapOf(cfg["custom"])["upload_limit_mb"])); uploadMB > 0 {
+	if uploadMB := intOf(mapOf(cfg["custom"])["upload_limit_mb"]); uploadMB > 0 {
 		lines = append(lines, "client_max_body_size "+itoa(uploadMB)+"m;")
 	}
 	if hall := mapOf(cfg["waiting_hall"]); boolOf(hall["enabled"]) {
@@ -1482,7 +1493,7 @@ func registerWAFRoutes(a *App) {
 			items = append(items, map[string]any{"ip": ip, "count": c})
 		}
 		sort.Slice(items, func(i, j int) bool {
-			return int(int64Of(items[i]["count"])) > int(int64Of(items[j]["count"]))
+			return intOf(items[i]["count"]) > intOf(items[j]["count"])
 		})
 		if len(items) > 100 {
 			items = items[:100]

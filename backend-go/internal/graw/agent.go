@@ -178,7 +178,7 @@ func publicNode(id string, node map[string]any) map[string]any {
 		// SSH 节点额外暴露连接信息；敏感字段只给「是否已配置」。
 		pub["host"] = str(node["host"])
 		pub["port"] = func() int {
-			if p := int(int64Of(node["port"])); p > 0 {
+			if p := intOf(node["port"]); p > 0 {
 				return p
 			}
 			return 22
@@ -190,7 +190,7 @@ func publicNode(id string, node map[string]any) map[string]any {
 		// 只有成对 key/secret 都存在才算 Agent 可用。
 		pub["agent_enabled"] = str(node["agent_key"]) != "" && str(node["agent_secret"]) != ""
 		pub["agent_port"] = func() int {
-			if p := int(int64Of(node["agent_port"])); p > 0 {
+			if p := intOf(node["agent_port"]); p > 0 {
 				return p
 			}
 			return defaultAgentPort
@@ -485,7 +485,7 @@ var (
 
 // nodeKey 生成连接池键（host:port:user）；不含密码，避免凭据进入缓存键。
 func nodeKey(node map[string]any) string {
-	return fmt.Sprintf("%s:%d:%s", str(node["host"]), int(int64Of(node["port"])), str(node["user"]))
+	return fmt.Sprintf("%s:%d:%s", str(node["host"]), intOf(node["port"]), str(node["user"]))
 }
 
 // sshConnect 建立一条新的 SSH 连接（不走连接池），用于节点连通性测试与池内重连。
@@ -494,7 +494,7 @@ func nodeKey(node map[string]any) string {
 // 失败返回错误，调用方决定如何提示（测试接口会把错误原样回给前端）。
 func sshConnect(node map[string]any, timeout time.Duration) (*ssh.Client, error) {
 	host := str(node["host"])
-	port := int(int64Of(node["port"]))
+	port := intOf(node["port"])
 	if port == 0 {
 		port = 22
 	}
@@ -625,11 +625,16 @@ func dropSSHPool(node map[string]any) {
 		delete(sshPool, key)
 	}
 	sshPoolMu.Unlock()
+	// 远端 Docker/Podman 探测结果同样按节点缓存：地址或凭据变更后必须重新探测，
+	// 否则节点重装并装上容器 CLI 后，面板会一直沿用「不可用」的旧结果直到重启。
+	remoteDockerMu.Lock()
+	delete(remoteDockerBins, key)
+	remoteDockerMu.Unlock()
 }
 
 // forgetSSHHostKey 删除节点对应的 TOFU 主机密钥记录（节点重装/换钥后重新信任）。
 func forgetSSHHostKey(node map[string]any) {
-	port := int(int64Of(node["port"]))
+	port := intOf(node["port"])
 	if port == 0 {
 		port = 22
 	}
@@ -667,7 +672,7 @@ func agentToken(node map[string]any, client *ssh.Client) (string, error) {
 		return cached.Token, nil
 	}
 	agentTokenMu.Unlock()
-	port := int(int64Of(node["agent_port"]))
+	port := intOf(node["agent_port"])
 	if port == 0 {
 		port = defaultAgentPort
 	}
@@ -817,7 +822,7 @@ func proxyToAgent(w http.ResponseWriter, r *http.Request, node map[string]any) {
 		WriteJSON(w, 502, map[string]any{"detail": "Agent 代理失败，请检查子节点 Agent 状态"})
 		return
 	}
-	port := int(int64Of(node["agent_port"]))
+	port := intOf(node["agent_port"])
 	if port == 0 {
 		port = defaultAgentPort
 	}
@@ -1124,7 +1129,7 @@ func bridgeAgentWS(w http.ResponseWriter, r *http.Request, node map[string]any, 
 		_ = browser.WriteText([]byte("\r\n[Agent 鉴权失败] " + err.Error() + "\r\n"))
 		return
 	}
-	port := int(int64Of(node["agent_port"]))
+	port := intOf(node["agent_port"])
 	if port == 0 {
 		port = defaultAgentPort
 	}
@@ -1223,7 +1228,7 @@ func registerNodesAndAgentRoutes(a *App) {
 			info = map[string]any{
 				"id": str(node["id"]), "name": str(node["name"]), "type": "ssh",
 				"host":         str(node["host"]),
-				"host_display": str(node["user"]) + "@" + str(node["host"]) + ":" + itoa(int(int64Of(node["port"]))),
+				"host_display": str(node["user"]) + "@" + str(node["host"]) + ":" + itoa(intOf(node["port"])),
 			}
 		} else {
 			info = map[string]any{"id": store.Current, "name": "本机", "type": "local"}
@@ -1538,7 +1543,7 @@ func sortStrings(v []string) {
 
 // nodeAgentPort 返回节点 Agent 监听端口；未配置时回落到默认端口。
 func nodeAgentPort(node map[string]any) int {
-	if p := int(int64Of(node["agent_port"])); p > 0 {
+	if p := intOf(node["agent_port"]); p > 0 {
 		return p
 	}
 	return defaultAgentPort
@@ -1628,11 +1633,17 @@ func parseRemoteOverview(raw string) map[string]any {
 	// 内存：MemAvailable 比 MemFree 更接近真实可用量；/proc/meminfo 单位为 KB。
 	memTotal, memAvail := int64(0), int64(0)
 	for _, line := range strings.Split(blocks["MEM"], "\n") {
+		// 先确认至少有「字段名 值」两列再取下标：远程输出异常（只有 "MemTotal:"）
+		// 时直接索引会 panic，整帧监控数据都会丢。
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
 		if strings.Contains(line, "MemTotal:") {
-			fmt.Sscanf(strings.Fields(line)[1], "%d", &memTotal)
+			fmt.Sscanf(fields[1], "%d", &memTotal)
 		}
 		if strings.Contains(line, "MemAvailable:") {
-			fmt.Sscanf(strings.Fields(line)[1], "%d", &memAvail)
+			fmt.Sscanf(fields[1], "%d", &memAvail)
 		}
 	}
 	memTotal *= 1024

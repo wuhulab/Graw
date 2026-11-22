@@ -299,10 +299,13 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logging := &statusWriter{ResponseWriter: w, status: 200}
 	// 访问日志：只记路径不记查询串（WS 令牌在 ?token= 里，不能落日志）。
 	defer func() {
-		// URL.Path 是解码后的值，%0a 可变成真实换行；落日志前去掉 CR/LF 防日志伪造（CWE-117）。
-		safePath := strings.NewReplacer("\r", "", "\n", "").Replace(r.URL.Path)
-		log.Printf("graw: %s %s %d %s %s", r.Method, safePath, logging.status,
+		// URL.Path 是解码后的值，%0a 可变成真实换行；X-Forwarded-For 也可能被塞进
+		// 非法字符。先把整行拼好再统一剔除 CR/LF，防止日志伪造（CWE-117）。
+		line := fmt.Sprintf("graw: %s %s %d %s %s", r.Method, r.URL.Path, logging.status,
 			time.Since(start).Round(time.Millisecond), ClientIP(r))
+		line = strings.ReplaceAll(line, "\r", "")
+		line = strings.ReplaceAll(line, "\n", "")
+		log.Print(line)
 	}()
 	// 安全响应头（对应 Python 的 security_headers 中间件）。
 	// CSP 已放行 inline/eval（前端构建产物内联脚本与 xterm 需要），

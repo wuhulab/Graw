@@ -765,7 +765,7 @@ func StartTamperMonitor() {
 					if !boolOf(site["enabled"]) {
 						continue
 					}
-					interval := int(int64Of(site["scan_interval_seconds"]))
+					interval := intOf(site["scan_interval_seconds"])
 					if interval <= 0 {
 						interval = defaultScanInterval
 					}

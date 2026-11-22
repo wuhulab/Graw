@@ -103,12 +103,12 @@ func startPortForward(item map[string]any) error {
 	if node == nil || str(node["type"]) != "ssh" {
 		return NewHTTPError(400, "端口转发的节点必须是 SSH 节点")
 	}
-	localPort := int(int64Of(item["local_port"]))
+	localPort := intOf(item["local_port"])
 	if localPort < 1024 || localPort > 65535 {
 		return NewHTTPError(400, "本地端口需在 1024-65535 之间")
 	}
 	remoteHost := str(item["remote_host"])
-	remotePort := int(int64Of(item["remote_port"]))
+	remotePort := intOf(item["remote_port"])
 	if remotePort < 1 || remotePort > 65535 || strings.ContainsAny(remoteHost, " \t\r\n;'\"") {
 		return NewHTTPError(400, "远程目标非法")
 	}
@@ -185,8 +185,8 @@ func portForwardPublic(t *pfTunnel) map[string]any {
 	defer t.mu.Unlock()
 	return map[string]any{
 		"id": str(t.Item["id"]), "name": str(t.Item["name"]), "node_id": str(t.Item["node_id"]),
-		"local_port": int(int64Of(t.Item["local_port"])), "remote_host": str(t.Item["remote_host"]),
-		"remote_port": int(int64Of(t.Item["remote_port"])),
+		"local_port": intOf(t.Item["local_port"]), "remote_host": str(t.Item["remote_host"]),
+		"remote_port": intOf(t.Item["remote_port"]),
 		"connections": t.Conns, "bytes": t.Bytes,
 		"started_at": t.StartedAt.Format("2006-01-02 15:04:05"),
 	}

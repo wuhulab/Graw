@@ -36,10 +36,10 @@ func loadNotify() map[string]any {
 			data["enabled"] = boolOf(cfg["enabled"])
 		}
 		if _, present := data["interval_seconds"]; !present {
-			data["interval_seconds"] = int(int64Of(cfg["interval_seconds"]))
+			data["interval_seconds"] = intOf(cfg["interval_seconds"])
 		}
 		if _, present := data["cooldown_seconds"]; !present {
-			data["cooldown_seconds"] = int(int64Of(cfg["cooldown_seconds"]))
+			data["cooldown_seconds"] = intOf(cfg["cooldown_seconds"])
 		}
 		delete(data, "config")
 	}
@@ -54,7 +54,7 @@ func loadNotify() map[string]any {
 
 // notifyInterval 返回阈值检查间隔（秒），非法值回落到默认 60。
 func notifyInterval(data map[string]any) int {
-	n := int(int64Of(data["interval_seconds"]))
+	n := intOf(data["interval_seconds"])
 	if n < 10 || n > 86400 {
 		return 60
 	}
@@ -63,7 +63,7 @@ func notifyInterval(data map[string]any) int {
 
 // notifyCooldown 返回同一规则告警冷却时间（秒），非法值回落到默认 300。
 func notifyCooldown(data map[string]any) int {
-	n := int(int64Of(data["cooldown_seconds"]))
+	n := intOf(data["cooldown_seconds"])
 	if n < 30 || n > 86400 {
 		return 300
 	}
@@ -240,7 +240,7 @@ func sendSMTP(cfg map[string]any, message string) error {
 	if err := AssertSafeHost(host, true, true); err != nil {
 		return fmt.Errorf("SMTP 主机校验失败：%v", err)
 	}
-	port := int(int64Of(cfg["port"]))
+	port := intOf(cfg["port"])
 	useSSL := boolOf(cfg["ssl"])
 	useStartTLS := boolOf(cfg["starttls"])
 	if port == 0 {
@@ -392,7 +392,7 @@ func validateNotifyChannel(ch map[string]any) *HTTPError {
 		if host == "" {
 			return NewHTTPError(400, "SMTP 主机不能为空")
 		}
-		port := int(int64Of(cfg["port"]))
+		port := intOf(cfg["port"])
 		if port < 1 || port > 65535 {
 			return NewHTTPError(400, "SMTP 端口必须在 1-65535")
 		}
@@ -792,6 +792,68 @@ func validateNotifyRule(rule map[string]any) *HTTPError {
 
 // --- 站点可用性 ---
 
+// uptimeMu / svcMonitorMu 串行化监控配置文件的「读-改-写」。
+// 后台探测协程与 API 编辑都会改写同一份 JSON；没有锁时两边基于旧快照写回，
+// 会把对方刚保存的条目/编辑静默覆盖掉。探测本身必须在锁外执行（可能耗时数十秒）。
+var (
+	uptimeMu     sync.Mutex
+	svcMonitorMu sync.Mutex
+)
+
+// uptimeProbeStateFields 是探测结果独占字段：后台探测写回时只合并这些字段，
+// 用户同时通过 API 修改的 url/间隔/名称等保持最新值。
+var uptimeProbeStateFields = []string{
+	"last_status", "last_code", "last_latency_ms", "last_checked_at",
+	"last_checked_ts", "down_since", "history",
+}
+
+// svcProbeStateFields 是服务监控探测结果独占字段，语义同 uptimeProbeStateFields。
+var svcProbeStateFields = []string{
+	"last_status", "last_detail", "last_checked_at", "last_checked_ts",
+	"down_since", "history",
+}
+
+// cloneJSONMap 深拷贝一个 JSON 形态的 map（探测在锁外修改副本，避免读到锁外的共享数据）。
+func cloneJSONMap(m map[string]any) map[string]any {
+	b, _ := json.Marshal(m)
+	var out map[string]any
+	if json.Unmarshal(b, &out) != nil || out == nil {
+		return map[string]any{}
+	}
+	return out
+}
+
+// pickProbeState 从已探测的条目中提取探测结果字段，供合并写回使用。
+func pickProbeState(item map[string]any, fields []string) map[string]any {
+	state := map[string]any{}
+	for _, k := range fields {
+		if v, ok := item[k]; ok {
+			state[k] = v
+		}
+	}
+	return state
+}
+
+// mergeProbeState 把探测结果按 id 合并进最新配置，只覆盖探测字段。
+// 返回是否有条目被更新；调用方必须已持有对应监控的互斥锁。
+func mergeProbeState(data map[string]any, items []map[string]any, states map[string]map[string]any, fields []string) bool {
+	changed := false
+	for _, it := range items {
+		state, ok := states[str(it["id"])]
+		if !ok {
+			continue
+		}
+		for _, k := range fields {
+			if v, exists := state[k]; exists {
+				it[k] = v
+				changed = true
+			}
+		}
+	}
+	data["items"] = items
+	return changed
+}
+
 func loadUptime() map[string]any {
 	data := map[string]any{"items": []any{}}
 	_ = ReadJSON(DataPath("uptime.json"), &data)
@@ -887,7 +949,7 @@ func uptimeValidateItem(req map[string]any, isCreate bool) *HTTPError {
 		req["url"] = validated
 	}
 	if v, ok := req["expect_status"]; ok || isCreate {
-		n := int(int64Of(v))
+		n := intOf(v)
 		if n == 0 && isCreate {
 			n = 200
 		}
@@ -897,7 +959,7 @@ func uptimeValidateItem(req map[string]any, isCreate bool) *HTTPError {
 		req["expect_status"] = n
 	}
 	if v, ok := req["timeout_seconds"]; ok || isCreate {
-		n := int(int64Of(v))
+		n := intOf(v)
 		if n == 0 {
 			n = 10
 		}
@@ -907,7 +969,7 @@ func uptimeValidateItem(req map[string]any, isCreate bool) *HTTPError {
 		req["timeout_seconds"] = n
 	}
 	if v, ok := req["interval_seconds"]; ok || isCreate {
-		n := int(int64Of(v))
+		n := intOf(v)
 		if n == 0 {
 			n = 60
 		}
@@ -924,10 +986,10 @@ func uptimeValidateItem(req map[string]any, isCreate bool) *HTTPError {
 
 // probeAndAlert 探测单个监控项并更新状态机 / 历史，状态变化时推送通知。
 func probeAndAlert(item map[string]any) map[string]any {
-	result := uptimeProbeURL(str(item["url"]), int(int64Of(item["timeout_seconds"])))
+	result := uptimeProbeURL(str(item["url"]), intOf(item["timeout_seconds"]))
 	now := time.Now()
 	nowISO := now.Format(time.RFC3339)
-	expect := int(int64Of(item["expect_status"]))
+	expect := intOf(item["expect_status"])
 	if expect == 0 {
 		expect = 200
 	}
@@ -1024,9 +1086,12 @@ func registerUptimeRoutes(a *App) {
 		req["last_checked_ts"] = 0
 		req["down_since"] = ""
 		req["history"] = []any{}
+		uptimeMu.Lock()
 		data := loadUptime()
 		data["items"] = append(uptimeItems(data), req)
-		if err := WriteJSONFile(DataPath("uptime.json"), data); err != nil {
+		err := WriteJSONFile(DataPath("uptime.json"), data)
+		uptimeMu.Unlock()
+		if err != nil {
 			return err
 		}
 		return WriteJSON(w, 200, req)
@@ -1040,6 +1105,8 @@ func registerUptimeRoutes(a *App) {
 		if err := uptimeValidateItem(req, false); err != nil {
 			return err
 		}
+		uptimeMu.Lock()
+		defer uptimeMu.Unlock()
 		data := loadUptime()
 		items := uptimeItems(data)
 		var item map[string]any
@@ -1062,6 +1129,8 @@ func registerUptimeRoutes(a *App) {
 	})
 	a.Delete("/api/uptime/items/{item_id}", perm("notify"), func(w http.ResponseWriter, r *http.Request) error {
 		id := PathParam(r, "item_id")
+		uptimeMu.Lock()
+		defer uptimeMu.Unlock()
 		data := loadUptime()
 		kept := []map[string]any{}
 		for _, it := range uptimeItems(data) {
@@ -1077,23 +1146,30 @@ func registerUptimeRoutes(a *App) {
 	})
 	a.Post("/api/uptime/items/{item_id}/test", perm("notify"), func(w http.ResponseWriter, r *http.Request) error {
 		id := PathParam(r, "item_id")
-		data := loadUptime()
-		items := uptimeItems(data)
-		var item map[string]any
-		for _, it := range items {
+		// 锁内只取一份条目副本：探测可能耗时数十秒，不能持锁做网络请求。
+		uptimeMu.Lock()
+		var probe map[string]any
+		for _, it := range uptimeItems(loadUptime()) {
 			if str(it["id"]) == id {
-				item = it
+				probe = cloneJSONMap(it)
+				break
 			}
 		}
-		if item == nil {
+		uptimeMu.Unlock()
+		if probe == nil {
 			return NewHTTPError(404, "监控项不存在")
 		}
-		result := probeAndAlert(item)
-		data["items"] = items
-		if err := WriteJSONFile(DataPath("uptime.json"), data); err != nil {
+		// 探测结果写回副本，再在锁内合并到最新配置，避免覆盖并发编辑。
+		result := probeAndAlert(probe)
+		uptimeMu.Lock()
+		data := loadUptime()
+		mergeProbeState(data, uptimeItems(data),
+			map[string]map[string]any{id: pickProbeState(probe, uptimeProbeStateFields)}, uptimeProbeStateFields)
+		err := WriteJSONFile(DataPath("uptime.json"), data)
+		uptimeMu.Unlock()
+		if err != nil {
 			return err
 		}
-		item["checked_at"] = item["last_checked_at"]
 		return WriteJSON(w, 200, result)
 	})
 }
@@ -1107,7 +1183,7 @@ func loadCertCheck() map[string]any {
 	_ = ReadJSON(DataPath("certcheck.json"), &data)
 	if _, ok := data["remind_days"]; !ok {
 		// 兼容早期 Go 版本写入的 days_before 单档位配置。
-		if legacy := int(int64Of(data["days_before"])); legacy > 0 {
+		if legacy := intOf(data["days_before"]); legacy > 0 {
 			data["remind_days"] = []any{legacy}
 		}
 	}
@@ -1191,7 +1267,7 @@ func certRemindDays(cfg map[string]any) []int {
 		}
 	}
 	if len(days) == 0 {
-		if legacy := int(int64Of(cfg["days_before"])); legacy > 0 {
+		if legacy := intOf(cfg["days_before"]); legacy > 0 {
 			days = []int{legacy}
 		}
 	}
@@ -1284,7 +1360,7 @@ func registerCertcheckRoutes(a *App) {
 		return WriteJSON(w, 200, map[string]any{
 			"enabled": boolOfDefault(cfg["enabled"], true),
 			"interval_seconds": func() int {
-				if n := int(int64Of(cfg["interval_seconds"])); n >= 3600 {
+				if n := intOf(cfg["interval_seconds"]); n >= 3600 {
 					return n
 				}
 				return 86400
@@ -1347,7 +1423,7 @@ func registerCertcheckRoutes(a *App) {
 			return err
 		}
 		return WriteJSON(w, 200, map[string]any{
-			"enabled": boolOfDefault(cfg["enabled"], true), "interval_seconds": int(int64Of(cfg["interval_seconds"])),
+			"enabled": boolOfDefault(cfg["enabled"], true), "interval_seconds": intOf(cfg["interval_seconds"]),
 			"remind_days": certRemindDays(cfg),
 		})
 	})
@@ -1400,7 +1476,7 @@ func probeSvcItem(item map[string]any) map[string]any {
 			}
 		} else {
 			host = defaultString(str(item["host"]), "127.0.0.1")
-			port = int(int64Of(item["port"]))
+			port = intOf(item["port"])
 		}
 		if port < 1 || port > 65535 {
 			return map[string]any{"status": "down", "detail": "端口号超出范围 1-65535"}
@@ -1502,7 +1578,7 @@ func svcValidateItem(req map[string]any, isCreate bool) *HTTPError {
 		req["target"] = target
 	}
 	if v, ok := req["timeout_seconds"]; ok || isCreate {
-		n := int(int64Of(v))
+		n := intOf(v)
 		if n == 0 {
 			n = 5
 		}
@@ -1512,7 +1588,7 @@ func svcValidateItem(req map[string]any, isCreate bool) *HTTPError {
 		req["timeout_seconds"] = n
 	}
 	if v, ok := req["interval_seconds"]; ok || isCreate {
-		n := int(int64Of(v))
+		n := intOf(v)
 		if n == 0 {
 			n = 60
 		}
@@ -1613,9 +1689,12 @@ func registerSvcMonitorRoutes(a *App) {
 		req["last_checked_ts"] = 0
 		req["down_since"] = ""
 		req["history"] = []any{}
+		svcMonitorMu.Lock()
 		data := loadSvcMonitor()
 		data["items"] = append(svcItems(data), req)
-		if err := WriteJSONFile(DataPath("svcmonitor.json"), data); err != nil {
+		err := WriteJSONFile(DataPath("svcmonitor.json"), data)
+		svcMonitorMu.Unlock()
+		if err != nil {
 			return err
 		}
 		return WriteJSON(w, 200, req)
@@ -1629,6 +1708,8 @@ func registerSvcMonitorRoutes(a *App) {
 		if err := svcValidateItem(req, false); err != nil {
 			return err
 		}
+		svcMonitorMu.Lock()
+		defer svcMonitorMu.Unlock()
 		data := loadSvcMonitor()
 		items := svcItems(data)
 		var item map[string]any
@@ -1651,6 +1732,8 @@ func registerSvcMonitorRoutes(a *App) {
 	})
 	a.Delete("/api/svcmonitor/items/{item_id}", perm("svcmonitor"), func(w http.ResponseWriter, r *http.Request) error {
 		id := PathParam(r, "item_id")
+		svcMonitorMu.Lock()
+		defer svcMonitorMu.Unlock()
 		data := loadSvcMonitor()
 		kept := []map[string]any{}
 		for _, it := range svcItems(data) {
@@ -1666,23 +1749,29 @@ func registerSvcMonitorRoutes(a *App) {
 	})
 	a.Post("/api/svcmonitor/items/{item_id}/test", perm("svcmonitor"), func(w http.ResponseWriter, r *http.Request) error {
 		id := PathParam(r, "item_id")
-		data := loadSvcMonitor()
-		items := svcItems(data)
-		var item map[string]any
-		for _, it := range items {
+		// 锁内只取副本，探测（可能数秒）在锁外执行，随后把结果合并回最新配置。
+		svcMonitorMu.Lock()
+		var probe map[string]any
+		for _, it := range svcItems(loadSvcMonitor()) {
 			if str(it["id"]) == id {
-				item = it
+				probe = cloneJSONMap(it)
+				break
 			}
 		}
-		if item == nil {
+		svcMonitorMu.Unlock()
+		if probe == nil {
 			return NewHTTPError(404, "监控项不存在")
 		}
-		result := probeSvcAndAlert(item)
-		data["items"] = items
-		if err := WriteJSONFile(DataPath("svcmonitor.json"), data); err != nil {
+		result := probeSvcAndAlert(probe)
+		svcMonitorMu.Lock()
+		data := loadSvcMonitor()
+		mergeProbeState(data, svcItems(data),
+			map[string]map[string]any{id: pickProbeState(probe, svcProbeStateFields)}, svcProbeStateFields)
+		err := WriteJSONFile(DataPath("svcmonitor.json"), data)
+		svcMonitorMu.Unlock()
+		if err != nil {
 			return err
 		}
-		item["checked_at"] = item["last_checked_at"]
 		return WriteJSON(w, 200, result)
 	})
 	a.Post("/api/svcmonitor/items/{item_id}/action", perm("svcmonitor"), func(w http.ResponseWriter, r *http.Request) error {
@@ -1828,16 +1917,18 @@ func StartMonitors() {
 		for {
 			func() {
 				defer func() { _ = recover() }()
-				data := loadUptime()
-				items := uptimeItems(data)
+				// 锁内只取快照：探测是网络请求（最长可达分钟级），不能持锁。
+				uptimeMu.Lock()
+				items := uptimeItems(loadUptime())
+				uptimeMu.Unlock()
 				now := float64(time.Now().Unix())
-				changed := false
+				states := map[string]map[string]any{}
 				for _, it := range items {
 					if !boolOf(it["enabled"]) && it["enabled"] != nil {
 						continue
 					}
 					last := num(it["last_checked_ts"])
-					interval := int(int64Of(it["interval_seconds"]))
+					interval := intOf(it["interval_seconds"])
 					if interval < 10 {
 						interval = 60
 					}
@@ -1845,11 +1936,16 @@ func StartMonitors() {
 						continue
 					}
 					probeAndAlert(it)
-					changed = true
+					states[str(it["id"])] = pickProbeState(it, uptimeProbeStateFields)
 				}
-				if changed {
-					data["items"] = items
+				if len(states) > 0 {
+					// 写回时重新读取最新配置，只合并探测结果字段，
+					// 避免用探测前的旧快照覆盖用户刚通过 API 做的编辑。
+					uptimeMu.Lock()
+					data := loadUptime()
+					mergeProbeState(data, uptimeItems(data), states, uptimeProbeStateFields)
 					_ = WriteJSONFile(DataPath("uptime.json"), data)
+					uptimeMu.Unlock()
 				}
 			}()
 			time.Sleep(10 * time.Second)
@@ -1860,16 +1956,17 @@ func StartMonitors() {
 		for {
 			func() {
 				defer func() { _ = recover() }()
-				data := loadSvcMonitor()
-				items := svcItems(data)
+				svcMonitorMu.Lock()
+				items := svcItems(loadSvcMonitor())
+				svcMonitorMu.Unlock()
 				now := float64(time.Now().Unix())
-				changed := false
+				states := map[string]map[string]any{}
 				for _, it := range items {
 					if !boolOf(it["enabled"]) && it["enabled"] != nil {
 						continue
 					}
 					last := num(it["last_checked_ts"])
-					interval := int(int64Of(it["interval_seconds"]))
+					interval := intOf(it["interval_seconds"])
 					if interval < 10 {
 						interval = 60
 					}
@@ -1877,11 +1974,14 @@ func StartMonitors() {
 						continue
 					}
 					probeSvcAndAlert(it)
-					changed = true
+					states[str(it["id"])] = pickProbeState(it, svcProbeStateFields)
 				}
-				if changed {
-					data["items"] = items
+				if len(states) > 0 {
+					svcMonitorMu.Lock()
+					data := loadSvcMonitor()
+					mergeProbeState(data, svcItems(data), states, svcProbeStateFields)
 					_ = WriteJSONFile(DataPath("svcmonitor.json"), data)
+					svcMonitorMu.Unlock()
 				}
 			}()
 			time.Sleep(10 * time.Second)
@@ -1903,7 +2003,7 @@ func StartMonitors() {
 				defer func() { _ = recover() }()
 				certCheckOnce()
 			}()
-			interval := int(int64Of(loadCertCheck()["interval_seconds"]))
+			interval := intOf(loadCertCheck()["interval_seconds"])
 			if interval < 3600 {
 				interval = 86400
 			}

@@ -331,13 +331,13 @@ func registerCronRoutes(a *App) {
 			task["alert"] = boolOf(v)
 		}
 		if v, ok := raw["timeout"]; ok && v != nil {
-			task["timeout"] = normalizeCronTimeout(int(int64Of(v)))
+			task["timeout"] = normalizeCronTimeout(intOf(v))
 		}
 		if v, ok := raw["retry"]; ok && v != nil {
-			task["retry"] = normalizeCronRetry(int(int64Of(v)))
+			task["retry"] = normalizeCronRetry(intOf(v))
 		}
 		if v, ok := raw["keep_count"]; ok && v != nil {
-			task["keep_count"] = normalizeCronKeep(int(int64Of(v)))
+			task["keep_count"] = normalizeCronKeep(intOf(v))
 		}
 		if _, hasCommand := raw["command"]; !hasCommand {
 			if _, hasType := raw["task_type"]; hasType {
@@ -455,6 +455,16 @@ func currentLogRegistry() map[string]string {
 	return reg
 }
 
+// hostLogExists 判断日志文件是否可读。
+// 面板自己的 panel.log 位于进程 data 目录，容器模式下不能用 HostExists
+// （它会叠加 HOST_ROOT，指向宿主机上的另一条路径而误报不存在）。
+func hostLogExists(path string) bool {
+	if remoteActive() {
+		return HostExists(path)
+	}
+	return fileExists(HostFilePath(path))
+}
+
 func safeLogPath(input string) (string, error) {
 	if strings.HasPrefix(input, `\\?\`) || strings.HasPrefix(input, `\\.\`) ||
 		strings.HasPrefix(input, `\\`) || strings.HasPrefix(input, "//") && remoteActive() {
@@ -510,13 +520,13 @@ func registerLogsRoutes(a *App) {
 		for id, path := range currentLogRegistry() {
 			items = append(items, map[string]any{
 				"id": id, "name": descs[id], "path": path,
-				"exists": HostExists(path), "builtin": true,
+				"exists": hostLogExists(path), "builtin": true,
 			})
 		}
 		for _, c := range loadCustomLogs() {
 			items = append(items, map[string]any{
 				"id": str(c["id"]), "name": str(c["name"]), "path": str(c["path"]),
-				"exists": HostExists(str(c["path"])), "builtin": false,
+				"exists": hostLogExists(str(c["path"])), "builtin": false,
 			})
 		}
 		return WriteJSON(w, 200, map[string]any{"logs": items})
@@ -534,7 +544,7 @@ func registerLogsRoutes(a *App) {
 		if err != nil {
 			return err
 		}
-		if !HostExists(safe) {
+		if !hostLogExists(safe) {
 			return NewHTTPError(404, "Log file not found")
 		}
 		if remoteActive() {
@@ -550,7 +560,7 @@ func registerLogsRoutes(a *App) {
 			}
 			return WriteJSON(w, 200, map[string]any{"path": path, "lines": lines, "count": len(lines)})
 		}
-		real := HostPath(safe)
+		real := HostFilePath(safe)
 		st, statErr := os.Stat(real)
 		if statErr != nil {
 			return NewHTTPError(404, "Log file not found")
@@ -626,11 +636,18 @@ func registerLogsRoutes(a *App) {
 		if err != nil {
 			return err
 		}
-		if !HostExists(safe) {
+		if !hostLogExists(safe) {
 			return NewHTTPError(404, "Log file not found")
 		}
-		if err := HostWriteBytes(safe, []byte(""), 0o644); err != nil {
-			return err
+		if remoteActive() {
+			if err := HostWriteBytes(safe, []byte(""), 0o644); err != nil {
+				return err
+			}
+		} else {
+			// panel.log 在进程 data 目录内，不能经 HostPath 叠加 HOST_ROOT。
+			if err := os.WriteFile(HostFilePath(safe), []byte(""), 0o644); err != nil {
+				return err
+			}
 		}
 		return WriteJSON(w, 200, map[string]any{"ok": true})
 	})

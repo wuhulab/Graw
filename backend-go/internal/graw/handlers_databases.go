@@ -61,7 +61,7 @@ func findDBConnection(id string) (map[string]any, error) {
 }
 
 func dbConnPort(conn map[string]any, def int) int {
-	p := int(int64Of(conn["port"]))
+	p := intOf(conn["port"])
 	if p == 0 {
 		return def
 	}

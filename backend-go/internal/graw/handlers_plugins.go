@@ -536,7 +536,7 @@ func installPlugin(req pluginInstallRequest) (map[string]any, error) {
 
 	port := req.Port
 	if port == 0 {
-		port = int(int64Of(mapOf(manifest["entry"])["port"]))
+		port = intOf(mapOf(manifest["entry"])["port"])
 	}
 	if port > 0 {
 		if svc, ok := services[entrySvc].(map[string]any); ok {
@@ -583,7 +583,7 @@ func installPlugin(req pluginInstallRequest) (map[string]any, error) {
 
 	record := map[string]any{
 		"id": pid, "name": str(manifest["name"]), "version": str(manifest["version"]),
-		"api_version": int(int64Of(manifest["api_version"])),
+		"api_version": intOf(manifest["api_version"]),
 		"author":      str(manifest["author"]), "description": str(manifest["description"]),
 		"category": str(manifest["category"]), "capabilities": manifest["capabilities"],
 		"manifest": manifest, "token_hash": hashToken(token), "compose_file": composePath,

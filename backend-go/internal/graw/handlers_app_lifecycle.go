@@ -464,7 +464,9 @@ func extractTarGz(archivePath, destDir string) error {
 			return nerr
 		}
 		name := filepath.Clean(strings.ReplaceAll(hdr.Name, "\\", "/"))
-		if name == "." || strings.HasPrefix(name, ".."+string(filepath.Separator)) || filepath.IsAbs(name) {
+		// 归档条目名完全不可信：IsLocal 会拒绝绝对路径、盘符、.. 越界与
+		// Windows 保留设备名，比手写前缀比较更完整（也覆盖 CWE-22 的旁路写法）。
+		if name == "." || !filepath.IsLocal(name) {
 			return fmt.Errorf("归档包含非法路径: %s", hdr.Name)
 		}
 		target := filepath.Join(root, name)

@@ -488,6 +488,11 @@ func oauthCallbackHandler(w http.ResponseWriter, r *http.Request) error {
 		strings.ReplaceAll(strings.ReplaceAll(ip, "\r", ""), "\n", ""))
 
 	// 第十步：把 ticket 拼回发起时的面板内路径并 302；no-store 防止 URL 被缓存
+	// 跳转前再校验一次：redirect 可能来自 query 或 state，必须限定为本地路径。
+	redirect = sanitizeOAuthRedirect(redirect)
+	if !isValidRedirect(redirect) {
+		redirect = "/"
+	}
 	u, _ := url.Parse(redirect)
 	uq := u.Query()
 	uq.Set("oauth_ticket", ticket)
@@ -912,19 +917,34 @@ func sanitizeOAuthUsername(raw, subject string) string {
 	return s
 }
 
-// sanitizeOAuthRedirect 把登录后的跳转目标限制为面板内绝对路径，防止开放重定向：
-// 空值、非 / 开头、以 // 开头（协议相对 URL）、绝对 URL 或带 Host 的输入统一回退到 "/"。
-// 返回值只保留路径部分，原始 query 会被丢弃；调用方需要 query 时自行追加。
-func sanitizeOAuthRedirect(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" || !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") {
-		return "/"
+// isValidRedirect 判断跳转目标是否是面板内的本地路径，防止开放重定向：
+// 必须以单个 "/" 开头（排除 "//host" 与 "/\host" 这类浏览器会当成协议相对 URL 的写法），
+// 解析后不能带 scheme/host，且路径不能为空。
+func isValidRedirect(raw string) bool {
+	if raw == "" || raw[0] != '/' {
+		return false
+	}
+	// 第二个字符是 / 或 \ 时，浏览器会把它解释为 "//host" 形式的站外地址。
+	if len(raw) > 1 && (raw[1] == '/' || raw[1] == '\\') {
+		return false
 	}
 	u, err := url.Parse(raw)
 	if err != nil || u.IsAbs() || u.Host != "" {
+		return false
+	}
+	return u.Path != ""
+}
+
+// sanitizeOAuthRedirect 把登录后的跳转目标限制为面板内绝对路径：
+// 非法输入统一回退到 "/"；返回值只保留路径部分，原始 query 会被丢弃，
+// 调用方需要 query 时自行追加。
+func sanitizeOAuthRedirect(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if !isValidRedirect(raw) {
 		return "/"
 	}
-	if u.Path == "" {
+	u, err := url.Parse(raw)
+	if err != nil {
 		return "/"
 	}
 	return u.Path
@@ -934,7 +954,11 @@ func sanitizeOAuthRedirect(raw string) string {
 // 错误文本会裁剪到 300 字符，且始终先经 sanitizeOAuthRedirect 防止开放重定向；
 // 响应带 no-store，避免错误 URL 被缓存或出现在共享缓存里。
 func oauthRedirectError(w http.ResponseWriter, r *http.Request, redirect, message string) error {
-	u, err := url.Parse(sanitizeOAuthRedirect(redirect))
+	redirect = sanitizeOAuthRedirect(redirect)
+	if !isValidRedirect(redirect) {
+		redirect = "/"
+	}
+	u, err := url.Parse(redirect)
 	if err != nil {
 		u, _ = url.Parse("/")
 	}

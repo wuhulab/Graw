@@ -84,7 +84,7 @@ func flushPort(port int, proto string) {
 }
 
 func addPortRule(rule map[string]any) {
-	port := int(int64Of(rule["port"]))
+	port := intOf(rule["port"])
 	proto := str(rule["protocol"])
 	if proto == "" {
 		proto = "tcp"
@@ -118,7 +118,7 @@ func delPortRule(rule map[string]any) {
 	if proto == "" {
 		proto = "tcp"
 	}
-	flushPort(int(int64Of(rule["port"])), proto)
+	flushPort(intOf(rule["port"]), proto)
 }
 
 func addIPRule(rule map[string]any) {
@@ -349,7 +349,7 @@ func registerFirewallRoutes(a *App) {
 		allowed := map[int]bool{}
 		for _, rule := range firewallRules(data, "port_rules") {
 			if str(rule["action"]) == "allow" {
-				allowed[int(int64Of(rule["port"]))] = true
+				allowed[intOf(rule["port"])] = true
 			}
 		}
 		ports := listeningTCPPorts()
@@ -370,7 +370,7 @@ func registerFirewallRoutes(a *App) {
 		data := loadFirewall()
 		allowSet, denySet := map[int]bool{}, map[int]bool{}
 		for _, rule := range firewallRules(data, "port_rules") {
-			p := int(int64Of(rule["port"]))
+			p := intOf(rule["port"])
 			if str(rule["action"]) == "allow" {
 				allowSet[p] = true
 			} else if str(rule["action"]) == "deny" {

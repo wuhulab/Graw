@@ -26,7 +26,7 @@ func agentJSONGet(node map[string]any, path string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	port := int(int64Of(node["agent_port"]))
+	port := intOf(node["agent_port"])
 	if port == 0 {
 		port = defaultAgentPort
 	}

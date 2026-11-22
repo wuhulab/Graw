@@ -58,6 +58,9 @@ type MetricsHub struct {
 	lastDisk ioCounters
 	rNet     ioCounters
 	rDisk    ioCounters
+	// rNodeID 记录 rNet/rDisk 基线所属的远程节点。切换节点后旧基线属于另一台机器，
+	// 继续差分会把两台机器的累计值混在一起，产生一次异常巨大的假速率。
+	rNodeID string
 }
 
 // metricsHub 是进程级单例。clients 必须初始化：AddClient 直接向该 map 写入，nil map 会 panic。
@@ -540,11 +543,17 @@ func (h *MetricsHub) remoteOverview() map[string]any {
 	}
 	memTotal, memAvail := int64(0), int64(0)
 	for _, line := range strings.Split(blocks["MEM"], "\n") {
+		// 先确认至少有「字段名 值」两列再取下标：远程输出异常（只有 "MemTotal:"）
+		// 时直接索引会 panic，整帧监控数据都会丢。
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
 		if strings.HasPrefix(line, "MemTotal:") {
-			fmt.Sscanf(strings.Fields(line)[1], "%d", &memTotal)
+			fmt.Sscanf(fields[1], "%d", &memTotal)
 		}
 		if strings.HasPrefix(line, "MemAvailable:") {
-			fmt.Sscanf(strings.Fields(line)[1], "%d", &memAvail)
+			fmt.Sscanf(fields[1], "%d", &memAvail)
 		}
 	}
 	// /proc/meminfo 的单位是 kB，×1024 才是字节，与前端口径一致。
@@ -637,13 +646,28 @@ func (h *MetricsHub) remoteNetBytes() (uint64, uint64) {
 func (h *MetricsHub) remoteNetwork() map[string]any {
 	sent, recv := h.remoteNetBytes()
 	now := time.Now()
+	nodeID := resolvedNodeID()
 	h.mu.Lock()
+	// 节点变化时丢弃旧节点基线，否则差值会跨机器计算，首帧出现异常速率。
+	reset := h.rNodeID != nodeID
+	if reset {
+		h.rNet = ioCounters{}
+		h.rDisk = ioCounters{}
+		h.rNodeID = nodeID
+	}
 	prevSent, prevRecv := h.rNet.NetOut, h.rNet.NetIn
 	prevAt := h.rNet.At
 	h.rNet = ioCounters{At: now, NetOut: sent, NetIn: recv}
 	h.mu.Unlock()
+	// 首帧/切换节点：只建立基线，速率返回 0（累计量不能当作 1 秒流量）。
+	if reset || prevAt.IsZero() {
+		return map[string]any{
+			"timestamp": now.UnixMilli(), "upload": 0.0, "download": 0.0,
+			"total_sent": sent, "total_recv": recv,
+		}
+	}
 	elapsed := now.Sub(prevAt).Seconds()
-	if prevAt.IsZero() || elapsed < 0.001 {
+	if elapsed < 0.001 {
 		elapsed = 1
 	}
 	up := float64(int64(sent)-int64(prevSent)) / elapsed
@@ -697,13 +721,25 @@ func (h *MetricsHub) remoteDiskIO() map[string]any {
 		write += row.writeSector * 512
 	}
 	now := time.Now()
+	nodeID := resolvedNodeID()
 	h.mu.Lock()
+	// 与 remoteNetwork 共用节点基线：切换节点时一并丢弃旧磁盘基线。
+	reset := h.rNodeID != nodeID
+	if reset {
+		h.rNet = ioCounters{}
+		h.rDisk = ioCounters{}
+		h.rNodeID = nodeID
+	}
 	prevRead, prevWrite := h.rDisk.DiskR, h.rDisk.DiskW
 	prevAt := h.rDisk.At
 	h.rDisk = ioCounters{At: now, DiskR: read, DiskW: write}
 	h.mu.Unlock()
+	// 首帧/切换节点：只建立基线，速率返回 0。
+	if reset || prevAt.IsZero() {
+		return map[string]any{"timestamp": now.UnixMilli(), "read": 0.0, "write": 0.0}
+	}
 	elapsed := now.Sub(prevAt).Seconds()
-	if prevAt.IsZero() || elapsed < 0.001 {
+	if elapsed < 0.001 {
 		elapsed = 1
 	}
 	rs := float64(int64(read)-int64(prevRead)) / elapsed

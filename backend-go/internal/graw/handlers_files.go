@@ -539,11 +539,12 @@ func filesCompressHandler(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		real := HostPath(v)
-		if !Exists(real) {
+		// 存在性必须走 HostExists：远程 SSH 节点下 HostPath 返回的是远端路径，
+		// 用本地 Exists 判断会误报「Paths not found」，远程压缩永远失败。
+		if !HostExists(v) {
 			return NewHTTPError(404, "Paths not found: "+p)
 		}
-		paths = append(paths, real)
+		paths = append(paths, HostPath(v))
 	}
 	if len(paths) == 0 {
 		return NewHTTPError(400, "请选择要压缩的路径")
@@ -726,20 +727,24 @@ func filesExtractHandler(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	archive, dest := HostPath(archiveView), HostPath(destView)
-	if st, err := os.Stat(archive); err != nil || st.IsDir() {
+	// 存在性检查必须走 HostIsFile：远程节点下 archive 是远端路径，
+	// 本地 os.Stat 只会得到「文件不存在」，远程解压会被误判为 404。
+	if !HostIsFile(archiveView) {
 		return NewHTTPError(404, "Archive not found")
 	}
-	if err := os.MkdirAll(dest, 0o755); err != nil {
-		return filesOpError(err, "解压失败")
-	}
-	lower := strings.ToLower(archive)
 	if remoteActive() {
-		if err := remoteExtractArchive(archive, dest, lower); err != nil {
+		// 远程分支的目标目录由 remoteExtractArchive 内部创建，不能在这里用本地
+		// os.MkdirAll（会把目录建到控制器的文件系统上）。
+		if err := remoteExtractArchive(archive, dest, strings.ToLower(archive)); err != nil {
 			return err
 		}
 		AuditRecord("解压", u.Username(), ClientIP(r), archiveView+" -> "+destView)
 		return WriteJSON(w, 200, map[string]any{"ok": true})
 	}
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return filesOpError(err, "解压失败")
+	}
+	lower := strings.ToLower(archive)
 	if strings.HasSuffix(lower, ".zip") {
 		err = extractZip(archive, dest)
 	} else {

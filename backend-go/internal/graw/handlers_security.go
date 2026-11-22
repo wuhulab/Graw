@@ -747,7 +747,7 @@ func healthcheckPorts() []map[string]any {
 	}
 	rulePorts := map[int]bool{}
 	for _, rule := range firewallRules(fw, "port_rules") {
-		if p := int(int64Of(rule["port"])); p > 0 {
+		if p := intOf(rule["port"]); p > 0 {
 			rulePorts[p] = true
 		}
 	}
@@ -1181,7 +1181,7 @@ func registerSlowQueryRoutes(a *App) {
 			if !isMySQLFamily(dbType) {
 				continue
 			}
-			port := int(int64Of(c["port"]))
+			port := intOf(c["port"])
 			if port == 0 {
 				port = 3306
 			}
@@ -1208,7 +1208,7 @@ func registerSlowQueryRoutes(a *App) {
 			return NewHTTPError(400, "仅支持 MySQL / MariaDB 连接")
 		}
 		host := defaultString(str(conn["host"]), "127.0.0.1")
-		port := int(int64Of(conn["port"]))
+		port := intOf(conn["port"])
 		if port == 0 {
 			port = 3306
 		}

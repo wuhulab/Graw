@@ -96,7 +96,7 @@ func saveCronReport(task map[string]any, output string, exitCode, attempts int) 
 	header := fmt.Sprintf("任务: %s\n命令: %s\n退出码: %d\n尝试次数: %d\n时间: %s\n\n",
 		str(task["name"]), str(task["command"]), exitCode, attempts, time.Now().Format("2006-01-02 15:04:05"))
 	_ = os.WriteFile(path, []byte(header+output), 0o600)
-	pruneCronReports(id, int(int64Of(task["keep_count"])))
+	pruneCronReports(id, intOf(task["keep_count"]))
 	return name
 }
 
@@ -148,8 +148,8 @@ func runCronTaskNow(task map[string]any) map[string]any {
 		runCommand(30*time.Second, "schtasks", "/run", "/tn", str(task["name"]))
 		return map[string]any{"ok": true, "mode": "schtasks", "output": "已下发到 Windows 任务计划程序"}
 	}
-	timeout := normalizeCronTimeout(int(int64Of(task["timeout"])))
-	retry := normalizeCronRetry(int(int64Of(task["retry"])))
+	timeout := normalizeCronTimeout(intOf(task["timeout"]))
+	retry := normalizeCronRetry(intOf(task["retry"]))
 	output := ""
 	code := 0
 	attempts := 0
@@ -225,9 +225,9 @@ func cronImport(tasks []map[string]any, scripts []map[string]any) (int, int, err
 			"command": command, "enabled": boolOf(t["enabled"]),
 			"task_type": str(t["task_type"]), "content": str(t["content"]),
 			"group": defaultString(str(t["group"]), "默认"), "alert": boolOf(t["alert"]),
-			"timeout":    normalizeCronTimeout(int(int64Of(t["timeout"]))),
-			"retry":      normalizeCronRetry(int(int64Of(t["retry"]))),
-			"keep_count": normalizeCronKeep(int(int64Of(t["keep_count"]))),
+			"timeout":    normalizeCronTimeout(intOf(t["timeout"])),
+			"retry":      normalizeCronRetry(intOf(t["retry"])),
+			"keep_count": normalizeCronKeep(intOf(t["keep_count"])),
 			"created_at": time.Now().Format("2006-01-02T15:04:05"),
 		}
 		existing = append(existing, nt)

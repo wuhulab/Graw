@@ -83,7 +83,6 @@ export default {
       portsHint: '每行一个，例如 8080:80 或 53:53/udp',
       invalidPort: '端口格式错误：{line}（应为 8080:80 或 53:53/udp）',
       env: '环境变量',
-      volumes: '卷挂载',
       network: '网络',
       restart: '重启策略',
       command: '启动命令（可选）',

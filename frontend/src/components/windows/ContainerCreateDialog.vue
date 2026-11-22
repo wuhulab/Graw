@@ -26,7 +26,7 @@
         <label class="field">{{ $t('docker.p1.env') }}
           <textarea v-model="form.env" class="area" spellcheck="false" placeholder="TZ=Asia/Shanghai" />
         </label>
-        <label class="field">{{ $t('docker.p1.volumes') }}
+        <label class="field">{{ $t('docker.p1.mounts') }}
           <textarea v-model="form.volumes" class="area" spellcheck="false" placeholder="/data/app:/app" />
         </label>
         <div class="row">

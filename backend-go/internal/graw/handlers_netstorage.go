@@ -115,7 +115,7 @@ func nsValidateConn(conn map[string]any, isCreate bool) *HTTPError {
 		}
 	}
 	conn["host"] = host
-	port := int(int64Of(conn["port"]))
+	port := intOf(conn["port"])
 	if port == 0 {
 		port = nsDefaultPt[typ]
 	}
@@ -444,7 +444,7 @@ func nsTest(conn map[string]any) error {
 		}
 		return nil
 	case "smb":
-		addr := net.JoinHostPort(str(conn["host"]), itoa(int(int64Of(conn["port"]))))
+		addr := net.JoinHostPort(str(conn["host"]), itoa(intOf(conn["port"])))
 		nc, err := net.DialTimeout("tcp", addr, 5*time.Second)
 		if err != nil {
 			return err
@@ -730,7 +730,7 @@ func ftpDial(conn map[string]any) (*ftpClient, error) {
 	if nsCtrlRe.MatchString(user) || nsCtrlRe.MatchString(pass) {
 		return nil, NewHTTPError(400, "FTP 用户名/密码包含控制字符")
 	}
-	port := int(int64Of(conn["port"]))
+	port := intOf(conn["port"])
 	if port == 0 {
 		if str(conn["type"]) == "ftps" {
 			port = 990
@@ -927,7 +927,7 @@ func webdavBase(conn map[string]any) string {
 		scheme = "https"
 	}
 	host := str(conn["host"])
-	port := int(int64Of(conn["port"]))
+	port := intOf(conn["port"])
 	if port > 0 && !((scheme == "http" && port == 80) || (scheme == "https" && port == 443)) {
 		host = net.JoinHostPort(host, itoa(port))
 	}
@@ -1116,7 +1116,7 @@ func mcRun(conn map[string]any, args ...string) ([]byte, error) {
 	if bin == "" {
 		return nil, fmt.Errorf("宿主机未安装 mc（MinIO Client）")
 	}
-	port := int(int64Of(conn["port"]))
+	port := intOf(conn["port"])
 	// secure 优先取 params.secure（前端表单字段）；缺省按端口 443 判定（与 Python 一致）。
 	secure := port == 443
 	if v, ok := nsParams(conn)["secure"].(bool); ok {
