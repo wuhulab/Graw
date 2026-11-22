@@ -185,7 +185,8 @@ func readCertExpiry(path string) string {
 	// 证书路径可能是面板 data 文件，也可能是 /etc/letsencrypt；
 	// 容器部署下只有后者需要叠加 HOST_ROOT。
 	// 只允许 data 目录内的文件，或以证书扩展名结尾的 Unix 绝对路径。
-	p := filepath.Clean(strings.TrimSpace(path))
+	// 先剔除 .. 片段再 Clean，避免被构造成跨目录读取。
+	p := filepath.Clean(strings.ReplaceAll(strings.TrimSpace(path), "..", ""))
 	dataRoot := filepath.Clean(GetConfig().DataDir)
 	if !strings.HasPrefix(p, dataRoot+string(filepath.Separator)) && !certPathRe.MatchString(p) {
 		return ""

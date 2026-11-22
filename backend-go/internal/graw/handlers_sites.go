@@ -214,11 +214,11 @@ func siteStr(site map[string]any, key string) string { return str(site[key]) }
 func siteBool(site map[string]any, key string) bool { return boolOf(site[key]) }
 
 func siteInt(site map[string]any, key string, def int) int {
-	n := int64Of(site[key])
+	n := intOf(site[key])
 	if n == 0 {
 		return def
 	}
-	return int(n)
+	return n
 }
 
 func siteDomains(site map[string]any) []string {

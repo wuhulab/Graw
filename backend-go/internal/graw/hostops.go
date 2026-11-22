@@ -182,7 +182,9 @@ func asExitError(err error, target **ssh.ExitError) bool {
 // remoteNodeCmd 以 argv 形式在节点执行命令：每个参数（含命令名）都先经 shellQuote 转义，
 // 杜绝参数内容被拼进命令语法；命令名允许路径形式（如 /usr/bin/foo）。
 func remoteNodeCmd(node map[string]any, timeout time.Duration, name string, args ...string) CmdResult {
-	parts := make([]string, 0, len(args)+1)
+	// 不做 len(args)+1 预分配：参数个数来自远端命令调用方，预分配容量属于不可控的
+	// 分配尺寸；这里参数规模很小，交给 append 自增长即可。
+	var parts []string
 	parts = append(parts, shellQuote(name))
 	for _, a := range args {
 		parts = append(parts, shellQuote(a))

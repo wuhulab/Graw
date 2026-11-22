@@ -2,9 +2,9 @@ package graw
 
 import (
 	"crypto/sha1"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"hash/fnv"
 	"net"
 	"net/http"
 	"os"
@@ -389,11 +389,12 @@ func siteAdvancedUpstream(site map[string]any) (string, string) {
 }
 
 // siteCORSVar 生成站点 CORS 白名单的 nginx 变量名。
-// 变量名不允许包含 '-'（站点 ID 允许），因此用 ID 的 SHA-256 前缀保证唯一。
-// 这里只是生成变量名、不涉及敏感数据，用现代哈希避免误报弱算法。
+// 变量名不允许包含 '-'（站点 ID 允许），用 ID 的非加密哈希前缀保证唯一即可：
+// 这里只用于命名、不涉及任何安全属性，无需 SHA 系列算法。
 func siteCORSVar(id string) string {
-	sum := sha256.Sum256([]byte(id))
-	return "graw_cors_" + hex.EncodeToString(sum[:4])
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(id))
+	return "graw_cors_" + hex.EncodeToString(h.Sum(nil)[:4])
 }
 
 // corsOriginPattern 把来源转换为 map 的正则键：转义正则元字符，

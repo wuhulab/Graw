@@ -466,6 +466,9 @@ func hostLogExists(path string) bool {
 }
 
 func safeLogPath(input string) (string, error) {
+	// 先剔除 .. 片段：日志路径可由请求参数指定，Clean 之前先消解穿越写法，
+	// 防止通过 ../ 跳出预期目录（后续仍会再做 Clean 与 data 目录保护）。
+	input = strings.ReplaceAll(input, "..", "")
 	if strings.HasPrefix(input, `\\?\`) || strings.HasPrefix(input, `\\.\`) ||
 		strings.HasPrefix(input, `\\`) || strings.HasPrefix(input, "//") && remoteActive() {
 		return "", NewHTTPError(400, "非法日志路径")
