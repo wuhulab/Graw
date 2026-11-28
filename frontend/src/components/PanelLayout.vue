@@ -227,28 +227,28 @@
             <div class="pnl-empty-sub">{{ $t('panel.emptySub') }}</div>
           </div>
         </div>
+
+        <!-- 页脚：社区版版权与版本号。放在主内容列内（左侧菜单栏右侧），不横跨/遮挡菜单栏。
+             版本号取公开接口 /api/health；点击后打开「设置 → 关于」页查看版本检测与一键更新。 -->
+        <footer class="pnl-footer">
+          <span class="pnl-footer-built">
+            <!-- 品牌外链：用 i18n-t + 具名插槽，保证不同语种下的语序正确 -->
+            <i18n-t keypath="panel.footer.builtOn" tag="span">
+              <template #graw>
+                <a class="pnl-footer-link" :href="SOURCE_REPO_URL" target="_blank" rel="noopener noreferrer">Graw</a>
+              </template>
+            </i18n-t>
+          </span>
+          <span class="pnl-footer-copy">{{ $t('panel.footer.copyright') }}</span>
+          <button
+            v-if="panelVersion"
+            class="pnl-footer-version"
+            :title="$t('panel.footer.versionTip')"
+            @click="emit('open-version')"
+          >v{{ panelVersion }}</button>
+        </footer>
       </main>
     </div>
-
-    <!-- 页脚：社区版版权与版本号（仅标准面板模式展示）。
-         版本号取公开接口 /api/health；点击后打开「设置 → 关于」页查看版本检测与一键更新。 -->
-    <footer class="pnl-footer">
-      <span class="pnl-footer-built">
-        <!-- 品牌外链：用 i18n-t + 具名插槽，保证不同语种下的语序正确 -->
-        <i18n-t keypath="panel.footer.builtOn" tag="span">
-          <template #graw>
-            <a class="pnl-footer-link" :href="SOURCE_REPO_URL" target="_blank" rel="noopener noreferrer">Graw</a>
-          </template>
-        </i18n-t>
-      </span>
-      <span class="pnl-footer-copy">{{ $t('panel.footer.copyright') }}</span>
-      <button
-        v-if="panelVersion"
-        class="pnl-footer-version"
-        :title="$t('panel.footer.versionTip')"
-        @click="emit('open-version')"
-      >v{{ panelVersion }}</button>
-    </footer>
 
     <!-- 侧边栏应用右键菜单：收藏 / 取消收藏 / 隐藏此应用（收藏置顶；隐藏后在设置里可恢复） -->
     <Transition name="pnl-drop">
@@ -1055,14 +1055,14 @@ html[data-theme="dark"] .pnl-menu::-webkit-scrollbar-thumb:hover {
 .pnl-empty-text { font-size: 14px; font-weight: 600; color: var(--g-text-muted); }
 .pnl-empty-sub { font-size: 12px; color: #aeaeb2; }
 
-/* ---- 页脚：社区版版权 + 版本号 ---- */
+/* ---- 页脚：社区版版权 + 版本号（位于主内容列底部，左侧紧贴菜单栏右侧） ---- */
 .pnl-footer {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 5px;
   height: 26px;
-  padding: 0 12px;
+  padding: 0 14px;
   background: var(--g-surface);
   border-top: 1px solid var(--g-border-soft);
   font-size: 11px;
