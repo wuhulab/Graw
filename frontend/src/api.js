@@ -27,10 +27,17 @@ function attachToken(config) {
     config.headers = config.headers || {}
     config.headers.Authorization = `Bearer ${auth.token}`
   }
-  // 统一面板兼容：聚焦窗口绑定的节点经 X-Graw-Node 下发给后端；为空则走全局当前节点
-  const node = getRequestNode()
+  config.headers = config.headers || {}
+  // 调用方显式指定 X-Graw-Node 时优先：工具浮窗里的「文件管理」固定绑定创建时
+  // 选择的节点，不能跟随当前聚焦窗口的请求级节点。未指定时才用全局请求级节点。
+  let explicit = ''
+  if (typeof config.headers.get === 'function') {
+    explicit = config.headers.get('X-Graw-Node') || ''
+  } else {
+    explicit = config.headers['X-Graw-Node'] || ''
+  }
+  const node = String(explicit || '').trim() || getRequestNode()
   if (node) {
-    config.headers = config.headers || {}
     config.headers['X-Graw-Node'] = node
   }
   return config

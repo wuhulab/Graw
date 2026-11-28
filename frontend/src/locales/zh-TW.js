@@ -634,6 +634,28 @@ export default {
     copy: '複製',
     paste: '貼上',
   },
+  // 右側「工具」書籤（終端 / 檔案管理）
+  toolDock: {
+    title: '工具',
+    open: '開啟工具面板',
+    collapse: '收回面板',
+    newTool: '新增',
+    toolTerminal: '終端',
+    toolFiles: '檔案管理',
+    chooseNode: '選擇節點',
+    tabCount: '{n} 個標籤',
+    empty: '尚無工具，點「+」選擇節點建立終端或檔案管理',
+    closeTab: '關閉標籤',
+    closeConfirm: '關閉「{name}」將結束後端常駐的 shell 進程，確定嗎？',
+    pathPlaceholder: '輸入路徑，按 Enter 跳轉',
+    uploading: '正在上傳…',
+    local: '本機',
+    copy: '複製',
+    paste: '貼上',
+    connecting: '連線中…',
+    connected: '已連線',
+    reconnecting: '連線中斷，正在重連…',
+  },
   // Graw資料庫保護機制
   protection: {
     title: 'Graw資料庫保護機制',

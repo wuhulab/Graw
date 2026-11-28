@@ -639,7 +639,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'         // 响应式、计算属性、挂载
+import { ref, reactive, computed, onMounted, watch } from 'vue'         // 响应式、计算属性、挂载、监听
 import { useI18n } from 'vue-i18n'                               // 国际化：取 t() 生成动态文案
 import { settings } from '../../store/settings'                 // 全局界面设置（任务栏/语言等）
 import { desktopPrefs, showShortcut, unpinShortcut } from '../../store/desktopPrefs'   // 应用收藏/隐藏/固定偏好（分账号隔离与恢复）
@@ -649,6 +649,13 @@ import { nodes as nodesStore, refreshNodes, setCurrentNode } from '../../store/n
 import { LANGUAGES, setLocale } from '../../locales'            // 语言清单与切换函数
 import ConfirmDialog from '../ConfirmDialog.vue'                // 高危操作二次确认弹窗（输入面板密码）
 import { Sun, Moon, Monitor, PanelLeft, Palette, ShieldCheck, Server, Wrench, Info, LayoutGrid } from 'lucide-vue-next'   // 设置分类导航与主题/界面形态选项图标
+
+// 外部跳转参数（面板模式页脚版本号点击 → 关于页）：
+//   initialTab 指定打开时选中的分类；tabJumpAt 为重复跳转令牌，窗口已打开时再次点击也能重新定位。
+const props = defineProps({
+  initialTab: { type: String, default: '' },
+  tabJumpAt: { type: Number, default: 0 },
+})
 
 // 设置分类：把原有区块按「通用外观 / 桌面应用 / 账户安全 / 节点 / 系统维护 / 关于」归组。
 // 受限管理员看不到节点与系统维护两个分类（对应区块本身也带 isAdmin 门控）。
@@ -661,6 +668,15 @@ const SETTINGS_TABS = [
   { key: 'about', labelKey: 'settings.nav.about', icon: Info },
 ]
 const activeTab = ref('general')   // 当前设置分类（默认通用与外观）
+
+// 应用外部指定的分类：仅接受已注册且当前用户有权限的分类，其余保持在通用页
+function applyInitialTab() {
+  const tab = SETTINGS_TABS.find((item) => item.key === props.initialTab)
+  if (!tab || (tab.adminOnly && !isAdmin())) return
+  activeTab.value = tab.key
+}
+applyInitialTab()   // 首次打开：窗口创建时即定位到指定分类
+watch(() => props.tabJumpAt, applyInitialTab)   // 已打开窗口：跳转令牌变化时重新定位
 
 // 面板安全：授权 IP / 绑定域名 / 密码策略 / 水印 / 标签页锁
 const secForm = reactive({

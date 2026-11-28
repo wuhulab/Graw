@@ -167,7 +167,94 @@ sequenceDiagram
 
 ---
 
-## 六、关键文件
+## 六、右侧「工具」书签：多持久终端与文件管理
+
+> 本节对应 Go 后端（`backend-go/internal/graw/handlers_terminal.go`）与前端
+> `frontend/src/components/ToolDock.vue`、`ToolTerminalPane.vue`；Python 旧版无此功能。
+
+之前的「保留持久化终端」有一个隐含限制：会话键固定是 `<节点ID>|shell`，
+**一个节点只能有一个常驻 shell**，再开窗口就变成多客户端共享同一个进程（像 tmux attach）。
+
+「工具」书签解决的是另一类需求：同时挂好几个互不干扰的长任务终端
+（比如一台机器上看日志、跑编译、开数据库客户端各一个），直到手动关掉才结束。
+
+### 用户看到的样子
+
+1. 登录后右侧边缘出现竖排书签「工具」，点开是一个**可拖动、可收回**的浮窗；
+   书签本身也能上下拖动，位置按用户名记在浏览器 `localStorage`，刷新后保持；
+2. 点「+」先选工具类型（**终端 / 文件管理**），再点节点（本机 / 各 SSH 子节点）：
+   终端会在那台机器上开一个持久 shell，文件管理则打开该节点的文件列表；
+   标签栏用图标区分类型（终端图标用绿 / 黄表示连接状态，文件管理是文件夹图标）；
+3. 浮窗可以拖到任意位置（坐标记进 localStorage），点「—」收回成右侧书签；
+4. 刷新页面、切标签、收回浮窗都**不会**杀掉 shell：只是断开 WebSocket；
+5. 只有点标签上的「×」并确认，才会调 `DELETE /api/terminal/persist` 结束对应进程。
+
+### 背后的三个小改动
+
+| 改动 | 说明 |
+|------|------|
+| `sid` 会话标识 | 每个终端标签由浏览器生成一个 `sid`（UUID），WS 带 `persist=1&sid=...`，后端会话键变成 `<节点ID>\|shell\|sid\|<sid>`，同一节点可并存多个常驻 shell |
+| Agent 转发 | 远端 Agent 子节点会把 `sid` 原样带进桥接目标；关闭时主面板把 DELETE 经隧道转发给子节点（去掉 `node`，子节点按本机键定位） |
+| 控制帧顺序 | 持久会话控制帧改用结构体序列化，保证以 `{"type":"persist"...}` 开头；否则 `encoding/json` 对 map 按字母序输出，前端识别不出控制帧，会把 JSON 画进终端 |
+
+### Windows 本机终端：从管道模式换成 ConPTY
+
+Go 后端原先在 Windows 上只有「管道回退」：PowerShell 用 `-Command -` 启动，约 2 秒才有输出、
+没有提示符、不会逐键回显，用户看到的就是「半天没反应」。现在 `term_pty_windows.go` 通过
+`github.com/UserExistsError/conpty` 接入 **ConPTY**（Win10 1809+）：
+
+- 提示符约 1 秒出现，输入逐键回显，方向键 / Ctrl+C / TUI 与 `Resize` 都可用；
+- Unix 侧仍是 `creack/pty`，两边的读写 / 改尺寸统一收敛到 `termTTY` 接口；
+- ConPTY 不可用的过旧 Windows 才回退管道模式，并改用 `cmd.exe /Q`（立刻有提示符），
+  不再使用响应慢的 PowerShell `-Command -`。
+
+### 标签与进程的关系
+
+前端**只挂载当前激活标签的 xterm**：切标签 = 旧连接断开 + 新连接接入，
+后端进程与 256KB 回放缓冲始终保留，重新激活时先回放再继续。
+这样即使开十几个终端，也只有一个 xterm DOM 在跑。
+
+### 文件管理标签（轻量版）
+
+「工具」里的文件管理不是完整版「文件管理」窗口，而是浮窗里的快捷浏览器：
+路径栏（回车直达）+ 上级 / 刷新 / 上传 + 文件列表（双击目录进入、双击或点下载图标保存文件）。
+
+- 每个文件标签**固定绑定创建时选择的节点**：请求显式带 `X-Graw-Node` 头
+  （`api.js` 拦截器优先采用显式头），不跟随当前聚焦窗口的请求级节点；
+  远端 Agent 节点经隧道代理，裸 SSH 节点由 hostops 远程原语执行。
+- 目录存在标签描述里（localStorage），切标签 / 刷新面板后回到上次目录；
+- 关闭文件标签只是移除视图，没有后端进程要结束，因此不会弹确认框。
+
+```mermaid
+flowchart TD
+    A[点击右侧「工具」书签] --> B[浮窗 + 标签栏]
+    B --> C{点 + 选择节点}
+    C --> D["WS: /api/terminal/ws?token=..&node=..&persist=1&sid=abc"]
+    D --> E{该节点已配 Agent?}
+    E -- 是 --> F[桥接到子节点 WS, 转发 sid]
+    E -- 否 --> G[主面板按 node|shell|sid|abc 建会话]
+    F --> H[子节点按 local|shell|sid|abc 建会话]
+    G --> I[记录标签到 localStorage 按用户名隔离]
+    H --> I
+    I --> J[切标签 / 收浮窗: 断开 WS, 进程继续跑]
+    J --> K[重新激活: 同 sid 接回 + 回放输出]
+    I --> L[点标签 × 并确认]
+    L --> M["DELETE /api/terminal/persist?node=..&sid=.."]
+    M --> N[结束该会话; Agent 节点经隧道转发]
+```
+
+### 边界与安全
+
+- 销毁 `sid` 端点仍是 `terminal` 模块权限；`sid` 有正则白名单（字母/数字/`_`/`-`，≤64 位），
+  Agent 桥接时也只透传这个受校验的参数；
+- 会话依旧只活在**面板进程内**：面板重启后 `sid` 对应的进程消失，前端用同一个 `sid` 重连会
+  得到一个新的 shell（标签结构保留）；
+- 标签列表按用户名隔离存在浏览器 localStorage，**不含任何命令输出**；
+- 终端 WS 仍强制管理员 + 已改默认密码 + `terminal` 权限，与其他终端入口一致。
+
+---
+
+## 七、关键文件
 
 | 文件 | 职责 |
 |------|------|
@@ -176,11 +263,28 @@ sequenceDiagram
 | `backend/app/routers/_wincon.py` | Windows ConPTY 封装（真伪控制台） |
 | `backend/app/main.py` | `lifespan` 启动/收尾：面板退出时 `shutdown_all()` 关闭持久会话 |
 | `frontend/src/components/windows/TerminalWindow.vue` | xterm 渲染、勾选框、控制帧处理、断线重连与偏好持久化 |
+| `backend-go/internal/graw/handlers_terminal.go` | Go 后端终端：WS（一次性 / 持久 / 多 `sid` 持久）、会话注册表、`GET/DELETE /api/terminal/persist` |
+| `backend-go/internal/graw/term_pty_windows.go` / `term_pty_unix.go` | 本地终端通道：Windows ConPTY（提示符 / 回显 / resize）与 Unix PTY，统一实现 `termTTY` 接口 |
+| `frontend/src/components/ToolDock.vue` | 右侧「工具」书签、可拖动 / 收回浮窗、节点选择、多终端标签与关闭 |
+| `frontend/src/components/ToolTerminalPane.vue` | 浮窗内的单个持久终端（`persist=1&sid=...`、心跳、重连、右键复制粘贴） |
 
 ---
 
 ## 更新记录
 
+- 2026-11-28：
+  - 新增右侧「工具」书签与多持久终端浮窗：每个终端带独立 `sid`，会话键为
+    `<节点ID>|shell|sid|<sid>`，同一节点可并存多个常驻 shell，直到手动关闭；
+  - `DELETE /api/terminal/persist` 支持 `sid`（只关单个终端），Agent 子节点的创建 / 关闭
+    均经隧道转发 `sid`；
+  - 修正持久会话控制帧的 JSON 字段顺序（结构体序列化），确保以 `{"type":"persist"...}`
+    开头，前端能正确识别、不再把控制帧画进终端；
+  - Windows 本机终端改用 ConPTY（`term_pty_windows.go`），提示符 / 逐键回显 / 方向键 /
+    Ctrl+C / 尺寸同步恢复正常；ConPTY 不可用的旧系统回退 `cmd.exe /Q`；
+  - 右侧「工具」书签支持上下拖动，位置按用户名存 `localStorage` 并在刷新后恢复；
+  - 「工具」浮窗新增文件管理标签：先选工具类型再选节点，文件列表固定绑定节点
+    （显式 `X-Graw-Node`），支持浏览 / 上传 / 下载，目录随标签持久化；
+    标签图标改为终端 / 文件夹图标（终端图标兼作连接状态指示）。
 - 2026-09-25：
   - 新增「保留持久化终端」：勾选后 shell 进程常驻后端，刷新面板 / 重开窗口按
     `<节点ID>|shell` 会话键接回同一终端并回放最近 256KB 输出；支持多窗口共享同一常驻进程；

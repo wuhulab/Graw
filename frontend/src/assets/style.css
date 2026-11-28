@@ -260,7 +260,9 @@ button {
 
 .ring-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* minmax(0, 1fr)：默认 1fr 的最小值是 min-content，ECharts 画布是固定像素宽，
+     侧栏折叠/展开后某一列会被旧画布撑宽、其余列被挤窄，导致四个环大小不一致 */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   align-items: center;
 }
@@ -270,12 +272,14 @@ button {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  min-width: 0; /* 同上：允许单元格窄于画布 min-content，避免撑破等分列 */
 }
 
 .ring-cell .ring-label {
   font-size: 11px;
   font-weight: 600;
-  color: #1d1d1f;
+  /* 跟随主题文字色：暗色模式下不再使用深色硬编码，避免与深色卡片融为一体 */
+  color: var(--g-text, #1d1d1f);
   margin-top: 2px;
 }
 
@@ -1172,9 +1176,9 @@ table.dt tr:hover td { background: var(--g-surface-soft, #f5f5f7); }
   padding: 8px 14px;
   font-size: 12.5px;
   cursor: pointer;
-  color: #374151;
+  color: var(--ui-text);
 }
-.ui-context-menu .menu-item:hover { background: #f5f5f7; }
+.ui-context-menu .menu-item:hover { background: var(--ui-bg-muted); }
 .ui-context-menu .menu-item.danger { color: var(--ui-danger-fg); }
 .ui-context-menu .menu-item.danger:hover { background: var(--ui-danger-bg); }
 .ui-context-menu .menu-divider { height: 1px; background: var(--ui-border); margin: 4px 0; }

@@ -827,6 +827,12 @@ export default {
     favRemove: '取消收藏',
     hideApp: '隐藏此应用',
     favHint: '右键应用可收藏并置顶',
+    // 页脚：社区版版权与版本号（版本号点击打开「设置 → 关于」）
+    footer: {
+      builtOn: '依据 {graw} 构建',
+      copyright: '© ShunX 2026 社区版',
+      versionTip: '查看版本与更新',
+    },
     menu: {
       monitor: '概览监控',
       site: '网站',
@@ -1244,6 +1250,28 @@ export default {
     copy: '复制',
     paste: '粘贴',
     inputPlaceholder: '输入命令，回车自动执行',
+  },
+  // 右侧「工具」书签（终端 / 文件管理）
+  toolDock: {
+    title: '工具',
+    open: '打开工具面板',
+    collapse: '收回面板',
+    newTool: '新建',
+    toolTerminal: '终端',
+    toolFiles: '文件管理',
+    chooseNode: '选择节点',
+    tabCount: '{n} 个标签',
+    empty: '暂无工具，点「+」选择节点创建终端或文件管理',
+    closeTab: '关闭标签',
+    closeConfirm: '关闭「{name}」将结束后端常驻的 shell 进程，确定吗？',
+    pathPlaceholder: '输入路径，回车跳转',
+    uploading: '正在上传…',
+    local: '本机',
+    copy: '复制',
+    paste: '粘贴',
+    connecting: '连接中…',
+    connected: '已连接',
+    reconnecting: '连接断开，正在重连…',
   },
   // Graw数据库保护机制
   protection: {

@@ -29,9 +29,22 @@ const (
 
 var containerIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 
+// termSIDRe 校验前端「工具」面板为每个持久终端生成的会话标识（sid）：
+// 只允许字母/数字/下划线/连字符并限制长度，避免任意串进入会话键与审计日志。
+var termSIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
 type termClient struct {
 	id int
 	ch chan []byte
+}
+
+// termTTY 是本地 shell 的终端通道抽象：Unix 伪终端与 Windows ConPTY 共用。
+// 读/写/改尺寸之外，Wait 用于回收底层进程（Unix 必须回收子进程；
+// Windows 只等待退出，进程句柄由 Close 释放）。
+type termTTY interface {
+	io.ReadWriteCloser
+	Resize(rows, cols int) error
+	Wait()
 }
 
 type termSession struct {
@@ -39,7 +52,7 @@ type termSession struct {
 	title      string
 	cmd        *exec.Cmd
 	stdin      io.WriteCloser
-	pty        *os.File
+	tty        termTTY
 	sshSession *ssh.Session
 	mu         sync.Mutex
 	buf        []byte
@@ -106,8 +119,9 @@ func (s *termSession) writeInput(data []byte) {
 	if !alive {
 		return
 	}
-	if s.pty != nil {
-		_, _ = s.pty.Write(data)
+	// 真终端（Unix PTY / Windows ConPTY）：输入原样写入，回车就是 \r
+	if s.tty != nil {
+		_, _ = s.tty.Write(data)
 		return
 	}
 	if runtime.GOOS == "windows" {
@@ -118,8 +132,8 @@ func (s *termSession) writeInput(data []byte) {
 }
 
 func (s *termSession) resize(rows, cols int) {
-	if s.pty != nil && rows > 0 && cols > 0 {
-		termResize(s.pty, rows, cols)
+	if s.tty != nil && rows > 0 && cols > 0 {
+		_ = s.tty.Resize(rows, cols)
 		return
 	}
 	if s.sshSession != nil && rows > 0 && cols > 0 {
@@ -174,13 +188,14 @@ func createTermSession(key, title string, args []string) (*termSession, error) {
 		createdAt: float64(time.Now().Unix()), lastActive: float64(time.Now().Unix()),
 	}
 	sink := termSink{s: session}
-	// 优先使用真正的 PTY（Unix）：交互式 shell、行编辑、TUI 均正常。
-	if ptyFile, err := startTermProcess(cmd); err == nil {
-		session.pty = ptyFile
+	// 优先使用真正的终端通道：Unix PTY / Windows ConPTY。
+	// 只有真控制台才有提示符、逐键回显、方向键 / Ctrl+C / TUI 与可靠的行编辑。
+	if tty, err := startTermProcess(cmd); err == nil {
+		session.tty = tty
 		go func() {
 			buf := make([]byte, 32768)
 			for {
-				n, err := ptyFile.Read(buf)
+				n, err := tty.Read(buf)
 				if n > 0 {
 					_, _ = sink.Write(buf[:n])
 				}
@@ -190,7 +205,8 @@ func createTermSession(key, title string, args []string) (*termSession, error) {
 			}
 			session.markDead()
 		}()
-		go func() { _ = cmd.Wait() }()
+		// Unix 用于回收子进程；Windows 等待 ConPTY 进程退出（句柄由 Close 释放）。
+		go tty.Wait()
 		return session, nil
 	}
 	// 回退：管道模式（Windows / 无 PTY 环境），功能受限但不阻断终端窗口。
@@ -213,13 +229,19 @@ func createTermSession(key, title string, args []string) (*termSession, error) {
 
 func localShellArgs() []string {
 	if runtime.GOOS == "windows" {
-		// 管道模式下必须使用 `-Command -`，PowerShell 才会把 stdin 当作命令逐行执行。
-		if p := HostWhich("pwsh"); p != "" {
-			return []string{p, "-NoLogo", "-NoProfile", "-Command", "-"}
+		if conptyAvailable() {
+			// 有 ConPTY（Win10 1809+）时启动普通交互式 shell：参数不能带 `-Command -`
+			//（那是「从 stdin 读脚本」的管道模式，没有提示符也不回显，看起来像卡死）。
+			if p := HostWhich("pwsh"); p != "" {
+				return []string{p, "-NoLogo", "-NoProfile"}
+			}
+			if p := HostWhich("powershell"); p != "" {
+				return []string{p, "-NoLogo", "-NoProfile"}
+			}
+			return []string{"cmd.exe", "/Q"}
 		}
-		if p := HostWhich("powershell"); p != "" {
-			return []string{p, "-NoLogo", "-NoProfile", "-Command", "-"}
-		}
+		// 无 ConPTY 的旧系统只能走管道：cmd 能立刻输出提示符，
+		// 而 PowerShell 的 `-Command -` 要等约 2 秒且全程没有提示符。
 		return []string{"cmd.exe", "/Q"}
 	}
 	shell := strings.TrimSpace(os.Getenv("SHELL"))
@@ -355,8 +377,8 @@ func destroyTermSession(key string) bool {
 	if !ok {
 		return false
 	}
-	if s.pty != nil {
-		_ = s.pty.Close()
+	if s.tty != nil {
+		_ = s.tty.Close()
 	}
 	if s.stdin != nil {
 		_ = s.stdin.Close()
@@ -395,10 +417,36 @@ func registerTerminalRoutes(a *App) {
 		if node == "" {
 			node = "local"
 		}
+		// sid：工具面板为每个持久终端分配的会话标识；缺省时按旧行为销毁该节点的
+		// 单例持久会话（node|shell），兼容老前端。
+		sid := strings.TrimSpace(r.URL.Query().Get("sid"))
+		if sid != "" && !termSIDRe.MatchString(sid) {
+			return NewHTTPError(400, "非法的终端会话标识")
+		}
 		key := node + "|shell"
+		if sid != "" {
+			key = node + "|shell|sid|" + sid
+		}
+		// 远端 Agent 子节点：常驻会话建在子节点进程里，把销毁请求经隧道转发过去。
+		// 转发时去掉 node 参数，子节点按本机键 local|shell|sid|xx 定位会话。
+		if node != "local" {
+			if n, ok := loadNodeStore().Nodes[node]; ok && str(n["type"]) == "ssh" && agentReady(n) {
+				r2 := r.Clone(r.Context())
+				u2 := *r.URL
+				q := url.Values{}
+				if sid != "" {
+					q.Set("sid", sid)
+				}
+				u2.RawQuery = q.Encode()
+				r2.URL = &u2
+				AuditRecord("关闭持久终端", u.Username(), SessionIP(r), key)
+				proxyToAgent(w, r2, n)
+				return nil
+			}
+		}
 		destroyed := destroyTermSession(key)
-		AuditRecord("关闭持久终端", u.Username(), SessionIP(r), node)
-		return WriteJSON(w, 200, map[string]any{"ok": destroyed, "node": node})
+		AuditRecord("关闭持久终端", u.Username(), SessionIP(r), key)
+		return WriteJSON(w, 200, map[string]any{"ok": destroyed, "node": node, "sid": sid})
 	})
 	a.wsRoute("/api/terminal/ws/container", containerTerminalWS)
 	a.wsRoute("/api/terminal/ws", terminalWS)
@@ -421,6 +469,13 @@ func terminalWS(w http.ResponseWriter, r *http.Request) {
 	}
 	node := strings.TrimSpace(r.URL.Query().Get("node"))
 	persist := QueryBool(r, "persist", false)
+	// sid：工具面板「多持久终端」的会话标识。带上它时按 <节点>|shell|sid|<sid>
+	// 各开一个常驻会话（互不覆盖），直到前端显式 DELETE；普通终端窗口不带该参数。
+	sid := strings.TrimSpace(r.URL.Query().Get("sid"))
+	if sid != "" && !termSIDRe.MatchString(sid) {
+		WriteJSON(w, 400, map[string]any{"detail": "非法的终端会话标识"})
+		return
+	}
 	if node == "" {
 		if remoteActive() {
 			node = CurrentNodeID()
@@ -431,15 +486,26 @@ func terminalWS(w http.ResponseWriter, r *http.Request) {
 	// 远端 Agent 子节点：桥接子节点的终端 WS（SSH 隧道 + agent JWT）。
 	if node != "local" {
 		if n, ok := loadNodeStore().Nodes[node]; ok && str(n["type"]) == "ssh" && agentReady(n) {
-			target := "/api/terminal/ws"
+			// 转发 sid，让子节点也按多会话键创建常驻 shell。
+			q := url.Values{}
 			if persist {
-				target += "?persist=1"
+				q.Set("persist", "1")
+			}
+			if sid != "" {
+				q.Set("sid", sid)
+			}
+			target := "/api/terminal/ws"
+			if enc := q.Encode(); enc != "" {
+				target += "?" + enc
 			}
 			bridgeAgentWS(w, r, n, target)
 			return
 		}
 	}
 	key := node + "|shell"
+	if persist && sid != "" {
+		key = node + "|shell|sid|" + sid
+	}
 	// 非持久终端使用独立 key，断开即销毁，避免与持久会话串线。
 	if !persist {
 		oneShot, err := newSID()
@@ -528,10 +594,16 @@ func serveTerminal(conn *wsConn, session *termSession, persist, fresh bool) {
 		session.mu.Lock()
 		clients := len(session.clients)
 		session.mu.Unlock()
-		ctrl, _ := json.Marshal(map[string]any{
-			"type": "persist", "key": session.key, "fresh": fresh,
-			"replay": len(session.buf), "clients": clients,
-		})
+		// 注意：必须用结构体而不是 map 序列化——encoding/json 对 map 按字母序输出，
+		// 会得到 {"clients":..,"fresh":..,...,"type":"persist"}，前端以 `{"type":"`
+		// 识别控制帧的逻辑就看不出这是控制帧，会把 JSON 当 shell 输出画进终端。
+		ctrl, _ := json.Marshal(struct {
+			Type    string `json:"type"`
+			Key     string `json:"key"`
+			Fresh   bool   `json:"fresh"`
+			Replay  int    `json:"replay"`
+			Clients int    `json:"clients"`
+		}{Type: "persist", Key: session.key, Fresh: fresh, Replay: len(session.buf), Clients: clients})
 		_ = conn.WriteText(ctrl)
 	}
 	id, outCh, replay := session.attach()

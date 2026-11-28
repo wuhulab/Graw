@@ -101,8 +101,12 @@ require_admin / require_perm("模块")
 - `/api/terminal/ws?...&persist=1`：**持久化终端**。后端把 shell 进程常驻（会话键为 `<节点ID>|shell`），
   WS 断开只摘客户端、进程继续运行；重连时先回放最近 256KB 输出快照再继续交互，用于长时间任务不因
   刷新面板而中断。接入时后端会先下发控制帧 `{"type":"persist",...}`（前端只用于状态展示，不写入终端）。
+- `/api/terminal/ws?...&persist=1&sid=<会话标识>`：右侧「工具」书签使用的**多持久终端**。带 `sid` 时
+  会话键变为 `<节点ID>|shell|sid|<sid>`，同一节点可以并存任意多个常驻 shell（`sid` 由前端生成，
+  只允许字母/数字/下划线/连字符，最长 64 位）；远端 Agent 节点会把 `sid` 一并转发到子节点。
   配套管理接口 `GET /api/terminal/persist`（列出常驻会话的脱敏状态）与
-  `DELETE /api/terminal/persist?node=<节点ID>`（结束常驻会话，均需 `terminal` 模块权限）。
+  `DELETE /api/terminal/persist?node=<节点ID>[&sid=<会话标识>]`（结束常驻会话，均需 `terminal`
+  模块权限；带 `sid` 只关闭对应终端，不带则按旧行为关闭该节点的单例持久会话）。
 - `/api/system/ws?node=<节点ID>`：目标为已配置 Agent 的 SSH 子节点时，桥接到子节点自身的 `/api/system/ws`；**`?node=` 仅管理员生效**，非管理员会被忽略并回落到全局当前节点（与 HTTP 只读接口的可视范围一致）。
 
 示例：

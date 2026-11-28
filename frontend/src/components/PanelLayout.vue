@@ -230,6 +230,26 @@
       </main>
     </div>
 
+    <!-- 页脚：社区版版权与版本号（仅标准面板模式展示）。
+         版本号取公开接口 /api/health；点击后打开「设置 → 关于」页查看版本检测与一键更新。 -->
+    <footer class="pnl-footer">
+      <span class="pnl-footer-built">
+        <!-- 品牌外链：用 i18n-t + 具名插槽，保证不同语种下的语序正确 -->
+        <i18n-t keypath="panel.footer.builtOn" tag="span">
+          <template #graw>
+            <a class="pnl-footer-link" :href="SOURCE_REPO_URL" target="_blank" rel="noopener noreferrer">Graw</a>
+          </template>
+        </i18n-t>
+      </span>
+      <span class="pnl-footer-copy">{{ $t('panel.footer.copyright') }}</span>
+      <button
+        v-if="panelVersion"
+        class="pnl-footer-version"
+        :title="$t('panel.footer.versionTip')"
+        @click="emit('open-version')"
+      >v{{ panelVersion }}</button>
+    </footer>
+
     <!-- 侧边栏应用右键菜单：收藏 / 取消收藏 / 隐藏此应用（收藏置顶；隐藏后在设置里可恢复） -->
     <Transition name="pnl-drop">
       <div
@@ -260,6 +280,7 @@ import {
   ChevronDown, LayoutGrid, Home, Server, Github, Heart, Lock, Star, EyeOff,
 } from 'lucide-vue-next'
 import WindowContent from './WindowContent.vue'
+import { panelApi } from '../api'
 import { isAdmin } from '../store/auth'
 import { desktopPrefs, isFavorite, toggleFavorite, hideShortcut } from '../store/desktopPrefs'   // 应用收藏 / 隐藏（支持分账号隔离）
 import { nodes, refreshNodes, setCurrentNode } from '../store/nodes'   // 多节点状态与当前主机切换
@@ -297,7 +318,7 @@ const props = defineProps({
   showTabs: { type: Boolean, default: true },             // 多标签缓存模式（false = 单页切换）
   contentEvents: { type: Object, default: () => ({}) },   // 窗口内容事件（App 的 winEvents：openXxx 处理器），显式透传给内容区
 })
-const emit = defineEmits(['open', 'focus', 'close', 'dirty', 'logout'])
+const emit = defineEmits(['open', 'focus', 'close', 'dirty', 'logout', 'open-version'])
 // 不把 attrs 落到根元素：openXxx 事件全部由内容区 WindowContent 显式接收后再转给具体窗口组件
 defineOptions({ inheritAttrs: false })
 
@@ -322,6 +343,20 @@ function openExternal(url) {
     alert(`${url}`)
   }
 }
+
+// ---- 页脚版本号 ----
+// 版本号来自公开接口 /api/health（与「设置 → 关于」同源）；获取失败只隐藏版本按钮，
+// 版权信息照常展示，不影响面板其余功能。
+const panelVersion = ref('')
+async function loadPanelVersion() {
+  try {
+    const res = await panelApi.health()
+    panelVersion.value = res.version || ''
+  } catch (e) {
+    panelVersion.value = ''
+  }
+}
+onMounted(loadPanelVersion)
 
 // ---- 顶栏/用户信息 ----
 const userName = computed(() => props.user?.username || 'admin')
@@ -788,6 +823,28 @@ watch(searching, (v) => {
   min-height: 0;
   overflow-y: auto;
   padding: 0 8px 12px;
+  /* 侧栏滚动条：细窄 + 低对比，颜色贴合侧栏底色（暗色下不再沿用全局偏亮的滚动条） */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.16) transparent;
+}
+.pnl-menu::-webkit-scrollbar {
+  width: 6px;
+}
+.pnl-menu::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.16);
+  border-radius: 3px;
+}
+.pnl-menu::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.28);
+}
+html[data-theme="dark"] .pnl-menu {
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+html[data-theme="dark"] .pnl-menu::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+}
+html[data-theme="dark"] .pnl-menu::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
 }
 .pnl-group { margin-bottom: 2px; }
 .pnl-group-head {
@@ -998,9 +1055,44 @@ watch(searching, (v) => {
 .pnl-empty-text { font-size: 14px; font-weight: 600; color: var(--g-text-muted); }
 .pnl-empty-sub { font-size: 12px; color: #aeaeb2; }
 
+/* ---- 页脚：社区版版权 + 版本号 ---- */
+.pnl-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 12px;
+  background: var(--g-surface);
+  border-top: 1px solid var(--g-border-soft);
+  font-size: 11px;
+  color: var(--g-text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  flex-shrink: 0;
+  z-index: 20;
+}
+.pnl-footer-built { display: inline-flex; align-items: center; gap: 4px; }
+.pnl-footer-link {
+  color: var(--g-primary);
+  text-decoration: none;
+}
+.pnl-footer-link:hover { text-decoration: underline; }
+.pnl-footer-version {
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: var(--g-primary);
+  cursor: pointer;
+}
+.pnl-footer-version:hover { text-decoration: underline; }
+
 /* ---- 窄屏（移动端）---- */
 @media (max-width: 767px) {
   .pnl-sidebar { width: 220px; }
   .pnl-host { display: none; }
+  /* 页脚空间有限：省略「依据 Graw 构建」，保留版权与版本号，避免文字被裁切 */
+  .pnl-footer-built { display: none; }
 }
 </style>

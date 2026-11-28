@@ -15,19 +15,19 @@
     <!-- 温度行存在时压缩环形区高度，保证卡片总高不变 -->
     <div class="ring-row" :style="{ height: temps.length ? 'calc(100% - 46px)' : 'calc(100% - 24px)' }">
       <div class="ring-cell">
-        <v-chart class="ring-chart" :option="loadOption" autoresize />
+        <v-chart class="ring-chart" :option="loadOption" :autoresize="AUTO_RESIZE" />
         <div class="ring-label">{{ $t('cards.ring.load') }}</div>
       </div>
       <div class="ring-cell">
-        <v-chart class="ring-chart" :option="cpuOption" autoresize />
+        <v-chart class="ring-chart" :option="cpuOption" :autoresize="AUTO_RESIZE" />
         <div class="ring-label">{{ $t('cards.ring.cpu') }}</div>
       </div>
       <div class="ring-cell">
-        <v-chart class="ring-chart" :option="memOption" autoresize />
+        <v-chart class="ring-chart" :option="memOption" :autoresize="AUTO_RESIZE" />
         <div class="ring-label">{{ $t('cards.ring.memory') }}</div>
       </div>
       <div class="ring-cell">
-        <v-chart class="ring-chart" :option="storageOption" autoresize />
+        <v-chart class="ring-chart" :option="storageOption" :autoresize="AUTO_RESIZE" />
         <div class="ring-label">{{ $t('cards.ring.storage') }}</div>
       </div>
     </div>
@@ -71,6 +71,12 @@ const ALARM_THRESHOLD = 90
 const ALARM_RED = '#f5222d'
 // 温度告警线：≥80°C 高亮红色（CPU/硬盘过热预警的通用经验值）
 const TEMP_HOT = 80
+
+// ECharts 自适应选项：关闭默认 100ms 节流。
+// 侧栏折叠/展开是 200ms 的宽度过渡，节流会让画布尺寸滞后于布局，
+// 过渡过程中画布可能短暂大于单元格并压到相邻的环；关闭后每帧同步。
+// 常量对象保证引用稳定，避免每次渲染都重建 ResizeObserver。
+const AUTO_RESIZE = { throttle: 0 }
 
 // 温度传感器列表：由后端随 overview 一并下发（CPU 优先排序）；
 // 无传感器主机（Windows / 虚拟机）为空数组 → 整行隐藏，不留空位
@@ -123,10 +129,15 @@ const storageOption = computed(() => ringOption(props.overview?.storage?.percent
 </script>
 
 <style scoped>
+/* 环形图按单元格宽度取正方形：只放大直径，不随卡片高度竖向拉伸。
+   min-height: 0 是必须的：作为 flex 子项时默认 min-height:auto 会被
+   ECharts 内部画布尺寸撑高，侧栏切换后图的盒子高度会被旧画布撑大，
+   环形图与文字被拉开、四个环大小不一致。 */
 .ring-chart {
   width: 100%;
-  height: 100%;
-  min-height: 70px;
+  height: auto;
+  aspect-ratio: 1 / 1;
+  min-height: 0;
 }
 /* 温度行：单行紧凑展示，超出裁剪（最多 3 条 + "+N"） */
 .temp-row {

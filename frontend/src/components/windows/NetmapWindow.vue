@@ -232,5 +232,5 @@ onMounted(async () => {
 .nm-row-actions { display: flex; gap: 6px; }
 .nm-preview-title { font-weight: 600; font-size: 13px; }
 .nm-frame { flex: 1; width: 100%; border: 1px solid var(--g-border); border-radius: 6px; background: var(--g-surface); box-sizing: border-box; }
-.nm-ws-hint { font-size: 11px; color: #98a2b3; padding-top: 4px; }
+.nm-ws-hint { font-size: 11px; color: var(--g-text-muted); padding-top: 4px; }
 </style>

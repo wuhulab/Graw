@@ -26,6 +26,7 @@
     @close="handleCloseWindow"
     @dirty="onPanelDirty"
     @logout="doLogout"
+    @open-version="openVersionPage"
   />
   <div v-else class="desktop" :style="desktopBgStyle">
     <!-- 动态壁纸层：视频壁纸或图片轮播（置于桌面内容之下） -->
@@ -221,6 +222,9 @@
   <!-- 全局快捷搜索（Ctrl+K / Spotlight）：搜索功能/节点/站点/容器并直达 -->
   <CommandPalette v-if="loggedIn" ref="paletteRef" :app-items="paletteItems" @open="onPaletteOpen" />
 
+  <!-- 右侧「工具」书签：点开可移动 / 可收回的浮窗，按节点创建多个持久化终端（手动关闭为止） -->
+  <ToolDock v-if="loggedIn" />
+
   <!-- 模块权限提示条：受限管理员点开「无权限模块」时不隐藏入口，只提示无权限 -->
   <div v-if="permNotice" class="perm-notice">{{ permNotice }}</div>
 
@@ -322,6 +326,8 @@ import { Archive, Container, Settings, Folder, Trash2, Terminal, FileText, Image
 // RingCard / MonitorCard 依赖 ECharts（体积大），且只在「类桌面」形态的首屏渲染——
 // 「标准面板模式」完全不使用它们。改为异步组件后 ECharts 不再进入入口 chunk，
 // 面板模式的启动因此不必再下载/解析图表库。
+// 右侧「工具」书签同样按需加载：浮窗内的终端依赖 xterm，避免进入首屏包。
+const ToolDock = defineAsyncComponent(() => import('./components/ToolDock.vue'))
 const RingCard = defineAsyncComponent(() => import('./components/cards/RingCard.vue'))
 const MonitorCard = defineAsyncComponent(() => import('./components/cards/MonitorCard.vue'))
 const InfoNotesCard = defineAsyncComponent(() => import('./components/cards/InfoNotesCard.vue'))
@@ -716,6 +722,18 @@ function toggleStartMenu() { startMenuOpen.value = !startMenuOpen.value }
 function openUsers() { openWindow('users') }
 function openChangePwd() { openWindow('changepwd') }
 function openSettings() { openWindow('settings') }
+// 面板模式页脚版本号：打开「设置」并定位到「关于」页（版本检测 / 一键更新）。
+// 已打开设置窗口时复用窗口并更新跳转令牌，让窗口内重新切到「关于」。
+function openVersionPage() {
+  const existing = openWindows.value.find((w) => w.key === 'settings')
+  if (existing) {
+    existing.props = { ...existing.props, initialTab: 'about', tabJumpAt: Date.now() }
+    if (existing.minimized) existing.minimized = false
+    focusWindow(existing.id)
+    return
+  }
+  openWindow('settings', { initialTab: 'about', tabJumpAt: Date.now() })
+}
 // 「设置」窗口 →「界面设置」入口：复用桌面快捷方式门控（adminOnly + 远程能力）。
 function openUiSettings() { openWindow('uisettings') }
 function openTasks() { openWindow('tasks') }

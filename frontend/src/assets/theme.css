@@ -93,10 +93,13 @@ html[data-theme="dark"] {
   --g-hover: rgba(255, 255, 255, 0.06);
   --g-active: #434552;
 
-  --g-text: #c0c2cf;
-  --g-text-secondary: #aeb0bd;
-  --g-text-muted: #9597a4;
-  --g-text-faint: #7c7f8c;
+  /* 文字层级：深底浅字会因对比度不足显得发灰、小字号更明显。
+     暗色下三级文字再整体提亮一档（接近暖白但仍保留层次），
+     让正文与提示文字在深色底上不发灰，同时避免纯白带来的刺眼与光晕。 */
+  --g-text: #e9ebf3;
+  --g-text-secondary: #d7dae5;
+  --g-text-muted: #bfc3d0;
+  --g-text-faint: #aaadbb;
 
   --g-strong: #f0be96;
   --g-strong-hover: #f5cba8;
@@ -110,7 +113,7 @@ html[data-theme="dark"] {
   --g-primary-ring: rgba(240, 190, 150, 0.2);
 
   --g-nav-hover-bg: rgba(255, 255, 255, 0.06);
-  --g-nav-hover-fg: #c0c2cf;
+  --g-nav-hover-fg: #e9ebf3;
   --g-nav-active-bg: #434552;
   --g-nav-active-fg: #f0be96;
   --g-nav-active-bar: #f0be96;
@@ -136,14 +139,14 @@ html[data-theme="dark"] {
   --ui-border-strong: #555866;
   --ui-bg: #242633;
   --ui-bg-muted: #2a2d39;
-  --ui-text: #c0c2cf;
-  --ui-text-secondary: #9597a4;
-  --ui-text-tertiary: #7c7f8c;
+  --ui-text: #e9ebf3;
+  --ui-text-secondary: #bfc3d0;
+  --ui-text-tertiary: #aaadbb;
   --ui-primary: #f0be96;
   --ui-primary-hover: #f5cba8;
   --ui-accent: #f0be96;
   --ui-off-bg: #343744;
-  --ui-off-fg: #9597a4;
+  --ui-off-fg: #bfc3d0;
   --ui-ok-bg: rgba(63, 185, 80, 0.16);
   --ui-ok-fg: #6fdc7c;
   --ui-warn-bg: rgba(237, 172, 44, 0.16);
@@ -154,19 +157,25 @@ html[data-theme="dark"] {
   --ui-shadow-md: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 
-/* 主按钮 / 激活页签：1Panel 使用暖金底 + 深色文字，保证亮底上的对比度 */
+/* 主按钮 / 激活页签：暗色下不再用整块暖金填充（亮色大色块刺眼），
+   改为暖金描边 + 深色半透明底 + 暖金文字，既保留主操作识别度，
+   又与深色界面保持一致的明度。 */
 html[data-theme="dark"] .btn.primary,
 html[data-theme="dark"] .ui-btn.primary,
 html[data-theme="dark"] .ui-tabs .ui-tab.active,
 html[data-theme="dark"] .tag-chip.active,
 html[data-theme="dark"] .el-button--primary {
-  color: var(--g-on-strong);
-  border-color: var(--g-strong);
+  background: rgba(240, 190, 150, 0.14);
+  color: var(--g-primary);
+  border-color: rgba(240, 190, 150, 0.5);
 }
 html[data-theme="dark"] .btn.primary:hover:not(:disabled),
-html[data-theme="dark"] .ui-btn.primary:hover:not(:disabled) {
-  background: var(--g-strong-hover);
-  border-color: var(--g-strong-hover);
+html[data-theme="dark"] .ui-btn.primary:hover:not(:disabled),
+html[data-theme="dark"] .ui-tabs .ui-tab.active:hover,
+html[data-theme="dark"] .tag-chip.active:hover {
+  background: rgba(240, 190, 150, 0.24);
+  color: var(--g-primary);
+  border-color: var(--g-primary);
 }
 
 /* ---- 基础页面 ---- */
@@ -266,6 +275,25 @@ html[data-theme="dark"] .menu-item:hover,
 html[data-theme="dark"] .ui-context-menu .menu-item:hover {
   background: var(--g-surface-hover);
 }
+/* 设计系统弹层菜单已改用 --ui-* 令牌，这里只需兜住各窗口 scoped 样式里
+   写死深红的危险菜单项（深色弹层上原色对比不足）。 */
+html[data-theme="dark"] .menu-item.danger {
+  color: #ff8a9a;
+}
+html[data-theme="dark"] .menu-item.danger:hover {
+  background: rgba(226, 50, 79, 0.2);
+}
+
+/* ---- 暗色下的文字可读性兜底 ----
+   以下文案在组件里写死了浅色主题的深色（深红 / 深绿），
+   深色底上对比不足，按语义色替换为暗色版本。 */
+html[data-theme="dark"] .start-item.danger,
+html[data-theme="dark"] .star-tip-msg {
+  color: #ff8a9a;
+}
+html[data-theme="dark"] .star-tip-msg.ok {
+  color: var(--ui-ok-fg);
+}
 
 /* ---- 设计系统细节：暗色下替换浅色硬编码（卡片悬停 / 危险按钮悬停） ---- */
 html[data-theme="dark"] .ui-card:hover {
@@ -283,4 +311,363 @@ html[data-theme="dark"] ::-webkit-scrollbar-thumb {
 }
 html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
   background: #5b5e6a;
+}
+
+/* ============================================================
+   暗色组件适配：次级按钮 / 语义徽标 / 提示块 / 浅色面板
+   业务背景：大量窗口的 scoped 样式直接写死了浅色主题的「浅底 + 深字」
+   （#d1fae5 / #fef2f2 / #fffbeb / #eef2ff / #dbeafe 等），暗色下这些
+   组件会变成刺眼的亮色块，文字与深色背景的对比也随之失衡。
+   下面按语义统一改为「深色语义底 + 高亮文字」；全部带
+   html[data-theme="dark"] 前缀，优先级高于组件 scoped 规则
+   （多出一个属性选择器 + 根元素），无需 !important，浅色主题不受影响。
+   ============================================================ */
+
+/* ---- 次级按钮：与卡片同色会缺少轮廓，抬高一档底色并强化描边 ---- */
+html[data-theme="dark"] .btn {
+  background: var(--g-surface-hover);
+  border-color: var(--g-border-strong);
+  color: var(--g-text);
+}
+html[data-theme="dark"] .btn:hover:not(:disabled) {
+  background: #3d4050;
+}
+html[data-theme="dark"] .ui-btn {
+  background: var(--g-surface-hover);
+  border-color: var(--g-border-strong);
+  color: var(--g-text);
+}
+html[data-theme="dark"] .ui-btn:hover:not(:disabled) {
+  background: #3d4050;
+}
+html[data-theme="dark"] .ui-btn.ghost {
+  background: transparent;
+}
+
+/* 浅色底的轻量按钮：浅橙 / 浅红 / 浅绿改为对应语义的深色底 */
+html[data-theme="dark"] .btn.warn {
+  background: rgba(237, 172, 44, 0.16);
+  color: #f0c25e;
+  border-color: rgba(237, 172, 44, 0.4);
+}
+html[data-theme="dark"] .btn-danger {
+  background: rgba(226, 50, 79, 0.14);
+  color: #ff8a9a;
+  border-color: rgba(226, 50, 79, 0.38);
+}
+html[data-theme="dark"] .btn-danger:hover:not(:disabled) {
+  background: rgba(226, 50, 79, 0.24);
+}
+html[data-theme="dark"] .btn.autostart-on {
+  background: rgba(63, 185, 80, 0.16);
+  color: #6fdc7c;
+  border-color: rgba(63, 185, 80, 0.4);
+}
+html[data-theme="dark"] .btn.danger-btn:disabled {
+  background: rgba(226, 50, 79, 0.3);
+  border-color: rgba(226, 50, 79, 0.2);
+  color: rgba(255, 255, 255, 0.55);
+}
+/* 工具浮窗空状态按钮：原来用 --g-strong 填充，暗色下改成描边式主按钮 */
+html[data-theme="dark"] .td-empty-btn {
+  background: rgba(240, 190, 150, 0.14);
+  color: var(--g-primary);
+  box-shadow: inset 0 0 0 1px rgba(240, 190, 150, 0.5);
+}
+html[data-theme="dark"] .td-empty-btn:hover {
+  background: rgba(240, 190, 150, 0.24);
+}
+
+/* ---- 通用徽标 / 标签 / 状态胶囊的基础底色 ---- */
+html[data-theme="dark"] .badge {
+  background: var(--g-surface-soft);
+  color: var(--g-text-secondary);
+}
+html[data-theme="dark"] .tag {
+  background: var(--g-surface-soft);
+  color: var(--g-text-secondary);
+  border-color: var(--g-border);
+}
+html[data-theme="dark"] .status-badge {
+  background: rgba(64, 150, 255, 0.16);
+  color: #7cb6ff;
+  border-color: rgba(64, 150, 255, 0.35);
+}
+
+/* ---- 成功 / 运行中 / 低风险 ---- */
+html[data-theme="dark"] .badge.ok,
+html[data-theme="dark"] .badge.success,
+html[data-theme="dark"] .badge.completed,
+html[data-theme="dark"] .badge.latest,
+html[data-theme="dark"] .badge.low,
+html[data-theme="dark"] .badge.lv-low,
+html[data-theme="dark"] .status-badge.ok,
+html[data-theme="dark"] .status-badge.green,
+html[data-theme="dark"] .state.ok,
+html[data-theme="dark"] .state.running,
+html[data-theme="dark"] .state-badge.running,
+html[data-theme="dark"] .exist.ok,
+html[data-theme="dark"] .test-result.ok,
+html[data-theme="dark"] .feedback.success,
+html[data-theme="dark"] .update-item.latest,
+html[data-theme="dark"] .task-hint,
+html[data-theme="dark"] .tag.port,
+html[data-theme="dark"] .pill.proto-webdav,
+html[data-theme="dark"] .proto-tag.tag-webdav {
+  background: rgba(63, 185, 80, 0.16);
+  color: #6fdc7c;
+  border-color: rgba(63, 185, 80, 0.38);
+}
+
+/* ---- 警告 / 待处理 / 中风险 ---- */
+html[data-theme="dark"] .badge.warn,
+html[data-theme="dark"] .badge.running,
+html[data-theme="dark"] .badge.maint,
+html[data-theme="dark"] .badge.med,
+html[data-theme="dark"] .badge.lv-medium,
+html[data-theme="dark"] .status-badge.warn,
+html[data-theme="dark"] .state.warn,
+html[data-theme="dark"] .state.partial,
+html[data-theme="dark"] .exist.warn,
+html[data-theme="dark"] .feedback.warn,
+html[data-theme="dark"] .update-item.update,
+html[data-theme="dark"] .warn,
+html[data-theme="dark"] .warn-banner,
+html[data-theme="dark"] .warn-box,
+html[data-theme="dark"] .hint-warn,
+html[data-theme="dark"] .hint-box,
+html[data-theme="dark"] .config-warn,
+html[data-theme="dark"] .rebuild-warn,
+html[data-theme="dark"] .auth-tag,
+html[data-theme="dark"] .tag-1p,
+html[data-theme="dark"] .app-tag.recommend,
+html[data-theme="dark"] .pill.proto-smb,
+html[data-theme="dark"] .proto-tag.tag-smb {
+  background: rgba(237, 172, 44, 0.16);
+  color: #f0c25e;
+  border-color: rgba(237, 172, 44, 0.4);
+}
+/* 仅有文字、没有底色的告警文案：只换文字色，避免凭空多出底色块 */
+html[data-theme="dark"] .warn-title,
+html[data-theme="dark"] .warn-line,
+html[data-theme="dark"] .warn-text,
+html[data-theme="dark"] .remain {
+  color: #f0c25e;
+}
+/* 组件内只有文字的成功提示（深绿在深色底上不易辨认） */
+html[data-theme="dark"] .containeredit-window .msg,
+html[data-theme="dark"] .f2b-panel .msg,
+html[data-theme="dark"] .cfg-editor + .msg {
+  color: #6fdc7c;
+}
+
+/* ---- 危险 / 失败 / 已停止 ---- */
+html[data-theme="dark"] .badge.err,
+html[data-theme="dark"] .badge.error,
+html[data-theme="dark"] .badge.available,
+html[data-theme="dark"] .badge.high,
+html[data-theme="dark"] .badge.lv-high,
+html[data-theme="dark"] .badge.danger,
+html[data-theme="dark"] .status-badge.off,
+html[data-theme="dark"] .status-badge.red,
+html[data-theme="dark"] .status-badge.danger,
+html[data-theme="dark"] .status-badge.down,
+html[data-theme="dark"] .state.off,
+html[data-theme="dark"] .state-badge.stopped,
+html[data-theme="dark"] .feedback.error,
+html[data-theme="dark"] .test-result.fail,
+html[data-theme="dark"] .error,
+html[data-theme="dark"] .error-box,
+html[data-theme="dark"] .error-banner,
+html[data-theme="dark"] .error-bar,
+html[data-theme="dark"] .query-error,
+html[data-theme="dark"] .container-err,
+html[data-theme="dark"] .danger-box,
+html[data-theme="dark"] .tag-danger {
+  background: rgba(226, 50, 79, 0.16);
+  color: #ff8a9a;
+  border-color: rgba(226, 50, 79, 0.4);
+}
+/* 纯文字错误提示 */
+html[data-theme="dark"] .err,
+html[data-theme="dark"] .err-text,
+html[data-theme="dark"] .err-line,
+html[data-theme="dark"] .fail-text,
+html[data-theme="dark"] .query-time,
+html[data-theme="dark"] .confirm-err,
+html[data-theme="dark"] .msg.err {
+  color: #ff8a9a;
+}
+html[data-theme="dark"] .msg.ok,
+html[data-theme="dark"] .ok,
+html[data-theme="dark"] .success,
+html[data-theme="dark"] .ok-text,
+html[data-theme="dark"] .ok-tip {
+  color: #6fdc7c;
+}
+/* 弹窗内的错误块（浅红底）统一换成深红语义底 */
+html[data-theme="dark"] .dialog .err {
+  background: rgba(226, 50, 79, 0.16);
+  border-color: rgba(226, 50, 79, 0.4);
+}
+/* Rewrite 的成功 / 失败提示是浅色块，单独兜底 */
+html[data-theme="dark"] .rewrite-window .msg.ok {
+  background: rgba(63, 185, 80, 0.14);
+  color: #6fdc7c;
+}
+html[data-theme="dark"] .rewrite-window .msg.err {
+  background: rgba(226, 50, 79, 0.16);
+  color: #ff8a9a;
+}
+
+/* ---- 蓝色信息 / 紫色分类 / 粉色协议标签 ---- */
+html[data-theme="dark"] .app-tag.blue,
+html[data-theme="dark"] .badge.info,
+html[data-theme="dark"] .update-item.not-pulled,
+html[data-theme="dark"] .upload-progress {
+  background: rgba(64, 150, 255, 0.16);
+  color: #7cb6ff;
+  border-color: rgba(64, 150, 255, 0.4);
+}
+html[data-theme="dark"] .badge.total,
+html[data-theme="dark"] .badge.neutral,
+html[data-theme="dark"] .tag.arch,
+html[data-theme="dark"] .site-tag,
+html[data-theme="dark"] .sev,
+html[data-theme="dark"] .sev.low {
+  background: rgba(122, 92, 246, 0.18);
+  color: #c4b5fd;
+  border-color: rgba(167, 139, 250, 0.42);
+}
+html[data-theme="dark"] .pill.proto-s3,
+html[data-theme="dark"] .proto-tag.tag-s3 {
+  background: rgba(236, 72, 153, 0.16);
+  color: #f9a8d4;
+  border-color: rgba(244, 114, 182, 0.38);
+}
+
+/* 设置页节点标签：基础 .tag 已改为中性色，这里恢复原有语义色 */
+html[data-theme="dark"] .tag-local {
+  background: rgba(63, 185, 80, 0.16);
+  color: #6fdc7c;
+}
+html[data-theme="dark"] .tag-remote {
+  background: rgba(64, 150, 255, 0.16);
+  color: #7cb6ff;
+}
+html[data-theme="dark"] .tag-current {
+  background: #0a84ff;
+  color: #ffffff;
+}
+html[data-theme="dark"] .tag-agenty {
+  background: rgba(122, 92, 246, 0.18);
+  color: #c4b5fd;
+}
+/* 磁盘系统盘标记：保留醒目的橙色底 */
+html[data-theme="dark"] .badge-sys {
+  background: #f5a623;
+  color: #ffffff;
+}
+
+/* ---- 浅色面板 / 结果块 ---- */
+html[data-theme="dark"] .result-box {
+  background: rgba(63, 185, 80, 0.12);
+  border-color: rgba(63, 185, 80, 0.35);
+}
+/* README 行内代码 / 高亮：浅底深红在暗色下对比不足 */
+html[data-theme="dark"] .md-body code {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ff9aa8;
+}
+html[data-theme="dark"] .md-body pre code {
+  background: transparent;
+  color: var(--g-text);
+}
+html[data-theme="dark"] .md-body mark {
+  background: rgba(237, 172, 44, 0.28);
+  color: var(--g-text);
+}
+/* 节点总览里的深绿统计文字 */
+html[data-theme="dark"] .agent-tag,
+html[data-theme="dark"] .ctr-item {
+  color: #6fdc7c;
+}
+html[data-theme="dark"] .metrics-fallback-backdrop {
+  background: rgba(46, 38, 18, 0.84);
+}
+html[data-theme="dark"] .metrics-fallback-title {
+  color: #f0c25e;
+}
+html[data-theme="dark"] .metrics-fallback-detail {
+  color: #d8b98a;
+}
+html[data-theme="dark"] .install-alert-card .alert-desc,
+html[data-theme="dark"] .install-alert-card .reinstall-hint {
+  background: rgba(237, 172, 44, 0.14);
+  border-color: rgba(237, 172, 44, 0.4);
+  color: #f0c25e;
+}
+html[data-theme="dark"] .install-alert-card .alert-sub {
+  color: #f0c25e;
+}
+html[data-theme="dark"] .tamper-alert-card .alert-desc,
+html[data-theme="dark"] .tamper-alert-card .advanced-panel {
+  background: rgba(226, 50, 79, 0.14);
+  border-color: rgba(226, 50, 79, 0.4);
+  color: #ff8a9a;
+}
+html[data-theme="dark"] .tamper-alert-card .alert-sub,
+html[data-theme="dark"] .tamper-alert-card .warn-text {
+  color: #ff8a9a;
+}
+/* 面板备份的危险提示框是红语义，覆盖通用的琥珀色警告底 */
+html[data-theme="dark"] .panelbackup-window .warn-box {
+  background: rgba(226, 50, 79, 0.14);
+  border-color: rgba(226, 50, 79, 0.4);
+  color: #ff8a9a;
+}
+
+/* ---- 浅色分隔线 / 表头 / 卡片描边 ---- */
+html[data-theme="dark"] .table-wrap,
+html[data-theme="dark"] .card,
+html[data-theme="dark"] .preview {
+  border-color: var(--g-border);
+}
+html[data-theme="dark"] .table-wrap td {
+  border-bottom-color: var(--g-border-soft);
+}
+html[data-theme="dark"] .table th {
+  background: var(--g-surface-soft);
+  color: var(--g-text);
+}
+html[data-theme="dark"] .sep {
+  background: var(--g-border);
+}
+/* 危险图标的浅粉悬停底 */
+html[data-theme="dark"] .iconbtn.danger:hover,
+html[data-theme="dark"] .danger-text:hover {
+  background: rgba(226, 50, 79, 0.2);
+  color: #ff8a9a;
+  border-color: rgba(226, 50, 79, 0.45);
+}
+/* 顶部「远程节点」胶囊的深紫在暗色下偏暗 */
+html[data-theme="dark"] .pnl-host.remote {
+  background: rgba(122, 92, 246, 0.18);
+  color: #c4b5fd;
+  border-color: rgba(167, 139, 250, 0.42);
+}
+html[data-theme="dark"] .pnl-host.remote .pnl-host-dot {
+  background: #c4b5fd;
+}
+
+/* ---- 链接文字：深蓝 / 默认蓝在深色底上对比不足，统一改为高亮蓝 ---- */
+html[data-theme="dark"] a {
+  color: var(--g-primary);
+}
+html[data-theme="dark"] .md-body a,
+html[data-theme="dark"] .fav-name,
+html[data-theme="dark"] .icon-link:hover,
+html[data-theme="dark"] .readme-btn:hover,
+html[data-theme="dark"] .name-btn:hover {
+  color: #7cb6ff;
 }

@@ -8,6 +8,8 @@
 ## [Unreleased]
 
 ### Added
+- **右侧「工具」书签 + 多持久终端**：登录后屏幕右缘出现竖排「工具」书签，点开是可拖动 / 可收回的浮窗；「+」里按节点（本机 / SSH 子节点）创建任意多个持久化终端，标签切换只断开 WebSocket、后端 shell 继续跑，直到点标签「×」显式结束。后端新增 `sid` 会话键（`<节点>|shell|sid|<sid>`）支持同一节点并存多个常驻会话，`DELETE /api/terminal/persist` 支持按 `sid` 单独关闭，Agent 子节点的创建 / 关闭经隧道转发 `sid`；同时修正持久会话控制帧的 JSON 字段顺序（`{"type":"persist",...}`），避免控制帧被当成 shell 输出画进终端
+- **「工具」浮窗新增文件管理**：「+」菜单先选工具类型（终端 / 文件管理）再选节点；文件管理标签固定绑定所选节点（请求显式带 `X-Graw-Node`），支持目录浏览 / 上级 / 路径直达 / 上传 / 下载，目录随标签持久化、切回自动恢复。标签图标改为终端 / 文件夹图标（终端图标用绿 / 黄表示连接状态），不再使用圆点
 - **Go 后端补齐 Python 旧版缺失能力**：
   - 统一出站 SSRF 防护（`backend-go/internal/graw/ssrf.go`）：通知 Webhook、站点可用性、备份 WebDAV、网络储存、服务/端口监控在拨号阶段校验并固定已解析 IP（防 DNS rebinding），拒绝回环 / 链路本地（含云元数据）/ 组播 / 保留地址；支持 `GRAW_NOTIFY_ALLOW_PRIVATE_NET` / `GRAW_UPTIME_ALLOW_PRIVATE_NET` / `GRAW_SVCMON_ALLOW_PRIVATE_NET`
   - 通知中心对齐 Python 语义：顶层 `enabled/interval_seconds/cooldown_seconds`、渠道 `has_password/has_bot_token/has_key` 脱敏、Server酱 `key` 字段、SMTP `ssl/starttls/subject`、资源阈值后台告警与冷却去重、告警记录字段与前端对齐
@@ -39,6 +41,8 @@
 - **默认后端切换为 Go**：根 `Dockerfile`（docker-publish 多架构构建与 docker-compose 共用）改为「前端 Node 构建 → Go 交叉编译 → Alpine 运行时」；CI 新增 Go 编译/vet/测试 job，CodeQL 增加 Go 扫描；`start.sh` / `start.bat` 开发启动与 `graw.sh` / `graw.bat` 守护进程部署均改用 `backend-go`。Python/FastAPI 保留在 `backend/` 作为旧版实现与回归测试。
 
 ### Fixed
+- **Windows 本机终端「半天没反应」**：Go 后端此前在 Windows 上只能回退到管道模式（PowerShell `-Command -` 启动约 2 秒、无提示符也不逐键回显），现接入 ConPTY（`github.com/UserExistsError/conpty`，Win10 1809+）：本地终端有正常提示符、逐键回显、方向键 / Ctrl+C / TUI 与尺寸同步；ConPTY 不可用的旧系统回退到 `cmd.exe /Q`（立即输出提示符）
+- **右侧「工具」书签可上下拖动**：书签支持竖直拖动并做可视区限位，位置按用户名写入 `localStorage`（`graw.toolDock.bookmarkY.<用户名>`），刷新 / 重新登录后保持；默认位置为屏幕约 42% 高处（修正 `Number(null)=0` 导致书签贴到最顶部的问题）
 - **Go 后端安全加固**：
   - `/api/auth/me` 不再返回完整用户记录（此前会回传 bcrypt 密码哈希与 TOTP 密钥），改为脱敏后的 `PublicUser`
   - 面板自身安全边界（用户管理 / 节点 / SSH 密钥 / 插件 / 更新 / 面板备份 / 安全入口等 `adminOnly` 路由）改为要求「完整管理员」，受限管理员无法再通过改自己的 `perms` 提权
