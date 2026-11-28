@@ -35,7 +35,7 @@ import (
 
 // AppVersion 面板版本号（Go 后端的唯一来源，/api/health 返回该值；
 // Python 旧版已冻结，不再要求同步修改）。
-const AppVersion = "1.9.6"
+const AppVersion = "1.9.7"
 
 // Config 汇总运行期配置（路径、限额、环境变量派生项）。
 //
